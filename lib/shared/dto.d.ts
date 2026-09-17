@@ -504,6 +504,24 @@ export interface InterviewPrepDto {
     checklist: string[];
     notes: string[];
 }
+/**
+ * 看板的全局筛选条件（§13 U8）。
+ *
+ * 有一条**硬约束**必须靠类型与文档记住：`greeting` / `message` / `interview` 三张表
+ * **没有 `resume_id`**，所以「简历版本」与「方向」只对**投递链路**成立；
+ * 接触段（打招呼/送达/已读/回复）对这两个条件**不生效**，服务层会显式忽略并在 note 里说明
+ * —— 一刀切地套上去会让接触段静默变成 0，看起来像"这版简历没人理"，那是假结论。
+ */
+export interface AnalyticsFilter {
+    /** ISO 时间下界（含）。投递链路按 `sent_at`；薪资模块按岗位的 `first_seen_at`。 */
+    from?: string;
+    /** ISO 时间上界（含）。 */
+    to?: string;
+    /** 只作用于投递链路的简历版本。 */
+    resumeId?: number;
+    /** 简历里填的方向（展示层用它当岗位关键词用）。只作用于投递链路。 */
+    direction?: string;
+}
 /** 漏斗的一层。 */
 export interface FunnelStepDto {
     key: string;

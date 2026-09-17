@@ -12,7 +12,7 @@
  * "哪版简历/哪个渠道转化好"必须以**每一次投递**为单位：
  * 同一个岗位可能投了两次、用了不同简历；按岗位聚合会把它们糊在一起。
  */
-import type { AttributionDto, FunnelDto, SalaryBandDto } from '../../shared/dto.js';
+import type { AnalyticsFilter, AttributionDto, FunnelDto, SalaryBandDto } from '../../shared/dto.js';
 import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../shared/enums.js';
 import type { ApplicationStage } from '../../shared/enums.js';
 import type { Store } from '../store/store.js';
@@ -20,11 +20,18 @@ import { type Clock } from '../util/time.js';
 /** 低于这个样本量就不下结论。 */
 export declare const MIN_SAMPLE = 5;
 export interface AnalyticsService {
-    funnel(): FunnelDto;
-    attribution(): AttributionDto;
+    /**
+     * 漏斗。`filter` 里的时间窗对两个总体都成立；
+     * **`resumeId` / `direction` 只作用于投递段** —— 打招呼那几张表没有 `resume_id` 这一列，
+     * 对接触段套用它们会把数字静默清零（详见 `AnalyticsFilter` 的注释）。
+     */
+    funnel(filter?: AnalyticsFilter): FunnelDto;
+    attribution(filter?: AnalyticsFilter): AttributionDto;
     salaryBand(options?: {
         city?: string;
         keyword?: string;
+        from?: string;
+        to?: string;
     }): SalaryBandDto;
 }
 export interface AnalyticsDeps {

@@ -13,6 +13,7 @@
  * 同一个岗位可能投了两次、用了不同简历；按岗位聚合会把它们糊在一起。
  */
 import type {
+  AnalyticsFilter,
   AttributionDto,
   AttributionRowDto,
   FunnelDto,
@@ -33,9 +34,14 @@ import { systemClock, type Clock } from '../util/time.js'
 export const MIN_SAMPLE = 5
 
 export interface AnalyticsService {
-  funnel(): FunnelDto
-  attribution(): AttributionDto
-  salaryBand(options?: { city?: string; keyword?: string }): SalaryBandDto
+  /**
+   * 漏斗。`filter` 里的时间窗对两个总体都成立；
+   * **`resumeId` / `direction` 只作用于投递段** —— 打招呼那几张表没有 `resume_id` 这一列，
+   * 对接触段套用它们会把数字静默清零（详见 `AnalyticsFilter` 的注释）。
+   */
+  funnel(filter?: AnalyticsFilter): FunnelDto
+  attribution(filter?: AnalyticsFilter): AttributionDto
+  salaryBand(options?: { city?: string; keyword?: string; from?: string; to?: string }): SalaryBandDto
 }
 
 export interface AnalyticsDeps {
@@ -65,10 +71,35 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
       .some((event) => stages.includes(event.toStage as ApplicationStage))
   }
 
+  /**
+   * 时间窗：两端都可缺省（缺省即不设该端）。ISO 字符串直接比大小 —— 我们全库都用
+   * `toISOString()` 落库，同格式的字符串比较与时间先后一致。
+   */
+  const inWindow = (at: string, filter: AnalyticsFilter): boolean => {
+    if (filter.from !== undefined && at < filter.from) return false
+    if (filter.to !== undefined && at > filter.to) return false
+    return true
+  }
+
+  /** 投递记录是否命中「简历版本 / 方向」。这两个维度只有 application 有。 */
+  const matchesResume = (record: ApplicationRecord, filter: AnalyticsFilter): boolean => {
+    if (filter.resumeId !== undefined && record.resumeId !== filter.resumeId) return false
+    if (filter.direction !== undefined && filter.direction !== '') {
+      const resume = record.resumeId === null ? undefined : store.resume.get(record.resumeId)
+      if (resume === undefined || resume.direction !== filter.direction) return false
+    }
+    return true
+  }
+
   return {
-    funnel(): FunnelDto {
-      const applications = store.pipeline.listApplications({ limit: 1000 })
-      const greetings = store.pipeline.listGreetings({ limit: 1000 }).filter((item) => item.jobId !== null)
+    funnel(filter: AnalyticsFilter = {}): FunnelDto {
+      // 时间窗对**两个总体都成立**；简历版本/方向只挑投递段。
+      const applications = store.pipeline
+        .listApplications({ limit: 1000 })
+        .filter((record) => inWindow(record.sentAt, filter) && matchesResume(record, filter))
+      const greetings = store.pipeline
+        .listGreetings({ limit: 1000 })
+        .filter((item) => item.jobId !== null && inWindow(item.sentAt, filter))
 
       const greeted = greetings.length
       const delivered = greetings.filter((item) => item.stage !== 'greeted' && item.stage !== 'none').length
