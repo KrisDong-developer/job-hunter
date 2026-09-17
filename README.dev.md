@@ -958,6 +958,27 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 `maxPages` / `weekdays` / `windowStartHour` / `windowEndHour` / `score|flag|dedup`，
 外加 `dimensions` / `pause` / `resume` 三个动作）；`job_report` 扩出 `box` / `baseline` / `resume`。
 
+### 真实实例验收（2026-09-17）
+
+离线闸门（`DSH_JOB_HUNTER_NO_NETWORK=1`）+ `--profile p5test --port 4399`，**不碰招聘站**：
+
+| 脚本 | 结果 |
+|---|---|
+| `jh-p9-verify.mjs`（本次新增，**74/74 通过**） | 直接打真实 HTTP 接口：A1 本地时间/抖动/时区、SR-1 触发点落在窗口内、SR-7 attempt/success 拆分、SR-17 原因枚举、SR-32 拒绝单点时刻、SR-39/41/42/43/45 校验、SR-30 暂停与恢复、F1 两个口径 + 拒绝乱写的口径、F2 基准来源声明、F3 禁止显著性 |
+| `jh-e2e.mjs`（基线，**总体通过**） | 断言数从 31 → **34**（见下面的"期望搬走"说明） |
+| `jh-p8-e2e.mjs`（**总体通过**，28 条） | 顺带修掉脚本自己的一个老 bug：它等的是 `.jh-drawer`，而岗位库的详情一直是**右侧内嵌栏**（抽屉只服务流水线/消息/面试）—— 于是这条**一直在超时**，P8 的 27 条断言其实早就全过。现在改成等 `.jh-detail-pane`，这条验证才真的在验东西 |
+| `jh-jobs-ui.mjs` / `jh-resume-ui.mjs` / `jh-resume-quick.mjs` | 全部 `pageErrors: []` |
+
+> **期望搬走 ≠ 放松断言**（§5 的纪律）。「定时抓取」与「平台与登录」两块按 D6 迁到了 U9 采集页，
+> 所以 `jh-e2e.mjs` 里那两条详细断言**搬到采集页继续验**，并且**加严**：
+> 今日屏改为断言减负后该有的那几样（新鲜度 / 立即采集 / 去配置 / 健康一行只读），
+> 采集页新增"为什么没跑"（SR-17/26）、一键暂停、方案配置三条。
+> 验收脚本不在仓库里（绑了本机 profile 与 playwright 位置），所以这些改动记在这里。
+
+> **验收脚本抓到的一条边界**：本机桌面宿主通常**已经持有租约**，于是 `p5test` 实例是只读的 ——
+> 这时它**不应该**武装任何定时器（两个调度器同时抓取正是 R20 要防的）。
+> 所以"恢复定时后 armed=true"这条断言必须按 `readOnly` 分流，否则会把**正确行为**判成失败。
+
 ---
 
 ## 包契约（改代码前先读）
