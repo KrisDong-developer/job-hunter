@@ -139,15 +139,19 @@ function renderSkill(skill: ResumeSkill): string {
 }
 
 function renderExperience(experience: ResumeExperience): string {
-  const heading = [escapeHtml(experience.company), has(experience.title) ? escapeHtml(experience.title) : '']
+  // 公司与职位分成两个 span：同一行里"公司"是锚点、"职位"是补充，全用粗体反而没有层级。
+  const heading = [
+    `<span class="exp-company">${escapeHtml(experience.company)}</span>`,
+    has(experience.title) ? `<span class="exp-title">${escapeHtml(experience.title)}</span>` : '',
+  ]
     .filter((part) => part !== '')
-    .join(' · ')
+    .join('')
   const tail = [dateRange(experience.start, experience.end), has(experience.city) ? escapeHtml(experience.city) : '']
     .filter((part) => part !== '')
     .join(' | ')
 
   const lines: string[] = [`        <div class="exp-head">`]
-  lines.push(`            <span class="exp-company">${heading}</span>`)
+  lines.push(`            ${heading}`)
   if (tail !== '') lines.push(`            <span class="exp-period">${tail}</span>`)
   lines.push(`          </div>`)
   if (experience.highlights.length > 0) {
@@ -165,12 +169,13 @@ function renderExperience(experience: ResumeExperience): string {
 }
 
 function renderProject(project: ResumeProject): string {
-  const headingBits = [escapeHtml(project.name)]
-  if (has(project.role)) headingBits.push(escapeHtml(project.role))
+  // 项目名是锚点，角色/时间是补充 —— 与工作经历同一套层级。
+  const headingBits = `<span class="exp-company">${escapeHtml(project.name)}</span>` +
+    (has(project.role) ? `<span class="exp-title">${escapeHtml(project.role)}</span>` : '')
   const tail = has(project.period) ? escapeHtml(project.period) : ''
 
   const lines: string[] = [`        <div class="exp-head">`]
-  lines.push(`            <span class="exp-company">${headingBits.join(' · ')}</span>`)
+  lines.push(`            ${headingBits}`)
   if (tail !== '') lines.push(`            <span class="exp-period">${tail}</span>`)
   lines.push(`          </div>`)
   if (project.highlights.length > 0) {
@@ -293,71 +298,95 @@ const CJK_FONT_STACK =
  * 这样"换个模板"永远只是换皮，不会改变分页与断行行为。
  * 所有颜色都被刻意选成**黑白打印下依然可读**：黑白打印机把 #1f4e79 打成深灰，
  * 不会像浅色那样直接消失。
+ *
+ * 2026-09-17 重排（用户反馈"预览出来不好看"）。病根不是配色，是**版式的层级与节奏**：
+ *   1. 每个段落标题下面都横贯一条灰线 → 整页像表格，这是"老式模板"观感的来源。
+ *      改成**只在标题文字下面划一条短线**（`inline-block` + `currentColor`），
+ *      于是"简洁"是黑短线、"专业"自动是主题色短线，不需要为两套模板各写一遍。
+ *   2. 技能用 `space-between` 把备注推到最右，看起来像被吹散的浮字。
+ *      改成"名字 + 备注"成对流动的云状排布，十几项技能只占两三行。
+ *   3. 元信息（时间 / 技术栈）比正文还深，抢了公司名的注意力。统一降到 #6b7280。
+ *   4. 标题与正文的字号差太小（12pt vs 10.5pt），层级立不起来：标题 11pt + 字距 0.1em，
+ *      靠"字重 + 字距 + 短线"区分，而不是靠"更大更黑"。
  */
 function stylesheet(): string {
   return `    :root { color-scheme: light only; }
     @page { size: A4; margin: 14mm 14mm; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #ffffff; }
+    /* @page 只在**打印**时生效，屏幕上会被忽略 —— 于是预览里文字会直接贴到纸边，
+       看起来又挤又"不像一份文档"。所以屏幕上用内边距把同一个版心补出来，
+       打印时再归零，免得页边距翻倍。两边的版心因此完全一致（预览即所得）。 */
+    body { padding: 14mm; }
+    @media print { body { padding: 0; } }
     body {
       /* 中文落在默认 serif 上会变成点阵观感，字体栈必须写死（R1）。 */
       font-family: ${CJK_FONT_STACK};
       /* 用 pt 而不是 px：打印链路按物理单位排版，px 在不同 DPI 下会漂。 */
       font-size: 10.5pt;
-      line-height: 1.6;
-      color: #1a1a1a;
+      line-height: 1.62;
+      color: #111827;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     a { color: inherit; text-decoration: none; }
     ul { list-style: none; margin: 0; padding: 0; }
 
-    .resume-header { border-bottom: 1px solid #d0d0d0; padding-bottom: 6pt; margin-bottom: 10pt; }
-    .resume-name { margin: 0; font-size: 19pt; font-weight: 700; letter-spacing: 0.03em; }
-    .resume-job { margin: 2pt 0 0; font-size: 11pt; }
-    .resume-contact { margin-top: 4pt; font-size: 9.5pt; color: #3a3a3a; }
-    .resume-contact .sep { margin: 0 6pt; color: #9a9a9a; }
-    .resume-meta { margin-top: 2pt; font-size: 9.5pt; color: #3a3a3a; }
+    /* ── 页眉：整页只有这一条贯穿线，把姓名区"框"住 ─────────────────── */
+    .resume-header { border-bottom: 1pt solid #111827; padding-bottom: 7pt; margin-bottom: 11pt; }
+    .resume-name { margin: 0; font-size: 20pt; font-weight: 700; letter-spacing: 0.02em; line-height: 1.2; }
+    .resume-job { margin: 3pt 0 0; font-size: 10.5pt; color: #4b5563; }
+    .resume-contact { margin-top: 5pt; font-size: 9.5pt; color: #374151; }
+    .resume-contact .sep { margin: 0 6pt; color: #cbd5e1; }
+    .resume-meta { margin-top: 2pt; font-size: 9.5pt; color: #374151; }
 
-    .resume-section { margin-top: 10pt; }
+    /* ── 段落 ────────────────────────────────────────────────────────── */
+    .resume-section { margin-top: 11pt; }
+    /* 短线只跟到标题文字末尾：横贯整行是"表格"观感，正是要摆脱的东西 */
     .section-title {
-      margin: 0 0 4pt;
-      font-size: 12pt;
+      display: inline-block;
+      margin: 0 0 6pt;
+      padding-bottom: 1.5pt;
+      font-size: 11pt;
       font-weight: 700;
-      padding-bottom: 1pt;
-      border-bottom: 1px solid #d0d0d0;
+      letter-spacing: 0.1em;
+      border-bottom: 2pt solid currentColor;
     }
     .resume-summary { margin: 0; text-align: justify; }
 
     /* 经历/项目块整体不可拆分：跨页断在成果列表中间，读起来像少了半段。 */
-    .exp-item { margin: 0 0 8pt; break-inside: avoid; page-break-inside: avoid; }
+    .exp-item { margin: 0 0 9pt; break-inside: avoid; page-break-inside: avoid; }
     .exp-item:last-child { margin-bottom: 0; }
     .exp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8pt; }
-    .exp-company { font-weight: 700; }
-    .exp-period { font-size: 9.5pt; color: #4a4a4a; white-space: nowrap; }
-    .exp-points { margin: 2pt 0 0; padding-left: 12pt; list-style: disc; }
-    .exp-points li { margin: 0 0 1pt; text-align: justify; }
-    .exp-stack { margin: 2pt 0 0; font-size: 9.5pt; color: #4a4a4a; }
+    .exp-company { font-weight: 600; }
+    /* 职位/角色退成常规字重：公司名才是这一行的锚点 */
+    .exp-title { font-weight: 400; color: #4b5563; margin-left: 6pt; }
+    .exp-period { font-size: 9.5pt; color: #6b7280; white-space: nowrap; }
+    .exp-points { margin: 3pt 0 0; padding-left: 11pt; list-style: disc; }
+    .exp-points li { margin: 0 0 1.5pt; }
+    .exp-stack { margin: 3pt 0 0; font-size: 9.5pt; color: #6b7280; }
 
-    .skill-item { display: flex; justify-content: space-between; gap: 8pt; margin-bottom: 1pt; break-inside: avoid; }
+    /* 技能：名字 + 备注成对流动。原先 space-between 把备注推到最右，
+       短名字 + 长备注时会读成两件不相干的事。 */
+    .skill-list { display: flex; flex-wrap: wrap; gap: 3pt 16pt; }
+    .skill-item { display: flex; align-items: baseline; gap: 5pt; break-inside: avoid; }
     .skill-name { font-weight: 600; }
-    .skill-note { font-size: 9.5pt; color: #4a4a4a; text-align: right; }
+    .skill-note { font-size: 9pt; color: #6b7280; }
 
-    .edu-item { display: flex; justify-content: space-between; gap: 8pt; margin-bottom: 1pt; break-inside: avoid; }
+    /* ── 教育 / 附加条目 ─────────────────────────────────────────────── */
+    .edu-list { margin: 0; }
+    .edu-item { display: flex; justify-content: space-between; gap: 8pt; margin-bottom: 2pt; break-inside: avoid; }
     .edu-main { font-weight: 600; }
 
-    .extra-item { margin-bottom: 2pt; break-inside: avoid; }
-    .extra-label { font-weight: 600; margin-right: 6pt; }
-    .extra-text { color: #2a2a2a; }
+    .extra-item { display: flex; gap: 8pt; margin-bottom: 2.5pt; break-inside: avoid; }
+    .extra-label { font-weight: 600; white-space: nowrap; }
+    .extra-text { color: #374151; }
 
-    /* 简洁：只有一条细分隔线，没有任何彩色。 */
-    .template-concise .section-title { border-bottom: 1px solid #bbbbbb; }
-
-    /* 专业：标题带主题色，经历块左侧一条框线做视觉分组。 */
+    /* ── 模板分叉：简洁 = 纯灰阶；专业 = 主题色 + 经历块左侧框线 ────── */
     .template-professional .resume-name { color: #1f4e79; }
     .template-professional .resume-job { color: #1f4e79; }
     .template-professional .resume-header { border-bottom: 1.5pt solid #1f4e79; }
-    .template-professional .section-title { color: #1f4e79; border-bottom: 1px solid #1f4e79; }
+    .template-professional .section-title { color: #1f4e79; }
     .template-professional .exp-item { border-left: 2pt solid #1f4e79; padding-left: 7pt; }
     .template-professional .extra-label { color: #1f4e79; }`
 }
