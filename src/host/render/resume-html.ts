@@ -73,29 +73,49 @@ function dateRange(start?: string, end?: string): string {
   return ''
 }
 
-/** 技能行右端的小字：等级 / 年限 / 证据。 */
-function skillNote(skill: ResumeSkill): string {
-  const parts: string[] = []
-  if (has(skill.level)) parts.push(escapeHtml(skill.level))
-  if (typeof skill.years === 'number') parts.push(`${String(skill.years)} 年`)
-  if (has(skill.evidence)) parts.push(escapeHtml(skill.evidence))
-  return parts.join(' · ')
-}
-
 // ─────────────────────────────────────────────────────────────────────
 // 页眉
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * 联系方式前的微型图标：**内联 SVG**（自包含约束不允许外链）。
+ * 用 `currentColor` 描边，所以它会跟着那一行的文字颜色走。
+ */
+const ICONS: Record<'phone' | 'mail' | 'pin', string> = {
+  phone:
+    '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.6 1.8h2.1l1 2.6-1.4.9a8.2 8.2 0 0 0 4.4 4.4l.9-1.4 2.6 1v2.1c0 .8-.7 1.5-1.5 1.5A10 10 0 0 1 2.1 3.3c0-.8.7-1.5 1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  mail:
+    '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3.6" width="12" height="8.8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.8 4.8 8 8.5l5.2-3.7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  pin:
+    '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14s4.1-3.9 4.1-6.9A4.1 4.1 0 0 0 3.9 7.1C3.9 10.1 8 14 8 14z" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="7" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+}
+
+/**
+ * 页眉。
+ *
+ * 2026-09-17 第二轮调整（反馈："姓名与求职意向太占行"）：
+ * 姓名与求职意向**并到同一行**（姓名 20pt，意向 11pt 灰、基线对齐），
+ * 联系方式一行排开并带微型图标。头部因此从三行收到两行，且信息更密。
+ *
+ * 关于"5 年经验 | 随时到岗"：年限确实在联系方式行里，但它归 `showOptional` 管
+ * —— 默认不显示是**刻意的**（§17 R3：避免没想清楚就把年龄/年限自动投出去）。
+ * "求职状态"这个字段目前**不存在**，要加是数据模型的事，不在渲染器里编。
+ */
 function renderBasics(basics: ResumeBasics, showOptional: boolean): string {
   const out: string[] = []
-  if (has(basics.name)) out.push(`      <h1 class="resume-name">${escapeHtml(basics.name)}</h1>`)
-  if (has(basics.title)) out.push(`      <p class="resume-job">${escapeHtml(basics.title)}</p>`)
+  const name = has(basics.name) ? `<h1 class="resume-name">${escapeHtml(basics.name)}</h1>` : ''
+  const role = has(basics.title) ? `<span class="resume-job">${escapeHtml(basics.title)}</span>` : ''
+  if (name !== '' || role !== '') out.push(`      <div class="resume-headline">${name}${role}</div>`)
 
-  // 联系方式行的顺序固定：手机 → 邮箱 → 城市 → 链接。HR 找手机号时手是有肌肉记忆的。
+  // 联系方式行的顺序固定：手机 → 邮箱 → 城市 →（开关打开时）年限 → 链接。
+  // HR 找手机号时手是有肌肉记忆的。
   const contacts: string[] = []
-  if (has(basics.phone)) contacts.push(`<span>${escapeHtml(basics.phone)}</span>`)
-  if (has(basics.email)) contacts.push(`<span>${escapeHtml(basics.email)}</span>`)
-  if (has(basics.city)) contacts.push(`<span>${escapeHtml(basics.city)}</span>`)
+  if (has(basics.phone)) contacts.push(`<span>${ICONS.phone}${escapeHtml(basics.phone)}</span>`)
+  if (has(basics.email)) contacts.push(`<span>${ICONS.mail}${escapeHtml(basics.email)}</span>`)
+  if (has(basics.city)) contacts.push(`<span>${ICONS.pin}${escapeHtml(basics.city)}</span>`)
+  if (showOptional && typeof basics.years === 'number') {
+    contacts.push(`<span>${String(basics.years)} 年经验</span>`)
+  }
   for (const link of basics.links ?? []) {
     const label = has(link.label) ? link.label : link.url
     if (!has(label)) continue
@@ -110,14 +130,9 @@ function renderBasics(basics: ResumeBasics, showOptional: boolean): string {
     out.push(`      <div class="resume-contact">${contacts.join('<span class="sep">·</span>')}</div>`)
   }
 
-  // 可选字段（R3 开关）：默认不出现，避免"35 岁"这类信息在没想清楚的时候被自动投出去。
-  if (showOptional) {
-    const meta: string[] = []
-    if (typeof basics.years === 'number') meta.push(`工作经验：${String(basics.years)} 年`)
-    if (typeof basics.age === 'number') meta.push(`年龄：${String(basics.age)} 岁`)
-    if (meta.length > 0) {
-      out.push(`      <div class="resume-meta">${escapeHtml(meta.join(' · '))}</div>`)
-    }
+  // 年龄仍然只在开关打开时出现，且单独一行（它比年限更敏感）
+  if (showOptional && typeof basics.age === 'number') {
+    out.push(`      <div class="resume-meta">年龄：${String(basics.age)} 岁</div>`)
   }
 
   return out.join('\n')
@@ -131,18 +146,34 @@ function renderSummary(summary: string): string {
   return `      <p class="resume-summary">${escapeHtml(summary)}</p>`
 }
 
-/** 技能做成 `名字 …… 备注` 的两端对齐行：一眼能扫出"熟练度分布"，比一段散文好读。 */
+/**
+ * 技能做成**标签块**（反馈："散列排列空隙大、等级差异不明显"）。
+ *
+ * 早先是"名字 …… 备注"两端拉开：空隙全靠布局撑，名字与等级同色同重，
+ * 看不出"精通"和"了解"的差别。现在整项技能是一块浅底色块：
+ * 名字加粗、等级半粗深灰、证据退成更浅的灰。
+ */
 function renderSkill(skill: ResumeSkill): string {
-  const note = skillNote(skill)
-  const tail = note === '' ? '' : `\n            <span class="skill-note">${note}</span>`
-  return `        <li class="skill-item">\n            <span class="skill-name">${escapeHtml(skill.name)}</span>${tail}\n          </li>`
+  const bits: string[] = [`<b class="skill-name">${escapeHtml(skill.name)}</b>`]
+  if (has(skill.level)) bits.push(`<span class="skill-level">${escapeHtml(skill.level)}</span>`)
+  if (typeof skill.years === 'number') bits.push(`<span class="skill-level">${String(skill.years)} 年</span>`)
+  if (has(skill.evidence)) bits.push(`<span class="skill-note">${escapeHtml(skill.evidence)}</span>`)
+  return `          <li class="skill-item">${bits.join('')}</li>`
+}
+
+/** 技术栈：微型浅底色块 + 前缀标签，和正文与项目符号明确分开。 */
+function renderStack(stack: string[]): string {
+  if (stack.length === 0) return ''
+  const chips = stack.map((item) => `<span class="stack-tag">${escapeHtml(item)}</span>`).join('')
+  return `          <p class="exp-stack"><span class="stack-label">技术栈</span>${chips}</p>`
 }
 
 function renderExperience(experience: ResumeExperience): string {
-  // 公司与职位分成两个 span：同一行里"公司"是锚点、"职位"是补充，全用粗体反而没有层级。
+  // 公司与职位用「·」连成**一个短语**放左边，时间放右边 —— 两端对齐。
+  // 早先公司、职位、时间各占一个位置（中间那个靠全角空格撑开），视线要来回跳三次。
   const heading = [
     `<span class="exp-company">${escapeHtml(experience.company)}</span>`,
-    has(experience.title) ? `<span class="exp-title">${escapeHtml(experience.title)}</span>` : '',
+    has(experience.title) ? `<span class="exp-title"> · ${escapeHtml(experience.title)}</span>` : '',
   ]
     .filter((part) => part !== '')
     .join('')
@@ -161,17 +192,15 @@ function renderExperience(experience: ResumeExperience): string {
     }
     lines.push(`          </ul>`)
   }
-  if ((experience.stack ?? []).length > 0) {
-    const stack = (experience.stack ?? []).map(escapeHtml).join(' / ')
-    lines.push(`          <p class="exp-stack">技术栈：${stack}</p>`)
-  }
+  const stack = renderStack(experience.stack ?? [])
+  if (stack !== '') lines.push(stack)
   return `        <div class="exp-item">\n${lines.join('\n')}\n        </div>`
 }
 
 function renderProject(project: ResumeProject): string {
-  // 项目名是锚点，角色/时间是补充 —— 与工作经历同一套层级。
-  const headingBits = `<span class="exp-company">${escapeHtml(project.name)}</span>` +
-    (has(project.role) ? `<span class="exp-title">${escapeHtml(project.role)}</span>` : '')
+  const headingBits =
+    `<span class="exp-company">${escapeHtml(project.name)}</span>` +
+    (has(project.role) ? `<span class="exp-title"> · ${escapeHtml(project.role)}</span>` : '')
   const tail = has(project.period) ? escapeHtml(project.period) : ''
 
   const lines: string[] = [`        <div class="exp-head">`]
@@ -185,22 +214,30 @@ function renderProject(project: ResumeProject): string {
     }
     lines.push(`          </ul>`)
   }
-  if ((project.stack ?? []).length > 0) {
-    const stack = (project.stack ?? []).map(escapeHtml).join(' / ')
-    lines.push(`          <p class="exp-stack">技术栈：${stack}</p>`)
-  }
+  const stack = renderStack(project.stack ?? [])
+  if (stack !== '') lines.push(stack)
   return `        <div class="exp-item">\n${lines.join('\n')}\n        </div>`
 }
 
-/** 教育压缩成一行（学校 · 专业 · 学历 + 时间）：它在多数简历里只配占一行。 */
+/**
+ * 教育一行：**学校是锚点（加粗）**，专业与学历退成常规灰，时间靠右。
+ *
+ * 反馈说"信息全挤在左侧、右边空一大片"，建议做成三列。
+ * 三列在 Word 里要引入中间制表位、在 HTML 里要把专业钉在固定列 ——
+ * 而真正的问题其实是**三者字重完全一样**（整行 600），所以没有落点。
+ * 这里按工作经历同一套层级解决：锚点粗、补充信息常规灰，不需要第三列。
+ */
 function renderEducation(education: ResumeEducation): string {
-  const parts = [escapeHtml(education.school)]
-  if (has(education.major)) parts.push(escapeHtml(education.major))
-  if (has(education.degree)) parts.push(escapeHtml(education.degree))
+  const extra = [
+    has(education.major) ? escapeHtml(education.major) : '',
+    has(education.degree) ? escapeHtml(education.degree) : '',
+  ]
+    .filter((part) => part !== '')
+    .join(' · ')
   const tail = dateRange(education.start, education.end)
-  return `          <li class="edu-item"><span class="edu-main">${parts.join(' · ')}</span>${
-    tail === '' ? '' : `<span class="exp-period">${tail}</span>`
-  }</li>`
+  return `          <li class="edu-item"><span class="edu-main">${escapeHtml(education.school)}${
+    extra === '' ? '' : `<span class="edu-extra"> · ${extra}</span>`
+  }</span>${tail === '' ? '' : `<span class="exp-period">${tail}</span>`}</li>`
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -332,51 +369,70 @@ function stylesheet(): string {
     a { color: inherit; text-decoration: none; }
     ul { list-style: none; margin: 0; padding: 0; }
 
-    /* ── 页眉：整页只有这一条贯穿线，把姓名区"框"住 ─────────────────── */
-    .resume-header { border-bottom: 1pt solid #111827; padding-bottom: 7pt; margin-bottom: 11pt; }
-    .resume-name { margin: 0; font-size: 20pt; font-weight: 700; letter-spacing: 0.02em; line-height: 1.2; }
-    .resume-job { margin: 3pt 0 0; font-size: 10.5pt; color: #4b5563; }
-    .resume-contact { margin-top: 5pt; font-size: 9.5pt; color: #374151; }
+    /* ── 页眉 ────────────────────────────────────────────────────────────
+       姓名与求职意向**同一行**（基线对齐），头部从三行收到两行。
+       整页的贯穿线仍只有页眉这一条（1pt 近黑）。 */
+    .resume-header { border-bottom: 1pt solid #111827; padding-bottom: 7pt; margin-bottom: 12pt; }
+    .resume-headline { display: flex; align-items: baseline; gap: 9pt; flex-wrap: wrap; }
+    .resume-name { margin: 0; font-size: 20pt; font-weight: 700; letter-spacing: 0.02em; line-height: 1.15; }
+    .resume-job { margin: 0; font-size: 11pt; font-weight: 500; color: #4b5563; }
+    .resume-contact { margin-top: 6pt; font-size: 9.5pt; color: #374151; }
+    .resume-contact span { white-space: nowrap; }
     .resume-contact .sep { margin: 0 6pt; color: #cbd5e1; }
+    /* 联系方式前的微型图标：内联 SVG，跟着文字颜色走 */
+    .ico { width: 9.5pt; height: 9.5pt; vertical-align: -1pt; margin-right: 2.5pt; color: #9ca3af; }
     .resume-meta { margin-top: 2pt; font-size: 9.5pt; color: #374151; }
 
-    /* ── 段落 ────────────────────────────────────────────────────────── */
-    .resume-section { margin-top: 11pt; }
-    /* 短线只跟到标题文字末尾：横贯整行是"表格"观感，正是要摆脱的东西 */
+    /* ── 段落 ──────────────────────────────────────────────────────────
+       标题：12pt 加粗 + 字距，下面一条 **1px 浅灰**贯穿线。
+       注意这条线是 #e5e7eb —— 早先那版用 #bbbbbb/#d0d0d0 的中灰横线，
+       每个标题一条、字号又大，整页就读成了表格；浅到"只提供分界、不抢视线"才对。
+       段前留 15pt 余量，滚动时模块边界一眼可见。 */
+    .resume-section { margin-top: 15pt; }
     .section-title {
-      display: inline-block;
-      margin: 0 0 6pt;
-      padding-bottom: 1.5pt;
-      font-size: 11pt;
+      margin: 0 0 7pt;
+      padding-bottom: 3pt;
+      font-size: 12pt;
       font-weight: 700;
-      letter-spacing: 0.1em;
-      border-bottom: 2pt solid currentColor;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid #e5e7eb;
     }
     .resume-summary { margin: 0; text-align: justify; }
 
     /* 经历/项目块整体不可拆分：跨页断在成果列表中间，读起来像少了半段。 */
-    .exp-item { margin: 0 0 9pt; break-inside: avoid; page-break-inside: avoid; }
+    .exp-item { margin: 0 0 10pt; break-inside: avoid; page-break-inside: avoid; }
     .exp-item:last-child { margin-bottom: 0; }
+    /* 两端对齐：左边「公司 · 职位」是一个短语，右边时间；不再三处分散 */
     .exp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8pt; }
     .exp-company { font-weight: 600; }
-    /* 职位/角色退成常规字重：公司名才是这一行的锚点 */
-    .exp-title { font-weight: 400; color: #4b5563; margin-left: 6pt; }
+    .exp-title { font-weight: 400; color: #4b5563; }
     .exp-period { font-size: 9.5pt; color: #6b7280; white-space: nowrap; }
     .exp-points { margin: 3pt 0 0; padding-left: 11pt; list-style: disc; }
-    .exp-points li { margin: 0 0 1.5pt; }
-    .exp-stack { margin: 3pt 0 0; font-size: 9.5pt; color: #6b7280; }
+    /* 条与条之间给 3pt（≈4px）余量；行高仍用正文的 1.62 ——
+       反馈建议压到 1.4~1.5，但那是**更挤**，与"提升阅读舒适度"的意图相反。 */
+    .exp-points li { margin: 0 0 3pt; }
+    .exp-points li:last-child { margin-bottom: 0; }
+    /* 技术栈：微型浅底色块 + 前缀，与正文和项目符号明确分开（原先是一行浅灰小字） */
+    .exp-stack { display: flex; flex-wrap: wrap; align-items: center; gap: 4pt; margin: 4pt 0 0; }
+    .stack-label { font-size: 9pt; font-weight: 600; color: #6b7280; }
+    .stack-tag { font-size: 9pt; line-height: 15pt; padding: 0 5pt; border-radius: 3pt;
+      background: #f1f3f5; color: #374151; }
 
-    /* 技能：名字 + 备注成对流动。原先 space-between 把备注推到最右，
-       短名字 + 长备注时会读成两件不相干的事。 */
-    .skill-list { display: flex; flex-wrap: wrap; gap: 3pt 16pt; }
-    .skill-item { display: flex; align-items: baseline; gap: 5pt; break-inside: avoid; }
+    /* 技能：整项一块浅底色块。名字加粗、等级半粗、证据更浅 ——
+       三者不同色重，"精通"与"了解"才看得出来。 */
+    .skill-list { display: flex; flex-wrap: wrap; gap: 4pt; }
+    .skill-item { display: flex; align-items: baseline; gap: 4pt; break-inside: avoid;
+      padding: 1.5pt 7pt; border-radius: 3pt; background: #f1f3f5; }
     .skill-name { font-weight: 600; }
+    .skill-level { font-size: 9pt; font-weight: 600; color: #4b5563; }
     .skill-note { font-size: 9pt; color: #6b7280; }
 
     /* ── 教育 / 附加条目 ─────────────────────────────────────────────── */
     .edu-list { margin: 0; }
-    .edu-item { display: flex; justify-content: space-between; gap: 8pt; margin-bottom: 2pt; break-inside: avoid; }
+    .edu-item { display: flex; justify-content: space-between; gap: 8pt; margin-bottom: 2.5pt; break-inside: avoid; }
+    /* 学校是锚点；专业与学历退成常规灰（原先整行一个粗体，三者没有落点） */
     .edu-main { font-weight: 600; }
+    .edu-extra { font-weight: 400; color: #4b5563; }
 
     .extra-item { display: flex; gap: 8pt; margin-bottom: 2.5pt; break-inside: avoid; }
     .extra-label { font-weight: 600; white-space: nowrap; }

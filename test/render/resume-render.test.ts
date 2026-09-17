@@ -288,7 +288,7 @@ test('可选字段（年限/年龄）默认不出现，开关打开后才渲染'
   const off = renderResumeHtml(FULL_RESUME)
   assert.equal(off.includes('年龄'), false)
   const on = renderResumeHtml(FULL_RESUME, { showOptional: true })
-  containsAll(on, ['工作经验：5 年', '年龄：28 岁'], '开启可选字段后')
+  containsAll(on, ['5 年经验', '年龄：28 岁'], '开启可选字段后')
 })
 
 test('时间区间：缺结束时间写「至今」，两端都没有就整行省略', () => {

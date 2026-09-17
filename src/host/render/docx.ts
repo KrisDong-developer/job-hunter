@@ -296,13 +296,17 @@ const CONTENT_WIDTH_TWIP = 11906 - 794 * 2
 function basicsParagraphs(basics: ResumeBasics, palette: Palette): string[] {
   // 先收集成描述、最后统一补边框：页眉那条贯穿线要画在**最后一行**上，
   // 而最后一行是哪一行取决于用户填了哪些可选字段。
-  const blocks: Array<{ text: string; options: ParaOptions }> = []
+  const blocks: Array<{ runs: RunSpec[]; options: ParaOptions }> = []
+
+  // 姓名与求职意向**同一行**（与 HTML 的 .resume-headline 对齐）
+  const headline: RunSpec[] = []
   if (has(basics.name)) {
-    blocks.push({ text: basics.name, options: { bold: true, halfPoints: 40, color: palette.accent, after: 20 } })
+    headline.push({ text: basics.name, bold: true, halfPoints: 40, color: palette.accent })
   }
   if (has(basics.title)) {
-    blocks.push({ text: basics.title, options: { halfPoints: 21, color: palette.subtle, after: 20 } })
+    headline.push({ text: `${headline.length === 0 ? '' : '　'}${basics.title}`, halfPoints: 22, color: palette.subtle })
   }
+  if (headline.length > 0) blocks.push({ runs: headline, options: { after: 20 } })
 
   const contacts: string[] = []
   if (has(basics.phone)) contacts.push(basics.phone)
@@ -313,22 +317,29 @@ function basicsParagraphs(basics: ResumeBasics, palette: Palette): string[] {
     if (has(label)) contacts.push(label)
   }
   if (contacts.length > 0) {
-    blocks.push({ text: contacts.join(' · '), options: { halfPoints: 19, color: palette.subtle, after: 20 } })
+    blocks.push({
+      runs: [{ text: contacts.join(' · '), halfPoints: 19, color: palette.subtle }],
+      options: { after: 20 },
+    })
   }
 
-  // docx 与 HTML 的可选字段策略必须一致：默认不写年龄/年限，避免误投。
+  // 年限与年龄：docx 侧一直是无条件写出的（HTML 侧默认隐藏，那条差异早于本轮）。
+  // 本轮只把"求职意向"并进姓名行，不动这两个字段的既有策略，免得顺手改掉行为。
   const meta: string[] = []
   if (typeof basics.years === 'number') meta.push(`工作经验：${String(basics.years)} 年`)
   if (typeof basics.age === 'number') meta.push(`年龄：${String(basics.age)} 岁`)
   if (meta.length > 0) {
-    blocks.push({ text: meta.join(' · '), options: { halfPoints: 19, color: palette.subtle, after: 20 } })
+    blocks.push({
+      runs: [{ text: meta.join(' · '), halfPoints: 19, color: palette.subtle }],
+      options: { after: 20 },
+    })
   }
 
-  // 整份文档只留这一条贯穿线（对应 HTML 的 .resume-header），段落标题不再画横线
+  // 整份文档只有页眉这一条**深色**贯穿线（段落标题那条是浅灰分界线，见 sectionTitle）
   const last = blocks.at(-1)
   if (last !== undefined) last.options = { ...last.options, border: true, borderColor: palette.rule, after: 90 }
 
-  return blocks.map((block) => paragraph(block.text, block.options))
+  return blocks.map((block) => richParagraph(block.runs, block.options))
 }
 
 /**
@@ -354,10 +365,19 @@ function experienceParagraphs(experience: ResumeExperience, palette: Palette): s
   const out: string[] = []
   if (left.length > 0 || tail !== '') out.push(headingParagraph(left, tail, palette))
   for (const highlight of experience.highlights) {
-    out.push(paragraph(`• ${highlight}`, { indent: 210, after: 20 }))
+    out.push(paragraph(`• ${highlight}`, { indent: 210, after: 40 }))
   }
   if ((experience.stack ?? []).length > 0) {
-    out.push(paragraph(`技术栈：${(experience.stack ?? []).join(' / ')}`, { halfPoints: 19, color: palette.muted }))
+    // 技术栈：前缀加粗、取值用次级灰（原来整行是最浅的 #6B7280，会读成正文）
+    out.push(
+      richParagraph(
+        [
+          { text: '技术栈 ', bold: true, halfPoints: 18, color: palette.muted },
+          { text: (experience.stack ?? []).join(' / '), halfPoints: 18, color: palette.subtle },
+        ],
+        { after: 20 },
+      ),
+    )
   }
   return out
 }
@@ -368,20 +388,30 @@ function projectParagraphs(project: ResumeProject, palette: Palette): string[] {
 
   const out: string[] = [headingParagraph(left, has(project.period) ? project.period : '', palette)]
   for (const highlight of project.highlights) {
-    out.push(paragraph(`• ${highlight}`, { indent: 210, after: 20 }))
+    out.push(paragraph(`• ${highlight}`, { indent: 210, after: 40 }))
   }
   if ((project.stack ?? []).length > 0) {
-    out.push(paragraph(`技术栈：${(project.stack ?? []).join(' / ')}`, { halfPoints: 19, color: palette.muted }))
+    out.push(
+      richParagraph(
+        [
+          { text: '技术栈 ', bold: true, halfPoints: 18, color: palette.muted },
+          { text: (project.stack ?? []).join(' / '), halfPoints: 18, color: palette.subtle },
+        ],
+        { after: 20 },
+      ),
+    )
   }
   return out
 }
 
 function educationParagraphs(education: ResumeEducation, palette: Palette): string[] {
-  const parts = [education.school]
-  if (has(education.major)) parts.push(education.major)
-  if (has(education.degree)) parts.push(education.degree)
+  // 学校是锚点（加粗），专业/学历退成常规灰 —— 与 HTML 同一套层级
+  const extra = [has(education.major) ? education.major : '', has(education.degree) ? education.degree : '']
+    .filter((part) => part !== '')
+    .join(' · ')
   const range = formatRange(education.start, education.end)
-  const runs: RunSpec[] = [{ text: parts.join(' · '), bold: true }]
+  const runs: RunSpec[] = [{ text: education.school, bold: true }]
+  if (extra !== '') runs.push({ text: ` · ${extra}`, color: palette.subtle })
   if (range !== '') runs.push({ text: `\t${range}`, color: palette.muted, halfPoints: 19 })
   return [richParagraph(runs, { rightTabAt: CONTENT_WIDTH_TWIP, after: 20 })]
 }
@@ -404,11 +434,14 @@ function sectionTitle(text: string, palette: Palette): string {
   return paragraph(text, {
     style: 'Heading1',
     bold: true,
-    halfPoints: 22,
+    halfPoints: 24,
     color: palette.accent,
-    underline: true,
-    spacing: 20,
-    after: 60,
+    spacing: 16,
+    // 浅灰分界线（1pt / #E5E7EB）：与 HTML 的 border-bottom 一致。
+    // 关键是**浅** —— 早先那版用中灰横线 + 13pt 标题，整页读成了表格。
+    border: true,
+    borderColor: 'E5E7EB',
+    after: 80,
   })
 }
 
