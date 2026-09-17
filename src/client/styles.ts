@@ -375,37 +375,110 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 
 /* ── P6：简历中心（U3）与定制（U4）────────────────────────────────── */
 .jh-row-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 12px}
-.jh-resume-layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px;align-items:start}
-.jh-resume-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
-.jh-resume-item{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;cursor:pointer;
-  border:1px solid transparent;background:transparent;border-radius:8px;padding:8px 10px;
-  color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
-.jh-resume-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.jh-resume-item-active{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
-.jh-resume-name{font-weight:600;display:flex;align-items:center;gap:6px}
+/* 这一屏要占满宽度：左边版本列表（约 1/4）+ 右边工作区 */
+.jh-screen-wide{max-width:none;height:100%;display:flex;flex-direction:column;box-sizing:border-box}
+.jh-resume-shell{display:grid;grid-template-columns:minmax(230px,25%) minmax(0,1fr);gap:16px;
+  flex:1 1 auto;min-height:0}
+.jh-resume-side{display:flex;flex-direction:column;gap:8px;min-height:0}
+.jh-resume-side-head{display:flex;gap:6px;flex:0 0 auto}
+.jh-resume-side-head .jh-btn{flex:0 0 auto}
+.jh-resume-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;
+  overflow:auto;min-height:0}
+.jh-resume-item{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:10px;
+  padding:10px 12px;color:var(--dsw-alias-label-primary);font:inherit}
+.jh-resume-item:hover{border-color:var(--dsw-alias-border-l4)}
+.jh-resume-item-active{border-color:var(--dsw-alias-brand-primary);
+  background:var(--dsw-alias-interactive-bg-active);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.jh-resume-item-top{display:flex;align-items:center;gap:6px}
+.jh-resume-name{font-size:13.5px;font-weight:600;flex:1 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 启用中：浅绿底 + 正文色。刻意不用"饱和绿底白字" —— 那是告警的语法，不是状态的语法 */
+.jh-badge-on{flex:0 0 auto;font-size:10.5px;font-weight:600;line-height:18px;padding:0 7px;
+  border-radius:999px;background:var(--dsw-alias-state-success-tertiary);
+  color:var(--dsw-alias-label-primary)}
 .jh-badge-inline{font-style:normal;font-size:10px;font-weight:600;padding:0 5px;border-radius:999px;
   color:var(--dsw-alias-brand-text);background:var(--dsw-alias-state-business-tertiary)}
-.jh-resume-meta{font-size:12px;line-height:1.5}
-.jh-resume-detail{min-width:0}
-.jh-resume-editor{display:flex;flex-direction:column;gap:10px}
-.jh-two-col{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:start}
-.jh-field{display:flex;flex-direction:column;gap:3px;margin:0 0 8px}
+.jh-resume-sub{font-size:12px;color:var(--dsw-alias-label-secondary)}
+.jh-resume-chips{display:flex;flex-wrap:wrap;gap:4px}
+.jh-chip{font-style:normal;font-size:11px;line-height:18px;padding:0 7px;border-radius:5px;
+  background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-secondary)}
+.jh-chip-warn{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-label-primary);
+  cursor:help}
+.jh-chip-quiet{background:transparent;border:1px dashed var(--dsw-alias-border-l3)}
+
+/* 右工作区 */
+.jh-resume-work{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;
+  container-type:inline-size}
+.jh-work-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
+.jh-work-name{max-width:260px;font-weight:600}
+.jh-work-actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center}
+.jh-work-modes{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:0 0 auto}
+.jh-modes{display:flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px}
+.jh-mode{border:0;background:transparent;cursor:pointer;font:inherit;font-size:12.5px;padding:3px 10px;
+  border-radius:6px;color:var(--dsw-alias-label-secondary)}
+.jh-mode:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.jh-mode-active{background:var(--dsw-alias-interactive-bg-active);
+  color:var(--dsw-alias-label-primary);font-weight:600}
+.jh-work-body{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;flex:1 1 auto;min-height:0}
+.jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.jh-mode-edit .jh-work-preview{display:none}
+.jh-mode-preview .jh-work-editor{display:none}
+.jh-work-editor{overflow:auto;min-height:0;padding-right:4px}
+.jh-work-preview{display:flex;flex-direction:column;gap:8px;min-height:0}
+.jh-preview-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
+/* 纸张隐喻：深灰底 + 白纸 + 阴影（bg-mask-2 实测 = 12% 黑，压在白底上就是浅灰） */
+.jh-paper-stage{flex:1 1 auto;min-height:320px;overflow:auto;border-radius:10px;
+  background:var(--dsw-alias-bg-mask-2);padding:18px}
+.jh-paper{display:block;width:100%;max-width:794px;height:1123px;margin:0 auto;border:0;
+  border-radius:2px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.3)}
+/* 工作区窄了就把"分屏"退回单栏 —— 判断依据是**面板**宽度，不是窗口宽度 */
+@container (max-width: 900px){
+  .jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr)}
+  .jh-mode-split .jh-work-preview{min-height:420px}
+}
+
+/* 表单 */
+.jh-form-card{border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
+  background:var(--dsw-alias-bg-layer-1);padding:12px 14px;margin:0 0 12px}
+.jh-form-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.jh-form-head h3{font-size:13px;font-weight:600;margin:0}
+.jh-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.jh-grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.jh-field{display:flex;flex-direction:column;gap:4px;margin:0 0 10px}
 .jh-field>span{font-size:12px;color:var(--dsw-alias-label-secondary)}
 .jh-inline{display:flex;gap:6px}
+/* 重复块：一块一框，编号 + 上移/下移/删除 */
+.jh-entry{border:1px solid var(--dsw-alias-border-l3);border-radius:9px;padding:10px 12px;
+  margin:0 0 10px;background:var(--dsw-alias-bg-base)}
+.jh-entry-head{display:flex;align-items:center;gap:4px;margin:0 0 8px}
+.jh-entry-no{font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.jh-icon-btn:disabled{opacity:.3;cursor:default}
+.jh-lines{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.jh-line{display:flex;gap:6px;align-items:center;width:100%}
+/* 标签输入：回车/顿号确认，点 × 删掉 */
+.jh-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.jh-chip-item{display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:20px;
+  padding:0 4px 0 8px;border-radius:6px;background:var(--dsw-alias-markdown-tag);
+  color:var(--dsw-alias-label-primary)}
+.jh-chip-x{border:0;background:transparent;cursor:pointer;color:var(--dsw-alias-label-secondary);
+  font-size:13px;line-height:1;padding:0 2px}
+.jh-chip-x:hover{color:var(--dsw-alias-state-error-primary)}
+.jh-chip-input{width:150px}
+
+/* 输入控件：浅灰底 = "这里能输入"；聚焦回白底 + 主题色描边 */
 .jh-input,.jh-textarea,.jh-select{width:100%;box-sizing:border-box;font:inherit;font-size:13px;
   padding:6px 10px;border-radius:8px;color:var(--dsw-alias-label-primary);
-  border:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-bg-base)}
-.jh-input:focus,.jh-textarea:focus,.jh-select:focus{outline:none;
+  border:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-markdown-tag)}
+.jh-input:hover,.jh-textarea:hover,.jh-select:hover{border-color:var(--dsw-alias-border-l4)}
+.jh-input:focus,.jh-textarea:focus,.jh-select:focus{outline:none;background:var(--dsw-alias-bg-base);
   border-color:var(--dsw-alias-link);box-shadow:0 0 0 3px var(--dsw-alias-state-business-tertiary)}
 .jh-input::placeholder,.jh-textarea::placeholder{color:var(--dsw-alias-label-caption)}
 .jh-input-narrow{max-width:90px}
-.jh-textarea{resize:vertical;line-height:1.6}
-.jh-textarea-tall{min-height:200px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
-.jh-issues{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
-.jh-preview{width:100%;height:420px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
-  background:#fff}
+.jh-textarea{resize:vertical;line-height:1.7}
+.jh-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
 .jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
-.jh-link{color:var(--dsw-alias-brand-text);text-decoration:underline}
+.jh-link{color:var(--dsw-alias-link);text-decoration:underline}
 .jh-footnote{margin-top:14px;font-size:12px}
 .jh-select{max-width:260px}
 
