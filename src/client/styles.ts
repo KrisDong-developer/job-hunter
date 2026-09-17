@@ -137,8 +137,8 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-todo:first-child{border-top:0}
 .jh-todo-level{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-.jh-todo-urgent .jh-todo-level{background:var(--dsw-alias-state-error-primary);color:#fff}
-.jh-todo-warn .jh-todo-level{background:var(--dsw-alias-state-warn-primary);color:#fff}
+.jh-todo-urgent .jh-todo-level{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-primary-foreground)}
+.jh-todo-warn .jh-todo-level{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground)}
 .jh-todo-title{font-weight:600}
 .jh-todo-body{flex:1 1 auto;min-width:0}
 .jh-todo-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -154,10 +154,12 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   box-shadow:0 1px 2px rgba(0,0,0,.04);
   color:var(--dsw-alias-label-primary);transition:border-color .12s,box-shadow .12s}
 .jh-job:hover{border-color:var(--dsw-alias-border-l4);box-shadow:0 2px 8px rgba(0,0,0,.08)}
-/* 选中：左侧 3px 主色条（inset 阴影画，不占宽度、文字不会跳）+ 更实的底 */
-.jh-job-active{border-color:var(--dsw-alias-border-l4);
+/* 选中：加深描边 + 更实的底。
+   不再用 inset 左侧色条 —— 卡片左边挂一条竖线在密集列表里很吵，
+   而且和"边框"重复表达了两遍。 */
+.jh-job-active{border-color:var(--dsw-alias-brand-primary);
   background:var(--dsw-alias-interactive-bg-active);
-  box-shadow:inset 3px 0 0 var(--dsw-alias-brand-primary),0 2px 8px rgba(0,0,0,.08)}
+  box-shadow:0 2px 8px rgba(0,0,0,.08)}
 .jh-job-main{flex:1 1 auto;min-width:0}
 .jh-job-title{font-size:14.5px;font-weight:600;margin:0 0 3px;line-height:1.5}
 .jh-job-meta{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;
@@ -176,8 +178,11 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   border-radius:999px;background:var(--dsw-alias-bg-overlay);
   color:var(--dsw-alias-label-secondary)}
 .jh-state-new{background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-brand-text)}
-.jh-state-saved{background:var(--dsw-alias-state-success-primary);
-  color:var(--dsw-alias-label-primary-foreground)}
+/* 已收藏不用实心绿块（一块饱和绿压在白底上很廉价，而且它只是个状态、不是告警）：
+   中性底 + 一个绿色小点，仍然一眼能认。 */
+.jh-state-saved{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary)}
+.jh-state-saved::before{content:'';display:inline-block;width:6px;height:6px;margin-right:5px;
+  border-radius:50%;background:var(--dsw-alias-state-success-primary);vertical-align:middle}
 .jh-state-ignored,.jh-state-archived{opacity:.75}
 
 /* 分页器：只有"上一页/下一页"两个文字按钮时，用户不知道总共有多少页 */
@@ -225,10 +230,10 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-score-inline{margin-left:8px;font-size:12px}
 .jh-flag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-.jh-flag-outsourcing{background:var(--dsw-alias-state-warn-primary);color:#fff}
-.jh-flag-fraud{background:var(--dsw-alias-state-error-primary);color:#fff}
+.jh-flag-outsourcing{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground)}
+.jh-flag-fraud{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-primary-foreground)}
 .jh-flag-zombie{background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
-.jh-flag-salary_inflation{background:var(--dsw-alias-state-warn-primary);color:#fff;opacity:.85}
+.jh-flag-salary_inflation{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground);opacity:.85}
 .jh-flag-jargon_hit{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
 .jh-reasons{list-style:none;margin:6px 0 0;padding:0}
 .jh-reason{display:flex;gap:8px;padding:2px 0;font-size:12px}
@@ -287,16 +292,15 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-reason-ok .jh-reason-mark{color:var(--dsw-alias-state-success-primary)}
 .jh-reason-bad .jh-reason-mark{color:var(--dsw-alias-state-error-primary)}
 
-/* 风险提示用 Alert 框，而不是一排灰字。
-   但"没有命中"**不刷成绿色**：绿色等于宣布"这个岗位没问题"，而规则没命中只说明
+/* 风险提示用 Alert 框，而不是一排灰字。**不在左边挂粗色条**：
+   靠"整体描边 + 浅底"就够表意了，左边一条竖线在密集列表里既吵又与边框重复。
+   另外"没有命中"**不刷成绿色**：绿色等于宣布"这个岗位没问题"，而规则没命中只说明
    "没命中已知模式" —— 那恰恰是本项目一路拒绝下的那种结论。 */
-.jh-alert{border:1px solid var(--dsw-alias-border-l2);border-left-width:3px;border-radius:10px;
+.jh-alert{border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
   padding:10px 12px;margin:0 0 10px;background:var(--dsw-alias-bg-base)}
 .jh-alert-warn{border-color:var(--dsw-alias-state-warn-secondary);
-  border-left-color:var(--dsw-alias-state-warn-primary);
   background:var(--dsw-alias-state-warn-tertiary)}
 .jh-alert-error{border-color:var(--dsw-alias-state-error-secondary);
-  border-left-color:var(--dsw-alias-state-error-primary);
   background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent)}
 .jh-alert-quiet{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-overlay)}
 .jh-alert-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 4px}
@@ -363,7 +367,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   flex:0 0 auto;font-size:12px}
 
 .jh-tv-pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:8px 10px;border-radius:8px;
-  background:var(--dsw-alias-markdown-code-block);border:.5px solid var(--dsw-alias-border-l1);
+  background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l2);
   color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
 .jh-tv-pre-body{background:transparent;border:0;padding:0}
 .jh-tv-draft{display:flex;flex-direction:column;gap:6px}
@@ -398,7 +402,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-textarea{resize:vertical;line-height:1.6}
 .jh-textarea-tall{min-height:200px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
 .jh-issues{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
-.jh-preview{width:100%;height:420px;border:.5px solid var(--dsw-alias-border-l1);border-radius:10px;
+.jh-preview{width:100%;height:420px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
   background:#fff}
 .jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
 .jh-link{color:var(--dsw-alias-brand-text);text-decoration:underline}
@@ -424,7 +428,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-board-count{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-weight:400}
 .jh-board-empty{margin:0;text-align:center;font-size:12px}
 .jh-board-card{display:flex;flex-direction:column;gap:3px;padding:7px 8px;border-radius:8px;
-  border:.5px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base)}
+  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base)}
 .jh-board-title{border:0;background:transparent;padding:0;text-align:left;cursor:pointer;font:inherit;
   font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary)}
 .jh-board-title:hover{color:var(--dsw-alias-brand-text);text-decoration:underline}
@@ -433,17 +437,18 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-board-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
 
 .jh-followups{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.jh-followup{padding:8px 10px;border-radius:8px;border-left:3px solid var(--dsw-alias-border-l3);
+/* 同样不用左侧色条：语气靠整体描边色表达 */
+.jh-followup{padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-layer-1);font-size:12px}
-.jh-followup-read-no-reply{border-left-color:var(--dsw-alias-state-warn-primary)}
-.jh-followup-unread-timeout{border-left-color:var(--dsw-alias-label-tertiary)}
+.jh-followup-read-no-reply{border-color:var(--dsw-alias-state-warn-secondary)}
+.jh-followup-unread-timeout{border-color:var(--dsw-alias-border-l3)}
 .jh-followup p{margin:2px 0 0}
 
 .jh-messages,.jh-interviews{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.jh-message,.jh-interview{padding:9px 11px;border-radius:9px;border:.5px solid var(--dsw-alias-border-l1);
+.jh-message,.jh-interview{padding:9px 11px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-layer-1)}
-.jh-message-hr{border-left:3px solid var(--dsw-alias-brand-text)}
-.jh-message-me{border-left:3px solid var(--dsw-alias-label-tertiary)}
+.jh-message-hr{border-color:var(--dsw-alias-brand-primary)}
+.jh-message-me{border-color:var(--dsw-alias-border-l2)}
 .jh-message-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12px}
 .jh-message-body{margin:5px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .jh-message-reply{display:flex;flex-direction:column;gap:6px;margin-top:6px}
@@ -459,19 +464,21 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-funnel-boundary{border-top:1px dashed var(--dsw-alias-border-l3);padding-top:4px;margin-top:2px}
 
 .jh-table{border-collapse:collapse;width:100%;font-size:12px}
-.jh-table th,.jh-table td{border-bottom:.5px solid var(--dsw-alias-border-l1);padding:4px 6px;text-align:left}
+.jh-table th,.jh-table td{border-bottom:1px solid var(--dsw-alias-border-l2);padding:4px 6px;text-align:left}
 .jh-table th{color:var(--dsw-alias-label-secondary);font-weight:500}
 
 /* ── P8：校招硬截止（不可逆节点必须显眼）──────────────────────────── */
 .jh-deadlines{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
-.jh-deadline{padding:5px 9px;border-radius:7px;border-left:3px solid var(--dsw-alias-border-l3);
+.jh-deadline{padding:5px 9px;border-radius:7px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-base)}
-/* 24 小时内：橙；已过期：红。两个色阶刻意区分 —— 「快了」与「没了」是两件事 */
-.jh-deadline-urgent{border-left-color:var(--dsw-alias-state-warn-primary);
+/* 24 小时内：橙；已过期：红。两个色阶刻意区分 —— 「快了」与「没了」是两件事。
+   注意：主题里**没有** state-error-tertiary（实测对着 357 个变量 diff 出来的），
+   原先写它等于背景静默失效 → 这里用 color-mix 自己调一个 8% 的红底。 */
+.jh-deadline-urgent{border-color:var(--dsw-alias-state-warn-primary);
   background:var(--dsw-alias-state-warn-tertiary)}
-.jh-deadline-overdue{border-left-color:var(--dsw-alias-state-error-primary);
-  background:var(--dsw-alias-state-error-tertiary)}
+.jh-deadline-overdue{border-color:var(--dsw-alias-state-error-primary);
+  background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent)}
 .jh-campus-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.jh-campus-item{padding:9px 11px;border-radius:9px;border:.5px solid var(--dsw-alias-border-l1);
+.jh-campus-item{padding:9px 11px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-layer-1)}
 `
