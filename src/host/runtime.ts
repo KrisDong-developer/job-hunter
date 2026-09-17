@@ -10,7 +10,14 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PHASE, PLUGIN_ID, REQUEST_DELAY_MAX_MS, REQUEST_DELAY_MIN_MS, ROUTE_PREFIX } from '../shared/constants.js'
+import {
+  DAILY_CRAWL_LIMIT,
+  PHASE,
+  PLUGIN_ID,
+  REQUEST_DELAY_MAX_MS,
+  REQUEST_DELAY_MIN_MS,
+  ROUTE_PREFIX,
+} from '../shared/constants.js'
 import type {
   CrawlStatusDto,
   CrawlSummaryDto,
@@ -75,7 +82,7 @@ import { createAdapterRegistry } from './platform/registry.js'
 import type { LoginFlow, SessionService } from './platform/session.js'
 import { createLoginFlow, createSessionService, toAccountDto } from './platform/session.js'
 import type { SearchCriteria } from './platform/types.js'
-import { createScheduler, type Scheduler, type RunReason } from './scheduler/index.js'
+import { createScheduler, type PlatformGate, type Scheduler, type RunReason } from './scheduler/index.js'
 import { cordisTimerPort, nativeTimerPort, type TimerLike, type TimerPort } from './scheduler/timer-port.js'
 import type { ResumeContent } from '../shared/resume.js'
 import type { SettingsPatch, SettingsService, SettingsSnapshot } from './settings.js'
@@ -130,7 +137,17 @@ export interface HostRuntime {
   today(): TodayDto
   crawlStatus(): CrawlStatusDto
   /** 手动触发一次抓取（走真实浏览器）。 */
-  crawl(options: { platformId: string; criteria: SearchCriteria; planId?: number | null }): Promise<CrawlSummaryDto>
+  crawl(options: {
+    platformId: string
+    criteria: SearchCriteria
+    planId?: number | null
+    /** SR-28：触发原因，落进 `crawl_run.reason`（定时/人工/补跑）。 */
+    reason?: RunReason
+  }): Promise<CrawlSummaryDto>
+  /** B3/SR-30：全局一键暂停（**只停定时**，手动永远可用）。 */
+  setSchedulePaused(paused: boolean, reason?: string): void
+  /** SR-21：人工确认恢复风控暂停的方案。 */
+  resumeRisk(planId: number): void
   /** 实时事件总线（ADR-24：事件只作提示）。 */
   events(): EventBus
 
@@ -351,6 +368,50 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
   /** 是否允许调度：数据层就绪 **且** 持有单实例租约（R20）。 */
   const canSchedule = (): boolean => store !== undefined && lease.held()
 
+  /** SR-44：读方案上的后处理开关。没有方案（裸抓一次）时按默认全开。 */
+  const postProcessForPlan = (planId: number | null): { score: boolean; flag: boolean; dedup: boolean } => {
+    if (planId === null) return { score: true, flag: true, dedup: true }
+    return store?.plan.get(planId)?.postProcess ?? { score: true, flag: true, dedup: true }
+  }
+
+  /**
+   * SR-16：**每平台独立**检查前置条件。
+   *
+   * 这是一个**纯判定**函数（不发请求、不改状态）—— 它回答的正是用户最想知道的那个问题：
+   * 「为什么今天没跑？」。所以它的返回值直接进界面文案（SR-17/26）。
+   *
+   * 顺序：离线闸门 → 适配器健康 → 登录态 → 每日配额。
+   * 顺序有讲究：越"根本、越不可能自愈"的原因越先报，
+   * 否则"没到点/配额"这类会盖住"你的适配器已经坏了"。
+   */
+  const platformGate: PlatformGate = (platformId) => {
+    const opened = store
+    if (opened === undefined) return 'lease_lost'
+    // 离线闸门（§14）：开了就**绝不**发起真实访问
+    if (isOfflineMode()) return 'offline_gate'
+
+    const adapter = registry.get(platformId)
+    if (adapter === undefined) return 'adapter_broken'
+
+    const health = readAdapterHealth(opened, platformId)
+    if (health.health === 'broken') return 'adapter_broken'
+
+    // 登录态：只有"确实被登录墙挡过"才算未登录。
+    // 全新安装时 account_state 是空的（logged_in=0），但 51job 的搜索本来就不需要登录 ——
+    // 把"从没检查过"当成"没登录"会让定时任务永远不跑，那是个很隐蔽的死锁。
+    const account = opened.account.get(platformId)
+    if (account !== undefined && !account.loggedIn && account.lastCheckAt !== null) return 'not_logged_in'
+
+    // SR-3：每日上限（只算自动触发的那些；手动是人在操作，不该被这条挡住）
+    const today = clock().slice(0, 10)
+    const autoToday = opened.crawlRun
+      .list(200, platformId)
+      .filter((run) => run.startedAt.slice(0, 10) === today && run.reason !== 'manual').length
+    if (autoToday >= DAILY_CRAWL_LIMIT) return 'quota_reached'
+
+    return null
+  }
+
   /** 当前启用简历的标识；没有简历时是 `{null, 0}`（此时分数一律算作"无简历基准"）。 */
   const currentResumeStamp = (): { resumeId: number | null; rev: number } =>
     resumes?.scoreStamp() ?? { resumeId: null, rev: 0 }
@@ -427,6 +488,21 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     }
 
     store = opened
+
+    // SR-15（A3）：**崩溃安全**。进程被强杀时 `finish()` 没机会执行，
+    // 那条 crawl_run 会永远停在 `running`，于是界面上永远显示"正在跑"。
+    // 启动时收敛超阈值的悬挂记录；没找到就什么都不做（正常启动的代价为零）。
+    try {
+      const reaped = opened.crawlRun.reapStale(clock())
+      if (reaped > 0) {
+        logger?.warn(
+          `[${PLUGIN_ID}] 收敛了 ${String(reaped)} 条悬挂的抓取记录（上次进程在结束前退出）—— 已置为 failed`,
+        )
+      }
+    } catch (error) {
+      logger?.warn(`[${PLUGIN_ID}] 收敛悬挂抓取记录失败（不影响其它功能）：${messageOf(error)}`)
+    }
+
     // 简历服务要先建：匹配分要读"当前简历版本"，而 jobs/intel 都需要它（§4.1）
     const filesDirPath = join(dataDir, 'files')
     resumes = createResumeService({
@@ -439,7 +515,8 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     })
     jobs = createJobService(opened, { scoreStamp: () => currentResumeStamp() })
     companies = createCompanyService(opened)
-    plans = createPlanService(opened, clock)
+    // 注册表传进去：方案的平台与筛选条件必须按**适配器声明**校验（SR-39/41/42/45）
+    plans = createPlanService(opened, clock, registry)
     session = createSessionService(opened, clock)
 
     // 适配器配置以 DB 为权威（ADR-19）：DB 覆盖合并到代码默认值之上
@@ -649,12 +726,14 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           platformId: input.platformId,
           criteria: input.criteria,
           planId: input.planId,
+          reason: input.reason,
         }),
       timer: timerPort,
       events: bus,
       canSchedule,
       readOnlyReason,
       leaseStatus: () => lease.status(),
+      platformGate,
       clock,
       ...(logger === undefined ? {} : { logger }),
     })
@@ -801,6 +880,11 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
             platformId: options.platformId,
             criteria: options.criteria,
             ...(options.planId === undefined ? {} : { planId: options.planId }),
+            // SR-28：触发原因随记录落库 —— 运行历史表要能回答「这次是谁触发的」
+            reason: options.reason ?? 'manual',
+            // SR-44：抓取后处理开关来自**方案**。方案服务不认识"抓取"，
+            // 抓取不认识"方案" —— 所以由装配点在这里把它们接起来。
+            postProcess: postProcessForPlan(options.planId ?? null),
           },
         )
         bus.publish('crawl.finished', {
@@ -1039,6 +1123,8 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
 
     schedulerStatus(): SchedulerStatusDto {
       if (scheduler === undefined) {
+        // 数据层还没就绪：如实报告，并且**每个字段都给一个真值** ——
+        // 少一个字段就是界面上一个 `undefined`，比空态更难查。
         return {
           scheduling: false,
           readOnly: true,
@@ -1049,9 +1135,30 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           running: false,
           plans: [],
           lease: lease.status(),
+          timezone: 'UTC',
+          jitterMs: 0,
+          paused: false,
+          pausedReason: null,
+          planStatus: [],
+          triggers: [],
+          recentRuns: [],
+          refreshSuggested: false,
+          refreshHint: null,
         }
       }
       return scheduler.status()
+    },
+
+    setSchedulePaused(paused, reason): void {
+      const instance = scheduler
+      if (instance === undefined) throw dataNotReady(runtime)
+      instance.setPaused(paused, reason)
+    },
+
+    resumeRisk(planId): void {
+      const instance = scheduler
+      if (instance === undefined) throw dataNotReady(runtime)
+      instance.resumeRisk(planId)
     },
 
     async runPlan(planId, reason): Promise<CrawlSummaryDto> {

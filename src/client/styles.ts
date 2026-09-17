@@ -636,4 +636,32 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-campus-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .jh-campus-item{padding:9px 11px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-layer-1)}
+
+/* ── D-19：新鲜度徽章与采集页（U9）────────────────────────────────── */
+/* 三级各自一个色阶，且**永远带文字**：只给颜色用户分不清"坏了"还是"旧了"。 */
+.jh-fresh{flex:0 0 auto;font-size:11.5px;font-weight:600;line-height:20px;padding:0 9px;
+  border-radius:999px;white-space:nowrap}
+.jh-fresh-fresh{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
+.jh-fresh-stale{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}
+.jh-fresh-cold{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+
+.jh-today-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
+.jh-health-line{font-size:12.5px}
+.jh-link{border:0;background:transparent;cursor:pointer;font:inherit;font-size:12.5px;
+  color:var(--dsw-alias-brand-text);padding:0}
+.jh-link:hover{text-decoration:underline}
+
+.jh-plan-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.jh-plan-item{padding:9px 11px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
+  background:var(--dsw-alias-bg-layer-1);font-size:12.5px}
+.jh-plan-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 4px}
+.jh-sub-title{font-size:12.5px;font-weight:600;margin:12px 0 6px;
+  color:var(--dsw-alias-label-primary)}
+
+.jh-card-editing{border-color:var(--dsw-alias-brand-primary)}
+.jh-card-error{border-color:var(--dsw-alias-state-error-secondary)}
+.jh-fieldset{border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:10px 12px;margin:0 0 12px}
+.jh-fieldset legend{font-size:12px;font-weight:600;padding:0 4px;color:var(--dsw-alias-label-secondary)}
+.jh-check{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer}
+.jh-check input{cursor:pointer}
 `

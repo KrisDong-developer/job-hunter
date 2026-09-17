@@ -601,3 +601,38 @@ ALTER TABLE job ADD COLUMN campus_batch TEXT;
 ALTER TABLE job ADD COLUMN remote_kind TEXT;
 ALTER TABLE job ADD COLUMN visa_stance TEXT;
 `
+
+/**
+ * v7 · 调度模型（D-19 / SR-1…SR-37）。
+ *
+ * 四处都是**语义修正**，不是加装饰：
+ *
+ * 1. `plan.last_attempt_at` 与 `last_success_at` **拆开**（SR-7）。
+ *    原来只有一个 `last_run_at`，于是"试过但失败了"和"真的拿到数据了"分不出来 ——
+ *    失败也推进它，新鲜度就永远看起来是新鲜的（最坏的一种谎）。
+ * 2. `plan.fail_streak` / `backoff_until` / `risk_paused`（SR-20/21/22）。
+ *    退避与风控暂停必须是**持久化**的：插件不是守护进程，重启后还得记得"这个平台别碰"。
+ * 3. `plan.timezone`（SR-5）。存本地墙钟 + 时区快照，不存推算出来的绝对 UTC。
+ * 4. `plan.post_process_json`（SR-44）+ `crawl_run.reason` / `skip_reason`（SR-28/29/17）。
+ *
+ * 旧的 `schedule_json` 里的 `hour` / `minute` **不动**：历史数据要在读取时被
+ * `normalizeSchedule` 翻译成窗口（`hour:9 → 09:00–10:00`），迁移里改 JSON 反而更难回滚。
+ */
+export const SCHEMA_V7 = `
+ALTER TABLE plan ADD COLUMN last_attempt_at TEXT;
+ALTER TABLE plan ADD COLUMN last_success_at TEXT;
+ALTER TABLE plan ADD COLUMN fail_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plan ADD COLUMN backoff_until TEXT;
+ALTER TABLE plan ADD COLUMN risk_paused INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plan ADD COLUMN risk_reason TEXT;
+ALTER TABLE plan ADD COLUMN timezone TEXT;
+ALTER TABLE plan ADD COLUMN post_process_json TEXT NOT NULL DEFAULT '{}';
+-- 历史回填：旧库只有 last_run_at。把它同时当成"尝试过"与"成功过" ——
+-- 这是唯一不撒谎的选择（我们**不知道**那一次到底成没成），并且下一次运行就会纠正它。
+UPDATE plan SET last_attempt_at = last_run_at WHERE last_run_at IS NOT NULL;
+UPDATE plan SET last_success_at = last_run_at WHERE last_run_at IS NOT NULL;
+
+ALTER TABLE crawl_run ADD COLUMN reason TEXT;
+ALTER TABLE crawl_run ADD COLUMN skip_reason TEXT;
+CREATE INDEX idx_crawl_run_started ON crawl_run(started_at DESC);
+`

@@ -38,7 +38,8 @@ export interface CrawlDeps {
    */
   intel?:
     | {
-        evaluateJob(jobId: number, now: string): unknown
+        /** SR-44：抓取后处理开关直接传给评估器，避免在 domain 之间再传一层配置。 */
+        evaluateJob(jobId: number, now: string, switches?: { score?: boolean; flag?: boolean }): unknown
         recomputeCompany(companyId: number, now: string): unknown
       }
     | undefined
@@ -50,8 +51,17 @@ export interface RunCrawlOptions {
   platformId: string
   planId?: number | null
   criteria: SearchCriteria
-  /** 最多抓几页（P1 默认 1 页）。 */
+  /** 最多抓几页。优先取 `criteria.maxPages`（方案配置，SR-40），其次这里。 */
   maxPages?: number
+  /** SR-28/29：触发原因，落进 `crawl_run.reason`。 */
+  reason?: string | null
+  /**
+   * SR-44：抓取后处理开关。**默认全开**（不给就是全开）。
+   *
+   * 为什么由调用方注入而不是这里读方案：`crawl.ts` 不认识"方案"，
+   * 它只认识"这次抓取"。让 domain 层去查方案会把两层的依赖搅在一起。
+   */
+  postProcess?: { score: boolean; flag: boolean; dedup: boolean }
 }
 
 /** 风控类型 → 领域错误码。 */
@@ -97,12 +107,17 @@ async function executeCrawl(
 ): Promise<CrawlSummaryDto> {
   const store = deps.store
   const now = (): string => clock()
+  // SR-44：默认全开 —— 不给就是老行为，升级不该悄悄改变结果。
+  const postProcess = options.postProcess ?? { score: true, flag: true, dedup: true }
 
   store.platform.ensure(
     { id: adapter.id, displayName: adapter.displayName, capabilities: adapter.capabilities },
     now(),
   )
-  const runId = store.crawlRun.start({ platformId: adapter.id, planId: options.planId ?? null }, now())
+  const runId = store.crawlRun.start(
+    { platformId: adapter.id, planId: options.planId ?? null, reason: options.reason ?? 'manual' },
+    now(),
+  )
 
   const collected: RawJob[] = []
   let pages = 0
@@ -110,7 +125,11 @@ async function executeCrawl(
 
   const page = await deps.pageSource.acquire()
   try {
-    const maxPages = Math.max(1, options.maxPages ?? 1)
+    // SR-40：抓取深度由方案配置（`criteria.maxPages`）决定，并受适配器声明上限约束。
+    // 上限外的值在这里**截断**而不是报错：入口层的校验（SR-45）已经拦过一次，
+    // 这里再抛一次错只会让一次已经批准的抓取白跑。
+    const requested = options.criteria.maxPages ?? options.maxPages ?? 1
+    const maxPages = Math.max(1, Math.min(Math.trunc(requested), adapter.maxPages))
     for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
       try {
         await adapter.crawl.gotoSearch(page, { ...options.criteria, page: pageNo })
@@ -158,6 +177,7 @@ async function executeCrawl(
         found: collected.length,
         errorCode: failure.code,
         errorMsg: failure.message,
+        reason: options.reason ?? 'manual',
       },
       now(),
     )
@@ -259,9 +279,12 @@ async function executeCrawl(
 
   // 公司画像重算（§6.1：受影响公司）。顺序有讲究：
   // 先算公司统计量（含驻场比例），再算岗位标注与匹配 —— 后者要读公司画像。
+  //
+  // SR-44：`flag` 关掉时公司统计量仍然重算（它是**事实**：这家公司有多少岗位在招），
+  // 但跳过风险/黑话标注那一半。公司统计量不是"标注"，不该被这个开关关掉。
   for (const companyId of touchedCompanies) {
     try {
-      if (deps.intel !== undefined) deps.intel.recomputeCompany(companyId, now())
+      if (deps.intel !== undefined && postProcess.flag) deps.intel.recomputeCompany(companyId, now())
       else deps.companies.recompute(companyId, now())
     } catch (error) {
       deps.logger?.warn(`[crawl] 公司画像重算失败（${String(companyId)}）：${messageOf(error)}`)
@@ -269,10 +292,11 @@ async function executeCrawl(
   }
 
   // 情报引擎：标注 + 匹配分（P4）。纯规则、零外部调用，跑全量也不心疼。
-  if (deps.intel !== undefined) {
+  // SR-44：关掉打分后**不写 match_score**（这正是该开关的验收标准）。
+  if (deps.intel !== undefined && (postProcess.score || postProcess.flag)) {
     for (const jobId of writtenJobIds) {
       try {
-        deps.intel.evaluateJob(jobId, now())
+        deps.intel.evaluateJob(jobId, now(), postProcess)
       } catch (error) {
         deps.logger?.warn(`[crawl] 情报标注失败（job ${String(jobId)}）：${messageOf(error)}`)
       }
@@ -282,6 +306,11 @@ async function executeCrawl(
   const quarantined = partition.rejected.length
   const suspicious = collected.length === 0 && pages > 0
   const state: CrawlState = suspicious || quarantined > 0 || paused ? 'partial' : 'ok'
+
+  // SR-37：跑完之后若启用简历的 rev 变了，旧分数必须被标过期（`scoreStale`）。
+  // 这件事由 `jobs` 服务在读取时按 stamp 判定，这里不需要额外动作 ——
+  // 但**必须**在关闭打分时不做任何标注，否则"关掉打分"就是句空话。
+  void postProcess
 
   store.crawlRun.finish(
     runId,
@@ -293,6 +322,7 @@ async function executeCrawl(
       updated,
       skipped: paused ? partition.accepted.length : 0,
       quarantined,
+      reason: options.reason ?? 'manual',
       errorCode: suspicious ? 'NO_RECORDS' : paused ? 'PLATFORM_PAUSED' : null,
       errorMsg: suspicious
         ? '页面打开正常但一条记录都没解析出来 —— 很可能是选择器失效'

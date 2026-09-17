@@ -19,6 +19,9 @@
  * 同时：注册失败**不再被静默吞掉**，会记进 `ToolRegistrationReport` 并经 `/health` 暴露。
  */
 import { PLUGIN_ID } from '../../shared/constants.js'
+// 窗口说明与星期标签在 host 与 client 是同一份实现 —— 对话里说的和面板上写的必须一致
+import { formatWeekdays } from '../../shared/time-format.js'
+import { describeWindow } from '../scheduler/schedule.js'
 import {
   APPLICATION_CHANNELS,
   APPLICATION_CHANNEL_LABEL,
@@ -402,18 +405,39 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
 
     tool<Record<string, unknown>, { text: string; planId?: number }>({
       name: 'job_plan_manage',
-      description: '搜索方案（抓什么 + 什么时候抓）的查看、创建、修改、启停、删除、立即跑一次。',
+      description:
+        '采集方案（抓什么 + 抓多深 + 什么时候抓 + 抓完做什么）的查看、创建、修改、启停、删除、立即跑一次。' +
+        '写入校验与界面完全同一套（SR-45）—— 工具塞非法条件与界面报同样的错。',
       parameters: schema(
         {
           action: {
             type: 'string',
-            enum: ['list', 'create', 'update', 'enable', 'disable', 'remove', 'run'],
-            description: '要做的操作',
+            enum: ['list', 'create', 'update', 'enable', 'disable', 'remove', 'run', 'dimensions', 'pause', 'resume'],
+            description:
+              '要做的操作。dimensions = 看当前平台支持哪些筛选维度；pause/resume = 全局一键暂停定时（只停定时，手动仍可用）',
           },
           planId: int('方案 id（update/enable/disable/remove/run 需要）'),
           name: str('方案名（create 需要）'),
           keyword: str('搜索关键词'),
           city: str('城市'),
+          platforms: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '平台集合；不填 = 全部已注册平台。未注册的平台会被明确拒绝（SR-39）',
+          },
+          sort: str('排序方式（取值域见 dimensions）'),
+          postedWithinDays: int('只要多少天内发布的岗位'),
+          maxPages: int('抓取页数上限（受适配器声明的上限约束）'),
+          weekdays: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: '0=周日…6=周六；空数组 = 每天。这是**偏好时段**的工作日掩码',
+          },
+          windowStartHour: int('偏好时段起点（本地时，0-23）。**不提供单点时刻**（SR-32）'),
+          windowEndHour: int('偏好时段终点（本地时，0-23）。终点 ≤ 起点表示跨零点'),
+          score: { type: 'boolean', description: '抓完是否打分（SR-44，默认开）' },
+          flag: { type: 'boolean', description: '抓完是否做风险/黑话标注（SR-44，默认开）' },
+          dedup: { type: 'boolean', description: '抓完是否做跨平台去重（SR-44，默认开）' },
           enabled: { type: 'boolean', description: '是否启用' },
         },
         ['action'],
@@ -424,67 +448,159 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
       async run(args) {
         requireData(runtime)
         const plans = runtime.plans()
+        const scheduler = runtime.schedulerStatus()
         const action = asString(args['action'])
         const planId = typeof args['planId'] === 'number' ? args['planId'] : undefined
         const name = asString(args['name'])
-        const keyword = asString(args['keyword'])
-        const city = asString(args['city'])
 
+        /**
+         * 一行一个方案的摘要。
+         *
+         * 窗口用「工作日 09:00–11:00」而不是「09:30」：**配置里本来就没有单点时刻**（SR-32），
+         * 显示成单点会让用户以为他配的是个固定时刻，然后奇怪为什么每天时间不一样。
+         */
         const describe = (): string =>
           [
             '现有方案：',
-            ...plans.list().map(
-              (plan) =>
+            ...plans.list().map((plan) => {
+              const status = scheduler.planStatus.find((item) => item.planId === plan.id)
+              const window = plan.schedule.enabled
+                ? `${describeWindow(plan.schedule, formatWeekdays(plan.schedule.weekdays))}`
+                : '不定时'
+              const freshness = status?.freshness.level ?? 'cold'
+              const hold = status?.riskPaused === true ? '｜**风控暂停**' : ''
+              const why =
+                status?.lastDecision?.decision === 'skipped' && status.lastDecision.message !== null
+                  ? `｜最近一次跳过：${status.lastDecision.message}`
+                  : ''
+              return (
                 `#${String(plan.id)} ${plan.name}｜${plan.platforms.join(',')}｜` +
                 `${JSON.stringify(plan.criteria)}｜${plan.enabled ? '已启用' : '已停用'}｜` +
-                `${
-                  plan.schedule.enabled
-                    ? `定时 ${String(plan.schedule.hour).padStart(2, '0')}:${String(plan.schedule.minute).padStart(2, '0')}`
-                    : '不定时'
-                }`,
-            ),
+                `${window}｜新鲜度 ${freshness}${hold}${why}`
+              )
+            }),
           ].join('\n')
+
+        /** 把工具参数翻译成方案写入输入（缺的键不传，交给领域层沿用现值）。 */
+        const configPatch = (): Record<string, unknown> => {
+          const patch: Record<string, unknown> = {}
+          if (name !== undefined) patch['name'] = name
+
+          const criteria: Record<string, string> = {}
+          const keyword = asString(args['keyword'])
+          const city = asString(args['city'])
+          const sort = asString(args['sort'])
+          if (keyword !== undefined) criteria['keyword'] = keyword
+          if (city !== undefined) criteria['city'] = city
+          if (sort !== undefined) criteria['sort'] = sort
+          const posted = args['postedWithinDays']
+          if (typeof posted === 'number') criteria['postedWithinDays'] = String(posted)
+          const maxPages = args['maxPages']
+          if (typeof maxPages === 'number') criteria['maxPages'] = String(maxPages)
+
+          const platforms = Array.isArray(args['platforms'])
+            ? args['platforms'].filter((item): item is string => typeof item === 'string')
+            : undefined
+          if (platforms !== undefined) patch['platforms'] = platforms
+
+          const schedule: Record<string, unknown> = {}
+          if (Array.isArray(args['weekdays'])) {
+            schedule['weekdays'] = args['weekdays'].filter((item): item is number => typeof item === 'number')
+          }
+          if (typeof args['windowStartHour'] === 'number') schedule['windowStartHour'] = args['windowStartHour']
+          if (typeof args['windowEndHour'] === 'number') schedule['windowEndHour'] = args['windowEndHour']
+          if (Object.keys(schedule).length > 0) patch['schedule'] = schedule
+
+          const postProcess: Record<string, unknown> = {}
+          for (const key of ['score', 'flag', 'dedup']) {
+            if (typeof args[key] === 'boolean') postProcess[key] = args[key]
+          }
+          if (Object.keys(postProcess).length > 0) patch['postProcess'] = postProcess
+
+          if (typeof args['enabled'] === 'boolean') patch['enabled'] = args['enabled']
+
+          // 读取现有条件后合并：`criteria` 在 DTO 里是"整体替换"，
+          // 所以只改一个键时必须把现有条件带上，否则会静默丢掉其它键。
+          if (Object.keys(criteria).length > 0) {
+            const current = planId === undefined ? undefined : plans.get(planId)
+            patch['criteria'] = { ...(current?.criteria ?? {}), ...criteria }
+          }
+          return patch
+        }
 
         switch (action) {
           case 'list':
             return { text: describe() }
+
+          case 'dimensions': {
+            const platforms = Array.isArray(args['platforms'])
+              ? (args['platforms'] as unknown[]).filter((item): item is string => typeof item === 'string')
+              : runtime.registry().list().map((adapter) => adapter.id)
+            const dimensions = plans.dimensions(platforms)
+            return {
+              text: [
+                `平台 ${platforms.join(',')} 支持的筛选维度：`,
+                ...dimensions.map((dimension) => {
+                  if (!dimension.supported) {
+                    return `· ${dimension.label}：**不支持** —— ${dimension.disabledReason ?? ''}`
+                  }
+                  const values =
+                    dimension.values.length === 0
+                      ? dimension.max === null
+                        ? '自由文本'
+                        : `正整数，上限 ${String(dimension.max)}`
+                      : dimension.values.map((item) => `${item.value}=${item.label}`).join(' / ')
+                  return `· ${dimension.label}：${values} —— ${dimension.hint}`
+                }),
+              ].join('\n'),
+            }
+          }
+
           case 'create': {
             if (name === undefined) throw new DomainError('INVALID_INPUT', 'create 需要 name')
-            const plan = plans.create({
+            const patch = configPatch()
+            // 校验先跑一次，好把"和哪个方案重复"如实回报（SR-43：只提示，不合并）
+            const checked = plans.validate({
+              ...patch,
               name,
-              platforms: runtime.registry().list().map((adapter) => adapter.id),
-              criteria: {
-                ...(keyword === undefined ? {} : { keyword }),
-                ...(city === undefined ? {} : { city }),
-              },
-            })
-            return { text: `已创建方案 #${String(plan.id)}「${plan.name}」。\n${describe()}`, planId: plan.id }
+              platforms:
+                (patch['platforms'] as string[] | undefined) ??
+                runtime.registry().list().map((adapter) => adapter.id),
+            } as never)
+            const plan = plans.create({
+              ...patch,
+              name,
+              platforms:
+                (patch['platforms'] as string[] | undefined) ??
+                runtime.registry().list().map((adapter) => adapter.id),
+            } as never)
+            const duplicateNote =
+              checked.duplicates.length === 0
+                ? ''
+                : `\n注意：与 ${checked.duplicates.map((item) => `#${String(item.planId)}「${item.name}」`).join('、')} 条件重复（${checked.duplicates[0]?.reason ?? ''}）。只提示，不会自动合并（SR-43）。`
+            return {
+              text: `已创建方案 #${String(plan.id)}「${plan.name}」。${duplicateNote}\n${describe()}`,
+              planId: plan.id,
+            }
           }
+
           case 'update':
           case 'enable':
           case 'disable': {
             if (planId === undefined) throw new DomainError('INVALID_INPUT', `${String(action)} 需要 planId`)
-            const patch: Record<string, unknown> = {}
-            if (name !== undefined) patch['name'] = name
-            if (keyword !== undefined || city !== undefined) {
-              const current = plans.get(planId)
-              patch['criteria'] = {
-                ...current.criteria,
-                ...(keyword === undefined ? {} : { keyword }),
-                ...(city === undefined ? {} : { city }),
-              }
-            }
+            const patch = configPatch()
             if (action === 'enable') patch['enabled'] = true
             if (action === 'disable') patch['enabled'] = false
-            if (typeof args['enabled'] === 'boolean') patch['enabled'] = args['enabled']
-            const plan = plans.update(planId, patch)
+            const plan = plans.update(planId, patch as never)
             return { text: `已更新方案 #${String(plan.id)}。\n${describe()}` }
           }
+
           case 'remove': {
             if (planId === undefined) throw new DomainError('INVALID_INPUT', 'remove 需要 planId')
             if (!plans.remove(planId)) throw new DomainError('NOT_FOUND', `方案不存在：${String(planId)}`)
             return { text: `已删除方案 #${String(planId)}。` }
           }
+
           case 'run': {
             if (planId === undefined) throw new DomainError('INVALID_INPUT', 'run 需要 planId')
             const summary = await runtime.runPlan(planId, 'manual')
@@ -494,9 +610,18 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
                 `新增 ${String(summary.run.inserted)}、更新 ${String(summary.run.updated)}。`,
             }
           }
+
+          case 'pause':
+            runtime.setSchedulePaused(true, asString(args['name']) ?? '模型工具发起的一键暂停')
+            return { text: '已暂停**定时**抓取。手动「立即采集」仍然可用（SR-30）。' }
+
+          case 'resume':
+            runtime.setSchedulePaused(false)
+            return { text: '已恢复定时抓取。' }
+
           default:
             throw new DomainError('INVALID_INPUT', `不认识的 action：${String(action)}`, {
-              hint: '合法取值：list / create / update / enable / disable / remove / run',
+              hint: '合法取值：list / create / update / enable / disable / remove / run / dimensions / pause / resume',
             })
         }
       },

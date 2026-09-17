@@ -47,7 +47,9 @@ import { TONE_LABEL } from '../../shared/labels.js'
 import { normalizeResumeContent } from '../../shared/resume.js'
 import type { JobQuery } from '../store/repo/jobs.js'
 import { DICTIONARY_KINDS } from '../store/repo/dictionary.js'
-import type { PlanUpsertInput } from '../store/repo/plans.js'
+import type { PlanConfigInput, PlanService } from '../domain/plans.js'
+import { criteriaDimensionsFor } from '../domain/plan-config.js'
+import { SKIP_REASON_LABEL } from '../scheduler/index.js'
 import type { ResumeWriteInput } from '../domain/resumes.js'
 import type { SearchCriteria } from '../platform/types.js'
 import { ConfirmRequiredError } from '../guard/index.js'
@@ -120,8 +122,8 @@ async function readObject(req: RouteRequest): Promise<Record<string, unknown>> {
 }
 
 /** 把请求体收敛成**显式给出**的方案字段。没给的键一律不出现 —— 更新时靠这一点保留原值。 */
-function planPatchOf(body: Record<string, unknown>): Partial<PlanUpsertInput> {
-  const patch: Partial<PlanUpsertInput> = {}
+function planPatchOf(body: Record<string, unknown>): PlanConfigInput {
+  const patch: PlanConfigInput = {}
   if (typeof body['name'] === 'string') patch.name = body['name']
   if (Array.isArray(body['platforms'])) {
     patch.platforms = body['platforms'].filter(
@@ -131,25 +133,86 @@ function planPatchOf(body: Record<string, unknown>): Partial<PlanUpsertInput> {
   if (typeof body['criteria'] === 'object' && body['criteria'] !== null && !Array.isArray(body['criteria'])) {
     const criteria: Record<string, string> = {}
     for (const [key, value] of Object.entries(body['criteria'] as Record<string, unknown>)) {
+      // 数值型维度允许直接给数字（界面上的数字输入框就是这么发的）
       if (typeof value === 'string') criteria[key] = value
+      else if (typeof value === 'number' && Number.isFinite(value)) criteria[key] = String(value)
     }
     patch.criteria = criteria
   }
   if (typeof body['schedule'] === 'object' && body['schedule'] !== null) {
-    patch.schedule = body['schedule'] as Partial<PlanSchedule>
+    patch.schedule = scheduleOf(body['schedule'] as Record<string, unknown>)
+  }
+  if (typeof body['postProcess'] === 'object' && body['postProcess'] !== null) {
+    const source = body['postProcess'] as Record<string, unknown>
+    const postProcess: Record<string, boolean> = {}
+    for (const key of ['score', 'flag', 'dedup']) {
+      if (typeof source[key] === 'boolean') postProcess[key] = source[key] as boolean
+    }
+    patch.postProcess = postProcess
   }
   if (typeof body['enabled'] === 'boolean') patch.enabled = body['enabled']
   return patch
 }
 
-/** 新建方案：缺省字段给一个能跑起来的默认值。 */
-function planCreateOf(body: Record<string, unknown>): PlanUpsertInput {
+/**
+ * 解析偏好时段（SR-1/32）。
+ *
+ * **不认识 `hour` / `minute`**：那正是 SR-32 要取消的"精确到分钟的单点时刻"。
+ * 收到它们就明确报错并指出正确用法 —— 静默忽略会让调用方以为自己配成功了，
+ * 而实际跑的是另一个时段（这类"看起来对、其实不对"的配置 bug 最难查）。
+ */
+function scheduleOf(source: Record<string, unknown>): Partial<PlanSchedule> {
+  const schedule: Partial<PlanSchedule> = {}
+  const hourKeys = ['hour', 'minute'].filter((key) => source[key] !== undefined)
+  if (hourKeys.length > 0) {
+    throw new DomainError('INVALID_INPUT', `偏好时段不接受 ${hourKeys.join(' / ')}`, {
+      hint:
+        '配置的是**时段**而不是单点时刻（SR-32）：用 windowStartHour / windowEndHour ' +
+        '（可加 windowStartMinute / windowEndMinute），触发点在这个时段内随机选。',
+    })
+  }
+  const intField = (key: string, min: number, max: number): void => {
+    const value = source[key]
+    if (value === undefined) return
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new DomainError('INVALID_INPUT', `${key} 必须是数字`)
+    }
+    const truncated = Math.trunc(value)
+    if (truncated < min || truncated > max) {
+      throw new DomainError('INVALID_INPUT', `${key} 必须在 ${String(min)}–${String(max)} 之间`)
+    }
+    ;(schedule as Record<string, number>)[key] = truncated
+  }
+  intField('windowStartHour', 0, 23)
+  intField('windowStartMinute', 0, 59)
+  intField('windowEndHour', 0, 23)
+  intField('windowEndMinute', 0, 59)
+  intField('jitterMs', 0, 60 * 60 * 1000)
+  intField('missedGraceMs', 0, 7 * 24 * 60 * 60 * 1000)
+  if (Array.isArray(source['weekdays'])) {
+    schedule.weekdays = source['weekdays'].filter(
+      (value): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 6,
+    )
+  }
+  if (typeof source['enabled'] === 'boolean') schedule.enabled = source['enabled']
+  return schedule
+}
+
+/**
+ * 新建方案：缺省字段交给领域层。
+ *
+ * 注意 `platforms` **不在这里兜底** —— 写死 `['51job']` 会在多平台落地那天
+ * 变成"新装的用户只抓到 51job"这种没人查得出来的 bug。
+ * 缺省平台由路由层用**注册表**补齐（见 `POST /plans` 的处理）。
+ */
+function planCreateOf(body: Record<string, unknown>): PlanConfigInput {
   const patch = planPatchOf(body)
   return {
     name: patch.name ?? '未命名方案',
-    platforms: patch.platforms ?? ['51job'],
+    ...(patch.platforms === undefined ? {} : { platforms: patch.platforms }),
     ...(patch.criteria === undefined ? {} : { criteria: patch.criteria }),
     ...(patch.schedule === undefined ? {} : { schedule: patch.schedule }),
+    ...(patch.postProcess === undefined ? {} : { postProcess: patch.postProcess }),
     ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
   }
 }
@@ -526,7 +589,16 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
 
     if (method === 'POST' && segments.length === 1) {
       const body = await readObject(req)
-      return json(201, { ok: true, plan: planService.create(planCreateOf(body)) })
+      const input = planCreateOf(body)
+      // SR-39：缺省平台 = **注册表里的全部平台**，不是写死的 '51job'。
+      // 写死会在多平台落地那天变成"新装的用户只抓到 51job"这种没人查得出来的 bug。
+      if (input.platforms === undefined || input.platforms.length === 0) {
+        input.platforms = runtime.registry().list().map((adapter) => adapter.id)
+      }
+      // SR-43：先校验一次，把"与谁重复"如实回给调用方（保存仍然成功 —— 只提示不合并）
+      const checked = planService.validate(input)
+      const plan = planService.create(input)
+      return json(201, { ok: true, plan, duplicates: checked.duplicates })
     }
 
     const planId = Number.parseInt(segments[1] ?? '', 10)
@@ -534,9 +606,44 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       throw new DomainError('INVALID_INPUT', `非法方案 id：${segments[1] ?? ''}`)
     }
 
+    // SR-45："只校验、不写库"—— 界面保存前先问一句靠它。
+    // 它与下面的写入路径、与模型工具调的都是 `planService.validate`，所以三边报错完全一致。
+    if (method === 'POST' && segments.length === 3 && segments[2] === 'validate') {
+      const body = await readObject(req)
+      const input = planCreateOf(body)
+      const current = planService.get(planId)
+      return json(200, {
+        ok: true,
+        validation: planService.validate(
+          {
+            name: input.name,
+            platforms: input.platforms ?? current.platforms,
+            criteria: input.criteria ?? current.criteria,
+            schedule: { ...current.schedule, ...(input.schedule ?? {}) },
+            enabled: input.enabled ?? current.enabled,
+            postProcess: { ...current.postProcess, ...(input.postProcess ?? {}) },
+          },
+          planId,
+        ),
+      })
+    }
+
     if (method === 'PATCH' && segments.length === 2) {
       const body = await readObject(req)
-      return json(200, { ok: true, plan: planService.update(planId, planPatchOf(body)) })
+      const patch = planPatchOf(body)
+      const current = planService.get(planId)
+      const checked = planService.validate(
+        {
+          name: patch.name ?? current.name,
+          platforms: patch.platforms ?? current.platforms,
+          criteria: patch.criteria ?? current.criteria,
+          schedule: { ...current.schedule, ...(patch.schedule ?? {}) },
+          enabled: patch.enabled ?? current.enabled,
+          postProcess: { ...current.postProcess, ...(patch.postProcess ?? {}) },
+        },
+        planId,
+      )
+      return json(200, { ok: true, plan: planService.update(planId, patch), duplicates: checked.duplicates })
     }
 
     if (method === 'DELETE' && segments.length === 2) {
@@ -551,6 +658,62 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       const summary = await runtime.runPlan(planId, reason)
       return json(200, summary)
     }
+
+    // SR-21：风控暂停只能由**人工确认**恢复，系统不会自动恢复。
+    if (method === 'POST' && segments.length === 3 && segments[2] === 'resume') {
+      runtime.resumeRisk(planId)
+      return json(200, { ok: true, plan: planService.get(planId) })
+    }
+  }
+
+  // ── A2："抓取一次"走**默认方案**（不再写死 {51job, 深圳, Java}）──────
+  // 没有方案时先建一个默认方案，所以这个入口永远有一个真实条件，而不是一个字面量。
+  if (method === 'POST' && segments.length === 1 && segments[0] === 'crawl') {
+    requireData(runtime)
+    const planService = runtime.plans()
+    planService.ensureDefault()
+    const first = planService.list().find((plan) => plan.enabled) ?? planService.list()[0]
+    if (first === undefined) {
+      throw new DomainError('INVALID_INPUT', '还没有任何方案，请先去「采集」页建一个', {
+        hint: '方案决定抓什么（平台 + 条件 + 抓取深度）。',
+      })
+    }
+    const summary = await runtime.runPlan(first.id, 'manual')
+    return json(200, { ...summary, planId: first.id, planName: first.name })
+  }
+
+  // ── SR-41：当前平台支持哪些筛选维度（界面据此渲染筛选器）─────────────
+  if (method === 'GET' && segments.length === 2 && segments[0] === 'criteria' && segments[1] === 'dimensions') {
+    requireData(runtime)
+    const platforms = (req.query.get('platforms') ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item !== '')
+    const effective =
+      platforms.length === 0 ? runtime.registry().list().map((adapter) => adapter.id) : platforms
+    return json(200, {
+      items: criteriaDimensionsFor(runtime.registry(), effective),
+      platforms: effective,
+      available: runtime
+        .registry()
+        .list()
+        .map((adapter) => ({ id: adapter.id, displayName: adapter.displayName })),
+    })
+  }
+
+  // ── B3/SR-30：全局一键暂停（**只停定时**，手动永远可用）──────────────
+  if (segments.length === 2 && segments[0] === 'schedule' && segments[1] === 'pause') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '暂停/恢复只支持 POST')
+    requireData(runtime)
+    const body = await readObject(req)
+    const paused = body['paused'] !== false
+    runtime.setSchedulePaused(paused, typeof body['reason'] === 'string' ? body['reason'] : undefined)
+    return json(200, { ok: true, status: runtime.schedulerStatus() })
+  }
+
+  // ── SR-17/26：跳过原因 → 人话（界面与工具共用同一份，避免两处说法漂移）──
+  if (method === 'GET' && segments.length === 2 && segments[0] === 'schedule' && segments[1] === 'reasons') {
+    return json(200, { items: SKIP_REASON_LABEL })
   }
 
   // ── 调度状态（P3）──────────────────────────────────────────────────

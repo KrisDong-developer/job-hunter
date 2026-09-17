@@ -39,8 +39,33 @@ export interface SearchCriteria {
   keyword?: string
   city?: string
   page?: number
+  /** 抓取深度（SR-40）：最多抓几页。 */
+  maxPages?: number
+  /** 排序方式（SR-40）：平台自己的取值域见 `criteriaDimensions`。 */
+  sort?: string
+  /** 发布时间窗（SR-40）：天。 */
+  postedWithinDays?: number
   /** 平台特有的补充参数（来自方案配置）。 */
   extra?: Record<string, string>
+}
+
+/**
+ * 适配器声明的一个筛选维度（SR-41/42）。
+ *
+ * **这一层是"能力驱动的 UI"的落地点**：界面据它渲染筛选器，
+ * 不支持的维度**禁用而非隐藏**并给出原因 —— 隐藏会让用户以为功能坏了。
+ *
+ * `values` 为空数组表示自由文本（如关键词）。
+ */
+export interface CriteriaDimension {
+  key: string
+  label: string
+  /** 值域；空数组 = 自由文本。 */
+  values: Array<{ value: string; label: string }>
+  /** 该维度可以取到的最多结果数（分页上限）。 */
+  max?: number
+  /** 不支持时的解释（用于"为什么这个筛选项是灰的"）。 */
+  hint: string
 }
 
 /** 运行期健康自检结果。 */
@@ -100,6 +125,15 @@ export interface SiteAdapter {
   capabilities: AdapterCapabilities
   /** 本适配器声明的必需字段（§4.2.4）。任一连续缺失即可能触发降级。 */
   requiredFields: readonly CoreField[]
+  /**
+   * SR-41/42：本适配器**声明支持的筛选维度**。
+   *
+   * 这是配置面唯一的权威：界面据它渲染、校验据它拒绝、
+   * 工具与 HTTP 走同一份校验（SR-45）。
+   */
+  criteriaDimensions: readonly CriteriaDimension[]
+  /** 抓取深度的上限（页数）。超出即拒绝，而不是默默截断。 */
+  maxPages: number
 
   criteria: {
     /** URL 编码路径 —— 首选，比 DOM 回填稳健得多，也少触发风控（ADR-9）。 */

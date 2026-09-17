@@ -97,7 +97,16 @@ export interface IntelService {
     seedDictionary(): number;
     matchProfile(): MatchProfile;
     /** 重算一个岗位的标注与匹配分，并落库。 */
-    evaluateJob(jobId: number, now: string): JobIntelResult | null;
+    /**
+     * 评估一个岗位：标注（flag）+ 匹配分（score）。
+     *
+     * SR-44：两个动作可以**分别**关掉。关掉 `score` 后不写 `match_score`（这是该开关的验收标准），
+     * 关掉 `flag` 后不写 `job_flag`。不给 switches 时全开 —— 默认行为不变。
+     */
+    evaluateJob(jobId: number, now: string, switches?: {
+        score?: boolean;
+        flag?: boolean;
+    }): JobIntelResult | null;
     /** 重算公司画像（统计量 + 由信号聚合出的分数）。 */
     recomputeCompany(companyId: number, now: string): CompanyProfileRecord;
 }

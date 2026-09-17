@@ -21,6 +21,8 @@ function fakeAdapter(options: { loggedIn: () => boolean; withAuth?: boolean }): 
       antiBot: 'low',
     },
     requiredFields: ['title'],
+    criteriaDimensions: [],
+    maxPages: 1,
     criteria: { buildSearchUrl: () => 'https://example.com/search' },
     crawl: {
       gotoSearch: async () => undefined,

@@ -35,13 +35,14 @@ test('到点自动跑并入库：定时器 → 调度器 → runCrawl → 岗位
 
   const jobs = createJobService(store)
   const companies = createCompanyService(store)
-  const plans = createPlanService(store, clock)
+  const plans = createPlanService(store, clock, registry)
 
   const plan = plans.create({
     name: '深圳 Java',
     platforms: ['51job'],
     criteria: { keyword: 'Java', city: '深圳' },
-    schedule: { hour: 9, minute: 0, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
+    // 窗口 08:00–10:00：9:00 到点时确实**在窗口内**（用例要的是"到点就真的跑"）
+    schedule: { windowStartHour: 8, windowEndHour: 10, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
   })
 
   const scheduler = createScheduler({
@@ -66,7 +67,6 @@ test('到点自动跑并入库：定时器 → 调度器 → runCrawl → 岗位
     readOnlyReason: () => null,
     leaseStatus: () => ({ path: 'x', held: true, pid: 1, heartbeatAt: null, startedAt: null, stale: false }),
     clock,
-    random: () => 0,
   })
 
   try {
@@ -77,9 +77,12 @@ test('到点自动跑并入库：定时器 → 调度器 → runCrawl → 岗位
     assert.equal(store.job.count(), 0, '启动时不该有数据')
     assert.equal(timer.pending(), 1, '定时器已武装')
 
-    // 时间走到 9:00，让定时器到期
-    now = new Date(2026, 8, 16, 9, 0)
-    timer.advance(60 * 60 * 1000)
+    // 时间走到**真实的触发点**（窗口内随机选点，所以不能假设是 9:00 整）
+    const trigger = new Date(plans.get(plan.id).nextRunAt ?? 0)
+    assert.ok(trigger.getTime() > now.getTime(), '触发点必须在未来')
+    assert.ok(trigger.getHours() >= 8 && trigger.getHours() < 10, `触发点 ${trigger.toISOString()} 要落在 8–10 点窗口内`)
+    now = trigger
+    timer.advance(trigger.getTime() - new Date(2026, 8, 16, 8, 0).getTime())
     // tick 内部是异步的（runCrawl 有 await），等它落地
     for (let attempt = 0; attempt < 50 && store.job.count() === 0; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -128,13 +131,13 @@ test('错过一轮：只生成补跑待办；用户点补跑后同样入库（C9
 
   const jobs = createJobService(store)
   const companies = createCompanyService(store)
-  const plans = createPlanService(store, clock)
+  const plans = createPlanService(store, clock, registry)
 
   const plan = plans.create({
     name: '错过测试',
     platforms: ['51job'],
     criteria: { keyword: 'Java', city: '深圳' },
-    schedule: { hour: 7, minute: 0, weekdays: [], jitterMs: 0, missedGraceMs: 60 * 60 * 1000 },
+    schedule: { windowStartHour: 7, windowEndHour: 8, weekdays: [], jitterMs: 0, missedGraceMs: 60 * 60 * 1000 },
   })
   store.plan.setRunTimes(plan.id, { lastRunAt: new Date(2026, 8, 15, 7, 0).toISOString() })
 
@@ -160,7 +163,6 @@ test('错过一轮：只生成补跑待办；用户点补跑后同样入库（C9
     readOnlyReason: () => null,
     leaseStatus: () => ({ path: 'x', held: true, pid: 1, heartbeatAt: null, startedAt: null, stale: false }),
     clock,
-    random: () => 0,
   })
 
   try {

@@ -19,7 +19,11 @@ export interface CrawlDeps {
      * 用窄接口而不是直接依赖 `IntelService`，避免 domain 层互相缠绕，也方便测试关掉它。
      */
     intel?: {
-        evaluateJob(jobId: number, now: string): unknown;
+        /** SR-44：抓取后处理开关直接传给评估器，避免在 domain 之间再传一层配置。 */
+        evaluateJob(jobId: number, now: string, switches?: {
+            score?: boolean;
+            flag?: boolean;
+        }): unknown;
         recomputeCompany(companyId: number, now: string): unknown;
     } | undefined;
     clock?: Clock;
@@ -32,8 +36,21 @@ export interface RunCrawlOptions {
     platformId: string;
     planId?: number | null;
     criteria: SearchCriteria;
-    /** 最多抓几页（P1 默认 1 页）。 */
+    /** 最多抓几页。优先取 `criteria.maxPages`（方案配置，SR-40），其次这里。 */
     maxPages?: number;
+    /** SR-28/29：触发原因，落进 `crawl_run.reason`。 */
+    reason?: string | null;
+    /**
+     * SR-44：抓取后处理开关。**默认全开**（不给就是全开）。
+     *
+     * 为什么由调用方注入而不是这里读方案：`crawl.ts` 不认识"方案"，
+     * 它只认识"这次抓取"。让 domain 层去查方案会把两层的依赖搅在一起。
+     */
+    postProcess?: {
+        score: boolean;
+        flag: boolean;
+        dedup: boolean;
+    };
 }
 /**
  * 跑一次抓取。已有抓取在进行时**立刻失败**（不排队）——

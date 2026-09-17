@@ -1,16 +1,18 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { formatClock, formatJitter, formatRelative } from '../../shared/time-format.js'
 import {
   ApiError,
   closeTodo,
   fetchPlatforms,
   fetchSchedulerStatus,
   fetchToday,
-  runCrawl,
+  runDefaultPlan,
   runPlan,
   startLogin,
   type TodayDto,
 } from '../api.js'
 import { useAsync } from '../use-async.js'
+import { FreshnessBadge } from './freshness.js'
 
 interface Feedback {
   running: boolean
@@ -30,15 +32,23 @@ function planIdOf(todo: { detail: unknown }): number | null {
 /**
  * U0 今日 —— 首屏回答「今天干什么」（§5.4）。
  *
- * P3 之后这里多了两块必须可见的东西：
- *   * **调度状态**：下次什么时候跑、上次什么时候跑的、本实例是不是只读（另一个实例在跑）；
- *   * **平台与登录**：登录态失效必须在这里看得见 —— 而不是变成「今天没有新岗位」。
+ * ## D6：今日**减负**后的样子
+ *
+ * 只留：新鲜度徽章 + 下次运行（本地时间 + 相对时间 + 抖动说明）+「立即采集」+「去配置」，
+ * 平台健康只留**一行只读**。
+ *
+ * 为什么把配置类内容搬走：这一屏原来塞了「平台与登录」「定时抓取」「最近一轮抓取」三块，
+ * 而它们回答的是"系统怎么配"，不是"今天干什么"。两件事混在一屏的结果是
+ * **首屏又长又难扫**，而真正需要立刻处理的东西（待办、欠账）被挤到下面。
+ * 配置类内容现在的家是 U9「采集」页。
  */
-export function TodayScreen(props: { revision: number; onGoJobs: () => void }) {
+export function TodayScreen(props: { revision: number; onGoJobs: () => void; onGoCollect: () => void }) {
   const today = useAsync((signal) => fetchToday(signal), [props.revision])
   const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision])
   const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision])
   const [feedback, setFeedback] = useState<Feedback>(IDLE)
+
+  const now = useMemo(() => new Date(), [props.revision])
 
   const report = (error: unknown): void => {
     setFeedback({
@@ -65,13 +75,14 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void }) {
     }
   }
 
+  /** A2：「抓取一次」走**默认方案**，不再写死 `{51job, 深圳, Java}`。 */
   const startCrawl = (): Promise<void> =>
-    act('正在抓取…（会打开一个浏览器窗口）', async () => {
-      const summary = await runCrawl({ platformId: '51job', criteria: { keyword: 'Java', city: '深圳' } })
+    act('正在采集…（会打开一个浏览器窗口）', async () => {
+      const summary = await runDefaultPlan()
       const run = summary.run
       return (
-        `本轮 ${run.state}：命中 ${String(run.found)} · 新增 ${String(run.inserted)} · ` +
-        `更新 ${String(run.updated)} · 隔离 ${String(run.quarantined)}` +
+        `方案「${summary.planName}」本轮 ${run.state}：命中 ${String(run.found)} · ` +
+        `新增 ${String(run.inserted)} · 更新 ${String(run.updated)} · 隔离 ${String(run.quarantined)}` +
         (run.errorCode === null ? '' : ` · ${run.errorCode}`)
       )
     })
@@ -90,6 +101,19 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void }) {
 
   const data: TodayDto | null = today.state.status === 'ok' ? today.state.data : null
   const sched = scheduler.state.status === 'ok' ? scheduler.state.data : null
+  const platformItems = platforms.state.status === 'ok' ? platforms.state.data.items : []
+  const unhealthy = platformItems.filter((item) => item.health !== 'healthy' || !item.account.loggedIn)
+
+  // 新鲜度取**最旧**的那个方案：只要有一个陈旧，"今天的数据"就整体不算新鲜
+  const worst = sched === null || sched.planStatus.length === 0
+    ? null
+    : sched.planStatus.reduce((acc, item) =>
+        (item.freshness.hoursSinceSuccess ?? Number.POSITIVE_INFINITY) >
+        (acc.freshness.hoursSinceSuccess ?? Number.POSITIVE_INFINITY)
+          ? item
+          : acc,
+      )
+  const nextTrigger = sched?.triggers[0] ?? null
 
   return (
     <div className="jh-screen">
@@ -125,6 +149,70 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void }) {
 
       {data !== null && (
         <>
+          {/* ── 数据新鲜度 + 下一次动作（D6 的核心）────────────────────── */}
+          <section className="jh-card">
+            <div className="jh-today-head">
+              {worst === null ? (
+                <span className="jh-muted">还没有采集方案。</span>
+              ) : (
+                <FreshnessBadge level={worst.freshness.level} hours={worst.freshness.hoursSinceSuccess} />
+              )}
+              <span className="jh-spacer" />
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline jh-btn-primary"
+                disabled={feedback.running || (sched?.readOnly ?? false)}
+                onClick={() => void startCrawl()}
+              >
+                {feedback.running ? '执行中…' : '立即采集'}
+              </button>
+              <button type="button" className="jh-btn jh-btn-inline" onClick={props.onGoCollect}>
+                去配置
+              </button>
+            </div>
+
+            <p className="jh-muted">
+              {nextTrigger === null
+                ? '没有启用定时的方案 —— 只会在你点「立即采集」时跑。'
+                : `下次自动采集：${formatClock(new Date(nextTrigger.nextRunAt))}（${formatRelative(new Date(nextTrigger.nextRunAt), now)}）` +
+                  `${formatJitter(nextTrigger.jitterMs) === null ? '' : ` · ${String(formatJitter(nextTrigger.jitterMs))}`}` +
+                  ` · 方案「${nextTrigger.planName}」`}
+              {sched?.paused === true ? ' · **定时已暂停**（手动仍然可用）' : ''}
+            </p>
+
+            {/* SR-2：在场触发只提示，不自动跑 */}
+            {sched?.refreshSuggested === true && sched.refreshHint !== null && (
+              <p className="jh-warn">{sched.refreshHint}</p>
+            )}
+
+            {sched?.readOnly === true && (
+              <p className="jh-error">本实例只读：{sched.readOnlyReason ?? '另一个实例正在运行'}</p>
+            )}
+
+            {feedback.message === null ? null : (
+              <p className={feedback.tone === 'error' ? 'jh-error' : 'jh-muted'}>{feedback.message}</p>
+            )}
+          </section>
+
+          {/* ── 健康只留一行只读（细节在「采集」页）────────────────────── */}
+          <p className="jh-muted jh-health-line">
+            平台健康：
+            {platformItems.length === 0
+              ? '还没有注册平台'
+              : unhealthy.length === 0
+                ? '全部正常'
+                : unhealthy
+                    .map(
+                      (item) =>
+                        `${item.id} ${item.health !== 'healthy' ? item.health : '未登录'}`,
+                    )
+                    .join(' · ')}
+            {' · '}
+            <button type="button" className="jh-link" onClick={props.onGoCollect}>
+              看细节
+            </button>
+          </p>
+
           <div className="jh-stats">
             <button type="button" className="jh-stat" onClick={props.onGoJobs}>
               <b>{data.newJobs24h}</b>
@@ -182,6 +270,11 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void }) {
                               去登录
                             </button>
                           )}
+                          {todo.kind === 'blocked' && (
+                            <button type="button" className="jh-btn jh-btn-inline" onClick={props.onGoCollect}>
+                              去确认恢复
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="jh-btn jh-btn-inline"
@@ -200,140 +293,6 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void }) {
                     </li>
                   )
                 })}
-              </ul>
-            )}
-          </section>
-
-          <section className="jh-card">
-            <h2 className="jh-card-title">定时抓取</h2>
-            {scheduler.state.status === 'error' && <p className="jh-error">{scheduler.state.message}</p>}
-            {sched !== null && (
-              <>
-                {sched.readOnly && (
-                  <p className="jh-error">本实例只读：{sched.readOnlyReason ?? '另一个实例正在运行'}</p>
-                )}
-                <ul className="jh-kv">
-                  <li>
-                    <span>下次运行</span>
-                    <span>{sched.nextRunAt ?? '—'}</span>
-                  </li>
-                  <li>
-                    <span>上次运行</span>
-                    <span>{sched.lastRunAt ?? '—'}</span>
-                  </li>
-                  <li>
-                    <span>调度</span>
-                    <span>{sched.scheduling ? (sched.armed ? '已武装' : '等待方案启用') : '未启动'}</span>
-                  </li>
-                  <li>
-                    <span>租约</span>
-                    <span>
-                      {sched.lease.held
-                        ? `本实例持有（pid ${String(sched.lease.pid ?? '?')}）`
-                        : `他人持有（pid ${String(sched.lease.pid ?? '?')}）`}
-                    </span>
-                  </li>
-                </ul>
-
-                {sched.plans.length === 0 ? (
-                  <p className="jh-muted">还没有搜索方案。</p>
-                ) : (
-                  <ul className="jh-list">
-                    {sched.plans.map((plan) => (
-                      <li key={plan.id}>
-                        <b>{plan.name}</b> · {plan.platforms.join('/')} ·{' '}
-                        {plan.schedule.enabled
-                          ? `${plan.schedule.weekdays.length === 0 ? '每天' : `周${plan.schedule.weekdays.join(',')}`} ${String(plan.schedule.hour).padStart(2, '0')}:${String(plan.schedule.minute).padStart(2, '0')}`
-                          : '不定时'}
-                        <button
-                          type="button"
-                          className="jh-btn jh-btn-inline jh-btn-tiny"
-                          disabled={feedback.running || sched.readOnly}
-                          onClick={() =>
-                            void act('正在按方案抓取…', async () => {
-                              const summary = await runPlan(plan.id)
-                              return `方案「${plan.name}」：${summary.run.state} · 新增 ${String(summary.run.inserted)}`
-                            })
-                          }
-                        >
-                          立即运行
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-            <button
-              type="button"
-              className="jh-btn"
-              disabled={feedback.running || (sched?.readOnly ?? false)}
-              onClick={() => void startCrawl()}
-            >
-              {feedback.running ? '执行中…' : '抓取一次（51job · 深圳 Java）'}
-            </button>
-            {feedback.message === null ? null : (
-              <p className={feedback.tone === 'error' ? 'jh-error' : 'jh-muted'}>{feedback.message}</p>
-            )}
-          </section>
-
-          <section className="jh-card">
-            <h2 className="jh-card-title">平台与登录</h2>
-            {platforms.state.status === 'error' && <p className="jh-error">{platforms.state.message}</p>}
-            {platforms.state.status === 'ok' && platforms.state.data.items.length === 0 && (
-              <p className="jh-muted">还没有注册平台。</p>
-            )}
-            {platforms.state.status === 'ok' && platforms.state.data.items.length > 0 && (
-              <ul className="jh-list">
-                {platforms.state.data.items.map((item) => (
-                  <li key={item.id}>
-                    <code>{item.id}</code> ·{' '}
-                    <b className={item.health === 'healthy' ? 'jh-ok' : 'jh-error'}>{item.health}</b>
-                    {' · '}
-                    <span className={item.account.loggedIn ? 'jh-ok' : 'jh-warn'}>
-                      {item.account.loggedIn ? '已登录' : '未登录'}
-                    </span>
-                    {' · '}
-                    {item.login.state === 'running' ? (
-                      <span className="jh-warn">登录检测中…</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="jh-btn jh-btn-inline jh-btn-tiny"
-                        disabled={feedback.running}
-                        onClick={() => void login(item.id)}
-                      >
-                        登录
-                      </button>
-                    )}
-                    {item.login.message === null ? null : (
-                      <div className="jh-muted">{item.login.message}</div>
-                    )}
-                    {item.account.hint === null ? null : <div className="jh-muted">{item.account.hint}</div>}
-                    {item.healthReason === null ? null : <div className="jh-muted">{item.healthReason}</div>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="jh-card">
-            <h2 className="jh-card-title">最近一轮抓取</h2>
-            {data.lastCrawl === null ? (
-              <p className="jh-muted">还没抓过。</p>
-            ) : (
-              <ul className="jh-kv">
-                <li><span>状态</span><b className={data.lastCrawl.state === 'ok' ? 'jh-ok' : 'jh-warn'}>{data.lastCrawl.state}</b></li>
-                <li><span>开始</span><span>{data.lastCrawl.startedAt}</span></li>
-                <li><span>命中</span><span>{data.lastCrawl.found}</span></li>
-                <li><span>新增 / 更新</span><span>{data.lastCrawl.inserted} / {data.lastCrawl.updated}</span></li>
-                <li><span>隔离</span><span>{data.lastCrawl.quarantined}</span></li>
-                {data.lastCrawl.errorCode === null ? null : (
-                  <li>
-                    <span>错误</span>
-                    <span className="jh-error">{data.lastCrawl.errorCode} · {data.lastCrawl.errorMsg}</span>
-                  </li>
-                )}
               </ul>
             )}
           </section>

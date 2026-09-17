@@ -37,6 +37,8 @@ function fakeSummary(): CrawlSummaryDto {
       quarantined: 0,
       errorCode: null,
       errorMsg: null,
+      reason: 'manual',
+      skipReason: null,
     },
     quarantined: 0,
     fieldPresence: [],
@@ -63,7 +65,14 @@ function harness(options: HarnessOptions = {}) {
     name: '测试方案',
     platforms: ['51job'],
     criteria: { keyword: 'Java', city: '深圳' },
-    schedule: { hour: 9, minute: 0, weekdays: [], jitterMs: 0, missedGraceMs: 60 * 60 * 1000, ...options.schedule },
+    schedule: {
+      windowStartHour: 9,
+      windowEndHour: 11,
+      weekdays: [],
+      jitterMs: 0,
+      missedGraceMs: 60 * 60 * 1000,
+      ...options.schedule,
+    },
   })
   if (options.lastRunAt !== undefined) {
     store.plan.setRunTimes(plan.id, { lastRunAt: options.lastRunAt })
@@ -90,7 +99,6 @@ function harness(options: HarnessOptions = {}) {
       stale: false,
     }),
     clock: time.clock,
-    random: () => 0,
   })
 
   return {
@@ -118,8 +126,9 @@ test('start：算出 next_run_at 并武装定时器', () => {
     const plan = h.plans.get(h.planId)
     assert.ok(plan.nextRunAt !== null)
     const next = new Date(plan.nextRunAt)
-    assert.equal(next.getHours(), 9, '应当落在配置的 9 点')
-    assert.equal(next.getDate(), 16, '8 点时启动，触发点是今天 9 点')
+    // SR-1：触发点落在 09:00–11:00 窗口**内**（不是固定在 9 点整）
+    assert.ok(next.getHours() >= 9 && next.getHours() < 11, `触发点 ${next.toISOString()} 应当落在窗口内`)
+    assert.equal(next.getDate(), 16, '8 点时启动，触发点在今天窗口内')
 
     const status = h.scheduler.status()
     assert.equal(status.scheduling, true)
@@ -136,9 +145,12 @@ test('到点自动跑：推进定时器就真的执行了（P3 出口标准）',
     h.scheduler.start()
     assert.equal(h.runs.length, 0)
 
-    // 时钟走到 9:00，并让定时器到期
-    h.time.set(new Date(2026, 8, 16, 9, 0))
-    h.timer.advance(60 * 60 * 1000)
+    // D-19 之后触发点是**窗口内随机选点**，所以不能假设"推进一小时就到点"。
+    // 时钟直接走到真实的 next_run_at —— 这才是"到点"的定义。
+    const trigger = new Date(h.plans.get(h.planId).nextRunAt ?? 0)
+    assert.ok(trigger.getTime() > h.time.get().getTime(), '触发点必须在未来')
+    h.time.set(trigger)
+    h.timer.advance(12 * 60 * 60 * 1000)
     // tick 是异步的，等它落地
     await new Promise((resolve) => setTimeout(resolve, 10))
 
@@ -162,7 +174,7 @@ test('错过的轮次只生成补跑待办，**绝不自动跑**（C9）', () =>
   const now = new Date(2026, 8, 16, 8, 0)
   const h = harness({
     now,
-    schedule: { hour: 7, minute: 0, missedGraceMs: 60 * 60 * 1000 },
+    schedule: { windowStartHour: 7, windowEndHour: 8, missedGraceMs: 60 * 60 * 1000 },
     lastRunAt: new Date(2026, 8, 15, 7, 0).toISOString(),
   })
   try {
@@ -188,7 +200,7 @@ test('没跳过的方案不会误报补跑', () => {
   const now = new Date(2026, 8, 16, 8, 0)
   const h = harness({
     now,
-    schedule: { hour: 7, minute: 0, missedGraceMs: 60 * 60 * 1000 },
+    schedule: { windowStartHour: 7, windowEndHour: 8, missedGraceMs: 60 * 60 * 1000 },
     lastRunAt: new Date(2026, 8, 16, 7, 5).toISOString(),
   })
   try {
@@ -204,7 +216,7 @@ test('runPlan 手动跑一次并把补跑待办关掉', async () => {
   const now = new Date(2026, 8, 16, 8, 0)
   const h = harness({
     now,
-    schedule: { hour: 7, minute: 0, missedGraceMs: 60 * 60 * 1000 },
+    schedule: { windowStartHour: 7, windowEndHour: 8, missedGraceMs: 60 * 60 * 1000 },
     lastRunAt: new Date(2026, 8, 15, 7, 0).toISOString(),
   })
   try {
@@ -251,7 +263,7 @@ test('只读实例拿到租约后能接管调度（不必重启）', () => {
     plans.create({
       name: '接管测试',
       platforms: ['51job'],
-      schedule: { hour: 9, minute: 0, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
+      schedule: { windowStartHour: 9, windowEndHour: 11, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
     })
     const scheduler = createScheduler({
       store,
@@ -263,7 +275,6 @@ test('只读实例拿到租约后能接管调度（不必重启）', () => {
       readOnlyReason: () => (readOnly ? '另一个实例正在运行（pid 999）' : null),
       leaseStatus: () => ({ path: 'x', held: !readOnly, pid: readOnly ? 999 : 1, heartbeatAt: null, startedAt: null, stale: false }),
       clock: () => new Date(2026, 8, 16, 8, 0).toISOString(),
-      random: () => 0,
     })
 
     scheduler.start()
@@ -321,7 +332,7 @@ test('到点时抓取抛错：不让定时器链断掉，错误被记录', async
     const plan = plans.create({
       name: '会失败的方案',
       platforms: ['51job'],
-      schedule: { hour: 9, minute: 0, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
+      schedule: { windowStartHour: 9, windowEndHour: 11, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
     })
     const scheduler = createScheduler({
       store,
@@ -336,13 +347,13 @@ test('到点时抓取抛错：不让定时器链断掉，错误被记录', async
       readOnlyReason: () => null,
       leaseStatus: () => ({ path: 'x', held: true, pid: 1, heartbeatAt: null, startedAt: null, stale: false }),
       clock: time.clock,
-      random: () => 0,
       logger: { info: () => undefined, warn: (message) => warnings.push(message) },
     })
 
     scheduler.start()
-    time.set(new Date(2026, 8, 16, 9, 0))
-    timer.advance(60 * 60 * 1000)
+    const failTrigger = new Date(plans.get(plan.id).nextRunAt ?? 0)
+    time.set(failTrigger)
+    timer.advance(12 * 60 * 60 * 1000)
     await new Promise((resolve) => setTimeout(resolve, 10))
 
     assert.equal(attempts, 1)

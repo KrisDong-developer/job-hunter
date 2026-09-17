@@ -218,7 +218,10 @@ test('GET /today 聚合出 U0 需要的数字', async () => {
     assert.equal(today.dataReady, true)
     assert.equal(today.jobCount, 2)
     assert.equal(today.newJobs24h, 1, '只有一条是最近 24 小时见到的')
+    // SR-24/SR-33：全新安装**不产生**"数据陈旧"待办 —— 刚装上就催刷新是骚扰。
+    // 所以这里只有我们手工插进去的那一条降级待办。
     assert.equal(today.todos.length, 1)
+    assert.equal(today.todos[0]?.title, '降级了')
   } finally {
     runtime.close()
     cleanup(dir)
@@ -289,12 +292,23 @@ test('P3：方案的增删改查走路由', async () => {
   const { runtime, dir } = await openRuntime()
   try {
     const created = await call(runtime, 'POST', '/plans', {
-      body: { name: '杭州测试', platforms: ['51job'], criteria: { keyword: '测试', city: '杭州' }, schedule: { hour: 20, minute: 15 } },
+      body: {
+        name: '杭州测试',
+        platforms: ['51job'],
+        criteria: { keyword: '测试', city: '杭州', maxPages: '2' },
+        // SR-32：传的是**偏好时段**，不是"单点时刻"
+        schedule: { windowStartHour: 20, windowEndHour: 22 },
+      },
     })
     assert.equal(created.status, 201)
-    const plan = (created.body as { plan: { id: number; schedule: { hour: number }; criteria: Record<string, string> } }).plan
-    assert.equal(plan.schedule.hour, 20)
+    const plan = (
+      created.body as {
+        plan: { id: number; schedule: { windowStartHour: number; windowEndHour: number }; criteria: Record<string, string> }
+      }
+    ).plan
+    assert.equal(plan.schedule.windowStartHour, 20)
     assert.equal(plan.criteria['city'], '杭州')
+    assert.equal(plan.criteria['maxPages'], '2', 'SR-40：抓取深度进方案配置')
 
     const list = await call(runtime, 'GET', '/plans')
     assert.equal((list.body as { items: unknown[] }).items.length, 2)

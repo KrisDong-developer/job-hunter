@@ -299,7 +299,17 @@ export interface IntelService {
   seedDictionary(): number
   matchProfile(): MatchProfile
   /** 重算一个岗位的标注与匹配分，并落库。 */
-  evaluateJob(jobId: number, now: string): JobIntelResult | null
+  /**
+   * 评估一个岗位：标注（flag）+ 匹配分（score）。
+   *
+   * SR-44：两个动作可以**分别**关掉。关掉 `score` 后不写 `match_score`（这是该开关的验收标准），
+   * 关掉 `flag` 后不写 `job_flag`。不给 switches 时全开 —— 默认行为不变。
+   */
+  evaluateJob(
+    jobId: number,
+    now: string,
+    switches?: { score?: boolean; flag?: boolean },
+  ): JobIntelResult | null
   /** 重算公司画像（统计量 + 由信号聚合出的分数）。 */
   recomputeCompany(companyId: number, now: string): CompanyProfileRecord
 }
@@ -366,7 +376,13 @@ export function createIntelService(
     }
   }
 
-  const evaluateJob = (jobId: number, now: string): JobIntelResult | null => {
+  const evaluateJob = (
+    jobId: number,
+    now: string,
+    switches: { score?: boolean; flag?: boolean } = {},
+  ): JobIntelResult | null => {
+    const wantFlag = switches.flag !== false
+    const wantScore = switches.score !== false
     const job = store.job.detail(jobId)
     if (job === undefined) return null
 
@@ -376,37 +392,42 @@ export function createIntelService(
     const entries = store.dictionary.list()
     const at = new Date(now)
 
-    const flags = evaluateJobFlags({
-      job: {
-        title: job.title,
-        city: job.city,
-        salaryRaw: job.salaryRaw,
-        salaryMin: job.salaryMin,
-        salaryMax: job.salaryMax,
-        tags: job.tags,
-        publishedAt: job.publishedAt,
-        lastSeenAt: job.lastSeenAt,
-      },
-      jdText,
-      companyName: job.companyName,
-      companyProfile,
-      entries,
-      now: at,
-    })
-    store.flag.replace(jobId, flags, now)
+    // 关掉标注时**连算都不算**：算了不用是浪费，而且会让人以为"只是没存"。
+    const flags = wantFlag
+      ? evaluateJobFlags({
+          job: {
+            title: job.title,
+            city: job.city,
+            salaryRaw: job.salaryRaw,
+            salaryMin: job.salaryMin,
+            salaryMax: job.salaryMax,
+            tags: job.tags,
+            publishedAt: job.publishedAt,
+            lastSeenAt: job.lastSeenAt,
+          },
+          jdText,
+          companyName: job.companyName,
+          companyProfile,
+          entries,
+          now: at,
+        })
+      : []
+    if (wantFlag) store.flag.replace(jobId, flags, now)
 
-    const match = scoreJobMatch({
-      job: {
-        title: job.title,
-        city: job.city,
-        salaryRaw: job.salaryRaw,
-        salaryMin: job.salaryMin,
-        tags: job.tags,
-      },
-      jdText,
-      profile: readProfile(),
-    })
-    store.job.setMatch(jobId, match.score, match.reasons, options.scoreStamp?.())
+    const match = wantScore
+      ? scoreJobMatch({
+          job: {
+            title: job.title,
+            city: job.city,
+            salaryRaw: job.salaryRaw,
+            salaryMin: job.salaryMin,
+            tags: job.tags,
+          },
+          jdText,
+          profile: readProfile(),
+        })
+      : { score: 0, reasons: [] }
+    if (wantScore) store.job.setMatch(jobId, match.score, match.reasons, options.scoreStamp?.())
 
     return { jobId, flags, match }
   }

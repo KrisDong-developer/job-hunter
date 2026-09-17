@@ -46,4 +46,14 @@ export declare const WRITE_BATCH_SIZE = 200;
 /** 抓取请求之间的随机延时区间（ms）——保守优先于效率（P5）。 */
 export declare const REQUEST_DELAY_MIN_MS = 1200;
 export declare const REQUEST_DELAY_MAX_MS = 3200;
+/**
+ * 每个平台每天最多自动跑几轮（SR-3 的每日上限）。
+ *
+ * 为什么要有：窗口 + 随机点已经避免了"每天同一分钟"，但一个坏掉的适配器
+ * 或者一个刚恢复的平台可能在一小时内被反复触发。上限是最后一道闸。
+ * 默认给得很松（8 次）：这不是节流阀，是"防止失控"的保险丝。
+ */
+export declare const DAILY_CRAWL_LIMIT = 8;
+/** 连续失败达到这个次数 → 风控暂停（SR-21），需人工确认才恢复。 */
+export declare const RISK_PAUSE_THRESHOLD = 3;
 //# sourceMappingURL=constants.d.ts.map

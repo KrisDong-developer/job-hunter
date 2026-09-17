@@ -14,7 +14,7 @@
  */
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
-import type { RawJob, SearchCriteria, SiteAdapter } from '../types.js'
+import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 51job 列表页的选择器集。**每一项都可以在 UI 里改。** */
 export interface FiftyOneSelectors {
@@ -33,13 +33,46 @@ export interface FiftyOneSelectors {
   trackingAttr: string
 }
 
-/** 字段 → URL 参数的映射。这一层**无法自动推导**，必须每平台人工建一次（§4.2.2）。 */
+/**
+ * 字段 → URL 参数的映射。这一层**无法自动推导**，必须每平台人工建一次（§4.2.2）。
+ *
+ * SR-40 追加了"抓取深度"三件套（页数/排序/时间窗）的映射 ——
+ * 它们**也**是 URL 参数，所以同样进配置、同样可人工修。
+ */
 export interface FiftyOneUrlParams {
   base: string
   keywordParam: string
   cityParam: string
   pageParam: string
+  /** 排序方式（`sortType`）。取值域见 `SORT_OPTIONS`。 */
+  sortParam: string
+  /** 发布时间窗（`issueDate`），单位=天。 */
+  postedWithinParam: string
 }
+
+/**
+ * 51job 支持的排序取值域（实测于搜索页 URL）。
+ *
+ * **只在声明里出现**：界面据它渲染下拉，校验据它拒绝非法值。
+ * 加一项只需要改这里和 `SORT_OPTIONS`。
+ */
+export const SORT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '0', label: '综合排序' },
+  { value: '1', label: '薪资最高' },
+  { value: '2', label: '最新发布' },
+  { value: '3', label: '距离最近' },
+]
+
+/** 发布时间窗取值域（天）。 */
+export const POSTED_WITHIN_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '1', label: '24 小时内' },
+  { value: '3', label: '3 天内' },
+  { value: '7', label: '一周内' },
+  { value: '30', label: '一个月内' },
+]
+
+/** 页数上限：再大也不会更"全"，只会更容易触发风控。 */
+export const FIFTYONE_MAX_PAGES = 5
 
 export interface FiftyOneConfig {
   selectors: FiftyOneSelectors
@@ -67,6 +100,8 @@ export const DEFAULT_FIFTYONE_CONFIG: FiftyOneConfig = {
     keywordParam: 'keyword',
     cityParam: 'jobArea',
     pageParam: 'pageNum',
+    sortParam: 'sortType',
+    postedWithinParam: 'issueDate',
   },
   cityCodes: {
     北京: '010000',
@@ -257,10 +292,53 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
     if (criteria.page !== undefined && criteria.page > 1) {
       params.set(config.urlParams.pageParam, String(criteria.page))
     }
+    // SR-40：抓取深度的三件套。**只在用户真的配了的时候才写进 URL** ——
+    // 塞一个平台默认值会改变"什么都没配"时的行为，那是静默改变语义。
+    if (criteria.sort !== undefined && criteria.sort !== '') {
+      params.set(config.urlParams.sortParam, criteria.sort)
+    }
+    if (criteria.postedWithinDays !== undefined && criteria.postedWithinDays > 0) {
+      params.set(config.urlParams.postedWithinParam, String(criteria.postedWithinDays))
+    }
     for (const [key, value] of Object.entries(criteria.extra ?? {})) params.set(key, value)
     const query = params.toString()
     return query === '' ? config.urlParams.base : `${config.urlParams.base}?${query}`
   }
+
+  /**
+   * SR-41/42：**声明**本适配器支持的筛选维度。
+   *
+   * 这张表就是"能力驱动的 UI"的唯一来源：界面据它渲染、
+   * 校验据它拒绝（SR-45 三条入口共用同一份）。
+   */
+  const dimensions: CriteriaDimension[] = [
+    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，平台原样接收' },
+    {
+      key: 'city',
+      label: '城市',
+      values: Object.keys(config.cityCodes).map((city) => ({ value: city, label: city })),
+      hint: '只有这张表里的城市有对应的平台城市码；其它城市无法构造搜索 URL',
+    },
+    {
+      key: 'sort',
+      label: '排序方式',
+      values: SORT_OPTIONS,
+      hint: '综合/薪资/最新/距离四种；平台没有更多排序维度',
+    },
+    {
+      key: 'postedWithinDays',
+      label: '发布时间',
+      values: POSTED_WITHIN_OPTIONS,
+      hint: '按天过滤；平台不提供"自定义起止日期"',
+    },
+    {
+      key: 'maxPages',
+      label: '抓取页数上限',
+      values: [],
+      max: FIFTYONE_MAX_PAGES,
+      hint: `最多 ${String(FIFTYONE_MAX_PAGES)} 页 —— 再多不会更全，只会更容易触发风控`,
+    },
+  ]
 
   return {
     id: '51job',
@@ -276,6 +354,9 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
     },
     // §4.2.4：适配器自己声明必需字段。这里是协议里的四个核心字段。
     requiredFields: CORE_FIELDS as readonly CoreField[],
+    // SR-41/42：声明支持的筛选维度（界面与校验的唯一来源）
+    criteriaDimensions: dimensions,
+    maxPages: FIFTYONE_MAX_PAGES,
 
     // P3 登录态：只回答「当前页会不会被登录墙挡住」。
     // 51job 的搜索本身不需要登录（capabilities.searchWithoutLogin），

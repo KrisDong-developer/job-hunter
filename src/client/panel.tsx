@@ -7,22 +7,43 @@ import { JobsScreen } from './screens/jobs.js'
 import { InboxScreen, InterviewsScreen } from './screens/messages.js'
 import { BoardScreen, PipelineScreen } from './screens/pipeline.js'
 import { CampusScreen } from './screens/campus.js'
+import { CollectScreen } from './screens/collect.js'
 import { ResumesScreen } from './screens/resumes.js'
+import { SettingsScreen } from './screens/settings.js'
 import { TodayScreen } from './screens/today.js'
 import { useEventStream } from './use-event-stream.js'
 
-type Screen = 'today' | 'jobs' | 'pipeline' | 'inbox' | 'interviews' | 'board' | 'resumes' | 'campus'
+type Screen =
+  | 'today'
+  | 'jobs'
+  | 'pipeline'
+  | 'inbox'
+  | 'interviews'
+  | 'campus'
+  | 'board'
+  | 'resumes'
+  | 'collect'
+  | 'settings'
 
-/** 标签顺序 = 日常使用的顺序：先看今天，再看岗位，然后才是跟进与复盘。 */
+/**
+ * 标签顺序 = 日常使用的顺序：先看今天，再看岗位，然后才是跟进与复盘。
+ *
+ * **「采集」就是 §5.4 规划过的 U9**（tab 显示「采集」，页面标题「数据采集」）——
+ * 不另造页面。它承载采集方案配置 + 平台状态 + 触发与"为什么没跑"，
+ * 而这些内容原来全挤在「今日」里（那正是今日屏拥挤的根因）。
+ * 「设置」是 §5.4 的 U10，与 U11 合并成一屏（见「日志与诊断」子块）。
+ */
 const TABS: Array<{ key: Screen; label: string }> = [
   { key: 'today', label: '今日' },
   { key: 'jobs', label: '岗位库' },
+  { key: 'collect', label: '采集' },
   { key: 'pipeline', label: '流水线' },
   { key: 'inbox', label: '消息' },
   { key: 'interviews', label: '面试' },
   { key: 'campus', label: '校招' },
   { key: 'board', label: '看板' },
   { key: 'resumes', label: '简历中心' },
+  { key: 'settings', label: '设置' },
 ]
 
 const STREAM_LABEL: Record<string, string> = {
@@ -120,7 +141,15 @@ export function JobHunterPanel() {
 
       <div className="jh-body">
         {screen === 'today' ? (
-          <TodayScreen revision={revision} onGoJobs={() => setScreen('jobs')} />
+          <TodayScreen
+            revision={revision}
+            onGoJobs={() => setScreen('jobs')}
+            onGoCollect={() => setScreen('collect')}
+          />
+        ) : screen === 'collect' ? (
+          <CollectScreen revision={revision} />
+        ) : screen === 'settings' ? (
+          <SettingsScreen revision={revision} />
         ) : screen === 'pipeline' ? (
           <PipelineScreen
             revision={revision}

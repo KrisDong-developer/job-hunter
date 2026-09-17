@@ -68,7 +68,13 @@ export interface HostRuntime {
         platformId: string;
         criteria: SearchCriteria;
         planId?: number | null;
+        /** SR-28：触发原因，落进 `crawl_run.reason`（定时/人工/补跑）。 */
+        reason?: RunReason;
     }): Promise<CrawlSummaryDto>;
+    /** B3/SR-30：全局一键暂停（**只停定时**，手动永远可用）。 */
+    setSchedulePaused(paused: boolean, reason?: string): void;
+    /** SR-21：人工确认恢复风控暂停的方案。 */
+    resumeRisk(planId: number): void;
     /** 实时事件总线（ADR-24：事件只作提示）。 */
     events(): EventBus;
     /** 情报引擎（P4）。 */

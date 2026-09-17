@@ -119,6 +119,10 @@ export interface CrawlRunDto {
   quarantined: number
   errorCode: string | null
   errorMsg: string | null
+  /** SR-28/29：触发原因（schedule / manual / catch-up）。 */
+  reason: string | null
+  /** SR-17/29：跳过原因（枚举键）。只有"到点了但没跑"才写。 */
+  skipReason: string | null
 }
 
 /** 一个适配器的健康快照（§4.2.3 + §4.2.4 的逐字段计数）。 */
@@ -261,20 +265,33 @@ export interface CompanyDetailDto {
 // ── P3：调度与健康 ────────────────────────────────────────────────────
 
 /**
- * 搜索方案的定时配置。
+ * 搜索方案的定时配置 —— **偏好时段，不是单点时刻**（D-19 / SR-1 / SR-32）。
  *
- * 用「每周几 + 本地时间几点几分」而不是 cron：需求里没有 cron 表达力的需要，
- * 而手写 cron 解析是纯负担（C3：宿主也没有 schedule 服务可用）。
+ * 为什么不是 `hour: 9, minute: 30`：固定时刻 + 每天同一分钟是最容易被识别的模式
+ * （R18 / D-17）。所以配置的是一段窗口，窗口内**随机**选点，窗口内最多跑一次。
+ *
+ * **SR-32 是硬约束**：配置项里**不提供**"精确到分钟的单点时刻"。
+ * 下面的 `windowStartMinute` / `windowEndMinute` 是窗口边界的分钟分量（默认 0），
+ * 不是触发分钟 —— 触发点在窗口内部由 `scheduler/schedule.ts` 派生。
+ *
+ * 时间一律是**本地墙钟**（SR-5：时区跟着人走）。
  */
 export interface PlanSchedule {
   enabled: boolean
-  /** 本地时间，0-23。 */
-  hour: number
-  /** 本地时间，0-59。 */
-  minute: number
+  /** 窗口起点：本地时，0-23。 */
+  windowStartHour: number
+  /** 窗口起点的分钟分量，0-59（默认 0）。 */
+  windowStartMinute: number
+  /** 窗口终点：本地时，0-23。终点 ≤ 起点表示跨零点。 */
+  windowEndHour: number
+  /** 窗口终点的分钟分量，0-59（默认 0）。 */
+  windowEndMinute: number
   /** 0=周日 … 6=周六。空数组视为每天。 */
   weekdays: number[]
-  /** 触发时刻上叠加的随机抖动上限（ms）——避免每天准点整点打同一个接口。 */
+  /**
+   * 窗口内的最小随机间隔（ms）——避免窗口内连着跑两次。
+   * 默认等于窗口长度的大约 1/3；它不是"抖动上限"，抖动由窗口本身承担。
+   */
   jitterMs: number
   /** 错过多久之内还算「今天该跑的」，超出就走补跑询问（C9）。 */
   missedGraceMs: number
@@ -288,9 +305,147 @@ export interface PlanDto {
   criteria: Record<string, string>
   schedule: PlanSchedule
   enabled: boolean
+  /**
+   * SR-7：**尝试**时刻（失败也推进）。
+   *
+   * 与 `lastSuccessAt` 拆开是必需的：只有分开才能回答"我试过了但没成功"
+   * 与"我最后真的拿到数据是什么时候"这两个不同的问题。
+   */
+  lastAttemptAt: string | null
+  /** SR-7：**成功**时刻（只有 `state='ok'` 才推进）。新鲜度看它。 */
+  lastSuccessAt: string | null
+  /** 兼容字段 = `lastSuccessAt`（旧界面与旧断言读它）。 */
   lastRunAt: string | null
   nextRunAt: string | null
+  /** SR-5：写入时的时间区快照（如 `Asia/Shanghai`）——时区跟着人走，不是推算 UTC。 */
+  timezone: string
+  /** SR-44：抓取后处理开关（打分 / 标注 / 去重），默认全开。 */
+  postProcess: PlanPostProcess
   createdAt: string
+}
+
+/** SR-44：抓取后处理开关。关掉打分后不再写 `match_score`。 */
+export interface PlanPostProcess {
+  /** 情报引擎打分 + 标注（纯规则、零外部调用）。 */
+  score: boolean
+  /** 风险/黑话标注。 */
+  flag: boolean
+  /** 跨平台去重分组。 */
+  dedup: boolean
+}
+
+/** SR-8：三级新鲜度。 */
+export type FreshnessLevel = 'fresh' | 'stale' | 'cold'
+
+/**
+ * 一个方案的新鲜度（SR-8）。
+ *
+ * 阈值**随计划频率**：每天跑一次的方案 18 小时就算旧了，
+ * 每周跑一次的方案 18 小时完全正常。所以 `thresholds` 一起回传，
+ * 界面上写"为什么它算 stale"时有据可依，而不是一个魔数。
+ */
+export interface FreshnessDto {
+  level: FreshnessLevel
+  /** 用来判定的小时数（负数 = 从未成功过，按 cold 处理）。 */
+  hoursSinceSuccess: number | null
+  thresholds: { freshHours: number; coldHours: number }
+}
+
+/**
+ * SR-17：跳过原因枚举。**界面显示人话，不显示这个英文键**。
+ *
+ * 枚举而不是自由文本：自由文本最后一定会退化成"已武装"这种什么都没说的话，
+ * 而"为什么没跑"恰恰是用户最需要知道的。
+ */
+export const SKIP_REASONS = [
+  'not_logged_in',
+  'adapter_broken',
+  'risk_paused',
+  'lease_lost',
+  'offline_gate',
+  'outside_window',
+  'quota_reached',
+  'another_run_active',
+  'backoff',
+  'global_pause',
+  'plan_disabled',
+] as const
+export type SkipReason = (typeof SKIP_REASONS)[number]
+
+/**
+ * 一次触发尝试的结论（SR-16/17/18/26）。
+ *
+ * `decision` 只有三种，刻意不给第四种：
+ *   * `ran` 真的跑了；
+ *   * `skipped` 到点了但没跑，**必须**带原因；
+ *   * `waiting` 还没到点（这不是"没跑"，不该产生告警）。
+ */
+export interface TriggerDecisionDto {
+  decision: 'ran' | 'skipped' | 'waiting'
+  reason: SkipReason | null
+  /** 人话原因，直接展示。 */
+  message: string | null
+  at: string
+}
+
+/**
+ * 一个方案的调度状态（SR-26/28）。
+ *
+ * `lastDecision` 是"为什么没跑"的载体：只报 `armed: true` 等于什么都没说 ——
+ * 未登录的平台也会 `armed`，然后每天安静地什么都不做。
+ */
+export interface PlanScheduleStatusDto {
+  planId: number
+  name: string
+  enabled: boolean
+  freshness: FreshnessDto
+  lastAttemptAt: string | null
+  lastSuccessAt: string | null
+  nextRunAt: string | null
+  lastDecision: TriggerDecisionDto | null
+  /** SR-20：当前退避到什么时候（null = 没在退避）。 */
+  backoffUntil: string | null
+  /** SR-21：连续失败次数（达阈值即 `risk_paused`）。 */
+  failStreak: number
+  /** SR-21/22：是否处于风控暂停（需人工确认恢复）。 */
+  riskPaused: boolean
+  /** 风控暂停的可读原因。 */
+  riskReason: string | null
+}
+
+/**
+ * 一个方案的**定时信息**（供界面本地化渲染）。
+ *
+ * 为什么要单独回传这些而不是只给 `nextRunAt`：界面要写
+ * 「下次运行 明天 09:37（含 4 分钟抖动）」，那需要窗口起点 + 抖动 + 时区三样东西一起算。
+ * 只给一个时间戳的话，界面只能原样打印 —— 那正是 A1 要修的 bug。
+ *
+ * 计算放在 **host**（`scheduler/schedule.ts` 是唯一的实现），
+ * 界面只做格式化，不重算触发点。两边各算一次必然漂移。
+ */
+export interface WeeklyTriggerDto {
+  planId: number
+  planName: string
+  nextRunAt: string
+  /** 这个触发点所属窗口的起点（本地墙钟语义，按 `timezone` 解释）。 */
+  windowStartAt: string
+  windowStartHour: number
+  windowStartMinute: number
+  windowEndHour: number
+  windowEndMinute: number
+  weekdays: number[]
+  /** A1：当前生效的抖动上限（ms）——界面据此写"含 N 分钟抖动"。 */
+  jitterMs: number
+  /** SR-5：写入时的时间区快照。 */
+  timezone: string
+}
+
+/** `GET /scheduler/status` 的一次运行摘要（SR-28 的小表）。 */
+export interface RecentRunDto extends CrawlRunDto {
+  /** 触发原因：定时 / 人工 / 补跑。 */
+  reason: string | null
+  /** 跳过原因（没真跑时才有）。 */
+  skipReason: string | null
 }
 
 /** 调度器当前状态（`GET /scheduler/status`）。 */
@@ -307,6 +462,24 @@ export interface SchedulerStatusDto {
   running: boolean
   plans: PlanDto[]
   lease: LeaseStatusDto
+  /** SR-5/27：宿主进程的时区（本地时间按它解释）。 */
+  timezone: string
+  /** A1：当前生效的抖动上限（ms）——界面必须说明"下次运行含抖动"。 */
+  jitterMs: number
+  /** B3/SR-30：全局一键暂停。**只停定时**，手动永远可用。 */
+  paused: boolean
+  /** B3：停定时时的原因（人话）。 */
+  pausedReason: string | null
+  /** SR-8/26：逐方案的调度状态与"为什么没跑"。 */
+  planStatus: PlanScheduleStatusDto[]
+  /** A1：逐方案的定时信息（本地化渲染用）。 */
+  triggers: WeeklyTriggerDto[]
+  /** SR-28：最近几次运行（时间/状态/新增/失败原因/触发原因）。 */
+  recentRuns: RecentRunDto[]
+  /** C2/SR-2：当前是否建议用户手动刷新一次（stale/cold 且没到下一个窗口）。 */
+  refreshSuggested: boolean
+  /** C2：建议刷新的原因（人话）。 */
+  refreshHint: string | null
 }
 
 /** 单实例租约状态。 */

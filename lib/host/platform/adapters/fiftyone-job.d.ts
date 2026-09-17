@@ -30,13 +30,39 @@ export interface FiftyOneSelectors {
     /** 跟踪载荷所在的属性名。 */
     trackingAttr: string;
 }
-/** 字段 → URL 参数的映射。这一层**无法自动推导**，必须每平台人工建一次（§4.2.2）。 */
+/**
+ * 字段 → URL 参数的映射。这一层**无法自动推导**，必须每平台人工建一次（§4.2.2）。
+ *
+ * SR-40 追加了"抓取深度"三件套（页数/排序/时间窗）的映射 ——
+ * 它们**也**是 URL 参数，所以同样进配置、同样可人工修。
+ */
 export interface FiftyOneUrlParams {
     base: string;
     keywordParam: string;
     cityParam: string;
     pageParam: string;
+    /** 排序方式（`sortType`）。取值域见 `SORT_OPTIONS`。 */
+    sortParam: string;
+    /** 发布时间窗（`issueDate`），单位=天。 */
+    postedWithinParam: string;
 }
+/**
+ * 51job 支持的排序取值域（实测于搜索页 URL）。
+ *
+ * **只在声明里出现**：界面据它渲染下拉，校验据它拒绝非法值。
+ * 加一项只需要改这里和 `SORT_OPTIONS`。
+ */
+export declare const SORT_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+/** 发布时间窗取值域（天）。 */
+export declare const POSTED_WITHIN_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+/** 页数上限：再大也不会更"全"，只会更容易触发风控。 */
+export declare const FIFTYONE_MAX_PAGES = 5;
 export interface FiftyOneConfig {
     selectors: FiftyOneSelectors;
     urlParams: FiftyOneUrlParams;

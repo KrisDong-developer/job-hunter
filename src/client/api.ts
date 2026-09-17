@@ -71,9 +71,15 @@ import type {
   JobDto,
   LoginStatusDto,
   PlanDto,
+  PlanPostProcess,
+  PlanSchedule,
+  PlanScheduleStatusDto,
   PlatformOverviewDto,
+  RecentRunDto,
   SchedulerStatusDto,
+  SkipReason,
   TodayDto,
+  WeeklyTriggerDto,
 } from '../shared/dto.js'
 import type { JobState } from '../shared/enums.js'
 import type { ResumeContent } from '../shared/resume.js'
@@ -88,14 +94,20 @@ export type {
   JobDto,
   LoginStatusDto,
   PlanDto,
+  PlanPostProcess,
+  PlanSchedule,
+  PlanScheduleStatusDto,
   PlatformOverviewDto,
+  RecentRunDto,
   ResumeDto,
   ResumeFileDto,
   ResumeIssue,
   ResumeSummaryDto,
   SchedulerStatusDto,
+  SkipReason,
   TailoringDto,
   TodayDto,
+  WeeklyTriggerDto,
 }
 
 /** 带宿主返回的 `code` / `hint` 的 API 错误，界面可以直接把 `hint` 显示给用户。 */
@@ -218,8 +230,133 @@ export async function runCrawl(input: {
 
 // ── P3：调度与健康 ────────────────────────────────────────────────────
 
+/** 方案写入体。**只有显式给出的键**才会被发出去 —— 缺的键由宿主沿用现值。 */
+export interface PlanWriteInput {
+  name?: string
+  platforms?: string[]
+  criteria?: Record<string, string>
+  schedule?: Partial<PlanSchedule>
+  enabled?: boolean
+  postProcess?: Partial<PlanPostProcess>
+}
+
+/** SR-41：一个筛选维度的声明（界面据此渲染；不支持的**禁用而非隐藏**）。 */
+export interface CriteriaDimensionDto {
+  key: string
+  label: string
+  values: Array<{ value: string; label: string }>
+  max: number | null
+  hint: string
+  supported: boolean
+  disabledReason: string | null
+  numeric: boolean
+}
+
+export interface CriteriaDimensionsDto {
+  items: CriteriaDimensionDto[]
+  platforms: string[]
+  available: Array<{ id: string; displayName: string }>
+}
+
+/** SR-43：重复提示（只提示，不合并）。 */
+export interface PlanDuplicateDto {
+  planId: number
+  name: string
+  reason: string
+}
+
+/** SR-45：校验结果。界面保存前先问一次，与工具/HTTP 是同一份校验。 */
+export interface PlanValidationDto {
+  name: string
+  platforms: string[]
+  criteria: Record<string, string>
+  schedule: PlanSchedule
+  enabled: boolean
+  postProcess: PlanPostProcess
+  duplicates: PlanDuplicateDto[]
+  dimensions: CriteriaDimensionDto[]
+}
+
 export async function fetchPlans(signal?: AbortSignal): Promise<{ items: PlanDto[] }> {
   return await request<{ items: PlanDto[] }>('/plans', signal === undefined ? {} : { signal })
+}
+
+export async function createPlan(
+  input: PlanWriteInput,
+): Promise<{ plan: PlanDto; duplicates: PlanDuplicateDto[] }> {
+  return await request<{ ok: boolean; plan: PlanDto; duplicates: PlanDuplicateDto[] }>('/plans', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updatePlan(
+  id: number,
+  input: PlanWriteInput,
+): Promise<{ plan: PlanDto; duplicates: PlanDuplicateDto[] }> {
+  return await request<{ ok: boolean; plan: PlanDto; duplicates: PlanDuplicateDto[] }>(
+    `/plans/${String(id)}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+  )
+}
+
+export async function deletePlan(id: number): Promise<void> {
+  await request<{ ok: boolean }>(`/plans/${String(id)}`, { method: 'DELETE' })
+}
+
+export async function validatePlan(
+  id: number,
+  input: PlanWriteInput,
+): Promise<PlanValidationDto> {
+  const result = await request<{ ok: boolean; validation: PlanValidationDto }>(
+    `/plans/${String(id)}/validate`,
+    { method: 'POST', body: JSON.stringify(input) },
+  )
+  return result.validation
+}
+
+export async function fetchCriteriaDimensions(
+  platforms: string[] = [],
+  signal?: AbortSignal,
+): Promise<CriteriaDimensionsDto> {
+  const query = platforms.length === 0 ? '' : `?platforms=${encodeURIComponent(platforms.join(','))}`
+  return await request<CriteriaDimensionsDto>(`/criteria/dimensions${query}`, signal === undefined ? {} : { signal })
+}
+
+/** A2：「抓取一次」= 按默认方案跑一轮（不再写死 51job/深圳/Java）。 */
+export async function runDefaultPlan(): Promise<CrawlSummaryDto & { planId: number; planName: string }> {
+  return await request<CrawlSummaryDto & { planId: number; planName: string }>('/crawl', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+/** B3/SR-30：全局一键暂停（**只停定时**，手动仍然可用）。 */
+export async function setSchedulePaused(paused: boolean, reason?: string): Promise<SchedulerStatusDto> {
+  const result = await request<{ ok: boolean; status: SchedulerStatusDto }>('/schedule/pause', {
+    method: 'POST',
+    body: JSON.stringify(reason === undefined ? { paused } : { paused, reason }),
+  })
+  return result.status
+}
+
+/** SR-21：人工确认恢复风控暂停的方案（系统不会自动恢复）。 */
+export async function resumePlanRisk(id: number): Promise<PlanDto> {
+  const result = await request<{ ok: boolean; plan: PlanDto }>(`/plans/${String(id)}/resume`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+  return result.plan
+}
+
+/** SR-17/26：跳过原因 → 人话。宿主是唯一来源，界面不自己写一套。 */
+export async function fetchSkipReasons(
+  signal?: AbortSignal,
+): Promise<{ items: Record<string, string> }> {
+  return await request<{ items: Record<string, string> }>(
+    '/schedule/reasons',
+    signal === undefined ? {} : { signal },
+  )
 }
 
 export async function fetchSchedulerStatus(signal?: AbortSignal): Promise<SchedulerStatusDto> {
