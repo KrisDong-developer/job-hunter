@@ -10,6 +10,7 @@
  */
 import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../shared/constants.js'
 import type {
+  AnalyticsFilter,
   CompanyDetailDto,
   CrawlStatusDto,
   CrawlSummaryDto,
@@ -1076,25 +1077,64 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
   }
 
   // ── P7：看板与归因（§13 U8）──────────────────────────────────────
+  //
+  // 全局筛选：三个接口共用一组 query 参数。解析与校验都在这里做完 ——
+  // 非法的时间或 id 一路传到服务层，只会换来一个看不懂的空结果。
+  const analyticsFilterOf = (): AnalyticsFilter => {
+    const iso = (value: string | null, name: string): string | undefined => {
+      if (value === null || value === '') return undefined
+      if (!Number.isFinite(Date.parse(value))) {
+        throw new DomainError('INVALID_INPUT', `${name} 不是合法时间：${value}`, {
+          hint: '用 ISO 格式，例如 2026-09-01 或 2026-09-01T00:00:00Z。',
+        })
+      }
+      return value
+    }
+    const resumeIdRaw = req.query.get('resumeId')
+    let resumeId: number | undefined
+    if (resumeIdRaw !== null && resumeIdRaw !== '') {
+      const parsed = Number.parseInt(resumeIdRaw, 10)
+      if (!Number.isFinite(parsed)) {
+        throw new DomainError('INVALID_INPUT', `resumeId 不是数字：${resumeIdRaw}`)
+      }
+      resumeId = parsed
+    }
+    const from = iso(req.query.get('from'), 'from')
+    const to = iso(req.query.get('to'), 'to')
+    const city = req.query.get('city')
+    const keyword = req.query.get('q')
+    const direction = req.query.get('direction')
+    return {
+      ...(from === undefined ? {} : { from }),
+      ...(to === undefined ? {} : { to }),
+      ...(city === null || city === '' ? {} : { city }),
+      ...(keyword === null || keyword === '' ? {} : { keyword }),
+      ...(direction === null || direction === '' ? {} : { direction }),
+      ...(resumeId === undefined ? {} : { resumeId }),
+    }
+  }
+
   if (method === 'GET' && segments.length === 2 && segments[0] === 'analytics' && segments[1] === 'funnel') {
     requireData(runtime)
-    return json(200, runtime.analytics().funnel())
+    return json(200, runtime.analytics().funnel(analyticsFilterOf()))
   }
 
   if (method === 'GET' && segments.length === 2 && segments[0] === 'analytics' && segments[1] === 'attribution') {
     requireData(runtime)
-    return json(200, runtime.analytics().attribution())
+    return json(200, runtime.analytics().attribution(analyticsFilterOf()))
   }
 
   if (method === 'GET' && segments.length === 2 && segments[0] === 'analytics' && segments[1] === 'salary') {
     requireData(runtime)
-    const city = req.query.get('city')
-    const keyword = req.query.get('q')
+    const filter = analyticsFilterOf()
+    // 城市/关键词由岗位库自己筛；时间窗是**岗位库的时间轴**，与投递时间不是一回事
     return json(
       200,
       runtime.analytics().salaryBand({
-        ...(city === null || city === '' ? {} : { city }),
-        ...(keyword === null || keyword === '' ? {} : { keyword }),
+        ...(filter.city === undefined ? {} : { city: filter.city }),
+        ...(filter.keyword === undefined ? {} : { keyword: filter.keyword }),
+        ...(filter.from === undefined ? {} : { from: filter.from }),
+        ...(filter.to === undefined ? {} : { to: filter.to }),
       }),
     )
   }

@@ -17,6 +17,7 @@ import type {
   TripartiteState,
 } from '../shared/enums.js'
 import type {
+  AnalyticsFilter,
   ApplicationDto,
   AssessmentDto,
   AttributionDto,
@@ -664,23 +665,41 @@ export async function deleteInterview(id: number): Promise<void> {
   await request<{ ok: boolean }>(`/interviews/${String(id)}`, { method: 'DELETE' })
 }
 
-export async function fetchFunnel(signal?: AbortSignal): Promise<FunnelDto> {
-  return await request<FunnelDto>('/analytics/funnel', signal === undefined ? {} : { signal })
+/** 把全局筛选拼成 query。空值一律不发，免得后端要区分 "" 与缺失。 */
+function analyticsQuery(filter: AnalyticsFilter): string {
+  const query = new URLSearchParams()
+  if (filter.from !== undefined && filter.from !== '') query.set('from', filter.from)
+  if (filter.to !== undefined && filter.to !== '') query.set('to', filter.to)
+  if (filter.city !== undefined && filter.city !== '') query.set('city', filter.city)
+  if (filter.keyword !== undefined && filter.keyword !== '') query.set('q', filter.keyword)
+  if (filter.direction !== undefined && filter.direction !== '') query.set('direction', filter.direction)
+  if (filter.resumeId !== undefined) query.set('resumeId', String(filter.resumeId))
+  const text = query.toString()
+  return text === '' ? '' : `?${text}`
 }
 
-export async function fetchAttribution(signal?: AbortSignal): Promise<AttributionDto> {
-  return await request<AttributionDto>('/analytics/attribution', signal === undefined ? {} : { signal })
+export async function fetchFunnel(
+  filter: AnalyticsFilter = {},
+  signal?: AbortSignal,
+): Promise<FunnelDto> {
+  return await request<FunnelDto>(`/analytics/funnel${analyticsQuery(filter)}`, signal === undefined ? {} : { signal })
+}
+
+export async function fetchAttribution(
+  filter: AnalyticsFilter = {},
+  signal?: AbortSignal,
+): Promise<AttributionDto> {
+  return await request<AttributionDto>(
+    `/analytics/attribution${analyticsQuery(filter)}`,
+    signal === undefined ? {} : { signal },
+  )
 }
 
 export async function fetchSalaryBand(
-  filter: { city?: string; q?: string } = {},
+  filter: AnalyticsFilter = {},
   signal?: AbortSignal,
 ): Promise<SalaryBandDto> {
-  const query = new URLSearchParams()
-  if (filter.city !== undefined && filter.city !== '') query.set('city', filter.city)
-  if (filter.q !== undefined && filter.q !== '') query.set('q', filter.q)
-  const suffix = query.toString() === '' ? '' : `?${query.toString()}`
-  return await request<SalaryBandDto>(`/analytics/salary${suffix}`, signal === undefined ? {} : { signal })
+  return await request<SalaryBandDto>(`/analytics/salary${analyticsQuery(filter)}`, signal === undefined ? {} : { signal })
 }
 
 export async function fetchFollowUps(signal?: AbortSignal): Promise<{ items: FollowUpDto[] }> {

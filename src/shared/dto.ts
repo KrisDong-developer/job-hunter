@@ -546,6 +546,10 @@ export interface AnalyticsFilter {
   resumeId?: number
   /** 简历里填的方向（展示层用它当岗位关键词用）。只作用于投递链路。 */
   direction?: string
+  /** 岗位城市：这三张表都没有城市列，要 JOIN `job`。 */
+  city?: string
+  /** 岗位标题关键词，同样是 JOIN `job`。 */
+  keyword?: string
 }
 
 /** 漏斗的一层。 */

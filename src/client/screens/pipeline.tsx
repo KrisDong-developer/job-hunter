@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { APPLICATION_CHANNEL_LABEL, APPLICATION_STAGE_LABEL } from '../../shared/enums.js'
 import type { ApplicationStage } from '../../shared/enums.js'
-import type { BoardCardDto, FollowUpDto } from '../../shared/dto.js'
+import type { AnalyticsFilter, BoardCardDto, FollowUpDto } from '../../shared/dto.js'
 import {
   advanceApplication,
   ApiError,
@@ -11,6 +11,7 @@ import {
   fetchBoard,
   fetchFollowUps,
   fetchFunnel,
+  fetchResumes,
   fetchSalaryBand,
 } from '../api.js'
 import { useAsync } from '../use-async.js'
@@ -234,21 +235,130 @@ function FollowUpRow(props: { item: FollowUpDto; onOpen: (id: number) => void })
  * 先看到"100% 回复率"再看到"样本 1 条"，人已经形成印象了。
  */
 export function BoardScreen(props: { revision: number; onDrillDown: (step: string) => void }) {
-  const funnel = useAsync((signal) => fetchFunnel(signal), [props.revision])
-  const attribution = useAsync((signal) => fetchAttribution(signal), [props.revision])
-  const [city, setCity] = useState('')
-  const [keyword, setKeyword] = useState('')
-  const salary = useAsync((signal) => fetchSalaryBand({ city, q: keyword }, signal), [props.revision, city, keyword])
+  // 全局筛选：一处状态，三处 fetch 一起联动。
+  const [filter, setFilter] = useState<AnalyticsFilter>({})
+  const [resumeOptions, setResumeOptions] = useState<Array<{ id: number; label: string }>>([])
+  const [directionOptions, setDirectionOptions] = useState<string[]>([])
+
+  // 简历版本与方向是**投递链路**的维度：从简历列表取选项（只取有方向的，去重）
+  useEffect(() => {
+    void fetchResumes()
+      .then((result) => {
+        setResumeOptions(result.items.map((item) => ({ id: item.id, label: `${item.name} #${String(item.id)}` })))
+        setDirectionOptions([...new Set(result.items.map((item) => item.direction).filter((d) => d !== ''))].sort())
+      })
+      .catch(() => {
+        /* 选项拉不到不影响看板本身 */
+      })
+  }, [props.revision])
+
+  const funnel = useAsync((signal) => fetchFunnel(filter, signal), [props.revision, filter])
+  const attribution = useAsync((signal) => fetchAttribution(filter, signal), [props.revision, filter])
+  const salary = useAsync((signal) => fetchSalaryBand(filter, signal), [props.revision, filter])
   // 提前取出数据：TS 不会把 `status === 'ok'` 的收窄带进回调里
   const funnelData = funnel.state.status === 'ok' ? funnel.state.data : null
   const attributionData = attribution.state.status === 'ok' ? attribution.state.data : null
   const salaryData = salary.state.status === 'ok' ? salary.state.data : null
 
+  const activeCount = Object.values(filter).filter((value) => value !== undefined && value !== '').length
+  const patch = (next: Partial<AnalyticsFilter>): void => {
+    setFilter((current) => {
+      const merged = { ...current, ...next }
+      // 空字符串等于"取消这一项"，别把它当成筛选条件发出去
+      for (const key of Object.keys(merged) as Array<keyof AnalyticsFilter>) {
+        if (merged[key] === '' || merged[key] === undefined) delete merged[key]
+      }
+      return merged
+    })
+  }
+
   return (
     <div className="jh-screen">
       <h2 className="jh-card-title">数据看板</h2>
-      <p className="jh-muted">
-        样本量小的时候不给结论 —— 投了 3 个岗位算出来的"回复率 100%"是噪声，照着它改策略会更糟。
+
+      {/* ── 全局筛选栏：一处改动，漏斗/归因/薪资一起重算 ─────────────── */}
+      <div className="jh-filterbar">
+        <label className="jh-field">
+          <span>起</span>
+          <input
+            className="jh-input jh-input-sm"
+            type="date"
+            value={(filter.from ?? '').slice(0, 10)}
+            onChange={(event) =>
+              patch({ from: event.target.value === '' ? '' : `${event.target.value}T00:00:00.000Z` })
+            }
+          />
+        </label>
+        <label className="jh-field">
+          <span>止</span>
+          <input
+            className="jh-input jh-input-sm"
+            type="date"
+            value={(filter.to ?? '').slice(0, 10)}
+            onChange={(event) =>
+              patch({ to: event.target.value === '' ? '' : `${event.target.value}T23:59:59.999Z` })
+            }
+          />
+        </label>
+        <label className="jh-field">
+          <span>关键词（岗位名）</span>
+          <input
+            className="jh-input jh-input-sm"
+            placeholder="Java"
+            value={filter.keyword ?? ''}
+            onChange={(event) => patch({ keyword: event.target.value })}
+          />
+        </label>
+        <label className="jh-field">
+          <span>方向（简历）</span>
+          <select
+            className="jh-select jh-input-sm"
+            value={filter.direction ?? ''}
+            onChange={(event) => patch({ direction: event.target.value })}
+          >
+            <option value="">全部方向</option>
+            {directionOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+        <label className="jh-field">
+          <span>城市</span>
+          <input
+            className="jh-input jh-input-sm"
+            placeholder="深圳"
+            value={filter.city ?? ''}
+            onChange={(event) => patch({ city: event.target.value })}
+          />
+        </label>
+        <label className="jh-field">
+          <span>简历版本</span>
+          <select
+            className="jh-select jh-input-sm"
+            value={filter.resumeId === undefined ? '' : String(filter.resumeId)}
+            onChange={(event) => patch({ resumeId: event.target.value === '' ? undefined : Number(event.target.value) })}
+          >
+            <option value="">全部版本</option>
+            {resumeOptions.map((item) => (
+              <option key={item.id} value={item.id}>{item.label}</option>
+            ))}
+          </select>
+        </label>
+        <span className="jh-spacer" />
+        {activeCount === 0 ? null : (
+          <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={() => setFilter({})}>
+            清空筛选（{activeCount}）
+          </button>
+        )}
+      </div>
+      {/* 方向与简历版本只对投递链路成立，而且这一点必须写在脸上 */}
+      <p className="jh-info">
+        <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+        <span>
+          <b>方向</b>与<b>简历版本</b>只作用于<b>投递段</b> —— 打招呼没有记录用过哪版简历／什么方向，
+          接触段（打招呼/送达/已读/回复）不受这两项影响。<b>薪资分位</b>来自岗位库，
+          它的时间窗是<b>岗位抓取时间</b>，不是你的投递时间。
+        </span>
       </p>
 
       <h3 className="jh-card-title">漏斗</h3>
@@ -330,20 +440,6 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
 
       <h3 className="jh-card-title">薪资分位</h3>
       <div className="jh-card">
-        <div className="jh-inline">
-          <input
-            className="jh-input"
-            placeholder="城市（如 深圳）"
-            value={city}
-            onChange={(event) => setCity(event.target.value)}
-          />
-          <input
-            className="jh-input"
-            placeholder="关键词（如 Java）"
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
-        </div>
         {salary.state.status === 'ok' ? (
           salary.state.data.count === 0 ? (
             <p className="jh-muted">这个范围里没有带薪资下限的岗位。</p>
@@ -357,6 +453,11 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
         ) : (
           <p className="jh-muted">正在统计…</p>
         )}
+        {/* 口径标注：这一块的口径与上面两块**不同轴**，不写出来就会被误读 */}
+        <p className="jh-info">
+          <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+          <span>城市与关键词在这里筛的是<b>岗位库</b>；时间窗是<b>岗位抓取时间</b>，不是你的投递时间。</span>
+        </p>
       </div>
     </div>
   )

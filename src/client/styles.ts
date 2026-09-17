@@ -608,6 +608,16 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-funnel-count:hover{color:var(--dsw-alias-label-primary)}
 .jh-funnel-drop{flex:0 0 52px;text-align:right;font-size:11px}
 
+/* ── 看板：全局筛选栏（§13 U8）───────────────────────────────────────
+   一处筛选，三个模块一起重算 —— 所以它必须长得像"整页的开关"，
+   而不是某个模块自己的小控件：独立卡片 + 一排贴底对齐的字段。 */
+.jh-filterbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;
+  padding:12px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
+  background:var(--dsw-alias-bg-layer-1);margin:0 0 10px}
+.jh-filterbar .jh-field{margin:0}
+.jh-filterbar .jh-input-sm{width:132px}
+.jh-filterbar .jh-select{max-width:190px}
+
 .jh-table{border-collapse:collapse;width:100%;font-size:12px}
 .jh-table th,.jh-table td{border-bottom:1px solid var(--dsw-alias-border-l2);padding:4px 6px;text-align:left}
 .jh-table th{color:var(--dsw-alias-label-secondary);font-weight:500}

@@ -547,18 +547,28 @@ window.__ModuleLoader__.load({
 		async function deleteInterview(id) {
 		  await request(`/interviews/${String(id)}`, { method: "DELETE" });
 		}
-		async function fetchFunnel(signal) {
-		  return await request("/analytics/funnel", signal === void 0 ? {} : { signal });
+		function analyticsQuery(filter) {
+		  const query = new URLSearchParams();
+		  if (filter.from !== void 0 && filter.from !== "") query.set("from", filter.from);
+		  if (filter.to !== void 0 && filter.to !== "") query.set("to", filter.to);
+		  if (filter.city !== void 0 && filter.city !== "") query.set("city", filter.city);
+		  if (filter.keyword !== void 0 && filter.keyword !== "") query.set("q", filter.keyword);
+		  if (filter.direction !== void 0 && filter.direction !== "") query.set("direction", filter.direction);
+		  if (filter.resumeId !== void 0) query.set("resumeId", String(filter.resumeId));
+		  const text = query.toString();
+		  return text === "" ? "" : `?${text}`;
 		}
-		async function fetchAttribution(signal) {
-		  return await request("/analytics/attribution", signal === void 0 ? {} : { signal });
+		async function fetchFunnel(filter = {}, signal) {
+		  return await request(`/analytics/funnel${analyticsQuery(filter)}`, signal === void 0 ? {} : { signal });
+		}
+		async function fetchAttribution(filter = {}, signal) {
+		  return await request(
+		    `/analytics/attribution${analyticsQuery(filter)}`,
+		    signal === void 0 ? {} : { signal }
+		  );
 		}
 		async function fetchSalaryBand(filter = {}, signal) {
-		  const query = new URLSearchParams();
-		  if (filter.city !== void 0 && filter.city !== "") query.set("city", filter.city);
-		  if (filter.q !== void 0 && filter.q !== "") query.set("q", filter.q);
-		  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
-		  return await request(`/analytics/salary${suffix}`, signal === void 0 ? {} : { signal });
+		  return await request(`/analytics/salary${analyticsQuery(filter)}`, signal === void 0 ? {} : { signal });
 		}
 		async function fetchFollowUps(signal) {
 		  return await request("/followups", signal === void 0 ? {} : { signal });
@@ -2326,17 +2336,135 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function BoardScreen(props) {
-		  const funnel = useAsync((signal) => fetchFunnel(signal), [props.revision]);
-		  const attribution = useAsync((signal) => fetchAttribution(signal), [props.revision]);
-		  const [city, setCity] = (0, import_react8.useState)("");
-		  const [keyword, setKeyword] = (0, import_react8.useState)("");
-		  const salary = useAsync((signal) => fetchSalaryBand({ city, q: keyword }, signal), [props.revision, city, keyword]);
+		  const [filter, setFilter] = (0, import_react8.useState)({});
+		  const [resumeOptions, setResumeOptions] = (0, import_react8.useState)([]);
+		  const [directionOptions, setDirectionOptions] = (0, import_react8.useState)([]);
+		  (0, import_react8.useEffect)(() => {
+		    void fetchResumes().then((result) => {
+		      setResumeOptions(result.items.map((item) => ({ id: item.id, label: `${item.name} #${String(item.id)}` })));
+		      setDirectionOptions([...new Set(result.items.map((item) => item.direction).filter((d) => d !== ""))].sort());
+		    }).catch(() => {
+		    });
+		  }, [props.revision]);
+		  const funnel = useAsync((signal) => fetchFunnel(filter, signal), [props.revision, filter]);
+		  const attribution = useAsync((signal) => fetchAttribution(filter, signal), [props.revision, filter]);
+		  const salary = useAsync((signal) => fetchSalaryBand(filter, signal), [props.revision, filter]);
 		  const funnelData = funnel.state.status === "ok" ? funnel.state.data : null;
 		  const attributionData = attribution.state.status === "ok" ? attribution.state.data : null;
 		  const salaryData = salary.state.status === "ok" ? salary.state.data : null;
+		  const activeCount = Object.values(filter).filter((value) => value !== void 0 && value !== "").length;
+		  const patch = (next) => {
+		    setFilter((current) => {
+		      const merged = { ...current, ...next };
+		      for (const key of Object.keys(merged)) {
+		        if (merged[key] === "" || merged[key] === void 0) delete merged[key];
+		      }
+		      return merged;
+		    });
+		  };
 		  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-screen", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h2", { className: "jh-card-title", children: "\u6570\u636E\u770B\u677F" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: '\u6837\u672C\u91CF\u5C0F\u7684\u65F6\u5019\u4E0D\u7ED9\u7ED3\u8BBA \u2014\u2014 \u6295\u4E86 3 \u4E2A\u5C97\u4F4D\u7B97\u51FA\u6765\u7684"\u56DE\u590D\u7387 100%"\u662F\u566A\u58F0\uFF0C\u7167\u7740\u5B83\u6539\u7B56\u7565\u4F1A\u66F4\u7CDF\u3002' }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-filterbar", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "jh-field", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u8D77" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          "input",
+		          {
+		            className: "jh-input jh-input-sm",
+		            type: "date",
+		            value: (filter.from ?? "").slice(0, 10),
+		            onChange: (event) => patch({ from: event.target.value === "" ? "" : `${event.target.value}T00:00:00.000Z` })
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "jh-field", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u6B62" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          "input",
+		          {
+		            className: "jh-input jh-input-sm",
+		            type: "date",
+		            value: (filter.to ?? "").slice(0, 10),
+		            onChange: (event) => patch({ to: event.target.value === "" ? "" : `${event.target.value}T23:59:59.999Z` })
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "jh-field", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u5173\u952E\u8BCD\uFF08\u5C97\u4F4D\u540D\uFF09" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          "input",
+		          {
+		            className: "jh-input jh-input-sm",
+		            placeholder: "Java",
+		            value: filter.keyword ?? "",
+		            onChange: (event) => patch({ keyword: event.target.value })
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "jh-field", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u65B9\u5411\uFF08\u7B80\u5386\uFF09" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+		          "select",
+		          {
+		            className: "jh-select jh-input-sm",
+		            value: filter.direction ?? "",
+		            onChange: (event) => patch({ direction: event.target.value }),
+		            children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: "", children: "\u5168\u90E8\u65B9\u5411" }),
+		              directionOptions.map((item) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: item, children: item }, item))
+		            ]
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "jh-field", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u57CE\u5E02" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          "input",
+		          {
+		            className: "jh-input jh-input-sm",
+		            placeholder: "\u6DF1\u5733",
+		            value: filter.city ?? "",
+		            onChange: (event) => patch({ city: event.target.value })
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "jh-field", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "\u7B80\u5386\u7248\u672C" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+		          "select",
+		          {
+		            className: "jh-select jh-input-sm",
+		            value: filter.resumeId === void 0 ? "" : String(filter.resumeId),
+		            onChange: (event) => patch({ resumeId: event.target.value === "" ? void 0 : Number(event.target.value) }),
+		            children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: "", children: "\u5168\u90E8\u7248\u672C" }),
+		              resumeOptions.map((item) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: item.id, children: item.label }, item.id))
+		            ]
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-spacer" }),
+		      activeCount === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline jh-btn-quiet", onClick: () => setFilter({}), children: [
+		        "\u6E05\u7A7A\u7B5B\u9009\uFF08",
+		        activeCount,
+		        "\uFF09"
+		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-info", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: "\u65B9\u5411" }),
+		        "\u4E0E",
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: "\u7B80\u5386\u7248\u672C" }),
+		        "\u53EA\u4F5C\u7528\u4E8E",
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: "\u6295\u9012\u6BB5" }),
+		        " \u2014\u2014 \u6253\u62DB\u547C\u6CA1\u6709\u8BB0\u5F55\u7528\u8FC7\u54EA\u7248\u7B80\u5386\uFF0F\u4EC0\u4E48\u65B9\u5411\uFF0C \u63A5\u89E6\u6BB5\uFF08\u6253\u62DB\u547C/\u9001\u8FBE/\u5DF2\u8BFB/\u56DE\u590D\uFF09\u4E0D\u53D7\u8FD9\u4E24\u9879\u5F71\u54CD\u3002",
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: "\u85AA\u8D44\u5206\u4F4D" }),
+		        "\u6765\u81EA\u5C97\u4F4D\u5E93\uFF0C \u5B83\u7684\u65F6\u95F4\u7A97\u662F",
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: "\u5C97\u4F4D\u6293\u53D6\u65F6\u95F4" }),
+		        "\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002"
+		      ] })
+		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { className: "jh-card-title", children: "\u6F0F\u6597" }),
 		    funnelData === null ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("ul", { className: "jh-funnel", children: funnelData.steps.map((step, index) => {
@@ -2399,26 +2527,6 @@ window.__ModuleLoader__.load({
 		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { className: "jh-card-title", children: "\u85AA\u8D44\u5206\u4F4D" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-inline", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-		          "input",
-		          {
-		            className: "jh-input",
-		            placeholder: "\u57CE\u5E02\uFF08\u5982 \u6DF1\u5733\uFF09",
-		            value: city,
-		            onChange: (event) => setCity(event.target.value)
-		          }
-		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-		          "input",
-		          {
-		            className: "jh-input",
-		            placeholder: "\u5173\u952E\u8BCD\uFF08\u5982 Java\uFF09",
-		            value: keyword,
-		            onChange: (event) => setKeyword(event.target.value)
-		          }
-		        )
-		      ] }),
 		      salary.state.status === "ok" ? salary.state.data.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u8303\u56F4\u91CC\u6CA1\u6709\u5E26\u85AA\u8D44\u4E0B\u9650\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-muted", children: [
 		        salary.state.data.scope,
 		        " \xB7 \u6837\u672C ",
@@ -2435,7 +2543,17 @@ window.__ModuleLoader__.load({
 		        salary.state.data.p75,
 		        " \xB7 \u6700\u9AD8 ",
 		        salary.state.data.max
-		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" })
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-info", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
+		          "\u57CE\u5E02\u4E0E\u5173\u952E\u8BCD\u5728\u8FD9\u91CC\u7B5B\u7684\u662F",
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: "\u5C97\u4F4D\u5E93" }),
+		          "\uFF1B\u65F6\u95F4\u7A97\u662F",
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: "\u5C97\u4F4D\u6293\u53D6\u65F6\u95F4" }),
+		          "\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002"
+		        ] })
+		      ] })
 		    ] })
 		  ] });
 		}
@@ -4690,6 +4808,16 @@ window.__ModuleLoader__.load({
 		  color:var(--dsw-alias-link);text-decoration:underline;padding:0}
 		.jh-funnel-count:hover{color:var(--dsw-alias-label-primary)}
 		.jh-funnel-drop{flex:0 0 52px;text-align:right;font-size:11px}
+
+		/* \u2500\u2500 \u770B\u677F\uFF1A\u5168\u5C40\u7B5B\u9009\u680F\uFF08\xA713 U8\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u4E00\u5904\u7B5B\u9009\uFF0C\u4E09\u4E2A\u6A21\u5757\u4E00\u8D77\u91CD\u7B97 \u2014\u2014 \u6240\u4EE5\u5B83\u5FC5\u987B\u957F\u5F97\u50CF"\u6574\u9875\u7684\u5F00\u5173"\uFF0C
+		   \u800C\u4E0D\u662F\u67D0\u4E2A\u6A21\u5757\u81EA\u5DF1\u7684\u5C0F\u63A7\u4EF6\uFF1A\u72EC\u7ACB\u5361\u7247 + \u4E00\u6392\u8D34\u5E95\u5BF9\u9F50\u7684\u5B57\u6BB5\u3002 */
+		.jh-filterbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;
+		  padding:12px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
+		  background:var(--dsw-alias-bg-layer-1);margin:0 0 10px}
+		.jh-filterbar .jh-field{margin:0}
+		.jh-filterbar .jh-input-sm{width:132px}
+		.jh-filterbar .jh-select{max-width:190px}
 
 		.jh-table{border-collapse:collapse;width:100%;font-size:12px}
 		.jh-table th,.jh-table td{border-bottom:1px solid var(--dsw-alias-border-l2);padding:4px 6px;text-align:left}

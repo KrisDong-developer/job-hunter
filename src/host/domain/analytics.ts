@@ -91,15 +91,58 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
     return true
   }
 
+  interface JobFacts {
+    city: string
+    title: string
+    firstSeenAt: string
+  }
+
+  /**
+   * 岗位索引：`city` / `keyword` 两个维度长在 `job` 表上，而流水线的三张表只有 `job_id`。
+   * 一次查询建成 Map，而不是逐条查库 —— 几百条记录逐条查会明显变慢。
+   * 只有真的要按这两个维度筛时才建（否则白跑一次全表查询）。
+   */
+  const jobIndex = (filter: AnalyticsFilter): Map<number, JobFacts> => {
+    const index = new Map<number, JobFacts>()
+    const wanted = (filter.city ?? '') !== '' || (filter.keyword ?? '') !== ''
+    if (!wanted) return index
+    for (const job of store.job.query({}, 2000, 0)) {
+      index.set(job.id, { city: job.city, title: job.title, firstSeenAt: job.firstSeenAt })
+    }
+    return index
+  }
+
+  /** 岗位维度：城市做精确匹配（与岗位库的筛法一致），关键词做包含匹配。 */
+  const matchesJob = (jobId: number | null, filter: AnalyticsFilter, index: Map<number, JobFacts>): boolean => {
+    if ((filter.city ?? '') === '' && (filter.keyword ?? '') === '') return true
+    const facts = jobId === null ? undefined : index.get(jobId)
+    // 岗位被删了就证不出它命中城市/关键词 —— 宁可不算，也不要"猜它算"。
+    if (facts === undefined) return false
+    if ((filter.city ?? '') !== '' && facts.city !== filter.city) return false
+    if ((filter.keyword ?? '') !== '' && !facts.title.toLowerCase().includes((filter.keyword ?? '').toLowerCase())) {
+      return false
+    }
+    return true
+  }
+
   return {
     funnel(filter: AnalyticsFilter = {}): FunnelDto {
-      // 时间窗对**两个总体都成立**；简历版本/方向只挑投递段。
+      // 时间窗 + 岗位维度对**两个总体都成立**；简历版本/方向只挑投递段。
+      const index = jobIndex(filter)
       const applications = store.pipeline
         .listApplications({ limit: 1000 })
-        .filter((record) => inWindow(record.sentAt, filter) && matchesResume(record, filter))
+        .filter(
+          (record) =>
+            inWindow(record.sentAt, filter) &&
+            matchesJob(record.jobId, filter, index) &&
+            matchesResume(record, filter),
+        )
       const greetings = store.pipeline
         .listGreetings({ limit: 1000 })
-        .filter((item) => item.jobId !== null && inWindow(item.sentAt, filter))
+        .filter(
+          (item) =>
+            item.jobId !== null && inWindow(item.sentAt, filter) && matchesJob(item.jobId, filter, index),
+        )
 
       const greeted = greetings.length
       const delivered = greetings.filter((item) => item.stage !== 'greeted' && item.stage !== 'none').length
@@ -247,14 +290,22 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
     },
 
     salaryBand(options = {}): SalaryBandDto {
-      const jobs = store.job.query(
-        {
-          ...(options.city === undefined || options.city === '' ? {} : { city: options.city }),
-          ...(options.keyword === undefined || options.keyword === '' ? {} : { keyword: options.keyword }),
-        },
-        2000,
-        0,
-      )
+      const jobs = store.job
+        .query(
+          {
+            ...(options.city === undefined || options.city === '' ? {} : { city: options.city }),
+            ...(options.keyword === undefined || options.keyword === '' ? {} : { keyword: options.keyword }),
+          },
+          2000,
+          0,
+        )
+        // 时间窗在**岗位库**的时间轴上（`first_seen_at`）—— 与投递时间不是一回事，
+        // 所以调用方必须把这一点写给用户看（看板上的那句标注）。
+        .filter((job) => {
+          if (options.from !== undefined && job.firstSeenAt < options.from) return false
+          if (options.to !== undefined && job.firstSeenAt > options.to) return false
+          return true
+        })
       // 只用**薪资下限**做分位：上下限混在一起算出来的中位数没有意义
       const values = jobs
         .map((job) => job.salaryMin)
