@@ -227,6 +227,16 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const [duplicates, setDuplicates] = useState<PlanDuplicateDto[]>([])
   /** 点开某条运行记录的错误全文（原来是直接摊在单元格里）。 */
   const [errorDetail, setErrorDetail] = useState<{ run: RecentRunDto; failure: FailureText } | null>(null)
+  /**
+   * 待确认的删除（破坏性操作的**硬闸门**）。
+   *
+   * 修的是一个真实缺陷：原来「删除」一次点击就直接删掉方案，没有任何确认 ——
+   * 违反 `commercial-ui-ux` 的 SKILL.md（"Protected or destructive actions need hard gates"）
+   * 与设计宪法**第六条**（"高风险操作必须让用户理解后果，并提供确认、撤销、软删除或恢复路径。
+   * 不要为了减少一次点击而牺牲用户掌控感"）。
+   * 原来只有一个 `title` 提示，而说明文字**不能**替代确认。
+   */
+  const [pendingDelete, setPendingDelete] = useState<PlanDto | null>(null)
 
   const report = (error: unknown): void => {
     setFeedback({
@@ -257,6 +267,19 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const status: SchedulerStatusDto | null = scheduler.state.status === 'ok' ? scheduler.state.data : null
   const planList: PlanDto[] = plans.state.status === 'ok' ? plans.state.data.items : []
   const platformList: PlatformOverviewDto[] = platforms.state.status === 'ok' ? platforms.state.data.items : []
+
+  /**
+   * **加载态 ≠ 空态**。
+   *
+   * 修的是一个真实缺陷（`commercial-ui-ux` 质量门槛 §2 的"空状态"一条，以及宪法第五条
+   * "状态即体验"）：下面几处原来只判断 `list.length === 0`，于是在**还在加载**的那一两秒里
+   * 会显示"还没有方案 / 还没有注册平台" —— 用户以为数据丢了。
+   * `ARCHITECTURE.md` §5.5 早就点过这个坑："宿主 bootstrap 未完成时显示'正在初始化'，
+   * **不要显示空列表**"。
+   */
+  const plansLoading = plans.state.status === 'loading'
+  const platformsLoading = platforms.state.status === 'loading'
+  const runsLoading = scheduler.state.status === 'loading'
   const reasonText = reasons.state.status === 'ok' ? reasons.state.data.items : {}
   const dimensionList: CriteriaDimensionDto[] =
     dimensions.state.status === 'ok' ? dimensions.state.data.items : []
@@ -283,6 +306,14 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const reasonFor = (skipReason: string | null): string | null =>
     skipReason === null ? null : (reasonText[skipReason] ?? skipReason)
 
+  const confirmDelete = async (plan: PlanDto): Promise<void> => {
+    setPendingDelete(null)
+    await act('正在删除…', async () => {
+      await deletePlan(plan.id)
+      return `已删除方案「${plan.name}」。已经抓到的岗位不受影响。`
+    })
+  }
+
   const runBlockTitle =
     status?.readOnly === true
       ? `本窗口没有采集权。用下面的「接管调度」，或到另一个窗口（进程 ${String(status.lease.pid ?? '?')}）里操作。`
@@ -304,11 +335,27 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         </div>
       )}
 
+      {/* 操作结果：可关闭 + 对读屏可见。
+          quality-gates §4 把 Alert 的必查状态列为 severity / dismiss / timeout / screen-reader，
+          原来这三点都缺（只是一个静态 card）。 */}
       {feedback.message === null ? null : (
-        <div className={`jh-card jh-card-tight ${feedback.tone === 'error' ? 'jh-card-error' : ''}`}>
+        <div
+          className={`jh-card jh-card-tight jh-feedback ${feedback.tone === 'error' ? 'jh-card-error' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
           <p className={feedback.tone === 'error' ? 'jh-error' : 'jh-muted'}>
             <InlineMd text={feedback.message} />
           </p>
+          <button
+            type="button"
+            className="jh-icon-btn jh-feedback-close"
+            aria-label="关闭提示"
+            title="关闭这条提示"
+            onClick={() => setFeedback(IDLE)}
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -406,6 +453,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
 
           <RunHistoryTable
             runs={status.recentRuns}
+            loading={runsLoading}
             reasonFor={reasonFor}
             onOpenError={(run, failure) => setErrorDetail({ run, failure })}
           />
@@ -417,9 +465,12 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         <div className="jh-form-head">
           <h2 className="jh-card-title">采集方案</h2>
           <span className="jh-spacer" />
+          {/* 次级，不是主按钮：一个工作区只能有**一个**视觉最强的主行动
+              （rules §4.2）。本页的核心任务是"采集一次"，所以主按钮是方案卡上的「立即采集」；
+              「新增方案」是低频的配置动作，不该和它抢同一档权重。 */}
           <button
             type="button"
-            className="jh-btn jh-btn-inline jh-btn-primary"
+            className="jh-btn jh-btn-inline"
             disabled={feedback.running}
             title="新建一个采集方案：决定抓什么（平台 + 筛选条件 + 抓取深度）与什么时候抓。"
             onClick={() => {
@@ -431,8 +482,17 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           </button>
         </div>
 
-        {planList.length === 0 ? (
-          <p className="jh-muted">还没有方案。方案决定抓什么（平台 + 筛选条件 + 抓取深度）与什么时候抓。</p>
+        {plansLoading ? (
+          <ul className="jh-plan-list" aria-busy="true" aria-live="polite">
+            <li className="jh-plan-card jh-skeleton-row">正在读取方案…</li>
+          </ul>
+        ) : planList.length === 0 ? (
+          <div className="jh-empty">
+            <p className="jh-muted">还没有方案。</p>
+            <p className="jh-note">
+              方案决定抓什么（平台 + 筛选条件 + 抓取深度）与什么时候抓。点右上角「新增方案」建第一个。
+            </p>
+          </div>
         ) : (
           <ul className="jh-plan-list">
             {planList.map((plan) => {
@@ -512,13 +572,8 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                       type="button"
                       className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger"
                       disabled={feedback.running}
-                      title="删除这个方案。已经抓到的岗位不受影响。"
-                      onClick={() =>
-                        void act('正在删除…', async () => {
-                          await deletePlan(plan.id)
-                          return `已删除方案「${plan.name}」。`
-                        })
-                      }
+                      title="删除这个方案（会先让你确认）。已经抓到的岗位不受影响。"
+                      onClick={() => setPendingDelete(plan)}
                     >
                       删除
                     </button>
@@ -566,8 +621,15 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
       <section className="jh-card">
         <h2 className="jh-card-title">平台状态</h2>
         {platforms.state.status === 'error' && <p className="jh-error">{platforms.state.message}</p>}
-        {platformList.length === 0 ? (
-          <p className="jh-muted">还没有注册平台。</p>
+        {platformsLoading ? (
+          <p className="jh-muted" aria-busy="true" aria-live="polite">
+            正在读取平台状态…
+          </p>
+        ) : platformList.length === 0 ? (
+          <div className="jh-empty">
+            <p className="jh-muted">还没有注册平台。</p>
+            <p className="jh-note">平台来自适配器注册表；当前没有任何适配器被注册，所以无法采集。</p>
+          </div>
         ) : (
           <ul className="jh-list">
             {platformList.map((item) => {
@@ -669,6 +731,47 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
             return result.duplicates
           }}
         />
+      )}
+
+      {/* 删除确认：破坏性操作的硬闸门（宪法第六条） */}
+      {pendingDelete === null ? null : (
+        <Modal
+          title="删除采集方案"
+          label="删除确认"
+          onClose={() => setPendingDelete(null)}
+          footer={
+            <>
+              <span className="jh-modal-foot-note jh-muted">
+                删除后这个方案不会再自动采集。
+              </span>
+              <span className="jh-spacer" />
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline"
+                onClick={() => setPendingDelete(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline jh-btn-danger"
+                disabled={feedback.running}
+                onClick={() => void confirmDelete(pendingDelete)}
+              >
+                确认删除
+              </button>
+            </>
+          }
+        >
+          <p className="jh-alert-body">
+            即将删除方案「{pendingDelete.name}」（{pendingDelete.platforms.join(' / ')}）。
+          </p>
+          <ul className="jh-note">
+            <li>这个方案本身与其定时配置会被移除，不会再有自动采集。</li>
+            <li>**已经抓到的岗位会保留** —— 删除方案不会删岗位库。</li>
+            <li>想保留配置只是暂时停用，请改用「编辑」里的「启用定时」或停用方案。</li>
+          </ul>
+        </Modal>
       )}
 
       {/* 错误全文弹窗：堆栈不再摊在表格单元格里 */}
@@ -883,14 +986,29 @@ function LeasePanel(props: {
  */
 function RunHistoryTable(props: {
   runs: RecentRunDto[]
+  loading: boolean
   reasonFor: (skipReason: string | null) => string | null
   onOpenError: (run: RecentRunDto, failure: FailureText) => void
 }) {
+  // 加载态与空态必须分开（见上面 `plansLoading` 的注释）
+  if (props.loading) {
+    return (
+      <>
+        <h3 className="jh-sub-title">最近运行</h3>
+        <p className="jh-muted" aria-busy="true" aria-live="polite">
+          正在读取运行记录…
+        </p>
+      </>
+    )
+  }
   if (props.runs.length === 0) {
     return (
       <>
         <h3 className="jh-sub-title">最近运行</h3>
-        <p className="jh-muted">还没有运行记录。</p>
+        <div className="jh-empty">
+          <p className="jh-muted">还没有运行记录。</p>
+          <p className="jh-note">第一次「立即采集」或等到偏好时段自动触发之后，这里会出现每一轮的结果。</p>
+        </div>
       </>
     )
   }
@@ -900,17 +1018,20 @@ function RunHistoryTable(props: {
   return (
     <>
       <h3 className="jh-sub-title">最近运行</h3>
-      <table className="jh-table jh-table-runs">
-        <thead>
-          <tr>
-            <th>开始</th>
-            <th>状态</th>
-            {showReason ? <th>触发</th> : null}
-            <th className="jh-num">新增</th>
-            <th className="jh-num">更新</th>
-            <th>结果说明</th>
-          </tr>
-        </thead>
+      {/* 小屏策略：**有意的横向滚动**（quality-gates §5 允许，但要求保留行身份与主操作）。
+          第一列（开始）做粘性，横向滚动时仍能认行；「更新」列在小屏隐藏以降低密度。 */}
+      <div className="jh-table-scroll">
+        <table className="jh-table jh-table-runs">
+          <thead>
+            <tr>
+              <th className="jh-col-sticky">开始</th>
+              <th>状态</th>
+              {showReason ? <th>触发</th> : null}
+              <th className="jh-num">新增</th>
+              <th className="jh-num jh-col-hide-sm">更新</th>
+              <th>结果说明</th>
+            </tr>
+          </thead>
         <tbody>
           {props.runs.map((run) => {
             const skip = props.reasonFor(run.skipReason)
@@ -918,7 +1039,7 @@ function RunHistoryTable(props: {
               skip === null ? humanizeFailure(run.errorCode, run.errorMsg) : null
             return (
               <tr key={run.id}>
-                <td title={new Date(run.startedAt).toLocaleString()}>
+                <td className="jh-col-sticky" title={new Date(run.startedAt).toLocaleString()}>
                   {formatClock(new Date(run.startedAt))}
                 </td>
                 <td>
@@ -926,7 +1047,7 @@ function RunHistoryTable(props: {
                 </td>
                 {showReason ? <td>{runReasonLabel(run.reason) ?? '—'}</td> : null}
                 <td className="jh-num">{run.inserted}</td>
-                <td className="jh-num">{run.updated}</td>
+                <td className="jh-num jh-col-hide-sm">{run.updated}</td>
                 <td>
                   {skip !== null ? (
                     <span>{skip}</span>
@@ -948,8 +1069,9 @@ function RunHistoryTable(props: {
               </tr>
             )
           })}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }
@@ -1142,10 +1264,15 @@ function PlanEditorModal(props: {
           <FieldHint text="触发时刻会在这段时间内随机选点，具体到哪一分钟不固定 —— 每天固定同一分钟去访问最容易被平台识别成自动化。这里刻意没有「精确到某分某秒」的选项。" />
         </legend>
         <div className="jh-timerange">
+          {/* 字段级错误关联：quality-gates §6 要求"错误文本与字段关联"。
+              只有可见的红字而不做 aria-invalid / aria-describedby，读屏用户根本不知道
+              是哪个字段错了、错在哪。 */}
           <input
             className="jh-input jh-time"
             type="time"
             aria-label="时段起点"
+            aria-invalid={startMissing}
+            {...(startMissing ? { 'aria-describedby': 'jh-window-error' } : {})}
             value={startMissing ? '' : form.windowStart}
             onChange={(event) => {
               const text = event.target.value
@@ -1159,6 +1286,8 @@ function PlanEditorModal(props: {
             className="jh-input jh-time"
             type="time"
             aria-label="时段终点"
+            aria-invalid={endMissing}
+            {...(endMissing ? { 'aria-describedby': 'jh-window-error' } : {})}
             value={endMissing ? '' : form.windowEnd}
             onChange={(event) => {
               const text = event.target.value
@@ -1166,7 +1295,9 @@ function PlanEditorModal(props: {
             }}
           />
           {startMissing || endMissing ? (
-            <span className="jh-warn">时段没填完整，保存时会退回默认的 09:00–11:00。</span>
+            <span className="jh-warn" id="jh-window-error" role="alert">
+              时段没填完整，保存时会退回默认的 09:00–11:00。
+            </span>
           ) : null}
         </div>
 

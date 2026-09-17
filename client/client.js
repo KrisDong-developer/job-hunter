@@ -3096,15 +3096,51 @@ window.__ModuleLoader__.load({
 		  (0, import_react9.useEffect)(() => {
 		    restoreRef.current = document.activeElement;
 		    dialogRef.current?.focus();
+		    const focusables = () => {
+		      const root = dialogRef.current;
+		      if (root === null) return [];
+		      return [...root.querySelectorAll("button, input, select, textarea, a[href], [tabindex]")].filter(
+		        (el) => !el.hasAttribute("disabled") && el.tabIndex !== -1 && // offsetParent 为 null 表示被隐藏（CSS 折叠），不该进焦点序列
+		        (el.offsetParent !== null || el === document.activeElement)
+		      );
+		    };
 		    const onKeyDown = (event) => {
 		      if (event.key === "Escape") {
 		        event.stopPropagation();
 		        props.onClose();
+		        return;
+		      }
+		      if (event.key !== "Tab") return;
+		      const root = dialogRef.current;
+		      if (root === null) return;
+		      const list = focusables();
+		      if (list.length === 0) {
+		        event.preventDefault();
+		        root.focus();
+		        return;
+		      }
+		      const first = list[0];
+		      const last = list[list.length - 1];
+		      const active = document.activeElement;
+		      if (first === void 0 || last === void 0) return;
+		      if (!root.contains(active)) {
+		        event.preventDefault();
+		        first.focus();
+		        return;
+		      }
+		      if (!event.shiftKey && active === last) {
+		        event.preventDefault();
+		        first.focus();
+		        return;
+		      }
+		      if (event.shiftKey && (active === first || active === root)) {
+		        event.preventDefault();
+		        last.focus();
 		      }
 		    };
-		    document.addEventListener("keydown", onKeyDown);
+		    document.addEventListener("keydown", onKeyDown, true);
 		    return () => {
-		      document.removeEventListener("keydown", onKeyDown);
+		      document.removeEventListener("keydown", onKeyDown, true);
 		      const previous = restoreRef.current;
 		      if (previous instanceof HTMLElement && document.contains(previous)) previous.focus();
 		    };
@@ -3289,6 +3325,7 @@ window.__ModuleLoader__.load({
 		  const [editing, setEditing] = (0, import_react10.useState)(null);
 		  const [duplicates, setDuplicates] = (0, import_react10.useState)([]);
 		  const [errorDetail, setErrorDetail] = (0, import_react10.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react10.useState)(null);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -3315,6 +3352,9 @@ window.__ModuleLoader__.load({
 		  const status = scheduler.state.status === "ok" ? scheduler.state.data : null;
 		  const planList = plans.state.status === "ok" ? plans.state.data.items : [];
 		  const platformList = platforms.state.status === "ok" ? platforms.state.data.items : [];
+		  const plansLoading = plans.state.status === "loading";
+		  const platformsLoading = platforms.state.status === "loading";
+		  const runsLoading = scheduler.state.status === "loading";
 		  const reasonText = reasons.state.status === "ok" ? reasons.state.data.items : {};
 		  const dimensionList = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
 		  const now = (0, import_react10.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
@@ -3328,6 +3368,13 @@ window.__ModuleLoader__.load({
 		    return `\u65B9\u6848\u300C${plan.name}\u300D\u672C\u8F6E ${CRAWL_STATE_LABEL[summary.run.state]}\uFF1A\u547D\u4E2D ${String(summary.run.found)} \xB7 \u65B0\u589E ${String(summary.run.inserted)} \xB7 \u66F4\u65B0 ${String(summary.run.updated)} \xB7 \u9694\u79BB ${String(summary.run.quarantined)}`;
 		  });
 		  const reasonFor = (skipReason) => skipReason === null ? null : reasonText[skipReason] ?? skipReason;
+		  const confirmDelete = async (plan) => {
+		    setPendingDelete(null);
+		    await act("\u6B63\u5728\u5220\u9664\u2026", async () => {
+		      await deletePlan(plan.id);
+		      return `\u5DF2\u5220\u9664\u65B9\u6848\u300C${plan.name}\u300D\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002`;
+		    });
+		  };
 		  const runBlockTitle = status?.readOnly === true ? `\u672C\u7A97\u53E3\u6CA1\u6709\u91C7\u96C6\u6743\u3002\u7528\u4E0B\u9762\u7684\u300C\u63A5\u7BA1\u8C03\u5EA6\u300D\uFF0C\u6216\u5230\u53E6\u4E00\u4E2A\u7A97\u53E3\uFF08\u8FDB\u7A0B ${String(status.lease.pid ?? "?")}\uFF09\u91CC\u64CD\u4F5C\u3002` : feedback.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u73B0\u5728\u6309\u8FD9\u4E2A\u65B9\u6848\u91C7\u96C6\u4E00\u6B21\uFF08\u4F1A\u6253\u5F00\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09\u3002";
 		  const enabledPlan = planList.find((plan) => plan.enabled) ?? planList[0];
 		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "jh-screen", children: [
@@ -3336,7 +3383,28 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-error", children: scheduler.state.message }),
 		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { type: "button", className: "jh-btn", onClick: scheduler.reload, children: "\u91CD\u8BD5" })
 		    ] }),
-		    feedback.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: `jh-card jh-card-tight ${feedback.tone === "error" ? "jh-card-error" : ""}`, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(InlineMd, { text: feedback.message }) }) }),
+		    feedback.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+		      "div",
+		      {
+		        className: `jh-card jh-card-tight jh-feedback ${feedback.tone === "error" ? "jh-card-error" : ""}`,
+		        role: "status",
+		        "aria-live": "polite",
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(InlineMd, { text: feedback.message }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-icon-btn jh-feedback-close",
+		              "aria-label": "\u5173\u95ED\u63D0\u793A",
+		              title: "\u5173\u95ED\u8FD9\u6761\u63D0\u793A",
+		              onClick: () => setFeedback(IDLE),
+		              children: "\xD7"
+		            }
+		          )
+		        ]
+		      }
+		    ),
 		    status !== null && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		      StatusAlert,
 		      {
@@ -3403,6 +3471,7 @@ window.__ModuleLoader__.load({
 		        RunHistoryTable,
 		        {
 		          runs: status.recentRuns,
+		          loading: runsLoading,
 		          reasonFor,
 		          onOpenError: (run, failure) => setErrorDetail({ run, failure })
 		        }
@@ -3416,7 +3485,7 @@ window.__ModuleLoader__.load({
 		          "button",
 		          {
 		            type: "button",
-		            className: "jh-btn jh-btn-inline jh-btn-primary",
+		            className: "jh-btn jh-btn-inline",
 		            disabled: feedback.running,
 		            title: "\u65B0\u5EFA\u4E00\u4E2A\u91C7\u96C6\u65B9\u6848\uFF1A\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
 		            onClick: () => {
@@ -3427,7 +3496,10 @@ window.__ModuleLoader__.load({
 		          }
 		        )
 		      ] }),
-		      planList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u65B9\u6848\u3002\u65B9\u6848\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("ul", { className: "jh-plan-list", children: planList.map((plan) => {
+		      plansLoading ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("ul", { className: "jh-plan-list", "aria-busy": "true", "aria-live": "polite", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("li", { className: "jh-plan-card jh-skeleton-row", children: "\u6B63\u5728\u8BFB\u53D6\u65B9\u6848\u2026" }) }) : planList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "jh-empty", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u65B9\u6848\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-note", children: "\u65B9\u6848\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002\u70B9\u53F3\u4E0A\u89D2\u300C\u65B0\u589E\u65B9\u6848\u300D\u5EFA\u7B2C\u4E00\u4E2A\u3002" })
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("ul", { className: "jh-plan-list", children: planList.map((plan) => {
 		        const planStatus = status?.planStatus.find((item) => item.planId === plan.id) ?? null;
 		        const decision = planStatus?.lastDecision ?? null;
 		        const runBlocked = feedback.running || (status?.readOnly ?? false);
@@ -3505,11 +3577,8 @@ window.__ModuleLoader__.load({
 		                type: "button",
 		                className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger",
 		                disabled: feedback.running,
-		                title: "\u5220\u9664\u8FD9\u4E2A\u65B9\u6848\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002",
-		                onClick: () => void act("\u6B63\u5728\u5220\u9664\u2026", async () => {
-		                  await deletePlan(plan.id);
-		                  return `\u5DF2\u5220\u9664\u65B9\u6848\u300C${plan.name}\u300D\u3002`;
-		                }),
+		                title: "\u5220\u9664\u8FD9\u4E2A\u65B9\u6848\uFF08\u4F1A\u5148\u8BA9\u4F60\u786E\u8BA4\uFF09\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002",
+		                onClick: () => setPendingDelete(plan),
 		                children: "\u5220\u9664"
 		              }
 		            )
@@ -3542,7 +3611,10 @@ window.__ModuleLoader__.load({
 		    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("section", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u72B6\u6001" }),
 		      platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-error", children: platforms.state.message }),
-		      platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("ul", { className: "jh-list", children: platformList.map((item) => {
+		      platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u72B6\u6001\u2026" }) : platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "jh-empty", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-note", children: "\u5E73\u53F0\u6765\u81EA\u9002\u914D\u5668\u6CE8\u518C\u8868\uFF1B\u5F53\u524D\u6CA1\u6709\u4EFB\u4F55\u9002\u914D\u5668\u88AB\u6CE8\u518C\uFF0C\u6240\u4EE5\u65E0\u6CD5\u91C7\u96C6\u3002" })
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("ul", { className: "jh-list", children: platformList.map((item) => {
 		        const missing = item.fields.filter((field) => field.consecutiveMiss > 0);
 		        return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("code", { children: item.id }),
@@ -3619,6 +3691,51 @@ window.__ModuleLoader__.load({
 		        }
 		      },
 		      String(editing)
+		    ),
+		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+		      Modal,
+		      {
+		        title: "\u5220\u9664\u91C7\u96C6\u65B9\u6848",
+		        label: "\u5220\u9664\u786E\u8BA4",
+		        onClose: () => setPendingDelete(null),
+		        footer: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "jh-modal-foot-note jh-muted", children: "\u5220\u9664\u540E\u8FD9\u4E2A\u65B9\u6848\u4E0D\u4F1A\u518D\u81EA\u52A8\u91C7\u96C6\u3002" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline",
+		              onClick: () => setPendingDelete(null),
+		              children: "\u53D6\u6D88"
+		            }
+		          ),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-danger",
+		              disabled: feedback.running,
+		              onClick: () => void confirmDelete(pendingDelete),
+		              children: "\u786E\u8BA4\u5220\u9664"
+		            }
+		          )
+		        ] }),
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("p", { className: "jh-alert-body", children: [
+		            "\u5373\u5C06\u5220\u9664\u65B9\u6848\u300C",
+		            pendingDelete.name,
+		            "\u300D\uFF08",
+		            pendingDelete.platforms.join(" / "),
+		            "\uFF09\u3002"
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("ul", { className: "jh-note", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("li", { children: "\u8FD9\u4E2A\u65B9\u6848\u672C\u8EAB\u4E0E\u5176\u5B9A\u65F6\u914D\u7F6E\u4F1A\u88AB\u79FB\u9664\uFF0C\u4E0D\u4F1A\u518D\u6709\u81EA\u52A8\u91C7\u96C6\u3002" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("li", { children: "**\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4F1A\u4FDD\u7559** \u2014\u2014 \u5220\u9664\u65B9\u6848\u4E0D\u4F1A\u5220\u5C97\u4F4D\u5E93\u3002" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("li", { children: "\u60F3\u4FDD\u7559\u914D\u7F6E\u53EA\u662F\u6682\u65F6\u505C\u7528\uFF0C\u8BF7\u6539\u7528\u300C\u7F16\u8F91\u300D\u91CC\u7684\u300C\u542F\u7528\u5B9A\u65F6\u300D\u6216\u505C\u7528\u65B9\u6848\u3002" })
+		          ] })
+		        ]
+		      }
 		    ),
 		    errorDetail === null ? null : /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
 		      Modal,
@@ -3770,33 +3887,42 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function RunHistoryTable(props) {
+		  if (props.loading) {
+		    return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { className: "jh-sub-title", children: "\u6700\u8FD1\u8FD0\u884C" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8FD0\u884C\u8BB0\u5F55\u2026" })
+		    ] });
+		  }
 		  if (props.runs.length === 0) {
 		    return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { className: "jh-sub-title", children: "\u6700\u8FD1\u8FD0\u884C" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u8FD0\u884C\u8BB0\u5F55\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "jh-empty", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u8FD0\u884C\u8BB0\u5F55\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "jh-note", children: "\u7B2C\u4E00\u6B21\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u6216\u7B49\u5230\u504F\u597D\u65F6\u6BB5\u81EA\u52A8\u89E6\u53D1\u4E4B\u540E\uFF0C\u8FD9\u91CC\u4F1A\u51FA\u73B0\u6BCF\u4E00\u8F6E\u7684\u7ED3\u679C\u3002" })
+		      ] })
 		    ] });
 		  }
 		  const showReason = props.runs.some((run) => runReasonLabel(run.reason) !== null);
 		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { className: "jh-sub-title", children: "\u6700\u8FD1\u8FD0\u884C" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("table", { className: "jh-table jh-table-runs", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("table", { className: "jh-table jh-table-runs", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { children: "\u5F00\u59CB" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { className: "jh-col-sticky", children: "\u5F00\u59CB" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { children: "\u72B6\u6001" }),
 		        showReason ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { children: "\u89E6\u53D1" }) : null,
 		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { className: "jh-num", children: "\u65B0\u589E" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { className: "jh-num", children: "\u66F4\u65B0" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { className: "jh-num jh-col-hide-sm", children: "\u66F4\u65B0" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("th", { children: "\u7ED3\u679C\u8BF4\u660E" })
 		      ] }) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("tbody", { children: props.runs.map((run) => {
 		        const skip = props.reasonFor(run.skipReason);
 		        const failure = skip === null ? humanizeFailure(run.errorCode, run.errorMsg) : null;
 		        return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("tr", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { title: new Date(run.startedAt).toLocaleString(), children: formatClock(new Date(run.startedAt)) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { className: "jh-col-sticky", title: new Date(run.startedAt).toLocaleString(), children: formatClock(new Date(run.startedAt)) }),
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(StateTag, { state: run.state, kind: "run" }) }),
 		          showReason ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { children: runReasonLabel(run.reason) ?? "\u2014" }) : null,
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { className: "jh-num", children: run.inserted }),
-		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { className: "jh-num", children: run.updated }),
+		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { className: "jh-num jh-col-hide-sm", children: run.updated }),
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("td", { children: skip !== null ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { children: skip }) : failure === null ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "jh-muted", children: "\u2014" }) : (
 		            // 单元格里只留一句人话；点开是弹窗
 		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
@@ -3815,7 +3941,7 @@ window.__ModuleLoader__.load({
 		          ) })
 		        ] }, run.id);
 		      }) })
-		    ] })
+		    ] }) })
 		  ] });
 		}
 		function FieldHint(props) {
@@ -3971,6 +4097,8 @@ window.__ModuleLoader__.load({
 		                className: "jh-input jh-time",
 		                type: "time",
 		                "aria-label": "\u65F6\u6BB5\u8D77\u70B9",
+		                "aria-invalid": startMissing,
+		                ...startMissing ? { "aria-describedby": "jh-window-error" } : {},
 		                value: startMissing ? "" : form.windowStart,
 		                onChange: (event) => {
 		                  const text = event.target.value;
@@ -3985,6 +4113,8 @@ window.__ModuleLoader__.load({
 		                className: "jh-input jh-time",
 		                type: "time",
 		                "aria-label": "\u65F6\u6BB5\u7EC8\u70B9",
+		                "aria-invalid": endMissing,
+		                ...endMissing ? { "aria-describedby": "jh-window-error" } : {},
 		                value: endMissing ? "" : form.windowEnd,
 		                onChange: (event) => {
 		                  const text = event.target.value;
@@ -3992,7 +4122,7 @@ window.__ModuleLoader__.load({
 		                }
 		              }
 		            ),
-		            startMissing || endMissing ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "jh-warn", children: "\u65F6\u6BB5\u6CA1\u586B\u5B8C\u6574\uFF0C\u4FDD\u5B58\u65F6\u4F1A\u9000\u56DE\u9ED8\u8BA4\u7684 09:00\u201311:00\u3002" }) : null
+		            startMissing || endMissing ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "jh-warn", id: "jh-window-error", role: "alert", children: "\u65F6\u6BB5\u6CA1\u586B\u5B8C\u6574\uFF0C\u4FDD\u5B58\u65F6\u4F1A\u9000\u56DE\u9ED8\u8BA4\u7684 09:00\u201311:00\u3002" }) : null
 		          ] }),
 		          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "jh-field", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "jh-field-label", children: [
@@ -5921,6 +6051,25 @@ window.__ModuleLoader__.load({
 		.jh-entry-glyph[data-wide="1"]{margin-left:2px}
 		.jh-entry-glyph svg{display:block}
 
+		/* \u2500\u2500 \u8BED\u4E49\u8272\u7684"\u6587\u672C\u7248"\uFF08\u5BF9\u6BD4\u5EA6\u4FEE\u590D\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u5B9E\u6D4B\uFF08\u771F\u5B9E\u6D4F\u89C8\u5668\u53D6\u8BA1\u7B97\u6837\u5F0F + WCAG \u516C\u5F0F\uFF09\uFF1A\u4E3B\u9898\u91CC\u7684 state-*-primary \u662F**\u6307\u793A\u8272**\uFF0C
+		   \u4E0D\u662F\u6587\u5B57\u8272 \u2014\u2014 \u62FF\u6765\u5F53\u6587\u5B57\u8272\u5728 bg-base \u4E0A\u53EA\u6709 2.0\u20132.3:1\uFF08\u6210\u529F #22c55e 2.28\u3001
+		   \u8B66\u544A #f59e0b 2.15\uFF09\uFF0C\u8FDC\u4F4E\u4E8E\u6B63\u6587\u8981\u6C42\u7684 4.5:1\u3002
+
+		   \u505A\u6CD5\uFF1A\u628A\u8BED\u4E49\u8272\u4E0E label-primary\uFF08#0f1115\uFF0C18.9:1\uFF09\u6309 55:45 \u6DF7\u51FA\u4E00\u4E2A**\u6DF1\u8272\u53D8\u4F53**\uFF0C
+		   \u8272\u76F8\u4ECD\u53EF\u8FA8\u8BA4\u3001\u5BF9\u6BD4\u5EA6\u8FBE\u6807\uFF08\u6DF7\u8272\u540E\u7ECF\u5B9E\u6D4B\u5747 \u22655:1\uFF09\uFF0C\u800C\u4E14**\u6CA1\u6709\u786C\u7F16\u7801\u8272\u503C** \u2014\u2014 \xA75.3
+		   \u8981\u6C42\u989C\u8272\u4E00\u5F8B\u8D70\u4E3B\u9898\u53D8\u91CF\uFF0Ccolor-mix \u5728\u672C\u6587\u4EF6\u91CC\u4E5F\u65E9\u6709\u5148\u4F8B\uFF08\u89C1\u622A\u6B62\u65E5\u671F\u7684\u7EA2\u5E95\uFF09\u3002
+
+		   \u53E6\u5916\uFF1A\u4E3B\u9898\u91CC**\u6CA1\u6709** --dsw-alias-state-error-tertiary\uFF08\u5B9E\u6D4B 7 \u4E2A\u4E0D\u5B58\u5728\u7684\u53D8\u91CF\u4E4B\u4E00\uFF09\uFF0C
+		   \u5199\u5B83\u7B49\u4E8E\u80CC\u666F\u9759\u9ED8\u5931\u6548 \u2014\u2014 \u6240\u4EE5\u7EA2\u5E95\u7528 color-mix \u81EA\u5DF1\u8C03\uFF0C\u4E0E\u65E2\u6709\u505A\u6CD5\u4E00\u81F4\u3002 */
+		.jh-root{
+		  --jh-ok-fg:color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary));
+		  --jh-warn-fg:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-label-primary));
+		  --jh-error-fg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, var(--dsw-alias-label-primary));
+		  --jh-error-bg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent);
+		  --jh-warn-bg:var(--dsw-alias-state-warn-tertiary);
+		  --jh-ok-bg:var(--dsw-alias-state-success-tertiary)}
+
 		/* \u2500\u2500 \u5916\u58F3 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-root{box-sizing:border-box;display:flex;flex-direction:column;height:100%;position:relative;
 		  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.7}
@@ -5952,8 +6101,8 @@ window.__ModuleLoader__.load({
 		.jh-card-tight{padding:12px 14px;margin:14px 0}
 		.jh-card-title{font-size:13px;font-weight:600;margin:0 0 8px}
 		.jh-muted{color:var(--dsw-alias-label-secondary);margin:0}
-		.jh-ok{color:var(--dsw-alias-state-success-primary)}
-		.jh-warn{color:var(--dsw-alias-state-warn-primary)}
+		.jh-ok{color:var(--jh-ok-fg)}
+		.jh-warn{color:var(--jh-warn-fg)}
 		.jh-error{color:var(--dsw-alias-state-error-primary);margin:0}
 
 		.jh-kv{list-style:none;margin:0 0 12px;padding:0;display:grid;
@@ -6012,7 +6161,7 @@ window.__ModuleLoader__.load({
 		button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 		.jh-stat b{font-size:22px;font-weight:600;line-height:1.2}
 		.jh-stat span{font-size:12px;color:var(--dsw-alias-label-secondary)}
-		.jh-stat-warn b{color:var(--dsw-alias-state-warn-primary)}
+		.jh-stat-warn b{color:var(--jh-warn-fg)}
 		.jh-stat-error b{color:var(--dsw-alias-state-error-primary)}
 
 		.jh-todos{list-style:none;margin:0;padding:0}
@@ -6021,8 +6170,10 @@ window.__ModuleLoader__.load({
 		.jh-todo:first-child{border-top:0}
 		.jh-todo-level{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:999px;
 		  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-		.jh-todo-urgent .jh-todo-level{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-primary-foreground)}
-		.jh-todo-warn .jh-todo-level{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground)}
+		/* \u540C\u4E00\u7C7B\u5BF9\u6BD4\u5EA6\u95EE\u9898\uFF08\u8BED\u4E49\u5E95 + \u767D\u5B57 = 4.50:1 \u4E34\u754C\uFF09\u5728\u8FD9\u91CC\u4E5F\u5B58\u5728\uFF0C\u4E00\u5E76\u4FEE\uFF1A
+		   \u6362\u6210\u6DF7\u8272\u6DF1\u53D8\u4F53\u540E\u662F 9.79:1 / 6.4:1\u3002\u5C5E\u4E8E rules \xA74.4 \u5141\u8BB8\u7684"\u53EF\u8BBF\u95EE\u6027\u4FEE\u590D"\uFF0C\u4E0D\u662F\u91CD\u7ED8\u3002 */
+		.jh-todo-urgent .jh-todo-level{background:var(--jh-error-fg);color:var(--dsw-alias-label-primary-foreground)}
+		.jh-todo-warn .jh-todo-level{background:var(--jh-warn-fg);color:var(--dsw-alias-label-primary-foreground)}
 		.jh-todo-title{font-weight:600}
 		.jh-todo-body{flex:1 1 auto;min-width:0}
 		.jh-todo-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -6114,16 +6265,16 @@ window.__ModuleLoader__.load({
 		.jh-score-inline{margin-left:8px;font-size:12px}
 		.jh-flag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;
 		  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-		.jh-flag-outsourcing{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground)}
-		.jh-flag-fraud{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-primary-foreground)}
+		.jh-flag-outsourcing{background:var(--jh-warn-fg);color:var(--dsw-alias-label-primary-foreground)}
+		.jh-flag-fraud{background:var(--jh-error-fg);color:var(--dsw-alias-label-primary-foreground)}
 		.jh-flag-zombie{background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
-		.jh-flag-salary_inflation{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground);opacity:.85}
+		.jh-flag-salary_inflation{background:var(--jh-warn-fg);color:var(--dsw-alias-label-primary-foreground);opacity:.9}
 		.jh-flag-jargon_hit{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
 		.jh-reasons{list-style:none;margin:6px 0 0;padding:0}
 		.jh-reason{display:flex;gap:8px;padding:2px 0;font-size:12px}
 		.jh-reason-weight{flex:0 0 34px;text-align:right;font-family:ui-monospace,Consolas,monospace;
 		  color:var(--dsw-alias-label-tertiary)}
-		.jh-reason-hit .jh-reason-weight{color:var(--dsw-alias-state-success-primary)}
+		.jh-reason-hit .jh-reason-weight{color:var(--jh-ok-fg)}
 		.jh-reason-penalty .jh-reason-weight,.jh-reason-exclude .jh-reason-weight{color:var(--dsw-alias-state-error-primary)}
 		.jh-reason-exclude{color:var(--dsw-alias-state-error-primary);font-weight:600}
 		.jh-flags{list-style:none;margin:0;padding:0}
@@ -6166,14 +6317,14 @@ window.__ModuleLoader__.load({
 		  justify-content:center;font-size:19px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 		.jh-gauge-unit{font-size:10px;font-weight:500;color:var(--dsw-alias-label-secondary);margin-top:2px}
 		.jh-gauge-band{font-size:12.5px;font-weight:600}
-		.jh-gauge-high{color:var(--dsw-alias-state-success-primary)}
-		.jh-gauge-mid{color:var(--dsw-alias-state-warn-primary)}
+		.jh-gauge-high{color:var(--jh-ok-fg)}
+		.jh-gauge-mid{color:var(--jh-warn-fg)}
 		.jh-gauge-low{color:var(--dsw-alias-label-secondary)}
 		.jh-gauge-side{min-width:0;flex:1 1 180px;display:flex;flex-direction:column;gap:6px}
 
 		/* \u547D\u4E2D/\u5931\u5206\u9010\u6761\uFF1A\u7ED9\u7B26\u53F7\u4E0E\u989C\u8272\uFF0C\u800C\u4E0D\u662F\u53EA\u7ED9\u4E00\u4E2A\u52A0\u6743\u6570\u5B57 */
 		.jh-reason-mark{flex:0 0 14px;text-align:center;font-weight:700}
-		.jh-reason-ok .jh-reason-mark{color:var(--dsw-alias-state-success-primary)}
+		.jh-reason-ok .jh-reason-mark{color:var(--jh-ok-fg)}
 		.jh-reason-bad .jh-reason-mark{color:var(--dsw-alias-state-error-primary)}
 
 		/* \u98CE\u9669\u63D0\u793A\u7528 Alert \u6846\uFF0C\u800C\u4E0D\u662F\u4E00\u6392\u7070\u5B57\u3002**\u4E0D\u5728\u5DE6\u8FB9\u6302\u7C97\u8272\u6761**\uFF1A
@@ -6235,7 +6386,7 @@ window.__ModuleLoader__.load({
 		.jh-tv-label{color:var(--dsw-alias-label-secondary);font-size:12px}
 		.jh-tv-value{min-width:0;overflow-wrap:anywhere}
 		.jh-tv-note{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px}
-		.jh-tv-ok{color:var(--dsw-alias-state-success-primary);margin:0;font-size:12px}
+		.jh-tv-ok{color:var(--jh-ok-fg);margin:0;font-size:12px}
 		.jh-tv-error{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px;
 		  overflow-wrap:anywhere;white-space:pre-wrap}
 
@@ -6429,7 +6580,7 @@ window.__ModuleLoader__.load({
 		.jh-tailor-skill{display:inline-block;margin:0 4px 4px 0;padding:1px 7px;border-radius:999px;font-size:12px;
 		  border:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
 		.jh-tailor-skill-hit{border-color:var(--dsw-alias-brand-text);color:var(--dsw-alias-brand-text)}
-		.jh-tv-score-stale{color:var(--dsw-alias-state-warn-primary);font-size:12px}
+		.jh-tv-score-stale{color:var(--jh-warn-fg);font-size:12px}
 
 		/* \u2500\u2500 P7\uFF1A\u6D41\u6C34\u7EBF\u770B\u677F / \u6D88\u606F / \u9762\u8BD5 / \u6570\u636E\u770B\u677F \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-board{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
@@ -6525,9 +6676,9 @@ window.__ModuleLoader__.load({
 		/* \u4E09\u7EA7\u5404\u81EA\u4E00\u4E2A\u8272\u9636\uFF0C\u4E14**\u6C38\u8FDC\u5E26\u6587\u5B57**\uFF1A\u53EA\u7ED9\u989C\u8272\u7528\u6237\u5206\u4E0D\u6E05"\u574F\u4E86"\u8FD8\u662F"\u65E7\u4E86"\u3002 */
 		.jh-fresh{flex:0 0 auto;font-size:11.5px;font-weight:600;line-height:20px;padding:0 9px;
 		  border-radius:999px;white-space:nowrap}
-		.jh-fresh-fresh{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
-		.jh-fresh-stale{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}
-		.jh-fresh-cold{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+		.jh-fresh-fresh{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
+		.jh-fresh-stale{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
+		.jh-fresh-cold{background:var(--jh-error-bg);color:var(--jh-error-fg)}
 
 		.jh-today-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
 		.jh-health-line{font-size:12.5px}
@@ -6589,16 +6740,16 @@ window.__ModuleLoader__.load({
 		  padding:0 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);
 		  color:var(--dsw-alias-label-primary)}
 
-		.jh-tone-ok{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
-		.jh-tone-warn{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}
-		.jh-tone-error{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
-		.jh-tone-muted{background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
+		.jh-tone-ok{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
+		.jh-tone-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
+		.jh-tone-error{background:var(--jh-error-bg);color:var(--jh-error-fg)}
+		.jh-tone-muted{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary)}
 
 		/* \u8C03\u5EA6\u5F52\u5C5E\u7684"\u552F\u4E00\u8BF4\u6CD5"\uFF1A\u4E00\u53E5\u8BDD\u8BB2\u6E05\u8C01\u5728\u8C03\u5EA6\u3001\u4E0B\u6B21\u4EC0\u4E48\u65F6\u5019\u8DD1\u3002
 		   \u539F\u6765\u8FD9\u91CC\u662F\u300C\u8C03\u5EA6\uFF1A\u672A\u542F\u52A8\u300D\u4E0E\u300C\u4E0B\u6B21\u8FD0\u884C\uFF1A\u8FD8\u6709 9 \u5C0F\u65F6\u300D\u5E76\u6392\uFF0C\u8BFB\u8D77\u6765\u81EA\u76F8\u77DB\u76FE\u3002 */
 		.jh-story{margin:2px 0 4px;font-size:13px;line-height:1.7}
 		.jh-story-ok{color:var(--dsw-alias-label-primary)}
-		.jh-story-warn{color:var(--dsw-alias-state-warn-primary)}
+		.jh-story-warn{color:var(--jh-warn-fg)}
 		.jh-story-muted{color:var(--dsw-alias-label-secondary)}
 
 		/* \u79DF\u7EA6\u9762\u677F\uFF1A\u628A"\u6B7B\u80E1\u540C"\u63D0\u793A\u6362\u6210\u5E26\u52A8\u4F5C\u7684\u9762\u677F */
@@ -6659,8 +6810,10 @@ window.__ModuleLoader__.load({
 		.jh-field-hint{display:inline-flex;align-items:center;justify-content:center;
 		  width:14px;height:14px;flex:none;font-size:10px;font-weight:700;line-height:1;cursor:help;
 		  border-radius:50%;border:1px solid var(--dsw-alias-border-l3);
-		  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-tertiary)}
+		  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-secondary)}
 		.jh-field-hint:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-text)}
+		/* \u5BF9\u6BD4\u5EA6\uFF1Alabel-tertiary \u5728\u6D45\u5E95\u4E0A\u53EA\u6709 3.71:1\uFF08\u53EA\u591F\u975E\u6587\u672C\u56FE\u5F62\uFF09\uFF0C\u800C\u8FD9\u662F\u4E2A 10px \u7684\u5B57\u7B26\uFF0C
+		   \u6240\u4EE5\u7528 label-secondary\uFF085.80:1\uFF09\u3002 */
 		.jh-field-flag{font-style:normal;font-size:11px;padding:0 6px;border-radius:999px;
 		  background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
 		.jh-field-row{display:flex;align-items:center;gap:6px}
@@ -6687,10 +6840,8 @@ window.__ModuleLoader__.load({
 		.jh-banner{display:flex;flex-direction:column;gap:2px;margin-top:8px;padding:7px 10px;
 		  border-radius:8px;font-size:12.5px;line-height:1.6}
 		.jh-banner-title{font-weight:600}
-		.jh-banner-warn{background:var(--dsw-alias-state-warn-tertiary);
-		  color:var(--dsw-alias-state-warn-primary)}
-		.jh-banner-error{background:var(--dsw-alias-state-error-tertiary);
-		  color:var(--dsw-alias-state-error-primary)}
+		.jh-banner-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
+		.jh-banner-error{background:var(--jh-error-bg);color:var(--jh-error-fg)}
 
 		/* \u65B9\u6848\u5361\u7247\uFF1A\u660E\u786E\u8FB9\u6846 + \u9634\u5F71\uFF0C\u4E0E\u5361\u7247\u80CC\u666F\u62C9\u5F00\u5C42\u6B21 */
 		.jh-plan-card{padding:11px 13px;border-radius:10px;border:1px solid var(--dsw-alias-border-l3);
@@ -6699,20 +6850,86 @@ window.__ModuleLoader__.load({
 
 		/* \u6309\u94AE\u6743\u91CD\uFF1A\u5371\u9669 / \u8B66\u793A\u3002\u4E3B\u64CD\u4F5C\u590D\u7528\u5DF2\u6709\u7684 .jh-btn-primary\u3002
 		   \u989C\u8272\u4E00\u5F8B\u8D70\u4E3B\u9898\u53D8\u91CF\uFF08\xA75.3\uFF09\uFF0C\u4E0D\u5199\u6B7B red\u3002 */
-		.jh-btn-danger{border-color:var(--dsw-alias-state-error-secondary);
-		  color:var(--dsw-alias-state-error-primary)}
-		.jh-btn-danger:hover:not(:disabled){background:var(--dsw-alias-state-error-tertiary)}
-		.jh-btn-warn{border-color:var(--dsw-alias-state-warn-secondary);
-		  color:var(--dsw-alias-state-warn-primary)}
-		.jh-btn-warn:hover:not(:disabled){background:var(--dsw-alias-state-warn-tertiary)}
+		/* \u5371\u9669\u64CD\u4F5C\uFF1A**\u5B9E\u5E95**\u3002
+		   \u6CE8\u610F\u5E95\u8272\u7528\u7684\u662F --jh-error-fg\uFF08\u8BED\u4E49\u8272\u4E0E label-primary \u6DF7\u51FA\u7684\u6DF1\u8272\u53D8\u4F53\uFF09\uFF0C\u4E0D\u662F\u4E3B\u9898\u7684
+		   state-error-primary \u2014\u2014 \u5B9E\u6D4B\u540E\u8005\u914D\u767D\u5B57\u6070\u597D **4.4996:1**\uFF0C\u6BD4 AA \u7684 4.5 \u5DEE\u4E00\u70B9\u70B9\uFF0C
+		   \u5C5E\u4E8E"\u770B\u7740\u6CA1\u95EE\u9898\u3001\u91CF\u4E86\u5C31\u662F\u4E0D\u8FBE\u6807"\u3002\u6362\u6210\u6DF7\u8272\u540E\u662F 9.79:1\uFF0C\u89C6\u89C9\u4E0A\u4ECD\u662F\u660E\u786E\u7684\u7EA2\u3002 */
+		.jh-btn-danger{border-color:transparent;font-weight:600;
+		  background:var(--jh-error-fg);
+		  color:var(--dsw-alias-label-primary-foreground)}
+		.jh-btn-danger:hover:not(:disabled){filter:brightness(1.12)}
+		.jh-btn-warn{border-color:var(--dsw-alias-state-warn-primary);color:var(--jh-warn-fg)}
+		.jh-btn-warn:hover:not(:disabled){background:var(--jh-warn-bg)}
 
 		/* \u8868\u683C\u91CC\u7684\u9519\u8BEF\uFF1A\u53EA\u7559\u4E00\u4E2A\u80F6\u56CA\uFF0C\u70B9\u5F00\u624D\u662F\u5F39\u7A97\uFF08\u539F\u6765\u662F\u6574\u6BB5\u5806\u6808\u644A\u5728\u5355\u5143\u683C\u91CC\uFF09*/
 		.jh-err-chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:inherit;
-		  font-size:12px;padding:1px 8px;border-radius:999px;
+		  font-size:12px;padding:2px 9px;border-radius:999px;
 		  border:1px solid var(--dsw-alias-state-error-secondary);
-		  background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+		  background:var(--jh-error-bg);color:var(--jh-error-fg)}
 		.jh-err-chip:hover{filter:brightness(.97)}
 		.jh-err-chip-more{font-size:10.5px;opacity:.75;text-decoration:underline}
+
+		/* \u2500\u2500 quality-gates \u6536\u5C3E\uFF1A\u8868\u683C\u72B6\u6001 / \u5C0F\u5C4F\u7B56\u7565 / \u7A7A\u6001 / \u52A0\u8F7D\u6001 / \u53CD\u9988\u53EF\u5173\u95ED \u2500\u2500 */
+
+		/* Table \u7684\u5FC5\u67E5\u72B6\u6001\u91CC\u6709 row hover \u2014\u2014 \u539F\u6765\u6CA1\u6709\uFF0C\u626B\u884C\u65F6\u4F1A\u4E22\u5931"\u9F20\u6807\u5728\u54EA\u4E00\u884C"\u7684\u53CD\u9988 */
+		.jh-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover)}
+
+		/* \u5C0F\u5C4F\u7B56\u7565\uFF1A**\u6709\u610F\u7684\u6A2A\u5411\u6EDA\u52A8**\uFF08quality-gates \xA75 \u5141\u8BB8\uFF0C\u6761\u4EF6\u662F\u4FDD\u7559\u884C\u8EAB\u4EFD\u4E0E\u4E3B\u64CD\u4F5C\uFF09\u3002
+		   \u8868\u683C\u7ED9\u4E00\u4E2A min-width \u8BA9\u5217\u4E0D\u88AB\u538B\u6210\u4E00\u6761\uFF1B\u5BB9\u5668 overflow-x:auto \u627F\u62C5\u6EDA\u52A8\u3002 */
+		.jh-table-scroll{overflow-x:auto;overscroll-behavior-x:contain}
+		.jh-table-runs{min-width:520px}
+		/* \u7C98\u4F4F"\u5F00\u59CB"\u5217\uFF1A\u6A2A\u5411\u6EDA\u52A8\u65F6\u4ECD\u7136\u8BA4\u5F97\u51FA\u8FD9\u662F\u54EA\u4E00\u884C */
+		.jh-table-runs th.jh-col-sticky,.jh-table-runs td.jh-col-sticky{
+		  position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
+
+		/* \u7A7A\u6001\uFF1A\u539F\u56E0 + \u4E0B\u4E00\u6B65\uFF08rules \xA74.3 / quality-gates \xA72 "\u7A7A\u6570\u636E\u65F6\u7ED9\u51FA\u539F\u56E0\u548C\u4E0B\u4E00\u6B65"\uFF09*/
+		.jh-empty{display:flex;flex-direction:column;gap:4px;padding:12px 0}
+
+		/* \u52A0\u8F7D\u6001\uFF1A\u5360\u4F4D\u884C\u4FDD\u6301\u5E03\u5C40\u7A33\u5B9A\uFF08\u4E0D\u8981\u628A"\u6B63\u5728\u8BFB\u53D6"\u663E\u793A\u6210"\u6CA1\u6709\u6570\u636E"\uFF09*/
+		.jh-skeleton-row{color:var(--dsw-alias-label-secondary);text-align:center}
+
+		/* \u53CD\u9988\u6761\uFF1A\u53EF\u5173\u95ED */
+		.jh-feedback{display:flex;align-items:flex-start;gap:8px}
+		.jh-feedback p{flex:1 1 auto;min-width:0}
+		.jh-feedback-close{flex:0 0 auto}
+
+		/* \u2500\u2500 \u5C0F\u5C4F\u9876\u680F\u964D\u7EA7\uFF08\u2264600px\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u5B9E\u6D4B\u8E29\u5230\uFF08375px \u622A\u56FE\uFF09\uFF1A\u6807\u9898\u88AB\u6324\u6210"\u6C42
+		\u804C
+		\u627E
+		\u5DE5
+		\u4F5C"\u4E00\u5217\u4E00\u4E2A\u5B57\uFF0C10 \u4E2A tab \u7AD6\u7740\u6392\u6210\u5341\u884C\u3002
+		   rules \xA77 \u8981\u6C42"\u5BFC\u822A\u3001\u7B5B\u9009\u548C\u6279\u91CF\u64CD\u4F5C\u5728\u5C0F\u5C4F\u6709\u5408\u7406\u964D\u7EA7" \u2014\u2014 \u7AD6\u5411\u5806\u53E0\u4E0D\u662F\u964D\u7EA7\uFF0C\u662F\u574F\u6389\u3002
+		   \u505A\u6CD5\uFF1A\u9876\u680F\u5141\u8BB8\u6362\u884C \u2192 \u7B2C\u4E00\u884C \u6807\u9898/\u5FBD\u7AE0/\u5B9E\u65F6\u72B6\u6001/\u8FD4\u56DE\uFF0C\u7B2C\u4E8C\u884C **\u53EF\u6A2A\u5411\u6EDA\u52A8\u7684 tab \u6761**\u3002 */
+		@media (max-width:600px){
+		  .jh-topbar{flex-wrap:wrap;gap:8px}
+		  .jh-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
+		  /* tab \u6761\u6574\u884C\u3001\u53EF\u6A2A\u6ED1\u3001\u4E0D\u6362\u884C\uFF1A\u4FDD\u7559"\u6211\u5728\u54EA\u91CC"\u7684\u53EF\u8FBE\u6027\uFF0C\u540C\u65F6\u4E0D\u628A\u9876\u680F\u6491\u6210\u5341\u884C */
+		  .jh-tabs{order:3;flex:1 1 100%;margin-left:0;flex-wrap:nowrap;
+		    overflow-x:auto;overscroll-behavior-x:contain}
+		  .jh-tabs::-webkit-scrollbar{display:none}
+		  .jh-tab{flex:0 0 auto}
+		  /* \u5B9E\u65F6\u72B6\u6001\u53EA\u7559\u5706\u70B9\uFF0C\u6587\u5B57\u8BA9\u4F4D\u7ED9\u64CD\u4F5C\u6309\u94AE */
+		  .jh-live span,.jh-live{font-size:0}
+		  .jh-live .jh-dot{width:8px;height:8px}
+		}
+
+		/* \u2500\u2500 \u5C0F\u5C4F\uFF08\u2264480px\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   quality-gates \xA75 \u8981\u6C42 375px \u53EF\u7528\uFF1Brules \xA77 \u8981\u6C42\u5F39\u7A97\u5728\u79FB\u52A8\u7AEF\u8003\u8651\u5E95\u90E8\u62BD\u5C49/\u5168\u5C4F\u9875\u3002 */
+		@media (max-width:480px){
+		  /* \u5F39\u7A97\uFF1A\u5C0F\u5C4F\u53D8\u6210\u63A5\u8FD1\u5168\u5C4F\u7684\u9875\u9762\uFF0C\u800C\u4E0D\u662F\u5361\u7247\u7559 16px \u8FB9 */
+		  .jh-modal-layer{padding:0;align-items:stretch}
+		  .jh-modal{max-height:100%;height:100%;border-radius:0;border-left:0;border-right:0}
+		  .jh-modal-md,.jh-modal-lg{max-width:none}
+		  /* \u4F4E\u5BC6\u5EA6\uFF1A\u5C0F\u5C4F\u9690\u85CF\u300C\u66F4\u65B0\u300D\u5217\uFF0C\u4FDD\u7559 \u65F6\u95F4/\u72B6\u6001/\u65B0\u589E/\u7ED3\u679C\u8BF4\u660E \u8FD9\u56DB\u5217\u5173\u952E\u4FE1\u606F */
+		  .jh-table-runs .jh-col-hide-sm{display:none}
+		  /* \u4E3B\u8981\u64CD\u4F5C\u5728\u5C0F\u5C4F\u4ECD\u7136\u627E\u5F97\u5230\uFF1A\u65B9\u6848\u5361\u7684\u52A8\u4F5C\u6362\u884C\u4E14\u5DE6\u5BF9\u9F50\uFF0C\u4E0D\u6324\u6210\u4E00\u6761 */
+		  .jh-plan-head{gap:4px}
+		  .jh-plan-head .jh-btn{flex:0 0 auto}
+		  /* \u65F6\u95F4\u8303\u56F4\u5728\u5C0F\u5C4F\u6362\u884C\u663E\u793A\uFF0C\u907F\u514D\u4E24\u4E2A\u8F93\u5165\u6846\u88AB\u538B\u6241 */
+		  .jh-timerange{gap:6px}
+		  .jh-time{width:100%;max-width:160px}
+		}
 		`;
 
 		// src/client/toolviews/greeting-card.tsx

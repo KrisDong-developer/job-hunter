@@ -1029,6 +1029,65 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 > ① `.jh-badge-state` → `.jh-tag`（类名统一），中文那一条不受影响；
 > ② 行内 `details.jh-details` → 胶囊 + 弹窗，验收脚本改成**真的点开一次**并验证弹窗内容，比原来更严。
 
+### commercial-ui-ux 技能审核（2026-09-17 第三轮）
+
+用 `commercial-ui-ux` 技能的 `docs/01-commercial-ui-ux-rules.md` 与 `docs/06-quality-gates.md`
+对采集页做了一次**取证式**审核，然后按 findings 修。规则文档与质量门槛都读的是
+包内原文（技能加载失败的原因见本文末尾）。
+
+#### findings（按严重度）
+
+| # | 严重度 | 位置 | 问题 | 用户影响 | 修法 |
+|---|---|---|---|---|---|
+| 1 | **P1** | `styles.ts` 语义色当**文字色**（`.jh-tag` / `.jh-fresh` / `.jh-story-warn` / `.jh-ok` / `.jh-warn` …） | 主题的 `state-*-primary` 是**指示色**不是文字色：实测成功 #22c55e **2.28:1**、警告 #f59e0b **2.15:1**、调度归属文字 **2.15:1** —— 远低于正文要求的 4.5:1 | 关键状态文字在浅底上**看不清**，尤其警告与成功 | 在自有层里由主题色混出**深色文本变体**：`--jh-ok-fg/--jh-warn-fg/--jh-error-fg = color-mix(语义色 55%, label-primary)`（实测 5.1–9.8:1） |
+| 2 | **P1** | `styles.ts` 4 处用 `--dsw-alias-state-error-tertiary` | 这个变量**不存在**（实测 7 个不存在的变量之一），写了等于背景**静默失效**、退成透明 | 错误横幅/胶囊"看起来有底"其实没有，语义只能靠字色，又正好不达标 | 换成项目既有的 `color-mix(语义色 9%, transparent)` 做法（截止日期样式里早已这么写过） |
+| 3 | **P1** | `styles.ts` 危险底 + 白字 | 主题 `state-error-primary` 配 `label-primary-foreground` 实测 **4.4996:1** —— 比 AA 的 4.5 差一点点 | 危险按钮文字处于"看着没问题、量了不达标" | 底色改用 `--jh-error-fg`（9.79:1），视觉上仍是明确的红 |
+| 4 | **P1** | `collect.tsx` 方案列表 / 平台列表 / 运行历史 | **加载态被当成空态**：还在加载的一两秒里显示"还没有方案 / 还没有注册平台" | 用户以为数据丢了（`ARCHITECTURE.md` §5.5 早就点过这个坑） | 三处都加 `loading` 分支；空态补"原因 + 下一步" |
+| 5 | **P1** | `collect.tsx` 删除按钮 | **破坏性操作没有硬闸门**：一次点击即永久删除方案 | 误点即失去配置，无法恢复（宪法第六条 / SKILL.md Protected actions） | 加确认弹窗：列出方案与后果、危险色按钮、可取消；验收脚本验证"未确认前数据未变 + 取消后未删" |
+| 6 | **P2** | `modal.tsx` | 没有 focus trap：Tab 会跑到被遮住的页面上 | 键盘用户在一堆看不见的控件里迷路（quality-gates §4 明确要求） | 实现**正确**的陷阱：每次 Tab 重新枚举可聚焦元素、首尾环绕、焦点外逃时拉回；验收脚本连按 Tab `N+3` 次（N=28）与 Shift+Tab 双向验证 |
+| 7 | **P2** | `collect.tsx` 时段输入 | 字段级错误没有与控件关联（只有可见红字） | 读屏用户不知道哪个字段错、错在哪 | `aria-invalid` + `aria-describedby` 指向错误文本（`role="alert"`） |
+| 8 | **P2** | `styles.ts` 小屏顶栏 | 375px 下标题被挤成"求\n职\n找\n工\n作"一列一个字，10 个 tab 竖排十行 | 移动端导航不可用（rules §7 要求小屏有合理降级） | ≤600px：顶栏换行 + tab 条整行**横向滚动**（保留"我在哪"的可达性） |
+| 9 | **P3** | `styles.ts` 运行表 | 表格行没有 hover 反馈（quality-gates §4 要求 row hover） | 扫行时丢失"鼠标在哪一行" | 加 `tbody tr:hover` |
+| 10 | **P3** | `collect.tsx` 表格 | 小屏没有表格策略（6 列被压进 375px） | 列挤成一条，读不了 | 有意的**横向滚动** + `min-width` + 首列粘性（保留行身份）+ ≤480px 隐藏"更新"列 |
+| 11 | **P3** | `collect.tsx` 反馈条 | Alert 缺 dismiss / 读屏语义（quality-gates §4 列了 severity/dismiss/timeout/screen-reader） | 提示只能自己消失，读屏不播报 | `role="status" aria-live="polite"` + 关闭按钮 |
+| 12 | **P3** | `collect.tsx` 按钮权重 | 「新增方案」与「立即采集」同为最强主按钮，同一工作区两个主行动 | 主次不分（rules §4.2 要求一个最强主行动） | 「新增方案」降为次级 |
+
+#### 两处"测量工具的错误伪装成产品缺陷"
+
+审核过程中踩到两次**假失败**，都记下来（宪法第十条：没有证据不能称完成，反过来**错误的证据也不能当缺陷**）：
+
+1. 第一版可访问性扫描扫了**整个文档**，把 shell 自己的搜索框（`INPUT.bhn1Oq_searchInput`）
+   报成我们的问题 → 改成只扫 `.jh-root`。假阳性会让真问题被淹没。
+2. 第一版对比度脚本只认 `rgb()/rgba()`，而 `color-mix()` 的计算结果会被序列化成
+   **`color(srgb 0.53 0.07 0.08 / 0.09)`**（浮点 + alpha）→ 解析失败后静默退到"白底"，
+   把 9.8:1 的合格配色报成 1.00:1，又把"9% 淡红底"读成"纯红底"报出 2.17:1。
+   修好解析（含 alpha 合成）后，**两个脚本才一致收敛到 0 条**。
+   教训：**两个测量脚本互相矛盾时，先怀疑测量**。
+
+#### 验证方式与结果
+
+| 检查 | 方式 | 结果 |
+|---|---|---|
+| 对比度 | 枚举页面上**真实存在的每一种文字样式**（不预设选择器清单，避免"没测到=通过"），在列表态/表单弹窗/删除确认弹窗三处各测一遍 | **151 种样式，0 处不合格** |
+| 响应式 | 375 / 768 / 1280，读 `documentElement.scrollWidth`、screen、卡片、弹窗的溢出与"立即采集/保存"是否在视口内 | 全部 0 溢出；小屏主操作与保存按钮均可达 |
+| 交互状态 | Tab `N+3` 次 + Shift+Tab 双向；`tbody tr:hover` 规则；`aria-modal`；`aria-invalid`+`aria-describedby` | 全部通过 |
+| 破坏性操作 | 真实点「删除」→ 看确认弹窗 → 点取消 → 比对方案数 | 未确认前数据未变、取消后未删 |
+| 工程 | `typecheck` / `build` / `verify` / `npm test` | 干净 / 通过 / 19-19 / **485 通过 0 失败** |
+
+> **这一轮没有新增单测**：改动集中在视觉与交互状态，而项目**没有组件测试基建**
+> （引入 React Testing Library 会违反 C5 零新增运行时依赖）。所以证据来自上面的
+> 真实浏览器审计 —— 这也正是质量门槛 §7 对视觉任务建议的方式（"视觉任务建议补充浏览器
+> 截图或手动视口检查"）。纯函数部分（时间转换、条件标签、错误人话）已在前两轮覆盖。
+
+> **`commercial-ui-ux` 技能本体加载失败**：`skill` 工具报
+> `loaded skill "commercial-ui-ux" source must be a string`，可复现。
+> 原因是该插件的 `index.js` 向 `ctx.skills.register({...})` 传的是 **`content`** 字段，
+> 而宿主读取的是 **`source`**（两者字段名不一致）。
+> 本轮改为**直接读包内原文**（`<profile>/node_modules/dsh-commercial-ui-ux/skills/commercial-ui-ux/`）：
+> `SKILL.md`、`docs/01-commercial-ui-ux-rules.md`、`docs/03-design-constitution.md`、
+> `docs/06-quality-gates.md`。这是宿主/插件契约不一致的问题，不在本仓库范围内，
+> 但**如实记下来**以免下一个人以为读的是缓存或猜测。
+
 ### 真实实例验收（2026-09-17）
 
 离线闸门（`DSH_JOB_HUNTER_NO_NETWORK=1`）+ `--profile p5test --port 4399`，**不碰招聘站**：
@@ -1040,7 +1099,10 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 | `jh-p8-e2e.mjs`（**总体通过**，28 条） | 顺带修掉脚本自己的一个老 bug：它等的是 `.jh-drawer`，而岗位库的详情一直是**右侧内嵌栏**（抽屉只服务流水线/消息/面试）—— 于是这条**一直在超时**，P8 的 27 条断言其实早就全过。现在改成等 `.jh-detail-pane`，这条验证才真的在验东西 |
 | `jh-jobs-ui.mjs` / `jh-resume-ui.mjs` / `jh-resume-quick.mjs` | 全部 `pageErrors: []` |
 | `jh-collect-ui.mjs`（可用性修复） | **27/27 通过**（含"没有任何 `**` 标记被原样显示"、"没有源码 JSON"、"没有裸堆栈"、"数值列右对齐（读计算样式）"、"置灰按钮都有悬浮解释"、"接管按钮在对方活着时置灰并解释"、"点击胶囊打开排查弹窗"） |
-| `jh-collect-ui2.mjs`（界面评审第二轮） | **40/40 通过**（重复提示只出现 1 次、表格里 0 个 `<pre>`、弹窗 `role=dialog` + Esc 可关、时间是**两个** `type=time`、分段标签 7 个且 `aria-pressed` 正确、点"周末"只剩周日与周六、`?` 释义 9 个、长句不再直铺、"检查是否重复"在方案名同行、卡片有边框+阴影、主/次/危险按钮计算样式不同、输入框白底+1px 边框+聚焦光环、保存/取消在 footer） |
+| `jh-uiux-audit.mjs`（commercial-ui-ux 质量门槛） | **0 findings**：§5 响应式三档无溢出；§6 对比度/焦点/label/不只靠颜色；§4 Table row hover / Modal focus trap 双向；§2 字段错误关联 / 破坏性操作硬闸门 |
+| `jh-contrast.mjs`（对比度专项） | 枚举三处界面共 **151 种文字样式，0 处不合格** |
+| `jh-responsive.mjs`（响应式专项） | 375/768/1280 均 0 横向溢出；小屏「立即采集」与弹窗「保存」都在视口内；截图 `jh-uiux-{mobile,tablet,desktop}.png` |
+| `jh-collect-ui2.mjs`（界面评审第二轮） | **39/39 通过**（重复提示只出现 1 次、表格里 0 个 `<pre>`、弹窗 `role=dialog` + Esc 可关、时间是**两个** `type=time`、分段标签 7 个且 `aria-pressed` 正确、点"周末"只剩周日与周六、`?` 释义 9 个、长句不再直铺、"检查是否重复"在方案名同行、卡片有边框+阴影、主/次/危险按钮计算样式不同、输入框白底+1px 边框+聚焦光环、保存/取消在 footer） |
 
 > **期望搬走 ≠ 放松断言**（§5 的纪律）。「定时抓取」与「平台与登录」两块按 D6 迁到了 U9 采集页，
 > 所以 `jh-e2e.mjs` 里那两条详细断言**搬到采集页继续验**，并且**加严**：

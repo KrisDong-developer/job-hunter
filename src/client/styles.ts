@@ -37,6 +37,25 @@ const CSS = `
 .jh-entry-glyph[data-wide="1"]{margin-left:2px}
 .jh-entry-glyph svg{display:block}
 
+/* ── 语义色的"文本版"（对比度修复）──────────────────────────────────
+   实测（真实浏览器取计算样式 + WCAG 公式）：主题里的 state-*-primary 是**指示色**，
+   不是文字色 —— 拿来当文字色在 bg-base 上只有 2.0–2.3:1（成功 #22c55e 2.28、
+   警告 #f59e0b 2.15），远低于正文要求的 4.5:1。
+
+   做法：把语义色与 label-primary（#0f1115，18.9:1）按 55:45 混出一个**深色变体**，
+   色相仍可辨认、对比度达标（混色后经实测均 ≥5:1），而且**没有硬编码色值** —— §5.3
+   要求颜色一律走主题变量，color-mix 在本文件里也早有先例（见截止日期的红底）。
+
+   另外：主题里**没有** --dsw-alias-state-error-tertiary（实测 7 个不存在的变量之一），
+   写它等于背景静默失效 —— 所以红底用 color-mix 自己调，与既有做法一致。 */
+.jh-root{
+  --jh-ok-fg:color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary));
+  --jh-warn-fg:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-label-primary));
+  --jh-error-fg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, var(--dsw-alias-label-primary));
+  --jh-error-bg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent);
+  --jh-warn-bg:var(--dsw-alias-state-warn-tertiary);
+  --jh-ok-bg:var(--dsw-alias-state-success-tertiary)}
+
 /* ── 外壳 ─────────────────────────────────────────────────────────── */
 .jh-root{box-sizing:border-box;display:flex;flex-direction:column;height:100%;position:relative;
   background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.7}
@@ -68,8 +87,8 @@ const CSS = `
 .jh-card-tight{padding:12px 14px;margin:14px 0}
 .jh-card-title{font-size:13px;font-weight:600;margin:0 0 8px}
 .jh-muted{color:var(--dsw-alias-label-secondary);margin:0}
-.jh-ok{color:var(--dsw-alias-state-success-primary)}
-.jh-warn{color:var(--dsw-alias-state-warn-primary)}
+.jh-ok{color:var(--jh-ok-fg)}
+.jh-warn{color:var(--jh-warn-fg)}
 .jh-error{color:var(--dsw-alias-state-error-primary);margin:0}
 
 .jh-kv{list-style:none;margin:0 0 12px;padding:0;display:grid;
@@ -128,7 +147,7 @@ button.jh-stat{cursor:pointer}
 button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-stat b{font-size:22px;font-weight:600;line-height:1.2}
 .jh-stat span{font-size:12px;color:var(--dsw-alias-label-secondary)}
-.jh-stat-warn b{color:var(--dsw-alias-state-warn-primary)}
+.jh-stat-warn b{color:var(--jh-warn-fg)}
 .jh-stat-error b{color:var(--dsw-alias-state-error-primary)}
 
 .jh-todos{list-style:none;margin:0;padding:0}
@@ -137,8 +156,10 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-todo:first-child{border-top:0}
 .jh-todo-level{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-.jh-todo-urgent .jh-todo-level{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-primary-foreground)}
-.jh-todo-warn .jh-todo-level{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground)}
+/* 同一类对比度问题（语义底 + 白字 = 4.50:1 临界）在这里也存在，一并修：
+   换成混色深变体后是 9.79:1 / 6.4:1。属于 rules §4.4 允许的"可访问性修复"，不是重绘。 */
+.jh-todo-urgent .jh-todo-level{background:var(--jh-error-fg);color:var(--dsw-alias-label-primary-foreground)}
+.jh-todo-warn .jh-todo-level{background:var(--jh-warn-fg);color:var(--dsw-alias-label-primary-foreground)}
 .jh-todo-title{font-weight:600}
 .jh-todo-body{flex:1 1 auto;min-width:0}
 .jh-todo-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -230,16 +251,16 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-score-inline{margin-left:8px;font-size:12px}
 .jh-flag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-.jh-flag-outsourcing{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground)}
-.jh-flag-fraud{background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-label-primary-foreground)}
+.jh-flag-outsourcing{background:var(--jh-warn-fg);color:var(--dsw-alias-label-primary-foreground)}
+.jh-flag-fraud{background:var(--jh-error-fg);color:var(--dsw-alias-label-primary-foreground)}
 .jh-flag-zombie{background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
-.jh-flag-salary_inflation{background:var(--dsw-alias-state-warn-primary);color:var(--dsw-alias-label-primary-foreground);opacity:.85}
+.jh-flag-salary_inflation{background:var(--jh-warn-fg);color:var(--dsw-alias-label-primary-foreground);opacity:.9}
 .jh-flag-jargon_hit{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
 .jh-reasons{list-style:none;margin:6px 0 0;padding:0}
 .jh-reason{display:flex;gap:8px;padding:2px 0;font-size:12px}
 .jh-reason-weight{flex:0 0 34px;text-align:right;font-family:ui-monospace,Consolas,monospace;
   color:var(--dsw-alias-label-tertiary)}
-.jh-reason-hit .jh-reason-weight{color:var(--dsw-alias-state-success-primary)}
+.jh-reason-hit .jh-reason-weight{color:var(--jh-ok-fg)}
 .jh-reason-penalty .jh-reason-weight,.jh-reason-exclude .jh-reason-weight{color:var(--dsw-alias-state-error-primary)}
 .jh-reason-exclude{color:var(--dsw-alias-state-error-primary);font-weight:600}
 .jh-flags{list-style:none;margin:0;padding:0}
@@ -282,14 +303,14 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   justify-content:center;font-size:19px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 .jh-gauge-unit{font-size:10px;font-weight:500;color:var(--dsw-alias-label-secondary);margin-top:2px}
 .jh-gauge-band{font-size:12.5px;font-weight:600}
-.jh-gauge-high{color:var(--dsw-alias-state-success-primary)}
-.jh-gauge-mid{color:var(--dsw-alias-state-warn-primary)}
+.jh-gauge-high{color:var(--jh-ok-fg)}
+.jh-gauge-mid{color:var(--jh-warn-fg)}
 .jh-gauge-low{color:var(--dsw-alias-label-secondary)}
 .jh-gauge-side{min-width:0;flex:1 1 180px;display:flex;flex-direction:column;gap:6px}
 
 /* 命中/失分逐条：给符号与颜色，而不是只给一个加权数字 */
 .jh-reason-mark{flex:0 0 14px;text-align:center;font-weight:700}
-.jh-reason-ok .jh-reason-mark{color:var(--dsw-alias-state-success-primary)}
+.jh-reason-ok .jh-reason-mark{color:var(--jh-ok-fg)}
 .jh-reason-bad .jh-reason-mark{color:var(--dsw-alias-state-error-primary)}
 
 /* 风险提示用 Alert 框，而不是一排灰字。**不在左边挂粗色条**：
@@ -351,7 +372,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-tv-label{color:var(--dsw-alias-label-secondary);font-size:12px}
 .jh-tv-value{min-width:0;overflow-wrap:anywhere}
 .jh-tv-note{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px}
-.jh-tv-ok{color:var(--dsw-alias-state-success-primary);margin:0;font-size:12px}
+.jh-tv-ok{color:var(--jh-ok-fg);margin:0;font-size:12px}
 .jh-tv-error{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px;
   overflow-wrap:anywhere;white-space:pre-wrap}
 
@@ -545,7 +566,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-tailor-skill{display:inline-block;margin:0 4px 4px 0;padding:1px 7px;border-radius:999px;font-size:12px;
   border:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
 .jh-tailor-skill-hit{border-color:var(--dsw-alias-brand-text);color:var(--dsw-alias-brand-text)}
-.jh-tv-score-stale{color:var(--dsw-alias-state-warn-primary);font-size:12px}
+.jh-tv-score-stale{color:var(--jh-warn-fg);font-size:12px}
 
 /* ── P7：流水线看板 / 消息 / 面试 / 数据看板 ───────────────────────── */
 .jh-board{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
@@ -641,9 +662,9 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 /* 三级各自一个色阶，且**永远带文字**：只给颜色用户分不清"坏了"还是"旧了"。 */
 .jh-fresh{flex:0 0 auto;font-size:11.5px;font-weight:600;line-height:20px;padding:0 9px;
   border-radius:999px;white-space:nowrap}
-.jh-fresh-fresh{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
-.jh-fresh-stale{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}
-.jh-fresh-cold{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+.jh-fresh-fresh{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
+.jh-fresh-stale{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
+.jh-fresh-cold{background:var(--jh-error-bg);color:var(--jh-error-fg)}
 
 .jh-today-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
 .jh-health-line{font-size:12.5px}
@@ -705,16 +726,16 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   padding:0 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);
   color:var(--dsw-alias-label-primary)}
 
-.jh-tone-ok{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
-.jh-tone-warn{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}
-.jh-tone-error{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
-.jh-tone-muted{background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
+.jh-tone-ok{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
+.jh-tone-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
+.jh-tone-error{background:var(--jh-error-bg);color:var(--jh-error-fg)}
+.jh-tone-muted{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary)}
 
 /* 调度归属的"唯一说法"：一句话讲清谁在调度、下次什么时候跑。
    原来这里是「调度：未启动」与「下次运行：还有 9 小时」并排，读起来自相矛盾。 */
 .jh-story{margin:2px 0 4px;font-size:13px;line-height:1.7}
 .jh-story-ok{color:var(--dsw-alias-label-primary)}
-.jh-story-warn{color:var(--dsw-alias-state-warn-primary)}
+.jh-story-warn{color:var(--jh-warn-fg)}
 .jh-story-muted{color:var(--dsw-alias-label-secondary)}
 
 /* 租约面板：把"死胡同"提示换成带动作的面板 */
@@ -775,8 +796,10 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-field-hint{display:inline-flex;align-items:center;justify-content:center;
   width:14px;height:14px;flex:none;font-size:10px;font-weight:700;line-height:1;cursor:help;
   border-radius:50%;border:1px solid var(--dsw-alias-border-l3);
-  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-tertiary)}
+  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-secondary)}
 .jh-field-hint:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-text)}
+/* 对比度：label-tertiary 在浅底上只有 3.71:1（只够非文本图形），而这是个 10px 的字符，
+   所以用 label-secondary（5.80:1）。 */
 .jh-field-flag{font-style:normal;font-size:11px;padding:0 6px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
 .jh-field-row{display:flex;align-items:center;gap:6px}
@@ -803,10 +826,8 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-banner{display:flex;flex-direction:column;gap:2px;margin-top:8px;padding:7px 10px;
   border-radius:8px;font-size:12.5px;line-height:1.6}
 .jh-banner-title{font-weight:600}
-.jh-banner-warn{background:var(--dsw-alias-state-warn-tertiary);
-  color:var(--dsw-alias-state-warn-primary)}
-.jh-banner-error{background:var(--dsw-alias-state-error-tertiary);
-  color:var(--dsw-alias-state-error-primary)}
+.jh-banner-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
+.jh-banner-error{background:var(--jh-error-bg);color:var(--jh-error-fg)}
 
 /* 方案卡片：明确边框 + 阴影，与卡片背景拉开层次 */
 .jh-plan-card{padding:11px 13px;border-radius:10px;border:1px solid var(--dsw-alias-border-l3);
@@ -815,18 +836,80 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 
 /* 按钮权重：危险 / 警示。主操作复用已有的 .jh-btn-primary。
    颜色一律走主题变量（§5.3），不写死 red。 */
-.jh-btn-danger{border-color:var(--dsw-alias-state-error-secondary);
-  color:var(--dsw-alias-state-error-primary)}
-.jh-btn-danger:hover:not(:disabled){background:var(--dsw-alias-state-error-tertiary)}
-.jh-btn-warn{border-color:var(--dsw-alias-state-warn-secondary);
-  color:var(--dsw-alias-state-warn-primary)}
-.jh-btn-warn:hover:not(:disabled){background:var(--dsw-alias-state-warn-tertiary)}
+/* 危险操作：**实底**。
+   注意底色用的是 --jh-error-fg（语义色与 label-primary 混出的深色变体），不是主题的
+   state-error-primary —— 实测后者配白字恰好 **4.4996:1**，比 AA 的 4.5 差一点点，
+   属于"看着没问题、量了就是不达标"。换成混色后是 9.79:1，视觉上仍是明确的红。 */
+.jh-btn-danger{border-color:transparent;font-weight:600;
+  background:var(--jh-error-fg);
+  color:var(--dsw-alias-label-primary-foreground)}
+.jh-btn-danger:hover:not(:disabled){filter:brightness(1.12)}
+.jh-btn-warn{border-color:var(--dsw-alias-state-warn-primary);color:var(--jh-warn-fg)}
+.jh-btn-warn:hover:not(:disabled){background:var(--jh-warn-bg)}
 
 /* 表格里的错误：只留一个胶囊，点开才是弹窗（原来是整段堆栈摊在单元格里）*/
 .jh-err-chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:inherit;
-  font-size:12px;padding:1px 8px;border-radius:999px;
+  font-size:12px;padding:2px 9px;border-radius:999px;
   border:1px solid var(--dsw-alias-state-error-secondary);
-  background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+  background:var(--jh-error-bg);color:var(--jh-error-fg)}
 .jh-err-chip:hover{filter:brightness(.97)}
 .jh-err-chip-more{font-size:10.5px;opacity:.75;text-decoration:underline}
+
+/* ── quality-gates 收尾：表格状态 / 小屏策略 / 空态 / 加载态 / 反馈可关闭 ── */
+
+/* Table 的必查状态里有 row hover —— 原来没有，扫行时会丢失"鼠标在哪一行"的反馈 */
+.jh-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover)}
+
+/* 小屏策略：**有意的横向滚动**（quality-gates §5 允许，条件是保留行身份与主操作）。
+   表格给一个 min-width 让列不被压成一条；容器 overflow-x:auto 承担滚动。 */
+.jh-table-scroll{overflow-x:auto;overscroll-behavior-x:contain}
+.jh-table-runs{min-width:520px}
+/* 粘住"开始"列：横向滚动时仍然认得出这是哪一行 */
+.jh-table-runs th.jh-col-sticky,.jh-table-runs td.jh-col-sticky{
+  position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
+
+/* 空态：原因 + 下一步（rules §4.3 / quality-gates §2 "空数据时给出原因和下一步"）*/
+.jh-empty{display:flex;flex-direction:column;gap:4px;padding:12px 0}
+
+/* 加载态：占位行保持布局稳定（不要把"正在读取"显示成"没有数据"）*/
+.jh-skeleton-row{color:var(--dsw-alias-label-secondary);text-align:center}
+
+/* 反馈条：可关闭 */
+.jh-feedback{display:flex;align-items:flex-start;gap:8px}
+.jh-feedback p{flex:1 1 auto;min-width:0}
+.jh-feedback-close{flex:0 0 auto}
+
+/* ── 小屏顶栏降级（≤600px）──────────────────────────────────────────
+   实测踩到（375px 截图）：标题被挤成"求\n职\n找\n工\n作"一列一个字，10 个 tab 竖着排成十行。
+   rules §7 要求"导航、筛选和批量操作在小屏有合理降级" —— 竖向堆叠不是降级，是坏掉。
+   做法：顶栏允许换行 → 第一行 标题/徽章/实时状态/返回，第二行 **可横向滚动的 tab 条**。 */
+@media (max-width:600px){
+  .jh-topbar{flex-wrap:wrap;gap:8px}
+  .jh-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
+  /* tab 条整行、可横滑、不换行：保留"我在哪里"的可达性，同时不把顶栏撑成十行 */
+  .jh-tabs{order:3;flex:1 1 100%;margin-left:0;flex-wrap:nowrap;
+    overflow-x:auto;overscroll-behavior-x:contain}
+  .jh-tabs::-webkit-scrollbar{display:none}
+  .jh-tab{flex:0 0 auto}
+  /* 实时状态只留圆点，文字让位给操作按钮 */
+  .jh-live span,.jh-live{font-size:0}
+  .jh-live .jh-dot{width:8px;height:8px}
+}
+
+/* ── 小屏（≤480px）─────────────────────────────────────────────────
+   quality-gates §5 要求 375px 可用；rules §7 要求弹窗在移动端考虑底部抽屉/全屏页。 */
+@media (max-width:480px){
+  /* 弹窗：小屏变成接近全屏的页面，而不是卡片留 16px 边 */
+  .jh-modal-layer{padding:0;align-items:stretch}
+  .jh-modal{max-height:100%;height:100%;border-radius:0;border-left:0;border-right:0}
+  .jh-modal-md,.jh-modal-lg{max-width:none}
+  /* 低密度：小屏隐藏「更新」列，保留 时间/状态/新增/结果说明 这四列关键信息 */
+  .jh-table-runs .jh-col-hide-sm{display:none}
+  /* 主要操作在小屏仍然找得到：方案卡的动作换行且左对齐，不挤成一条 */
+  .jh-plan-head{gap:4px}
+  .jh-plan-head .jh-btn{flex:0 0 auto}
+  /* 时间范围在小屏换行显示，避免两个输入框被压扁 */
+  .jh-timerange{gap:6px}
+  .jh-time{width:100%;max-width:160px}
+}
 `
