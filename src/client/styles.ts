@@ -145,6 +145,31 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-state-saved{background:var(--dsw-alias-state-success-primary);color:#fff}
 .jh-state-ignored,.jh-state-archived{opacity:.7}
 
+/* ── U1 岗位库：左列表 / 右详情（2026-09-17 起不再用抽屉）────────────
+   这个屏的主任务是"浏览 → 比较 → 决定"，弹层会盖住列表、每看下一个都要先关一次。
+   两栏各自滚动：筛选条固定在顶部，左栏 padding-right 与右栏 padding-left 给中间那条
+   分隔线留呼吸；分隔线画在右栏的 border-left 上，不再额外占一列宽度。 */
+.jh-jobs-split{display:flex;flex-direction:column;height:100%;box-sizing:border-box;
+  padding:16px 18px;max-width:1560px}
+.jh-jobs-cols{display:grid;grid-template-columns:minmax(360px,46%) 1fr;
+  flex:1 1 auto;min-height:0}
+.jh-jobs-pane{min-width:0;overflow:auto;padding-right:16px;padding-bottom:16px}
+.jh-detail-pane{min-width:0;overflow:auto;padding-left:16px;padding-bottom:16px;
+  border-left:1px solid var(--dsw-alias-border-l1)}
+.jh-detail-pane-empty{display:flex;flex-direction:column;gap:8px;justify-content:center;
+  color:var(--dsw-alias-label-secondary)}
+.jh-detail-empty-title{font-size:14px;font-weight:600;margin:0;color:var(--dsw-alias-label-primary)}
+.jh-job-active{border-color:var(--dsw-alias-brand-primary);
+  background:var(--dsw-alias-interactive-bg-active)}
+/* 面板被拖窄时退回单栏：列表在上、详情在下，整屏一起滚。 */
+@media (max-width:820px){
+  .jh-jobs-split{height:auto}
+  .jh-jobs-cols{grid-template-columns:1fr}
+  .jh-jobs-pane{overflow:visible;padding-right:0}
+  .jh-detail-pane{overflow:visible;border-left:0;border-top:1px solid var(--dsw-alias-border-l1);
+    padding-left:0;padding-top:12px;margin-top:12px}
+}
+
 /* ── P4：匹配分与风险标注 ────────────────────────────────────────── */
 .jh-job-signals{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
 .jh-score{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;

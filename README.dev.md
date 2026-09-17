@@ -14,7 +14,7 @@ GUI 面板与模型工具。
 > |---|---|---|
 > | P0 骨架 | ✅ 完成并通过端到端验证 | 包结构、宿主半 + 客户端半、槽位注册、构建、装包 |
 > | P1 数据与采集 | ✅ 完成并通过离线验收 | sqlite 迁移、岗位/公司领域、浏览器管理、51job 适配器、**字段级断言 + 脏数据隔离** |
-> | P2 界面 | ✅ 完成并通过真实 GUI 验收 | `/today`、`/jobs`、`/jobs/:id`、`/jobs/:id/mark`、`/crawl/*`、`/events`(SSE)；U0 今日 / U1 岗位库 / U2 抽屉详情 |
+> | P2 界面 | ✅ 完成并通过真实 GUI 验收 | `/today`、`/jobs`、`/jobs/:id`、`/jobs/:id/mark`、`/crawl/*`、`/events`(SSE)；U0 今日 / U1 岗位库（左列表 / 右详情分栏）/ U2 详情（内嵌栏 + 抽屉） |
 > | P3 调度与健康 | ✅ 完成并通过真实 GUI 验收 | 搜索方案 CRUD、自排程器（+抖动/自重新武装）、**错过只弹待办不自动跑**、登录态检测与引导、**单实例租约锁**、U0 暴露调度/登录/补跑 |
 > | P4 情报引擎 | ✅ 完成并通过真实 GUI 验收 | 迁移 v2（`dictionary`/`job_flag`/`company_signal`/`dedup_group`）、词表驱动的黑话与信号词、公司画像打分、**外包/诈骗/僵尸/薪资虚标标注**、多级去重漏斗、**L1 可解释匹配** |
 > | P5 安全与工具 | ✅ 完成并通过真实模型验收 | 迁移 v3（`audit_log`/`llm_call`）、**guard 六项检查链 + 两段式审批 + 一次性令牌**、`ai/` 隐私闸门与注入防御、**模型工具**、**toolview 卡片**、**离线闸门** |
@@ -196,8 +196,8 @@ src/
 │   └── util/          # salary / company-name / text / dedupe / errors / time / offline
 ├── client/            # ── 浏览器半
 │   ├── index.tsx      # apply：注册槽位（先 main，再侧栏入口、浮层、toolview 卡片）
-│   ├── panel.tsx      # 外壳：顶栏 + 标签 + 实时状态 + 抽屉 + 对话意图消费
-│   ├── screens/       # U0 today / U1 jobs / U2 job-detail（抽屉）
+│   ├── panel.tsx      # 外壳：顶栏 + 标签 + 实时状态 + 详情抽屉 + 对话意图消费
+│   ├── screens/       # U0 today / U1 jobs / U2 job-detail（内嵌栏 + 抽屉两种承载）
 │   │                  # U3 resumes / U4 tailor-panel / U5+U8 pipeline / U6+U7 messages
 │   │                  # P8 campus + 海外面板 + 英文体检
 │   ├── toolviews/     # 对话里的岗位/详情/话术卡片（§22.3）
@@ -314,9 +314,13 @@ mutex（全局互斥，忙就立刻失败，不排队）
 |---|---|
 | U0 今日 | 24h 新增 / 岗位总数 / 待修复 / 紧急待办 四个数字；待办列表；适配器逐字段健康；最近一轮抓取；手动抓取按钮 |
 | U1 岗位库 | 筛选条（关键词/城市/状态/最低月薪/排序）+ 分页列表；每行含薪资原文、地点、公司、标签、状态徽章 |
-| U2 详情 | 抽屉式：岗位字段 + 公司画像 + 动作按钮（收藏/忽略/标为已读/归档）+ 原始页面链接 |
+| U2 详情 | **两种承载、同一份正文**（`JobDetailBody`）：岗位库里是**右侧内嵌栏**（列表不动，逐个比较不打断）；流水线 / 消息 / 面试里是**抽屉**（那三屏是"处理一件事"，看完就关）。内容：岗位字段 + 匹配理由 + 标注依据 + 公司画像 + 动作按钮（收藏/忽略/标为已读/归档）+ 简历定制 + 海外面板 + 原始页面链接 |
 
-每屏都有**加载态 / 空态 / 异常态**（§13）。改状态后由抽屉回调 bump 一次 revision，
+> **为什么 U2 要分两种**（2026-09-17 改）：岗位库的主任务是"浏览 → 比较 → 决定"，
+> 弹层会盖住列表，每看下一个都得先关一次再点，来回两步；分栏之后两栏各自滚动、互不打断。
+> 其余三屏的任务是"处理一件事"，临时看一眼用弹层更合适 —— 关掉就回到原来的上下文。
+
+每屏都有**加载态 / 空态 / 异常态**（§13）。改状态后由详情回调 bump 一次 revision，
 列表与详情各自重拉 —— 不靠手写状态同步。
 
 ### 出口标准怎么验的
@@ -328,9 +332,12 @@ mutex（全局互斥，忙就立刻失败，不排队）
 ```
 ✔ entryRendered ✔ entryInsideButton ✔ noticeAppeared ✔ panelHiddenInitially
 ✔ clickSwitchesToPanel ✔ todayShowsStats ✔ sseConnected ✔ jobListRendered
-✔ drawerOpened ✔ drawerShowsJob ✔ markSaved ✔ listReflectsSaved
+✔ detailPaneShown ✔ detailIsInline ✔ markSaved ✔ listReflectsSaved
 ✔ noticeAutoDismissed ✔ backToConversation
 ```
+
+> `detailIsInline` 是 2026-09-17 随分栏一起加的：它断言页面上**没有** `.jh-drawer`。
+> 只说"详情显示了"是不够的 —— 弹层与内嵌栏都能让前半句为真。
 
 验收脚本**不在本仓库**（它与开发机上的 DSH profile、Playwright 安装位置、`?token=` 入口绑定，
 没有做成可复现的分发形态），使用时形如 `node jh-e2e.mjs "http://127.0.0.1:4399/?token=…"`。
@@ -520,7 +527,7 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 
 卡片上的按钮**打的是与界面完全相同的端点**：`收藏` → `POST /jobs/:id/mark`、
 `生成话术` → `POST /jobs/:id/greeting/draft`。`在面板里打开` 经 `client/intent.ts` 的意图通道
-（先记意图再切面板，因为 `main` 是 keyed 槽位，面板可能是刚挂载的）跳到主面板并自动打开抽屉。
+（先记意图再切面板，因为 `main` 是 keyed 槽位，面板可能是刚挂载的）跳到主面板并自动打开详情。
 
 ### 离线闸门（§14 的机制化兜底）
 
@@ -550,7 +557,7 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
   全程 `crawl_run` 停留在 5 条 —— **零真实站点流量**。
 - **真实模型 GUI 验收 14/14**（`jh-p5-toolview.mjs`，profile `p5test`）：
   提示词让模型依次调 `job_query` → `job_detail` → `greeting_draft`，三张卡片分别渲染成
-  3 个岗位行 / 7 行结构化详情 / 话术正文；**点击卡片里的岗位行 → 跳主面板 → 抽屉自动打开到那个岗位**。
+  3 个岗位行 / 7 行结构化详情 / 话术正文；**点击卡片里的岗位行 → 跳主面板 → 详情自动打开到那个岗位**（岗位库里就是右侧栏）。
 - **基线 GUI 31/31**（`jh-e2e.mjs`，含 P5 的 HTTP 层检查）。
 - **两段式确认 10/10**（`jh-p5-confirm.mjs`）：未确认 → `409 NEEDS_CONFIRM` 且审计增量为 0；
   确认后 → 真的走到动作实现并**如实失败**（`ADAPTER_BROKEN`：「前程无忧 的适配器还没实现打招呼动作」）且审计 +1；

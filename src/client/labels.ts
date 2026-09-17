@@ -1,4 +1,5 @@
 import type { JobState } from '../shared/enums.js'
+import type { JobDto } from '../shared/dto.js'
 
 /**
  * 岗位处置态的中文标签。
@@ -19,4 +20,19 @@ export const JOB_ACTION_LABEL: Record<JobState, string> = {
   saved: '收藏',
   ignored: '忽略',
   archived: '归档',
+}
+
+/**
+ * 薪资展示：原文优先，归一化结果只作补充（§4.10.2：解析结果不覆盖原文）。
+ *
+ * 放在这里而不是 `screens/jobs.tsx`：岗位库的左右两栏都要用它，
+ * 而右侧详情又必须被岗位库 import —— 留在 jobs.tsx 会形成两个屏之间的循环 import。
+ */
+export function salaryDetail(job: JobDto): string | null {
+  if (job.salaryMin === null) return null
+  const range =
+    job.salaryMax === null || job.salaryMax === job.salaryMin
+      ? String(job.salaryMin)
+      : `${String(job.salaryMin)}-${String(job.salaryMax)}`
+  return `${range} 元/月${job.salaryMonths === null ? '' : ` · ${String(job.salaryMonths)} 薪`}`
 }

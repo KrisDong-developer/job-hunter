@@ -32,7 +32,10 @@ const STREAM_LABEL: Record<string, string> = {
 }
 
 /**
- * 面板外壳：顶栏（标签 + 实时状态）+ U0/U1 两个屏 + U2 抽屉。
+ * 面板外壳：顶栏（标签 + 实时状态）+ 各屏。
+ *
+ * 岗位详情有两种呈现：岗位库里是**右侧内嵌栏**（列表不动，方便逐个比较），
+ * 流水线 / 消息 / 面试里是**抽屉**（那三个屏是"处理一件事"，临时看一眼更合适）。
  *
  * SSE 的用法严格按 ADR-24：事件只当作「去重新拉一次」的提示，
  * 收到后合并成一次 revision 自增，各屏用这个 revision 作依赖重新取数。
@@ -94,7 +97,12 @@ export function JobHunterPanel() {
               key={tab.key}
               type="button"
               className={`jh-tab${screen === tab.key ? ' jh-tab-active' : ''}`}
-              onClick={() => setScreen(tab.key)}
+              onClick={() => {
+                setScreen(tab.key)
+                // 换标签就丢掉选中的岗位：详情要么在岗位库里当右栏，要么当抽屉盖在上面，
+                // 两个屏之间带着走只会让人莫名其妙（抽屉会凭空在别的标签上弹出来）。
+                setSelected(null)
+              }}
             >
               {tab.label}
             </button>
@@ -138,11 +146,17 @@ export function JobHunterPanel() {
         ) : screen === 'resumes' ? (
           <ResumesScreen revision={revision} onChanged={() => setRevision((value) => value + 1)} />
         ) : (
-          <JobsScreen revision={revision} onSelect={setSelected} />
+          <JobsScreen
+            revision={revision}
+            selected={selected}
+            onSelect={setSelected}
+            onChanged={() => setRevision((value) => value + 1)}
+          />
         )}
       </div>
 
-      {selected === null ? null : (
+      {/* 岗位库的详情是右侧内嵌栏（见 JobsScreen）；抽屉只服务其它三个屏。 */}
+      {screen === 'jobs' || selected === null ? null : (
         <JobDetailDrawer
           id={selected}
           revision={revision}

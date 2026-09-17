@@ -179,7 +179,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/job-detail.tsx
-		var import_react6 = require("react");
+		var import_react5 = require("react");
 
 		// src/shared/enums.ts
 		var JOB_STATES = ["new", "seen", "saved", "ignored", "archived"];
@@ -647,6 +647,11 @@ window.__ModuleLoader__.load({
 		  ignored: "\u5FFD\u7565",
 		  archived: "\u5F52\u6863"
 		};
+		function salaryDetail(job) {
+		  if (job.salaryMin === null) return null;
+		  const range = job.salaryMax === null || job.salaryMax === job.salaryMin ? String(job.salaryMin) : `${String(job.salaryMin)}-${String(job.salaryMax)}`;
+		  return `${range} \u5143/\u6708${job.salaryMonths === null ? "" : ` \xB7 ${String(job.salaryMonths)} \u85AA`}`;
+		}
 
 		// src/client/screens/tailor-panel.tsx
 		var import_react2 = require("react");
@@ -1219,9 +1224,202 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 
-		// src/client/screens/jobs.tsx
-		var import_react5 = require("react");
+		// src/client/screens/job-detail.tsx
 		var import_jsx_runtime5 = require("react/jsx-runtime");
+		var ACTION_STATES = ["saved", "ignored", "seen", "archived"];
+		function JobDetailBody(props) {
+		  const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision]);
+		  const [busy, setBusy] = (0, import_react5.useState)(null);
+		  const [failure, setFailure] = (0, import_react5.useState)(null);
+		  const mark = async (next) => {
+		    setBusy(next);
+		    setFailure(null);
+		    try {
+		      await markJob(props.id, next);
+		      props.onChanged();
+		      reload();
+		    } catch (error) {
+		      setFailure(error instanceof ApiError ? error.display : String(error));
+		    } finally {
+		      setBusy(null);
+		    }
+		  };
+		  if (state.status === "loading") {
+		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u8BE6\u60C5\u2026" });
+		  }
+		  if (state.status === "error") {
+		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: state.message }),
+		      state.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: state.hint }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-btn", onClick: reload, children: "\u91CD\u8BD5" })
+		    ] });
+		  }
+		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h2", { className: "jh-detail-title", children: state.data.job.title }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-detail-salary", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { className: "jh-salary", children: state.data.job.salaryRaw }),
+		      salaryDetail(state.data.job) === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-muted", children: [
+		        "\uFF08",
+		        salaryDetail(state.data.job),
+		        "\uFF09"
+		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("ul", { className: "jh-kv", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u516C\u53F8" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.companyName ?? "\u2014" })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5730\u70B9" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
+		          state.data.job.city,
+		          state.data.job.district === "" ? "" : `\xB7${state.data.job.district}`
+		        ] })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u7ECF\u9A8C" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.expReq === "" ? "\u2014" : state.data.job.expReq })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5B66\u5386" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.eduReq === "" ? "\u2014" : state.data.job.eduReq })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u53D1\u5E03" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.publishedAt ?? "\u2014" })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u9996\u6B21\u89C1\u5230" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.firstSeenAt })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5F53\u524D\u72B6\u6001" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: JOB_STATE_LABEL[state.data.job.state] })
+		      ] })
+		    ] }),
+		    state.data.job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-tags", children: state.data.job.tags.map((tag) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("h3", { className: "jh-card-title", children: [
+		        "L1 \u7C97\u7B5B\u5206",
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-score jh-score-inline", children: state.data.job.matchScore === null ? "\u672A\u8BA1\u7B97" : state.data.job.matchScore })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u7EAF\u89C4\u5219\u6253\u5206\uFF08\u57CE\u5E02 / \u85AA\u8D44 / \u5173\u952E\u8BCD\u547D\u4E2D\u7387\uFF09\uFF0C**\u5168\u91CF\u9002\u7528\u3001\u96F6\u6210\u672C**\u3002 \u8BED\u4E49\u7EA7\u7684\u7CBE\u8BC4\u8981\u7B49 L2\uFF0C\u6240\u4EE5\u8FD9\u91CC\u6807\u7684\u662F\u300C\u7C97\u7B5B\u5206\u300D\u800C\u4E0D\u662F\u300C\u5339\u914D\u5EA6\u300D\u3002" }),
+		      state.data.matchReasons.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u7406\u7531\u8BB0\u5F55 \u2014\u2014 \u91C7\u96C6\u540E\u4F1A\u968F\u6807\u6CE8\u4E00\u8D77\u7B97\u51FA\u6765\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-reasons", children: state.data.matchReasons.map((reason, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: `jh-reason jh-reason-${reason.kind}`, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-reason-weight", children: reason.weight > 0 ? `+${String(reason.weight)}` : reason.weight < 0 ? String(reason.weight) : "\xB7" }),
+		        reason.text
+		      ] }, `${reason.kind}-${String(index)}`)) })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "\u6807\u6CE8\u4E0E\u4F9D\u636E" }),
+		      state.data.flags.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u89C4\u5219\u6CA1\u6709\u547D\u4E2D\u4EFB\u4F55\u98CE\u9669\u7279\u5F81\u3002\u8FD9\u4E0D\u7B49\u4E8E\u300C\u6CA1\u95EE\u9898\u300D\u2014\u2014 \u53EA\u662F\u6CA1\u547D\u4E2D\u5DF2\u77E5\u6A21\u5F0F\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-flags", children: state.data.flags.map((flag) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "jh-flag-item", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-flag-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `jh-flag jh-flag-${flag.flagType}`, children: JOB_FLAG_LABEL[flag.flagType] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-muted", children: [
+		            "\u5F3A\u5EA6 ",
+		            flag.score
+		          ] })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-evidence", children: flag.evidence.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { children: item }, `${flag.flagType}-${String(index)}`)) })
+		      ] }, flag.flagType)) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8BC6\u522B\u4F9D\u636E\u5206\u4E24\u5C42\uFF1A**\u6587\u672C\u5C42**\u6765\u81EA\u8BCD\u8868\u547D\u4E2D\u7684\u539F\u6587\u7247\u6BB5\uFF0C**\u7EDF\u8BA1\u5C42**\u6765\u81EA\u516C\u53F8\u7EF4\u5EA6 \uFF08\u5C97\u4F4D\u6570\u3001\u5730\u57DF\u8DE8\u5EA6\u3001\u9A7B\u573A\u6BD4\u4F8B\uFF09\u3002\u4E24\u8005\u90FD\u4F1A\u5728\u6B64\u9010\u6761\u5217\u51FA\u3002" })
+		    ] }),
+		    state.data.company === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "\u516C\u53F8\u753B\u50CF" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("ul", { className: "jh-kv", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5F52\u4E00\u5316\u540D" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("code", { children: state.data.company.nameNorm })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u884C\u4E1A" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.industry ?? "\u2014" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u6027\u8D28" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.nature ?? "\u2014" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u89C4\u6A21" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.size ?? "\u2014" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5728\u624B\u5C97\u4F4D" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.jobCount })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u6280\u672F\u6808\u5E7F\u5EA6" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.stackDiversity })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5730\u57DF\u8DE8\u5EA6" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.geoSpread })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u9A7B\u573A\u6BD4\u4F8B" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.onsiteRatio === null ? "\u2014" : `${String(Math.round(state.data.company.onsiteRatio * 100))}%` })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u540D\u79F0\u5173\u952E\u8BCD" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.nameKeywordHits })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5916\u5305\u5206 / \u8BC8\u9A97\u5206" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
+		            String(state.data.company.outsourcingScore ?? 0),
+		            " / ",
+		            String(state.data.company.fraudScore ?? 0)
+		          ] })
+		        ] })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u51B7\u542F\u52A8\u65F6\u7EDF\u8BA1\u4FE1\u53F7\u5F31\uFF08D-16\uFF09\u2014\u2014 \u5C97\u4F4D\u8D8A\u591A\u5224\u65AD\u8D8A\u51C6\uFF1B\u4F9D\u636E\u4E0D\u8DB3\u65F6\u4E0A\u9762\u8FD9\u4E9B\u6570\u5B57\u4F1A\u504F\u4F4E\uFF0C \u800C\u4E0D\u662F\u786C\u7ED9\u4E00\u4E2A\u7ED3\u8BBA\u3002" })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-detail-actions", children: ACTION_STATES.map((action) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: `jh-btn jh-btn-inline${state.data.job.state === action ? " jh-btn-active" : ""}`,
+		        disabled: busy !== null,
+		        onClick: () => void mark(action),
+		        children: busy === action ? "\u2026" : JOB_ACTION_LABEL[action]
+		      },
+		      action
+		    )) }),
+		    failure === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: failure }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(TailorPanel, { jobId: props.id, revision: props.revision, onChanged: props.onChanged }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(OverseasPanel, { jobId: props.id, onChanged: props.onChanged }),
+		    state.data.job.scoreStale ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-warn", children: "\u8FD9\u4E2A\u5339\u914D\u5206\u662F**\u65E7\u7248\u7B80\u5386**\u4E0B\u7B97\u51FA\u6765\u7684 \u2014\u2014 \u7B80\u5386\u6539\u8FC7\u4E4B\u540E\u5B83\u5C31\u4E0D\u518D\u6709\u6548\u3002 \u7528\u300C\u91CD\u7B97\u300D\u6216\u5728\u5BF9\u8BDD\u91CC\u8BA9\u6A21\u578B\u8DD1 job_match_explain \u624D\u662F\u5F53\u524D\u5206\u6570\u3002" }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-muted", children: [
+		      "\u539F\u59CB\u9875\u9762\uFF1A",
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("a", { href: state.data.job.sourceUrl, target: "_blank", rel: "noreferrer noopener", children: state.data.job.sourceUrl })
+		    ] })
+		  ] });
+		}
+		function JobDetailPane(props) {
+		  if (props.id === null) {
+		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-detail-pane jh-detail-pane-empty", "data-job-hunter": "job-detail", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-detail-empty-title", children: "\u4ECE\u5DE6\u4FA7\u9009\u4E00\u4E2A\u5C97\u4F4D" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8BE6\u60C5\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\uFF0C\u5217\u8868\u4FDD\u6301\u4E0D\u52A8\uFF0C\u65B9\u4FBF\u4E00\u4E2A\u4E2A\u5F80\u4E0B\u6BD4\u3002" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u5217\u8868\u4E0A\u7684\u300C\u7C97\u7B5B\u5206\u300D\u4E0E\u98CE\u9669\u6807\u6CE8\u53EA\u662F\u521D\u7B5B\uFF1B\u70B9\u8FDB\u6765\u80FD\u770B\u5230\u6BCF\u4E00\u6761\u7ED3\u8BBA\u7684**\u539F\u6587\u4F9D\u636E**\u3002" })
+		    ] });
+		  }
+		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("section", { className: "jh-detail-pane", "data-job-hunter": "job-detail", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(JobDetailBody, { id: props.id, revision: props.revision, onChanged: props.onChanged }) });
+		}
+		function JobDetailDrawer(props) {
+		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-drawer-layer", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-drawer-backdrop", "aria-label": "\u5173\u95ED\u8BE6\u60C5", onClick: props.onClose }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("aside", { className: "jh-drawer", role: "dialog", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", "data-job-hunter": "job-drawer", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("header", { className: "jh-drawer-head", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-drawer-title", children: "\u5C97\u4F4D\u8BE6\u60C5" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-icon-btn", "aria-label": "\u5173\u95ED", onClick: props.onClose, children: "\xD7" })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-drawer-body", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(JobDetailBody, { id: props.id, revision: props.revision, onChanged: props.onChanged }) })
+		    ] })
+		  ] });
+		}
+
+		// src/client/screens/jobs.tsx
+		var import_react6 = require("react");
+		var import_jsx_runtime6 = require("react/jsx-runtime");
 		var EMPTY_FILTERS = {
 		  q: "",
 		  city: "",
@@ -1238,9 +1436,9 @@ window.__ModuleLoader__.load({
 		];
 		var PAGE_SIZE = 20;
 		function JobsScreen(props) {
-		  const [draft, setDraft] = (0, import_react5.useState)(EMPTY_FILTERS);
-		  const [applied, setApplied] = (0, import_react5.useState)(EMPTY_FILTERS);
-		  const [page, setPage] = (0, import_react5.useState)(1);
+		  const [draft, setDraft] = (0, import_react6.useState)(EMPTY_FILTERS);
+		  const [applied, setApplied] = (0, import_react6.useState)(EMPTY_FILTERS);
+		  const [page, setPage] = (0, import_react6.useState)(1);
 		  const { state, reload } = useAsync(
 		    (signal) => fetchJobs(
 		      {
@@ -1267,9 +1465,9 @@ window.__ModuleLoader__.load({
 		    setApplied(EMPTY_FILTERS);
 		    setPage(1);
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-screen", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("form", { className: "jh-filters", onSubmit: submit, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-jobs-split", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("form", { className: "jh-filters", onSubmit: submit, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "input",
 		        {
 		          className: "jh-input",
@@ -1278,7 +1476,7 @@ window.__ModuleLoader__.load({
 		          onChange: (event) => setDraft({ ...draft, q: event.target.value })
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "input",
 		        {
 		          className: "jh-input jh-input-narrow",
@@ -1287,19 +1485,19 @@ window.__ModuleLoader__.load({
 		          onChange: (event) => setDraft({ ...draft, city: event.target.value })
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
 		        "select",
 		        {
 		          className: "jh-input jh-input-narrow",
 		          value: draft.state,
 		          onChange: (event) => setDraft({ ...draft, state: event.target.value }),
 		          children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "", children: "\u5168\u90E8\u72B6\u6001" }),
-		            JOB_STATES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value, children: JOB_STATE_LABEL[value] }, value))
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: "", children: "\u5168\u90E8\u72B6\u6001" }),
+		            JOB_STATES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value, children: JOB_STATE_LABEL[value] }, value))
 		          ]
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "input",
 		        {
 		          className: "jh-input jh-input-narrow",
@@ -1309,272 +1507,107 @@ window.__ModuleLoader__.load({
 		          onChange: (event) => setDraft({ ...draft, minSalary: event.target.value.replace(/[^0-9]/g, "") })
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "select",
 		        {
 		          className: "jh-input jh-input-narrow",
 		          value: draft.orderBy,
 		          onChange: (event) => setDraft({ ...draft, orderBy: event.target.value }),
-		          children: ORDER_OPTIONS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: option.value, children: option.label }, option.value))
+		          children: ORDER_OPTIONS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: option.value, children: option.label }, option.value))
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline", children: "\u7B5B\u9009" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: reset, children: "\u91CD\u7F6E" })
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline", children: "\u7B5B\u9009" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: reset, children: "\u91CD\u7F6E" })
 		    ] }),
-		    state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u67E5\u8BE2\u5C97\u4F4D\u2026" }),
-		    state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h2", { className: "jh-card-title", children: "\u67E5\u8BE2\u5931\u8D25" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: state.message }),
-		      state.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: state.hint }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-btn", onClick: reload, children: "\u91CD\u8BD5" })
-		    ] }),
-		    state.status === "ok" && state.data.items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h2", { className: "jh-card-title", children: "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u5C97\u4F4D" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-muted", children: [
-		        "\u5171 ",
-		        state.data.total,
-		        " \u6761\u3002\u6362\u4E2A\u5173\u952E\u8BCD\u6216\u653E\u5BBD\u7B5B\u9009\u6761\u4EF6\u8BD5\u8BD5\uFF1B\u4E5F\u53EF\u4EE5\u56DE\u5230\u300C\u4ECA\u65E5\u300D\u624B\u52A8\u6293\u53D6\u4E00\u6B21\u3002"
-		      ] })
-		    ] }),
-		    state.status === "ok" && state.data.items.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-listbar", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-muted", children: [
-		          "\u5171 ",
-		          state.data.total,
-		          " \u6761 \xB7 \u7B2C ",
-		          state.data.page,
-		          " \u9875"
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-spacer" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-		          "button",
-		          {
-		            type: "button",
-		            className: "jh-btn jh-btn-inline",
-		            disabled: page <= 1,
-		            onClick: () => setPage((value) => Math.max(1, value - 1)),
-		            children: "\u4E0A\u4E00\u9875"
-		          }
-		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-		          "button",
-		          {
-		            type: "button",
-		            className: "jh-btn jh-btn-inline",
-		            disabled: !state.data.hasMore,
-		            onClick: () => setPage((value) => value + 1),
-		            children: "\u4E0B\u4E00\u9875"
-		          }
-		        )
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-jobs", children: state.data.items.map((job) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("button", { type: "button", className: "jh-job", onClick: () => props.onSelect(job.id), children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-job-main", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-job-title", children: job.title }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-job-meta", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { className: "jh-salary", children: job.salaryRaw }),
-		            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
-		              job.city,
-		              job.district === "" ? "" : `\xB7${job.district}`
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-job-company", children: job.companyName ?? "\u2014" })
-		          ] }),
-		          job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tags", children: job.tags.slice(0, 8).map((tag) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
-		          (job.flagTypes.length > 0 || job.matchScore !== null) && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-job-signals", children: [
-		            job.matchScore === null ? null : (
-		              // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
-		              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-score", children: [
-		                "\u7C97\u7B5B ",
-		                job.matchScore
-		              ] })
-		            ),
-		            job.flagTypes.map((type) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `jh-flag jh-flag-${type}`, children: JOB_FLAG_LABEL[type] }, type))
-		          ] })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `jh-state jh-state-${job.state}`, children: JOB_STATE_LABEL[job.state] })
-		      ] }) }, job.id)) })
-		    ] })
-		  ] });
-		}
-		function salaryDetail(job) {
-		  if (job.salaryMin === null) return null;
-		  const range = job.salaryMax === null || job.salaryMax === job.salaryMin ? String(job.salaryMin) : `${String(job.salaryMin)}-${String(job.salaryMax)}`;
-		  return `${range} \u5143/\u6708${job.salaryMonths === null ? "" : ` \xB7 ${String(job.salaryMonths)} \u85AA`}`;
-		}
-
-		// src/client/screens/job-detail.tsx
-		var import_jsx_runtime6 = require("react/jsx-runtime");
-		var ACTION_STATES = ["saved", "ignored", "seen", "archived"];
-		function JobDetailDrawer(props) {
-		  const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision]);
-		  const [busy, setBusy] = (0, import_react6.useState)(null);
-		  const [failure, setFailure] = (0, import_react6.useState)(null);
-		  const mark = async (next) => {
-		    setBusy(next);
-		    setFailure(null);
-		    try {
-		      await markJob(props.id, next);
-		      props.onChanged();
-		      reload();
-		    } catch (error) {
-		      setFailure(error instanceof ApiError ? error.display : String(error));
-		    } finally {
-		      setBusy(null);
-		    }
-		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-drawer-layer", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "jh-drawer-backdrop", "aria-label": "\u5173\u95ED\u8BE6\u60C5", onClick: props.onClose }),
-		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("aside", { className: "jh-drawer", role: "dialog", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("header", { className: "jh-drawer-head", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-drawer-title", children: "\u5C97\u4F4D\u8BE6\u60C5" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "jh-icon-btn", "aria-label": "\u5173\u95ED", onClick: props.onClose, children: "\xD7" })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-drawer-body", children: [
-		        state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u8BE6\u60C5\u2026" }),
-		        state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-jobs-cols", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-jobs-pane", "data-job-hunter": "job-list", children: [
+		        state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u67E5\u8BE2\u5C97\u4F4D\u2026" }),
+		        state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { className: "jh-card-title", children: "\u67E5\u8BE2\u5931\u8D25" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-error", children: state.message }),
 		          state.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: state.hint }),
 		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "jh-btn", onClick: reload, children: "\u91CD\u8BD5" })
 		        ] }),
-		        state.status === "ok" && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { className: "jh-detail-title", children: state.data.job.title }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-detail-salary", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "jh-salary", children: state.data.job.salaryRaw }),
-		            salaryDetail(state.data.job) === null ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-muted", children: [
-		              "\uFF08",
-		              salaryDetail(state.data.job),
-		              "\uFF09"
-		            ] })
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("ul", { className: "jh-kv", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u516C\u53F8" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.job.companyName ?? "\u2014" })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5730\u70B9" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
-		                state.data.job.city,
-		                state.data.job.district === "" ? "" : `\xB7${state.data.job.district}`
-		              ] })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u7ECF\u9A8C" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.job.expReq === "" ? "\u2014" : state.data.job.expReq })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5B66\u5386" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.job.eduReq === "" ? "\u2014" : state.data.job.eduReq })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u53D1\u5E03" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.job.publishedAt ?? "\u2014" })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u9996\u6B21\u89C1\u5230" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.job.firstSeenAt })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F53\u524D\u72B6\u6001" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: JOB_STATE_LABEL[state.data.job.state] })
-		            ] })
-		          ] }),
-		          state.data.job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "jh-tags", children: state.data.job.tags.map((tag) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("h3", { className: "jh-card-title", children: [
-		              "L1 \u7C97\u7B5B\u5206",
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-score jh-score-inline", children: state.data.job.matchScore === null ? "\u672A\u8BA1\u7B97" : state.data.job.matchScore })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u7EAF\u89C4\u5219\u6253\u5206\uFF08\u57CE\u5E02 / \u85AA\u8D44 / \u5173\u952E\u8BCD\u547D\u4E2D\u7387\uFF09\uFF0C**\u5168\u91CF\u9002\u7528\u3001\u96F6\u6210\u672C**\u3002 \u8BED\u4E49\u7EA7\u7684\u7CBE\u8BC4\u8981\u7B49 L2\uFF0C\u6240\u4EE5\u8FD9\u91CC\u6807\u7684\u662F\u300C\u7C97\u7B5B\u5206\u300D\u800C\u4E0D\u662F\u300C\u5339\u914D\u5EA6\u300D\u3002" }),
-		            state.data.matchReasons.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u7406\u7531\u8BB0\u5F55 \u2014\u2014 \u91C7\u96C6\u540E\u4F1A\u968F\u6807\u6CE8\u4E00\u8D77\u7B97\u51FA\u6765\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "jh-reasons", children: state.data.matchReasons.map((reason, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { className: `jh-reason jh-reason-${reason.kind}`, children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-reason-weight", children: reason.weight > 0 ? `+${String(reason.weight)}` : reason.weight < 0 ? String(reason.weight) : "\xB7" }),
-		              reason.text
-		            ] }, `${reason.kind}-${String(index)}`)) })
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { className: "jh-card-title", children: "\u6807\u6CE8\u4E0E\u4F9D\u636E" }),
-		            state.data.flags.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u89C4\u5219\u6CA1\u6709\u547D\u4E2D\u4EFB\u4F55\u98CE\u9669\u7279\u5F81\u3002\u8FD9\u4E0D\u7B49\u4E8E\u300C\u6CA1\u95EE\u9898\u300D\u2014\u2014 \u53EA\u662F\u6CA1\u547D\u4E2D\u5DF2\u77E5\u6A21\u5F0F\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "jh-flags", children: state.data.flags.map((flag) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { className: "jh-flag-item", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-flag-head", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `jh-flag jh-flag-${flag.flagType}`, children: JOB_FLAG_LABEL[flag.flagType] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-muted", children: [
-		                  "\u5F3A\u5EA6 ",
-		                  flag.score
-		                ] })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "jh-evidence", children: flag.evidence.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("li", { children: item }, `${flag.flagType}-${String(index)}`)) })
-		            ] }, flag.flagType)) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u8BC6\u522B\u4F9D\u636E\u5206\u4E24\u5C42\uFF1A**\u6587\u672C\u5C42**\u6765\u81EA\u8BCD\u8868\u547D\u4E2D\u7684\u539F\u6587\u7247\u6BB5\uFF0C**\u7EDF\u8BA1\u5C42**\u6765\u81EA\u516C\u53F8\u7EF4\u5EA6 \uFF08\u5C97\u4F4D\u6570\u3001\u5730\u57DF\u8DE8\u5EA6\u3001\u9A7B\u573A\u6BD4\u4F8B\uFF09\u3002\u4E24\u8005\u90FD\u4F1A\u5728\u6B64\u9010\u6761\u5217\u51FA\u3002" })
-		          ] }),
-		          state.data.company === null ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { className: "jh-card-title", children: "\u516C\u53F8\u753B\u50CF" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("ul", { className: "jh-kv", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F52\u4E00\u5316\u540D" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("code", { children: state.data.company.nameNorm })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u884C\u4E1A" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.industry ?? "\u2014" })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6027\u8D28" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.nature ?? "\u2014" })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u89C4\u6A21" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.size ?? "\u2014" })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5728\u624B\u5C97\u4F4D" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.jobCount })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6280\u672F\u6808\u5E7F\u5EA6" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.stackDiversity })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5730\u57DF\u8DE8\u5EA6" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.geoSpread })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u9A7B\u573A\u6BD4\u4F8B" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.onsiteRatio === null ? "\u2014" : `${String(Math.round(state.data.company.onsiteRatio * 100))}%` })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u540D\u79F0\u5173\u952E\u8BCD" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: state.data.company.nameKeywordHits })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5916\u5305\u5206 / \u8BC8\u9A97\u5206" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
-		                  String(state.data.company.outsourcingScore ?? 0),
-		                  " / ",
-		                  String(state.data.company.fraudScore ?? 0)
-		                ] })
-		              ] })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u51B7\u542F\u52A8\u65F6\u7EDF\u8BA1\u4FE1\u53F7\u5F31\uFF08D-16\uFF09\u2014\u2014 \u5C97\u4F4D\u8D8A\u591A\u5224\u65AD\u8D8A\u51C6\uFF1B\u4F9D\u636E\u4E0D\u8DB3\u65F6\u4E0A\u9762\u8FD9\u4E9B\u6570\u5B57\u4F1A\u504F\u4F4E\uFF0C \u800C\u4E0D\u662F\u786C\u7ED9\u4E00\u4E2A\u7ED3\u8BBA\u3002" })
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "jh-detail-actions", children: ACTION_STATES.map((action) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: `jh-btn jh-btn-inline${state.data.job.state === action ? " jh-btn-active" : ""}`,
-		              disabled: busy !== null,
-		              onClick: () => void mark(action),
-		              children: busy === action ? "\u2026" : JOB_ACTION_LABEL[action]
-		            },
-		            action
-		          )) }),
-		          failure === null ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-error", children: failure }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(TailorPanel, { jobId: props.id, revision: props.revision, onChanged: props.onChanged }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(OverseasPanel, { jobId: props.id, onChanged: props.onChanged }),
-		          state.data.job.scoreStale ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-warn", children: "\u8FD9\u4E2A\u5339\u914D\u5206\u662F**\u65E7\u7248\u7B80\u5386**\u4E0B\u7B97\u51FA\u6765\u7684 \u2014\u2014 \u7B80\u5386\u6539\u8FC7\u4E4B\u540E\u5B83\u5C31\u4E0D\u518D\u6709\u6548\u3002 \u7528\u300C\u91CD\u7B97\u300D\u6216\u5728\u5BF9\u8BDD\u91CC\u8BA9\u6A21\u578B\u8DD1 job_match_explain \u624D\u662F\u5F53\u524D\u5206\u6570\u3002" }) : null,
+		        state.status === "ok" && state.data.items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { className: "jh-card-title", children: "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u5C97\u4F4D" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: "jh-muted", children: [
-		            "\u539F\u59CB\u9875\u9762\uFF1A",
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("a", { href: state.data.job.sourceUrl, target: "_blank", rel: "noreferrer noopener", children: state.data.job.sourceUrl })
+		            "\u5171 ",
+		            state.data.total,
+		            " \u6761\u3002\u6362\u4E2A\u5173\u952E\u8BCD\u6216\u653E\u5BBD\u7B5B\u9009\u6761\u4EF6\u8BD5\u8BD5\uFF1B\u4E5F\u53EF\u4EE5\u56DE\u5230\u300C\u4ECA\u65E5\u300D\u624B\u52A8\u6293\u53D6\u4E00\u6B21\u3002"
 		          ] })
+		        ] }),
+		        state.status === "ok" && state.data.items.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-listbar", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-muted", children: [
+		              "\u5171 ",
+		              state.data.total,
+		              " \u6761 \xB7 \u7B2C ",
+		              state.data.page,
+		              " \u9875"
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-spacer" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "jh-btn jh-btn-inline",
+		                disabled: page <= 1,
+		                onClick: () => setPage((value) => Math.max(1, value - 1)),
+		                children: "\u4E0A\u4E00\u9875"
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "jh-btn jh-btn-inline",
+		                disabled: !state.data.hasMore,
+		                onClick: () => setPage((value) => value + 1),
+		                children: "\u4E0B\u4E00\u9875"
+		              }
+		            )
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "jh-jobs", children: state.data.items.map((job) => {
+		            const active = job.id === props.selected;
+		            return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+		              "button",
+		              {
+		                type: "button",
+		                className: `jh-job${active ? " jh-job-active" : ""}`,
+		                "data-job-id": job.id,
+		                "aria-current": active ? "true" : void 0,
+		                onClick: () => props.onSelect(job.id),
+		                children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-job-main", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-job-title", children: job.title }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-job-meta", children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "jh-salary", children: job.salaryRaw }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+		                        job.city,
+		                        job.district === "" ? "" : `\xB7${job.district}`
+		                      ] }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-job-company", children: job.companyName ?? "\u2014" })
+		                    ] }),
+		                    job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-tags", children: job.tags.slice(0, 8).map((tag) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
+		                    (job.flagTypes.length > 0 || job.matchScore !== null) && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-job-signals", children: [
+		                      job.matchScore === null ? null : (
+		                        // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
+		                        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-score", children: [
+		                          "\u7C97\u7B5B ",
+		                          job.matchScore
+		                        ] })
+		                      ),
+		                      job.flagTypes.map((type) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `jh-flag jh-flag-${type}`, children: JOB_FLAG_LABEL[type] }, type))
+		                    ] })
+		                  ] }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `jh-state jh-state-${job.state}`, children: JOB_STATE_LABEL[job.state] })
+		                ]
+		              }
+		            ) }, job.id);
+		          }) })
 		        ] })
-		      ] })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(JobDetailPane, { id: props.selected, revision: props.revision, onChanged: props.onChanged })
 		    ] })
 		  ] });
 		}
@@ -3050,7 +3083,10 @@ window.__ModuleLoader__.load({
 		        {
 		          type: "button",
 		          className: `jh-tab${screen === tab.key ? " jh-tab-active" : ""}`,
-		          onClick: () => setScreen(tab.key),
+		          onClick: () => {
+		            setScreen(tab.key);
+		            setSelected(null);
+		          },
 		          children: tab.label
 		        },
 		        tab.key
@@ -3083,8 +3119,16 @@ window.__ModuleLoader__.load({
 		        onChanged: () => setRevision((value) => value + 1),
 		        onSelectJob: setSelected
 		      }
-		    ) : screen === "campus" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(CampusScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : screen === "board" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(BoardScreen, { revision }) : screen === "resumes" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ResumesScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(JobsScreen, { revision, onSelect: setSelected }) }),
-		    selected === null ? null : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		    ) : screen === "campus" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(CampusScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : screen === "board" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(BoardScreen, { revision }) : screen === "resumes" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ResumesScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		      JobsScreen,
+		      {
+		        revision,
+		        selected,
+		        onSelect: setSelected,
+		        onChanged: () => setRevision((value) => value + 1)
+		      }
+		    ) }),
+		    screen === "jobs" || selected === null ? null : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
 		      JobDetailDrawer,
 		      {
 		        id: selected,
@@ -3231,6 +3275,31 @@ window.__ModuleLoader__.load({
 		.jh-state-new{background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-brand-text)}
 		.jh-state-saved{background:var(--dsw-alias-state-success-primary);color:#fff}
 		.jh-state-ignored,.jh-state-archived{opacity:.7}
+
+		/* \u2500\u2500 U1 \u5C97\u4F4D\u5E93\uFF1A\u5DE6\u5217\u8868 / \u53F3\u8BE6\u60C5\uFF082026-09-17 \u8D77\u4E0D\u518D\u7528\u62BD\u5C49\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u8FD9\u4E2A\u5C4F\u7684\u4E3B\u4EFB\u52A1\u662F"\u6D4F\u89C8 \u2192 \u6BD4\u8F83 \u2192 \u51B3\u5B9A"\uFF0C\u5F39\u5C42\u4F1A\u76D6\u4F4F\u5217\u8868\u3001\u6BCF\u770B\u4E0B\u4E00\u4E2A\u90FD\u8981\u5148\u5173\u4E00\u6B21\u3002
+		   \u4E24\u680F\u5404\u81EA\u6EDA\u52A8\uFF1A\u7B5B\u9009\u6761\u56FA\u5B9A\u5728\u9876\u90E8\uFF0C\u5DE6\u680F padding-right \u4E0E\u53F3\u680F padding-left \u7ED9\u4E2D\u95F4\u90A3\u6761
+		   \u5206\u9694\u7EBF\u7559\u547C\u5438\uFF1B\u5206\u9694\u7EBF\u753B\u5728\u53F3\u680F\u7684 border-left \u4E0A\uFF0C\u4E0D\u518D\u989D\u5916\u5360\u4E00\u5217\u5BBD\u5EA6\u3002 */
+		.jh-jobs-split{display:flex;flex-direction:column;height:100%;box-sizing:border-box;
+		  padding:16px 18px;max-width:1560px}
+		.jh-jobs-cols{display:grid;grid-template-columns:minmax(360px,46%) 1fr;
+		  flex:1 1 auto;min-height:0}
+		.jh-jobs-pane{min-width:0;overflow:auto;padding-right:16px;padding-bottom:16px}
+		.jh-detail-pane{min-width:0;overflow:auto;padding-left:16px;padding-bottom:16px;
+		  border-left:1px solid var(--dsw-alias-border-l1)}
+		.jh-detail-pane-empty{display:flex;flex-direction:column;gap:8px;justify-content:center;
+		  color:var(--dsw-alias-label-secondary)}
+		.jh-detail-empty-title{font-size:14px;font-weight:600;margin:0;color:var(--dsw-alias-label-primary)}
+		.jh-job-active{border-color:var(--dsw-alias-brand-primary);
+		  background:var(--dsw-alias-interactive-bg-active)}
+		/* \u9762\u677F\u88AB\u62D6\u7A84\u65F6\u9000\u56DE\u5355\u680F\uFF1A\u5217\u8868\u5728\u4E0A\u3001\u8BE6\u60C5\u5728\u4E0B\uFF0C\u6574\u5C4F\u4E00\u8D77\u6EDA\u3002 */
+		@media (max-width:820px){
+		  .jh-jobs-split{height:auto}
+		  .jh-jobs-cols{grid-template-columns:1fr}
+		  .jh-jobs-pane{overflow:visible;padding-right:0}
+		  .jh-detail-pane{overflow:visible;border-left:0;border-top:1px solid var(--dsw-alias-border-l1);
+		    padding-left:0;padding-top:12px;margin-top:12px}
+		}
 
 		/* \u2500\u2500 P4\uFF1A\u5339\u914D\u5206\u4E0E\u98CE\u9669\u6807\u6CE8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-job-signals{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
