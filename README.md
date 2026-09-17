@@ -51,6 +51,14 @@ dsh plugin --profile web add .
 > `prepare` 构建脚本 —— 你必须先在 profile 的 `pnpm-workspace.yaml` 里手写 `allowBuilds` 才放行
 > （DSH 自己的错误提示也是这么说的）。与其让你多走一步授权，不如把 `lib/`、`client/` 一起提交。
 > 代价很明确：**改了 `src/` 必须 `npm run build` 之后再提交**，否则别人装到的还是旧产物。
+>
+> 安装时可能看到一个警告：`✕ missing peer react@^18.2.0`。**可以忽略** —— 客户端半要的 `react`
+> 由 DSH 前端的 shell seed 提供（`__ModuleLoader__` 注入的 `require`），不需要你在 profile 里再装一份；
+> 声明成 `peerDependencies` 只是为了让「react 由宿主提供」这件事在清单上可见。
+>
+> 另外，从 GitHub 装到的包只含运行所需文件（`lib/`、`client/client.js`、`cordis.patch.yml`、
+> `LICENSE`、`DISCLAIMER.md`）—— 这是 `files` 字段限定的结果。想看源码、`docs/` 或 `assets/`，
+> 直接 clone 仓库。
 
 ## 截图
 
