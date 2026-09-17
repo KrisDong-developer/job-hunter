@@ -652,6 +652,47 @@ window.__ModuleLoader__.load({
 		  const range = job.salaryMax === null || job.salaryMax === job.salaryMin ? String(job.salaryMin) : `${String(job.salaryMin)}-${String(job.salaryMax)}`;
 		  return `${range} \u5143/\u6708${job.salaryMonths === null ? "" : ` \xB7 ${String(job.salaryMonths)} \u85AA`}`;
 		}
+		var BENEFIT_KEYWORDS = [
+		  "\u4E94\u9669",
+		  "\u4E00\u91D1",
+		  "\u516C\u79EF\u91D1",
+		  "\u5E74\u7EC8",
+		  "\u5956\u91D1",
+		  "\u63D0\u6210",
+		  "\u8865\u8D34",
+		  "\u8865\u52A9",
+		  "\u798F\u5229",
+		  "\u4F53\u68C0",
+		  "\u65C5\u6E38",
+		  "\u56E2\u5EFA",
+		  "\u5E74\u5047",
+		  "\u53CC\u4F11",
+		  "\u5F39\u6027",
+		  "\u4F4F\u5BBF",
+		  "\u5305\u5403",
+		  "\u5305\u4F4F",
+		  "\u73ED\u8F66",
+		  "\u57F9\u8BAD",
+		  "\u80A1\u7968",
+		  "\u671F\u6743",
+		  "\u9910\u996E",
+		  "\u8282\u65E5",
+		  "\u751F\u65E5",
+		  "\u4E0B\u5348\u8336",
+		  "\u5065\u8EAB",
+		  "\u8865\u5145\u533B\u7597",
+		  "\u610F\u5916\u9669",
+		  "\u5E26\u85AA"
+		];
+		function splitJobTags(tags) {
+		  const skills = [];
+		  const benefits = [];
+		  for (const tag of tags) {
+		    if (BENEFIT_KEYWORDS.some((keyword) => tag.includes(keyword))) benefits.push(tag);
+		    else skills.push(tag);
+		  }
+		  return { skills, benefits };
+		}
 
 		// src/client/screens/tailor-panel.tsx
 		var import_react2 = require("react");
@@ -1227,6 +1268,45 @@ window.__ModuleLoader__.load({
 		// src/client/screens/job-detail.tsx
 		var import_jsx_runtime5 = require("react/jsx-runtime");
 		var ACTION_STATES = ["saved", "ignored", "seen", "archived"];
+		var FLAG_TONE = {
+		  fraud: "error",
+		  outsourcing: "warn",
+		  salary_inflation: "warn",
+		  zombie: "quiet",
+		  jargon_hit: "quiet"
+		};
+		function Hint(props) {
+		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-hint", role: "img", "aria-label": props.text, title: props.text, children: "?" });
+		}
+		function Gauge(props) {
+		  const clamped = Math.max(0, Math.min(100, Math.round(props.score)));
+		  const band = clamped >= 70 ? "high" : clamped >= 45 ? "mid" : "low";
+		  const radius = 30;
+		  const circumference = 2 * Math.PI * radius;
+		  const filled = clamped / 100 * circumference;
+		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: `jh-gauge jh-gauge-${band}`, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("svg", { width: "72", height: "72", viewBox: "0 0 72 72", "aria-hidden": "true", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("circle", { className: "jh-gauge-track", cx: "36", cy: "36", r: radius, fill: "none", strokeWidth: "7" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		        "circle",
+		        {
+		          cx: "36",
+		          cy: "36",
+		          r: radius,
+		          fill: "none",
+		          strokeWidth: "7",
+		          strokeLinecap: "round",
+		          stroke: "currentColor",
+		          strokeDasharray: `${String(filled)} ${String(circumference - filled)}`
+		        }
+		      )
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-gauge-num", children: [
+		      clamped,
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-gauge-unit", children: "\u7C97\u7B5B\u5206" })
+		    ] })
+		  ] });
+		}
 		function JobDetailBody(props) {
 		  const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision]);
 		  const [busy, setBusy] = (0, import_react5.useState)(null);
@@ -1254,143 +1334,196 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-btn", onClick: reload, children: "\u91CD\u8BD5" })
 		    ] });
 		  }
+		  const { job, company, flags, matchReasons } = state.data;
+		  const grouped = splitJobTags(job.tags);
 		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h2", { className: "jh-detail-title", children: state.data.job.title }),
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-detail-salary", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { className: "jh-salary", children: state.data.job.salaryRaw }),
-		      salaryDetail(state.data.job) === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-muted", children: [
-		        "\uFF08",
-		        salaryDetail(state.data.job),
-		        "\uFF09"
-		      ] })
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("header", { className: "jh-detail-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-detail-headline", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h2", { className: "jh-detail-title", children: job.title }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-detail-salary", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { className: "jh-salary", children: job.salaryRaw }),
+		          salaryDetail(job) === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-muted", children: [
+		            "\uFF08",
+		            salaryDetail(job),
+		            "\uFF09"
+		          ] })
+		        ] })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-detail-actions", children: ACTION_STATES.map((action) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: `jh-btn jh-btn-inline${job.state === action ? " jh-btn-active" : ""}`,
+		          disabled: busy !== null,
+		          onClick: () => void mark(action),
+		          children: busy === action ? "\u2026" : JOB_ACTION_LABEL[action]
+		        },
+		        action
+		      )) })
 		    ] }),
+		    failure === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: failure }),
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("ul", { className: "jh-kv", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u516C\u53F8" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.companyName ?? "\u2014" })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: job.companyName ?? "\u2014" })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5730\u70B9" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
-		          state.data.job.city,
-		          state.data.job.district === "" ? "" : `\xB7${state.data.job.district}`
+		          job.city,
+		          job.district === "" ? "" : `\xB7${job.district}`
 		        ] })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u7ECF\u9A8C" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.expReq === "" ? "\u2014" : state.data.job.expReq })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: job.expReq === "" ? "\u2014" : job.expReq })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5B66\u5386" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.eduReq === "" ? "\u2014" : state.data.job.eduReq })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: job.eduReq === "" ? "\u2014" : job.eduReq })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u53D1\u5E03" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.publishedAt ?? "\u2014" })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: job.publishedAt ?? "\u2014" })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u9996\u6B21\u89C1\u5230" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.job.firstSeenAt })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: job.firstSeenAt })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5F53\u524D\u72B6\u6001" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: JOB_STATE_LABEL[state.data.job.state] })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: JOB_STATE_LABEL[job.state] })
 		      ] })
 		    ] }),
-		    state.data.job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-tags", children: state.data.job.tags.map((tag) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("h3", { className: "jh-card-title", children: [
-		        "L1 \u7C97\u7B5B\u5206",
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-score jh-score-inline", children: state.data.job.matchScore === null ? "\u672A\u8BA1\u7B97" : state.data.job.matchScore })
+		    job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-card jh-card-tight", children: [
+		      grouped.skills.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-tag-group", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tag-group-name", children: "\u6280\u80FD\u8981\u6C42" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-tags", children: grouped.skills.map((tag) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tag", children: tag }, tag)) })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u7EAF\u89C4\u5219\u6253\u5206\uFF08\u57CE\u5E02 / \u85AA\u8D44 / \u5173\u952E\u8BCD\u547D\u4E2D\u7387\uFF09\uFF0C**\u5168\u91CF\u9002\u7528\u3001\u96F6\u6210\u672C**\u3002 \u8BED\u4E49\u7EA7\u7684\u7CBE\u8BC4\u8981\u7B49 L2\uFF0C\u6240\u4EE5\u8FD9\u91CC\u6807\u7684\u662F\u300C\u7C97\u7B5B\u5206\u300D\u800C\u4E0D\u662F\u300C\u5339\u914D\u5EA6\u300D\u3002" }),
-		      state.data.matchReasons.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u7406\u7531\u8BB0\u5F55 \u2014\u2014 \u91C7\u96C6\u540E\u4F1A\u968F\u6807\u6CE8\u4E00\u8D77\u7B97\u51FA\u6765\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-reasons", children: state.data.matchReasons.map((reason, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: `jh-reason jh-reason-${reason.kind}`, children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-reason-weight", children: reason.weight > 0 ? `+${String(reason.weight)}` : reason.weight < 0 ? String(reason.weight) : "\xB7" }),
-		        reason.text
-		      ] }, `${reason.kind}-${String(index)}`)) })
+		      grouped.benefits.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-tag-group", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tag-group-name", children: "\u516C\u53F8\u798F\u5229" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-tags", children: grouped.benefits.map((tag) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-tag", children: tag }, tag)) })
+		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "L1 \u7C97\u7B5B\u5206" }),
+		      job.matchScore === null ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-note", children: "\u8FD8\u6CA1\u6709\u7B97\u8FC7 \u2014\u2014 \u91C7\u96C6\u540E\u4F1A\u968F\u6807\u6CE8\u4E00\u8D77\u7B97\u51FA\u6765\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-gauge-row", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Gauge, { score: job.matchScore }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-gauge-side", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-gauge-band", children: job.matchScore >= 70 ? "\u672C\u8F6E\u89C4\u5219\u91CC\u9760\u524D" : job.matchScore >= 45 ? "\u4E2D\u7B49" : "\u504F\u4F4E" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-note", children: [
+		            "\u6309\u89C4\u5219\u7B97\u51FA\u6765\u7684**\u7C97\u7B5B\u5206**\uFF0C\u4E0B\u9762\u662F\u9010\u6761\u52A0\u51CF\u5206\u3002",
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		              Hint,
+		              {
+		                text: "\u7EAF\u89C4\u5219\u6253\u5206\uFF08\u57CE\u5E02 / \u85AA\u8D44 / \u5173\u952E\u8BCD\u547D\u4E2D\u7387\uFF09\uFF0C\u5168\u91CF\u9002\u7528\u3001\u96F6\u6210\u672C\u3002\u8BED\u4E49\u7EA7\u7684\u7CBE\u8BC4\u8981\u7B49 L2\uFF0C\u6240\u4EE5\u8FD9\u91CC\u6807\u7684\u662F\u300C\u7C97\u7B5B\u5206\u300D\u800C\u4E0D\u662F\u300C\u5339\u914D\u5EA6\u300D\u3002"
+		              }
+		            )
+		          ] })
+		        ] })
+		      ] }),
+		      matchReasons.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-reasons", children: matchReasons.map((reason, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+		        "li",
+		        {
+		          className: `jh-reason jh-reason-${reason.kind}${reason.kind === "hit" ? " jh-reason-ok" : " jh-reason-bad"}`,
+		          children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-reason-mark", children: reason.kind === "hit" ? "\u2713" : "\u2715" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-reason-weight", children: reason.weight > 0 ? `+${String(reason.weight)}` : reason.weight < 0 ? String(reason.weight) : "\xB7" }),
+		            reason.text
+		          ]
+		        },
+		        `${reason.kind}-${String(index)}`
+		      )) })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "\u6807\u6CE8\u4E0E\u4F9D\u636E" }),
-		      state.data.flags.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u89C4\u5219\u6CA1\u6709\u547D\u4E2D\u4EFB\u4F55\u98CE\u9669\u7279\u5F81\u3002\u8FD9\u4E0D\u7B49\u4E8E\u300C\u6CA1\u95EE\u9898\u300D\u2014\u2014 \u53EA\u662F\u6CA1\u547D\u4E2D\u5DF2\u77E5\u6A21\u5F0F\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-flags", children: state.data.flags.map((flag) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "jh-flag-item", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-flag-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `jh-flag jh-flag-${flag.flagType}`, children: JOB_FLAG_LABEL[flag.flagType] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-muted", children: [
-		            "\u5F3A\u5EA6 ",
-		            flag.score
-		          ] })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-evidence", children: flag.evidence.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { children: item }, `${flag.flagType}-${String(index)}`)) })
-		      ] }, flag.flagType)) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8BC6\u522B\u4F9D\u636E\u5206\u4E24\u5C42\uFF1A**\u6587\u672C\u5C42**\u6765\u81EA\u8BCD\u8868\u547D\u4E2D\u7684\u539F\u6587\u7247\u6BB5\uFF0C**\u7EDF\u8BA1\u5C42**\u6765\u81EA\u516C\u53F8\u7EF4\u5EA6 \uFF08\u5C97\u4F4D\u6570\u3001\u5730\u57DF\u8DE8\u5EA6\u3001\u9A7B\u573A\u6BD4\u4F8B\uFF09\u3002\u4E24\u8005\u90FD\u4F1A\u5728\u6B64\u9010\u6761\u5217\u51FA\u3002" })
+		      flags.length === 0 ? (
+		        // 刻意不刷成绿色：绿色等于宣布"这个岗位没问题"，而规则没命中只说明"没命中已知模式"。
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-alert jh-alert-quiet", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-alert-title", children: "\u6CA1\u6709\u547D\u4E2D\u4EFB\u4F55\u5DF2\u77E5\u98CE\u9669\u7279\u5F81" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-alert-body", children: "\u8FD9\u4E0D\u7B49\u4E8E\u300C\u6CA1\u95EE\u9898\u300D\u3002\u8BC6\u522B\u4F9D\u636E\u5206\u4E24\u5C42\uFF1A**\u6587\u672C\u5C42**\u6765\u81EA\u8BCD\u8868\u547D\u4E2D\u7684\u539F\u6587\u7247\u6BB5\uFF0C **\u7EDF\u8BA1\u5C42**\u6765\u81EA\u516C\u53F8\u7EF4\u5EA6\uFF08\u5C97\u4F4D\u6570\u3001\u5730\u57DF\u8DE8\u5EA6\u3001\u9A7B\u573A\u6BD4\u4F8B\uFF09\uFF1B\u4E24\u8005\u90FD\u6CA1\u6709\u547D\u4E2D\u65F6\uFF0C\u8FD9\u91CC\u662F\u7A7A\u7684\u3002" })
+		        ] })
+		      ) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+		        flags.map((flag) => {
+		          const tone = FLAG_TONE[flag.flagType] ?? "quiet";
+		          return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: `jh-alert jh-alert-${tone}`, children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-alert-head", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `jh-flag jh-flag-${flag.flagType}`, children: JOB_FLAG_LABEL[flag.flagType] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-alert-title", children: [
+		                "\u5F3A\u5EA6 ",
+		                flag.score
+		              ] })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-evidence", children: flag.evidence.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { children: item }, `${flag.flagType}-${String(index)}`)) })
+		          ] }, flag.flagType);
+		        }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-note", children: [
+		          "\u6BCF\u6761\u7ED3\u8BBA\u90FD\u9644\u539F\u6587\u6216\u7EDF\u8BA1\u4F9D\u636E\u3002",
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		            Hint,
+		            {
+		              text: "\u8BC6\u522B\u4F9D\u636E\u5206\u4E24\u5C42\uFF1A\u6587\u672C\u5C42\u6765\u81EA\u8BCD\u8868\u547D\u4E2D\u7684\u539F\u6587\u7247\u6BB5\uFF0C\u7EDF\u8BA1\u5C42\u6765\u81EA\u516C\u53F8\u7EF4\u5EA6\uFF08\u5C97\u4F4D\u6570\u3001\u5730\u57DF\u8DE8\u5EA6\u3001\u9A7B\u573A\u6BD4\u4F8B\uFF09\u3002\u5F3A\u5EA6\u662F\u89C4\u5219\u6743\u91CD\uFF0C\u4E0D\u662F\u6982\u7387\u3002"
+		            }
+		          )
+		        ] })
+		      ] })
 		    ] }),
-		    state.data.company === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		    company === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-card jh-card-tight", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "\u516C\u53F8\u753B\u50CF" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("ul", { className: "jh-kv", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5F52\u4E00\u5316\u540D" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("code", { children: state.data.company.nameNorm })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("code", { children: company.nameNorm })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u884C\u4E1A" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.industry ?? "\u2014" })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.industry ?? "\u2014" })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u6027\u8D28" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.nature ?? "\u2014" })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.nature ?? "\u2014" })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u89C4\u6A21" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.size ?? "\u2014" })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.size ?? "\u2014" })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5728\u624B\u5C97\u4F4D" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.jobCount })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.jobCount })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u6280\u672F\u6808\u5E7F\u5EA6" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.stackDiversity })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.stackDiversity })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5730\u57DF\u8DE8\u5EA6" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.geoSpread })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.geoSpread })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u9A7B\u573A\u6BD4\u4F8B" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.onsiteRatio === null ? "\u2014" : `${String(Math.round(state.data.company.onsiteRatio * 100))}%` })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.onsiteRatio === null ? "\u2014" : `${String(Math.round(company.onsiteRatio * 100))}%` })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u540D\u79F0\u5173\u952E\u8BCD" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: state.data.company.nameKeywordHits })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: company.nameKeywordHits })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5916\u5305\u5206 / \u8BC8\u9A97\u5206" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
-		            String(state.data.company.outsourcingScore ?? 0),
+		            String(company.outsourcingScore ?? 0),
 		            " / ",
-		            String(state.data.company.fraudScore ?? 0)
+		            String(company.fraudScore ?? 0)
 		          ] })
 		        ] })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u51B7\u542F\u52A8\u65F6\u7EDF\u8BA1\u4FE1\u53F7\u5F31\uFF08D-16\uFF09\u2014\u2014 \u5C97\u4F4D\u8D8A\u591A\u5224\u65AD\u8D8A\u51C6\uFF1B\u4F9D\u636E\u4E0D\u8DB3\u65F6\u4E0A\u9762\u8FD9\u4E9B\u6570\u5B57\u4F1A\u504F\u4F4E\uFF0C \u800C\u4E0D\u662F\u786C\u7ED9\u4E00\u4E2A\u7ED3\u8BBA\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-note", children: "\u51B7\u542F\u52A8\u65F6\u7EDF\u8BA1\u4FE1\u53F7\u5F31\uFF08D-16\uFF09\uFF1A\u5C97\u4F4D\u8D8A\u591A\u5224\u65AD\u8D8A\u51C6\uFF0C\u4F9D\u636E\u4E0D\u8DB3\u65F6\u8FD9\u4E9B\u6570\u5B57\u4F1A\u504F\u4F4E\u3002" })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "jh-detail-actions", children: ACTION_STATES.map((action) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-		      "button",
-		      {
-		        type: "button",
-		        className: `jh-btn jh-btn-inline${state.data.job.state === action ? " jh-btn-active" : ""}`,
-		        disabled: busy !== null,
-		        onClick: () => void mark(action),
-		        children: busy === action ? "\u2026" : JOB_ACTION_LABEL[action]
-		      },
-		      action
-		    )) }),
-		    failure === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: failure }),
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(TailorPanel, { jobId: props.id, revision: props.revision, onChanged: props.onChanged }),
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(OverseasPanel, { jobId: props.id, onChanged: props.onChanged }),
-		    state.data.job.scoreStale ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-warn", children: "\u8FD9\u4E2A\u5339\u914D\u5206\u662F**\u65E7\u7248\u7B80\u5386**\u4E0B\u7B97\u51FA\u6765\u7684 \u2014\u2014 \u7B80\u5386\u6539\u8FC7\u4E4B\u540E\u5B83\u5C31\u4E0D\u518D\u6709\u6548\u3002 \u7528\u300C\u91CD\u7B97\u300D\u6216\u5728\u5BF9\u8BDD\u91CC\u8BA9\u6A21\u578B\u8DD1 job_match_explain \u624D\u662F\u5F53\u524D\u5206\u6570\u3002" }) : null,
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-muted", children: [
+		    job.scoreStale ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-warn", children: "\u8FD9\u4E2A\u5339\u914D\u5206\u662F**\u65E7\u7248\u7B80\u5386**\u4E0B\u7B97\u51FA\u6765\u7684 \u2014\u2014 \u7B80\u5386\u6539\u8FC7\u4E4B\u540E\u5B83\u5C31\u4E0D\u518D\u6709\u6548\u3002 \u7528\u300C\u91CD\u7B97\u300D\u6216\u5728\u5BF9\u8BDD\u91CC\u8BA9\u6A21\u578B\u8DD1 job_match_explain \u624D\u662F\u5F53\u524D\u5206\u6570\u3002" }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-note", children: [
 		      "\u539F\u59CB\u9875\u9762\uFF1A",
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("a", { href: state.data.job.sourceUrl, target: "_blank", rel: "noreferrer noopener", children: state.data.job.sourceUrl })
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("a", { className: "jh-link", href: job.sourceUrl, target: "_blank", rel: "noreferrer noopener", children: job.sourceUrl })
 		    ] })
 		  ] });
 		}
@@ -1398,8 +1531,8 @@ window.__ModuleLoader__.load({
 		  if (props.id === null) {
 		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "jh-detail-pane jh-detail-pane-empty", "data-job-hunter": "job-detail", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-detail-empty-title", children: "\u4ECE\u5DE6\u4FA7\u9009\u4E00\u4E2A\u5C97\u4F4D" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8BE6\u60C5\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\uFF0C\u5217\u8868\u4FDD\u6301\u4E0D\u52A8\uFF0C\u65B9\u4FBF\u4E00\u4E2A\u4E2A\u5F80\u4E0B\u6BD4\u3002" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u5217\u8868\u4E0A\u7684\u300C\u7C97\u7B5B\u5206\u300D\u4E0E\u98CE\u9669\u6807\u6CE8\u53EA\u662F\u521D\u7B5B\uFF1B\u70B9\u8FDB\u6765\u80FD\u770B\u5230\u6BCF\u4E00\u6761\u7ED3\u8BBA\u7684**\u539F\u6587\u4F9D\u636E**\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-note", children: "\u8BE6\u60C5\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\uFF0C\u5217\u8868\u4FDD\u6301\u4E0D\u52A8\uFF0C\u65B9\u4FBF\u4E00\u4E2A\u4E2A\u5F80\u4E0B\u6BD4\u3002" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-note", children: "\u5217\u8868\u4E0A\u7684\u300C\u7C97\u7B5B\u5206\u300D\u4E0E\u98CE\u9669\u6807\u6CE8\u53EA\u662F\u521D\u7B5B\uFF1B\u70B9\u8FDB\u6765\u80FD\u770B\u5230\u6BCF\u4E00\u6761\u7ED3\u8BBA\u7684**\u539F\u6587\u4F9D\u636E**\u3002" })
 		    ] });
 		  }
 		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("section", { className: "jh-detail-pane", "data-job-hunter": "job-detail", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(JobDetailBody, { id: props.id, revision: props.revision, onChanged: props.onChanged }) });
@@ -1435,6 +1568,57 @@ window.__ModuleLoader__.load({
 		  { value: "title", label: "\u6309\u6807\u9898" }
 		];
 		var PAGE_SIZE = 20;
+		function pageNumbers(page, pages) {
+		  if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
+		  const wanted = [.../* @__PURE__ */ new Set([1, pages, page - 1, page, page + 1])].filter((value) => value >= 1 && value <= pages).sort((a, b) => a - b);
+		  const out = [];
+		  let previous = 0;
+		  for (const value of wanted) {
+		    if (previous !== 0 && value - previous > 1) out.push("\u2026");
+		    out.push(value);
+		    previous = value;
+		  }
+		  return out;
+		}
+		function Pager(props) {
+		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("nav", { className: "jh-pager", "aria-label": "\u5206\u9875", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-pg",
+		        "aria-label": "\u4E0A\u4E00\u9875",
+		        disabled: props.page <= 1,
+		        onClick: () => props.onGo(props.page - 1),
+		        children: "\u2039"
+		      }
+		    ),
+		    pageNumbers(props.page, props.pages).map(
+		      (item, index) => item === "\u2026" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-pg-gap", children: "\u2026" }, `gap-${String(index)}`) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: `jh-pg${item === props.page ? " jh-pg-active" : ""}`,
+		          "aria-current": item === props.page ? "page" : void 0,
+		          onClick: () => props.onGo(item),
+		          children: item
+		        },
+		        item
+		      )
+		    ),
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-pg",
+		        "aria-label": "\u4E0B\u4E00\u9875",
+		        disabled: !props.hasMore,
+		        onClick: () => props.onGo(props.page + 1),
+		        children: "\u203A"
+		      }
+		    )
+		  ] });
+		}
 		function JobsScreen(props) {
 		  const [draft, setDraft] = (0, import_react6.useState)(EMPTY_FILTERS);
 		  const [applied, setApplied] = (0, import_react6.useState)(EMPTY_FILTERS);
@@ -1465,13 +1649,16 @@ window.__ModuleLoader__.load({
 		    setApplied(EMPTY_FILTERS);
 		    setPage(1);
 		  };
+		  const total = state.status === "ok" ? state.data.total : 0;
+		  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-jobs-split", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("form", { className: "jh-filters", onSubmit: submit, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "input",
 		        {
-		          className: "jh-input",
+		          className: "jh-input jh-input-grow",
 		          placeholder: "\u5173\u952E\u8BCD\uFF08\u5C97\u4F4D\u540D\uFF09",
+		          "aria-label": "\u5173\u952E\u8BCD",
 		          value: draft.q,
 		          onChange: (event) => setDraft({ ...draft, q: event.target.value })
 		        }
@@ -1479,8 +1666,9 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "input",
 		        {
-		          className: "jh-input jh-input-narrow",
+		          className: "jh-input jh-input-sm",
 		          placeholder: "\u57CE\u5E02",
+		          "aria-label": "\u57CE\u5E02",
 		          value: draft.city,
 		          onChange: (event) => setDraft({ ...draft, city: event.target.value })
 		        }
@@ -1488,7 +1676,8 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
 		        "select",
 		        {
-		          className: "jh-input jh-input-narrow",
+		          className: "jh-select jh-input-sm",
+		          "aria-label": "\u72B6\u6001",
 		          value: draft.state,
 		          onChange: (event) => setDraft({ ...draft, state: event.target.value }),
 		          children: [
@@ -1500,8 +1689,9 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "input",
 		        {
-		          className: "jh-input jh-input-narrow",
+		          className: "jh-input jh-input-sm",
 		          placeholder: "\u6700\u4F4E\u6708\u85AA",
+		          "aria-label": "\u6700\u4F4E\u6708\u85AA",
 		          inputMode: "numeric",
 		          value: draft.minSalary,
 		          onChange: (event) => setDraft({ ...draft, minSalary: event.target.value.replace(/[^0-9]/g, "") })
@@ -1510,14 +1700,15 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        "select",
 		        {
-		          className: "jh-input jh-input-narrow",
+		          className: "jh-select jh-input-sm",
+		          "aria-label": "\u6392\u5E8F",
 		          value: draft.orderBy,
 		          onChange: (event) => setDraft({ ...draft, orderBy: event.target.value }),
 		          children: ORDER_OPTIONS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: option.value, children: option.label }, option.value))
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline", children: "\u7B5B\u9009" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: reset, children: "\u91CD\u7F6E" })
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline jh-btn-primary", children: "\u7B5B\u9009" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline jh-btn-quiet", onClick: reset, children: "\u91CD\u7F6E" })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-jobs-cols", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-jobs-pane", "data-job-hunter": "job-list", children: [
@@ -1543,29 +1734,11 @@ window.__ModuleLoader__.load({
 		              state.data.total,
 		              " \u6761 \xB7 \u7B2C ",
 		              state.data.page,
+		              " / ",
+		              pages,
 		              " \u9875"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-spacer" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
-		              "button",
-		              {
-		                type: "button",
-		                className: "jh-btn jh-btn-inline",
-		                disabled: page <= 1,
-		                onClick: () => setPage((value) => Math.max(1, value - 1)),
-		                children: "\u4E0A\u4E00\u9875"
-		              }
-		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
-		              "button",
-		              {
-		                type: "button",
-		                className: "jh-btn jh-btn-inline",
-		                disabled: !state.data.hasMore,
-		                onClick: () => setPage((value) => value + 1),
-		                children: "\u4E0B\u4E00\u9875"
-		              }
-		            )
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Pager, { page: state.data.page, pages, hasMore: state.data.hasMore, onGo: setPage })
 		          ] }),
 		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "jh-jobs", children: state.data.items.map((job) => {
 		            const active = job.id === props.selected;
@@ -3194,40 +3367,61 @@ window.__ModuleLoader__.load({
 
 		/* \u2500\u2500 \u5C4F \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-screen{padding:16px 18px;max-width:1000px}
-		.jh-card{max-width:1000px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;
+		.jh-card{max-width:1000px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
 		  background:var(--dsw-alias-bg-layer-1);padding:14px 16px;margin:0 0 12px}
-		.jh-card-tight{padding:10px 12px;margin:12px 0}
+		.jh-card-tight{padding:12px 14px;margin:14px 0}
 		.jh-card-title{font-size:13px;font-weight:600;margin:0 0 8px}
 		.jh-muted{color:var(--dsw-alias-label-secondary);margin:0}
 		.jh-ok{color:var(--dsw-alias-state-success-primary)}
 		.jh-warn{color:var(--dsw-alias-state-warn-primary)}
 		.jh-error{color:var(--dsw-alias-state-error-primary);margin:0}
 
-		.jh-kv{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:96px 1fr;gap:2px 12px}
+		.jh-kv{list-style:none;margin:0 0 12px;padding:0;display:grid;
+		  grid-template-columns:84px minmax(0,1fr);gap:6px 12px;font-size:13px}
 		.jh-kv>li{display:contents}
-		.jh-kv span:first-child{color:var(--dsw-alias-label-secondary)}
+		/* \u952E\u6D45\u3001\u503C\u6DF1\uFF1ALabel \u8D70 secondary(#61666b)\uFF0CValue \u8D70 primary \u5E76\u52A0\u534A\u6863\u5B57\u91CD \u2014\u2014
+		   \u4E4B\u524D\u4E24\u8005\u989C\u8272\u51E0\u4E4E\u4E00\u6837\uFF0C\u773C\u775B\u6CA1\u6709\u843D\u70B9\u3002 */
+		.jh-kv span:first-child{color:var(--dsw-alias-label-secondary);font-size:12.5px}
+		.jh-kv span:last-child{color:var(--dsw-alias-label-primary);font-weight:500;
+		  min-width:0;overflow-wrap:anywhere}
 		.jh-kv code,.jh-list code{font-family:ui-monospace,Consolas,monospace;font-size:12px;
 		  background:var(--dsw-alias-markdown-inline-code);padding:1px 5px;border-radius:4px}
 		.jh-list{margin:0;padding-left:18px}
 		.jh-list li{margin:2px 0}
 
-		/* \u2500\u2500 \u63A7\u4EF6 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		/* \u2500\u2500 \u63A7\u4EF6 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u5BF9\u6BD4\u5EA6\u57FA\u7EBF\uFF082026-09-17 \u4ECE\u4E3B\u9898\u91CC\u91CF\u51FA\u6765\u7684\uFF0C\u4E0D\u662F\u62CD\u8111\u888B\uFF09\uFF1A
+		     border-l1 = #0000000a\uFF084% \u9ED1\uFF09\u2192 \u51E0\u4E4E\u770B\u4E0D\u89C1\uFF1Bl2 = 10% / l3 = 12% / l4 = 16%
+		     bg-base \u4E0E bg-layer-1/-2/-3 **\u5168\u662F\u7EAF\u767D** \u2192 \u9760\u80CC\u666F\u5206\u4E0D\u51FA\u4EFB\u4F55\u5C42\u7EA7
+		     label-primary = bluish-1000\uFF08\u8FD1\u9ED1\uFF09/ secondary = #61666b /
+		     tertiary = #81858c / caption = #adb2b8
+		   \u7ED3\u8BBA\uFF1A**\u80FD\u770B\u89C1\u7684\u8FB9\u754C\u53EA\u80FD\u7531 l2 \u4EE5\u4E0A\u7684\u63CF\u8FB9\u6216\u9634\u5F71\u63D0\u4F9B**\uFF1B\u6B63\u6587\u4E00\u5F8B label-primary\uFF0C
+		   secondary \u53EA\u7559\u7ED9"\u6807\u7B7E\u4E0E\u6B21\u8981\u8BF4\u660E"\uFF0Ctertiary \u53CA\u4EE5\u4E0B\u53EA\u7528\u4E8E\u771F\u6B63\u53EF\u4EE5\u5FFD\u7565\u7684\u4E1C\u897F\u3002 */
 		.jh-btn{margin-top:10px;padding:6px 12px;font-size:13px;border-radius:8px;cursor:pointer;
-		  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);
+		  border:1px solid var(--dsw-alias-border-l3);background:transparent;
 		  color:var(--dsw-alias-label-primary)}
 		.jh-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
-		.jh-btn:disabled{opacity:.5;cursor:default}
+		.jh-btn:disabled{opacity:.45;cursor:default}
 		.jh-btn-inline{margin-top:0}
-		.jh-btn-active{border-color:var(--dsw-alias-brand-primary);font-weight:600}
+		.jh-btn-active{border-color:var(--dsw-alias-brand-primary);font-weight:600;
+		  background:var(--dsw-alias-interactive-bg-active)}
+		/* \u4E3B\u6309\u94AE\u7167\u6284 shell \u81EA\u5DF1\u7684\u914D\u65B9\uFF08button-primary-fill + label-primary-foreground\uFF09\u3002
+		   \u6CE8\u610F\uFF1A\u8FD9\u4E2A\u4E3B\u9898\u91CC brand-primary = bluish-1000\uFF08\u8FD1\u9ED1\uFF09\uFF0C\u6240\u4EE5"\u4E3B\u8272\u6309\u94AE"\u5C31\u662F\u9ED1\u5E95\u767D\u5B57\u3002 */
+		.jh-btn-primary{border-color:transparent;font-weight:600;
+		  background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
+		.jh-btn-primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
+		/* \u4E09\u7EA7\u52A8\u4F5C\uFF08"\u91CD\u7F6E"\uFF09\u8FDE\u8FB9\u6846\u90FD\u4E0D\u7ED9\uFF1A\u5B83\u4E0D\u8BE5\u548C\u4E3B\u6309\u94AE\u62A2\u6CE8\u610F\u529B */
+		.jh-btn-quiet{border-color:transparent;color:var(--dsw-alias-label-secondary)}
+		.jh-btn-quiet:hover:not(:disabled){color:var(--dsw-alias-label-primary)}
 		.jh-icon-btn{border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;
 		  padding:2px 6px;border-radius:6px;color:var(--dsw-alias-label-secondary)}
 		.jh-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 
 		.jh-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
-		.jh-input{box-sizing:border-box;padding:5px 9px;font-size:13px;border-radius:8px;
-		  border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);
-		  color:var(--dsw-alias-label-primary);min-width:180px}
-		.jh-input-narrow{min-width:110px;width:auto}
+		.jh-filters .jh-input,.jh-filters .jh-select{width:auto}
+		/* \u5173\u952E\u8BCD\u5403\u6389\u5269\u4F59\u5BBD\u5EA6\uFF1A\u7B5B\u9009\u533A\u53F3\u4FA7\u4E0D\u518D\u7A7A\u4E00\u5927\u7247 */
+		.jh-input-grow{flex:1 1 220px;min-width:180px}
+		.jh-input-sm{width:130px}
 
 		/* \u2500\u2500 U0 \u4ECA\u65E5 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 12px}
@@ -3255,33 +3449,58 @@ window.__ModuleLoader__.load({
 		.jh-btn-tiny{padding:3px 8px;font-size:12px;border-radius:6px;margin-left:6px}
 
 		/* \u2500\u2500 U1 \u5C97\u4F4D\u5E93 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
-		.jh-listbar{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+		.jh-listbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;flex-wrap:wrap}
 		.jh-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+		/* \u5361\u7247\u5FC5\u987B\u6709\u8FB9\u754C\uFF1A\u767D\u5E95 + 4% \u63CF\u8FB9\u753B\u5728\u767D\u9875\u9762\u4E0A\u7B49\u4E8E\u6CA1\u6709\u5361\u7247\uFF0C\u6EDA\u52A8\u65F6\u5BB9\u6613\u770B\u4E32\u884C */
 		.jh-job{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;
 		  box-sizing:border-box;padding:12px 14px;border-radius:10px;
-		  border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);
-		  color:var(--dsw-alias-label-primary)}
-		.jh-job:hover{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover)}
+		  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
+		  box-shadow:0 1px 2px rgba(0,0,0,.04);
+		  color:var(--dsw-alias-label-primary);transition:border-color .12s,box-shadow .12s}
+		.jh-job:hover{border-color:var(--dsw-alias-border-l4);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+		/* \u9009\u4E2D\uFF1A\u5DE6\u4FA7 3px \u4E3B\u8272\u6761\uFF08inset \u9634\u5F71\u753B\uFF0C\u4E0D\u5360\u5BBD\u5EA6\u3001\u6587\u5B57\u4E0D\u4F1A\u8DF3\uFF09+ \u66F4\u5B9E\u7684\u5E95 */
+		.jh-job-active{border-color:var(--dsw-alias-border-l4);
+		  background:var(--dsw-alias-interactive-bg-active);
+		  box-shadow:inset 3px 0 0 var(--dsw-alias-brand-primary),0 2px 8px rgba(0,0,0,.08)}
 		.jh-job-main{flex:1 1 auto;min-width:0}
-		.jh-job-title{font-size:14px;font-weight:600;margin:0 0 2px}
-		.jh-job-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
-		.jh-salary{color:var(--dsw-alias-state-business-primary);font-weight:600}
-		.jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
-		.jh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-		.jh-tag{font-size:11px;padding:1px 7px;border-radius:999px;
-		  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-		.jh-state{flex:0 0 auto;font-size:11px;padding:2px 8px;border-radius:999px;
-		  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+		.jh-job-title{font-size:14.5px;font-weight:600;margin:0 0 3px;line-height:1.5}
+		.jh-job-meta{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;
+		  font-size:12px;color:var(--dsw-alias-label-secondary)}
+		/* \u85AA\u8D44\u662F\u51B3\u7B56\u7B2C\u4E00\u773C\u8981\u770B\u7684\u4E1C\u897F\uFF1A\u5B57\u53F7\u4E0E\u5B57\u91CD\u90FD\u63D0\u4E0A\u53BB\uFF0C\u4E0D\u518D\u548C\u5730\u70B9\u4E00\u4E2A\u91CF\u7EA7 */
+		.jh-salary{font-size:15px;font-weight:700;color:var(--dsw-alias-state-business-primary)}
+		/* \u516C\u53F8\u540D\u662F\u6B21\u8981\u4FE1\u606F\uFF0C\u4F46\u4E5F\u4E0D\u80FD\u6DE1\u5230\u8BFB\u4E0D\u51FA\uFF1A\u7528\u6B63\u6587\u8272 */
+		.jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;
+		  color:var(--dsw-alias-label-primary)}
+		.jh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+		/* \u6807\u7B7E\u505A\u6210"\u6781\u6D45\u7070\u5E95 + \u6DF1\u8272\u5B57"\u7684\u6241\u5E73\u5757\uFF1A\u4E0D\u63CF\u8FB9\u3001\u4E0D\u52A0\u7C97 \u2014\u2014 \u5BC6\u5EA6\u9AD8\u4F46\u4E0D\u566A */
+		.jh-tag{font-size:12px;line-height:18px;padding:0 7px;border-radius:5px;
+		  background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-primary)}
+		/* \u72B6\u6001\u5FBD\u7AE0\u662F"\u8FD9\u4E2A\u5C97\u4F4D\u5F53\u524D\u7B97\u4EC0\u4E48"\uFF0C\u4E0D\u662F\u590D\u9009\u6846\uFF08\u9879\u76EE\u91CC\u6CA1\u6709\u6279\u91CF\u9009\u62E9\uFF09 */
+		.jh-state{flex:0 0 auto;font-size:11.5px;font-weight:600;line-height:20px;padding:0 9px;
+		  border-radius:999px;background:var(--dsw-alias-bg-overlay);
+		  color:var(--dsw-alias-label-secondary)}
 		.jh-state-new{background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-brand-text)}
-		.jh-state-saved{background:var(--dsw-alias-state-success-primary);color:#fff}
-		.jh-state-ignored,.jh-state-archived{opacity:.7}
+		.jh-state-saved{background:var(--dsw-alias-state-success-primary);
+		  color:var(--dsw-alias-label-primary-foreground)}
+		.jh-state-ignored,.jh-state-archived{opacity:.75}
+
+		/* \u5206\u9875\u5668\uFF1A\u53EA\u6709"\u4E0A\u4E00\u9875/\u4E0B\u4E00\u9875"\u4E24\u4E2A\u6587\u5B57\u6309\u94AE\u65F6\uFF0C\u7528\u6237\u4E0D\u77E5\u9053\u603B\u5171\u6709\u591A\u5C11\u9875 */
+		.jh-pager{display:flex;align-items:center;gap:4px;margin-left:auto}
+		.jh-pg{min-width:28px;height:28px;padding:0 8px;font-size:12.5px;cursor:pointer;
+		  border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;
+		  color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
+		.jh-pg:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+		.jh-pg:disabled{opacity:.4;cursor:default}
+		.jh-pg-active{border-color:transparent;font-weight:600;
+		  background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
+		.jh-pg-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}
 
 		/* \u2500\u2500 U1 \u5C97\u4F4D\u5E93\uFF1A\u5DE6\u5217\u8868 / \u53F3\u8BE6\u60C5\uFF082026-09-17 \u8D77\u4E0D\u518D\u7528\u62BD\u5C49\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 		   \u8FD9\u4E2A\u5C4F\u7684\u4E3B\u4EFB\u52A1\u662F"\u6D4F\u89C8 \u2192 \u6BD4\u8F83 \u2192 \u51B3\u5B9A"\uFF0C\u5F39\u5C42\u4F1A\u76D6\u4F4F\u5217\u8868\u3001\u6BCF\u770B\u4E0B\u4E00\u4E2A\u90FD\u8981\u5148\u5173\u4E00\u6B21\u3002
 		   \u4E24\u680F\u5404\u81EA\u6EDA\u52A8\uFF1A\u7B5B\u9009\u6761\u56FA\u5B9A\u5728\u9876\u90E8\uFF0C\u5DE6\u680F padding-right \u4E0E\u53F3\u680F padding-left \u7ED9\u4E2D\u95F4\u90A3\u6761
 		   \u5206\u9694\u7EBF\u7559\u547C\u5438\uFF1B\u5206\u9694\u7EBF\u753B\u5728\u53F3\u680F\u7684 border-left \u4E0A\uFF0C\u4E0D\u518D\u989D\u5916\u5360\u4E00\u5217\u5BBD\u5EA6\u3002 */
 		.jh-jobs-split{display:flex;flex-direction:column;height:100%;box-sizing:border-box;
-		  padding:16px 18px;max-width:1560px}
+		  padding:16px 18px;max-width:1560px;container-type:inline-size}
 		.jh-jobs-cols{display:grid;grid-template-columns:minmax(360px,46%) 1fr;
 		  flex:1 1 auto;min-height:0}
 		.jh-jobs-pane{min-width:0;overflow:auto;padding-right:16px;padding-bottom:16px}
@@ -3292,8 +3511,10 @@ window.__ModuleLoader__.load({
 		.jh-detail-empty-title{font-size:14px;font-weight:600;margin:0;color:var(--dsw-alias-label-primary)}
 		.jh-job-active{border-color:var(--dsw-alias-brand-primary);
 		  background:var(--dsw-alias-interactive-bg-active)}
-		/* \u9762\u677F\u88AB\u62D6\u7A84\u65F6\u9000\u56DE\u5355\u680F\uFF1A\u5217\u8868\u5728\u4E0A\u3001\u8BE6\u60C5\u5728\u4E0B\uFF0C\u6574\u5C4F\u4E00\u8D77\u6EDA\u3002 */
-		@media (max-width:820px){
+		/* \u9762\u677F\u88AB\u62D6\u7A84\u65F6\u9000\u56DE\u5355\u680F\uFF1A\u5217\u8868\u5728\u4E0A\u3001\u8BE6\u60C5\u5728\u4E0B\uFF0C\u6574\u5C4F\u4E00\u8D77\u6EDA\u3002
+		   \u7528 container query \u800C\u4E0D\u662F media query \u2014\u2014 \u51B3\u5B9A"\u7A84\u4E0D\u7A84"\u7684\u662F**\u9762\u677F**\u6709\u591A\u5BBD\uFF0C
+		   \u4E0D\u662F\u7A97\u53E3\u6709\u591A\u5BBD\uFF1A\u4FA7\u680F\u4E00\u5C55\u5F00\u3001\u5BF9\u8BDD\u533A\u4E00\u6324\uFF0C\u7A97\u53E3\u8FD8\u5BBD\u7740\u5462\u9762\u677F\u5DF2\u7ECF\u653E\u4E0D\u4E0B\u4E24\u680F\u4E86\u3002 */
+		@container (max-width: 820px){
 		  .jh-jobs-split{height:auto}
 		  .jh-jobs-cols{grid-template-columns:1fr}
 		  .jh-jobs-pane{overflow:visible;padding-right:0}
@@ -3326,20 +3547,76 @@ window.__ModuleLoader__.load({
 		.jh-flag-head{display:flex;align-items:center;gap:8px}
 		.jh-evidence{margin:4px 0 0;padding-left:18px;font-size:12px;color:var(--dsw-alias-label-secondary)}
 
-		/* \u2500\u2500 U2 \u62BD\u5C49 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		/* \u2500\u2500 U2 \u8BE6\u60C5\uFF08\u53F3\u4FA7\u5185\u5D4C\u680F\u4E0E\u62BD\u5C49\u5171\u7528\u540C\u4E00\u4EFD\u6B63\u6587\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u64CD\u4F5C\u6309\u94AE\u539F\u5148\u5728\u6B63\u6587**\u6700\u5E95\u90E8** \u2014\u2014 \u53F3\u4FA7\u4E00\u5C4F\u90A3\u4E48\u957F\uFF0C\u7528\u6237\u6839\u672C\u6EDA\u4E0D\u5230
+		   \uFF08\u5B9E\u6D4B\u53CD\u9988\u5C31\u662F"\u8BE6\u60C5\u9875\u53F3\u4FA7\u6CA1\u6709\u4EFB\u4F55\u64CD\u4F5C\u6309\u94AE"\uFF09\u3002\u73B0\u5728\u505A\u6210**\u5438\u9876\u64CD\u4F5C\u6761**\uFF1A
+		   \u6807\u9898 + \u85AA\u8D44 + \u56DB\u4E2A\u52A8\u4F5C\u6C38\u8FDC\u505C\u5728\u6700\u4E0A\u9762\u3002
+		   sticky \u76F8\u5BF9\u6700\u8FD1\u7684\u53EF\u6EDA\u52A8\u7956\u5148\uFF08.jh-detail-pane / .jh-drawer-body\uFF09\u5B9A\u4F4D\u3002 */
+		.jh-detail-head{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:10px;
+		  align-items:flex-start;justify-content:space-between;padding:12px 0 10px;margin:0 0 12px;
+		  background:var(--dsw-alias-bg-base);border-bottom:1px solid var(--dsw-alias-border-l2)}
+		.jh-detail-headline{min-width:0;flex:1 1 240px}
+		.jh-detail-title{font-size:17px;font-weight:600;margin:0 0 4px;line-height:1.4}
+		.jh-detail-salary{margin:0;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+		.jh-detail-actions{display:flex;flex-wrap:wrap;gap:6px;flex:0 0 auto}
+
+		/* \u62BD\u5C49\uFF1A\u4E34\u65F6\u770B\u4E00\u773C\u7528\uFF0C\u4FDD\u6301\u5F39\u5C42\u5F62\u6001 */
 		.jh-drawer-layer{position:absolute;inset:0;z-index:30}
 		.jh-drawer-backdrop{position:absolute;inset:0;border:0;padding:0;cursor:pointer;
 		  background:rgba(0,0,0,.28)}
-		.jh-drawer{position:absolute;top:0;right:0;bottom:0;width:min(520px,86%);
+		.jh-drawer{position:absolute;top:0;right:0;bottom:0;width:min(560px,88%);
 		  display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);
-		  border-left:1px solid var(--dsw-alias-border-l1);box-shadow:-8px 0 28px rgba(0,0,0,.18)}
+		  border-left:1px solid var(--dsw-alias-border-l2);box-shadow:-8px 0 28px rgba(0,0,0,.18)}
 		.jh-drawer-head{display:flex;align-items:center;gap:8px;padding:10px 14px;
-		  border-bottom:1px solid var(--dsw-alias-border-l1)}
+		  border-bottom:1px solid var(--dsw-alias-border-l2)}
 		.jh-drawer-title{font-weight:600;flex:1 1 auto}
-		.jh-drawer-body{flex:1 1 auto;overflow:auto;padding:14px}
-		.jh-detail-title{font-size:16px;font-weight:600;margin:0 0 4px}
-		.jh-detail-salary{margin:0 0 12px}
-		.jh-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 8px}
+		.jh-drawer-body{flex:1 1 auto;overflow:auto;padding:0 14px 14px}
+
+		/* L1 \u7C97\u7B5B\u5206\uFF1A\u672C\u9879\u76EE\u7684\u7279\u8272\u6570\u636E\uFF0C\u503C\u5F97\u4E00\u4E2A\u770B\u5F97\u61C2\u7684\u4EEA\u8868\u76D8\u800C\u4E0D\u662F\u4E00\u884C\u7070\u5B57 */
+		.jh-gauge-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+		.jh-gauge{position:relative;flex:0 0 auto;width:72px;height:72px}
+		.jh-gauge svg{transform:rotate(-90deg)}
+		.jh-gauge-track{stroke:var(--dsw-alias-bg-overlay)}
+		.jh-gauge-num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+		  justify-content:center;font-size:19px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+		.jh-gauge-unit{font-size:10px;font-weight:500;color:var(--dsw-alias-label-secondary);margin-top:2px}
+		.jh-gauge-band{font-size:12.5px;font-weight:600}
+		.jh-gauge-high{color:var(--dsw-alias-state-success-primary)}
+		.jh-gauge-mid{color:var(--dsw-alias-state-warn-primary)}
+		.jh-gauge-low{color:var(--dsw-alias-label-secondary)}
+		.jh-gauge-side{min-width:0;flex:1 1 180px;display:flex;flex-direction:column;gap:6px}
+
+		/* \u547D\u4E2D/\u5931\u5206\u9010\u6761\uFF1A\u7ED9\u7B26\u53F7\u4E0E\u989C\u8272\uFF0C\u800C\u4E0D\u662F\u53EA\u7ED9\u4E00\u4E2A\u52A0\u6743\u6570\u5B57 */
+		.jh-reason-mark{flex:0 0 14px;text-align:center;font-weight:700}
+		.jh-reason-ok .jh-reason-mark{color:var(--dsw-alias-state-success-primary)}
+		.jh-reason-bad .jh-reason-mark{color:var(--dsw-alias-state-error-primary)}
+
+		/* \u98CE\u9669\u63D0\u793A\u7528 Alert \u6846\uFF0C\u800C\u4E0D\u662F\u4E00\u6392\u7070\u5B57\u3002
+		   \u4F46"\u6CA1\u6709\u547D\u4E2D"**\u4E0D\u5237\u6210\u7EFF\u8272**\uFF1A\u7EFF\u8272\u7B49\u4E8E\u5BA3\u5E03"\u8FD9\u4E2A\u5C97\u4F4D\u6CA1\u95EE\u9898"\uFF0C\u800C\u89C4\u5219\u6CA1\u547D\u4E2D\u53EA\u8BF4\u660E
+		   "\u6CA1\u547D\u4E2D\u5DF2\u77E5\u6A21\u5F0F" \u2014\u2014 \u90A3\u6070\u6070\u662F\u672C\u9879\u76EE\u4E00\u8DEF\u62D2\u7EDD\u4E0B\u7684\u90A3\u79CD\u7ED3\u8BBA\u3002 */
+		.jh-alert{border:1px solid var(--dsw-alias-border-l2);border-left-width:3px;border-radius:10px;
+		  padding:10px 12px;margin:0 0 10px;background:var(--dsw-alias-bg-base)}
+		.jh-alert-warn{border-color:var(--dsw-alias-state-warn-secondary);
+		  border-left-color:var(--dsw-alias-state-warn-primary);
+		  background:var(--dsw-alias-state-warn-tertiary)}
+		.jh-alert-error{border-color:var(--dsw-alias-state-error-secondary);
+		  border-left-color:var(--dsw-alias-state-error-primary);
+		  background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent)}
+		.jh-alert-quiet{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-overlay)}
+		.jh-alert-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 4px}
+		.jh-alert-title{font-weight:600;font-size:13px}
+		.jh-alert-body{margin:0;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-primary)}
+
+		/* \u957F\u89E3\u91CA\u6536\u8FDB\u4E00\u4E2A\u5C0F\u95EE\u53F7\uFF1A\u60AC\u6D6E\u770B\u5168\u6587\uFF0C\u6B63\u6587\u91CC\u53EA\u7559\u4E00\u53E5 */
+		.jh-hint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+		  margin-left:5px;border-radius:50%;cursor:help;font-size:10.5px;font-weight:700;line-height:1;
+		  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary);vertical-align:middle}
+		.jh-note{margin:0;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary)}
+
+		/* \u6807\u7B7E\u5206\u7EC4\uFF08\u6280\u80FD\u8981\u6C42 / \u516C\u53F8\u798F\u5229\uFF09 */
+		.jh-tag-group{margin:0 0 10px}
+		.jh-tag-group-name{display:block;font-size:11.5px;font-weight:600;margin:0 0 5px;
+		  color:var(--dsw-alias-label-secondary)}
 
 		/* \u2500\u2500 shell.overlay \u6D6E\u5C42\uFF08P0-VERIFICATION F1\uFF1A\u5FC5\u987B\u81EA\u6D88\u5931\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-notice{position:fixed;right:18px;bottom:18px;pointer-events:auto;z-index:40;
@@ -3416,8 +3693,11 @@ window.__ModuleLoader__.load({
 		.jh-field>span{font-size:12px;color:var(--dsw-alias-label-secondary)}
 		.jh-inline{display:flex;gap:6px}
 		.jh-input,.jh-textarea,.jh-select{width:100%;box-sizing:border-box;font:inherit;font-size:13px;
-		  padding:5px 8px;border-radius:8px;color:var(--dsw-alias-label-primary);
-		  border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base)}
+		  padding:6px 10px;border-radius:8px;color:var(--dsw-alias-label-primary);
+		  border:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-bg-base)}
+		.jh-input:focus,.jh-textarea:focus,.jh-select:focus{outline:none;
+		  border-color:var(--dsw-alias-link);box-shadow:0 0 0 3px var(--dsw-alias-state-business-tertiary)}
+		.jh-input::placeholder,.jh-textarea::placeholder{color:var(--dsw-alias-label-caption)}
 		.jh-input-narrow{max-width:90px}
 		.jh-textarea{resize:vertical;line-height:1.6}
 		.jh-textarea-tall{min-height:200px;font-family:ui-monospace,Consolas,monospace;font-size:12px}

@@ -63,40 +63,61 @@ const CSS = `
 
 /* ── 屏 ───────────────────────────────────────────────────────────── */
 .jh-screen{padding:16px 18px;max-width:1000px}
-.jh-card{max-width:1000px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;
+.jh-card{max-width:1000px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
   background:var(--dsw-alias-bg-layer-1);padding:14px 16px;margin:0 0 12px}
-.jh-card-tight{padding:10px 12px;margin:12px 0}
+.jh-card-tight{padding:12px 14px;margin:14px 0}
 .jh-card-title{font-size:13px;font-weight:600;margin:0 0 8px}
 .jh-muted{color:var(--dsw-alias-label-secondary);margin:0}
 .jh-ok{color:var(--dsw-alias-state-success-primary)}
 .jh-warn{color:var(--dsw-alias-state-warn-primary)}
 .jh-error{color:var(--dsw-alias-state-error-primary);margin:0}
 
-.jh-kv{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:96px 1fr;gap:2px 12px}
+.jh-kv{list-style:none;margin:0 0 12px;padding:0;display:grid;
+  grid-template-columns:84px minmax(0,1fr);gap:6px 12px;font-size:13px}
 .jh-kv>li{display:contents}
-.jh-kv span:first-child{color:var(--dsw-alias-label-secondary)}
+/* 键浅、值深：Label 走 secondary(#61666b)，Value 走 primary 并加半档字重 ——
+   之前两者颜色几乎一样，眼睛没有落点。 */
+.jh-kv span:first-child{color:var(--dsw-alias-label-secondary);font-size:12.5px}
+.jh-kv span:last-child{color:var(--dsw-alias-label-primary);font-weight:500;
+  min-width:0;overflow-wrap:anywhere}
 .jh-kv code,.jh-list code{font-family:ui-monospace,Consolas,monospace;font-size:12px;
   background:var(--dsw-alias-markdown-inline-code);padding:1px 5px;border-radius:4px}
 .jh-list{margin:0;padding-left:18px}
 .jh-list li{margin:2px 0}
 
-/* ── 控件 ─────────────────────────────────────────────────────────── */
+/* ── 控件 ───────────────────────────────────────────────────────────
+   对比度基线（2026-09-17 从主题里量出来的，不是拍脑袋）：
+     border-l1 = #0000000a（4% 黑）→ 几乎看不见；l2 = 10% / l3 = 12% / l4 = 16%
+     bg-base 与 bg-layer-1/-2/-3 **全是纯白** → 靠背景分不出任何层级
+     label-primary = bluish-1000（近黑）/ secondary = #61666b /
+     tertiary = #81858c / caption = #adb2b8
+   结论：**能看见的边界只能由 l2 以上的描边或阴影提供**；正文一律 label-primary，
+   secondary 只留给"标签与次要说明"，tertiary 及以下只用于真正可以忽略的东西。 */
 .jh-btn{margin-top:10px;padding:6px 12px;font-size:13px;border-radius:8px;cursor:pointer;
-  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);
+  border:1px solid var(--dsw-alias-border-l3);background:transparent;
   color:var(--dsw-alias-label-primary)}
 .jh-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
-.jh-btn:disabled{opacity:.5;cursor:default}
+.jh-btn:disabled{opacity:.45;cursor:default}
 .jh-btn-inline{margin-top:0}
-.jh-btn-active{border-color:var(--dsw-alias-brand-primary);font-weight:600}
+.jh-btn-active{border-color:var(--dsw-alias-brand-primary);font-weight:600;
+  background:var(--dsw-alias-interactive-bg-active)}
+/* 主按钮照抄 shell 自己的配方（button-primary-fill + label-primary-foreground）。
+   注意：这个主题里 brand-primary = bluish-1000（近黑），所以"主色按钮"就是黑底白字。 */
+.jh-btn-primary{border-color:transparent;font-weight:600;
+  background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
+.jh-btn-primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
+/* 三级动作（"重置"）连边框都不给：它不该和主按钮抢注意力 */
+.jh-btn-quiet{border-color:transparent;color:var(--dsw-alias-label-secondary)}
+.jh-btn-quiet:hover:not(:disabled){color:var(--dsw-alias-label-primary)}
 .jh-icon-btn{border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;
   padding:2px 6px;border-radius:6px;color:var(--dsw-alias-label-secondary)}
 .jh-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 
 .jh-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
-.jh-input{box-sizing:border-box;padding:5px 9px;font-size:13px;border-radius:8px;
-  border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);
-  color:var(--dsw-alias-label-primary);min-width:180px}
-.jh-input-narrow{min-width:110px;width:auto}
+.jh-filters .jh-input,.jh-filters .jh-select{width:auto}
+/* 关键词吃掉剩余宽度：筛选区右侧不再空一大片 */
+.jh-input-grow{flex:1 1 220px;min-width:180px}
+.jh-input-sm{width:130px}
 
 /* ── U0 今日 ─────────────────────────────────────────────────────── */
 .jh-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 12px}
@@ -124,33 +145,58 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-btn-tiny{padding:3px 8px;font-size:12px;border-radius:6px;margin-left:6px}
 
 /* ── U1 岗位库 ───────────────────────────────────────────────────── */
-.jh-listbar{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.jh-listbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;flex-wrap:wrap}
 .jh-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+/* 卡片必须有边界：白底 + 4% 描边画在白页面上等于没有卡片，滚动时容易看串行 */
 .jh-job{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;
   box-sizing:border-box;padding:12px 14px;border-radius:10px;
-  border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);
-  color:var(--dsw-alias-label-primary)}
-.jh-job:hover{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover)}
+  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
+  box-shadow:0 1px 2px rgba(0,0,0,.04);
+  color:var(--dsw-alias-label-primary);transition:border-color .12s,box-shadow .12s}
+.jh-job:hover{border-color:var(--dsw-alias-border-l4);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+/* 选中：左侧 3px 主色条（inset 阴影画，不占宽度、文字不会跳）+ 更实的底 */
+.jh-job-active{border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-active);
+  box-shadow:inset 3px 0 0 var(--dsw-alias-brand-primary),0 2px 8px rgba(0,0,0,.08)}
 .jh-job-main{flex:1 1 auto;min-width:0}
-.jh-job-title{font-size:14px;font-weight:600;margin:0 0 2px}
-.jh-job-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
-.jh-salary{color:var(--dsw-alias-state-business-primary);font-weight:600}
-.jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
-.jh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.jh-tag{font-size:11px;padding:1px 7px;border-radius:999px;
-  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-.jh-state{flex:0 0 auto;font-size:11px;padding:2px 8px;border-radius:999px;
-  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+.jh-job-title{font-size:14.5px;font-weight:600;margin:0 0 3px;line-height:1.5}
+.jh-job-meta{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;
+  font-size:12px;color:var(--dsw-alias-label-secondary)}
+/* 薪资是决策第一眼要看的东西：字号与字重都提上去，不再和地点一个量级 */
+.jh-salary{font-size:15px;font-weight:700;color:var(--dsw-alias-state-business-primary)}
+/* 公司名是次要信息，但也不能淡到读不出：用正文色 */
+.jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;
+  color:var(--dsw-alias-label-primary)}
+.jh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+/* 标签做成"极浅灰底 + 深色字"的扁平块：不描边、不加粗 —— 密度高但不噪 */
+.jh-tag{font-size:12px;line-height:18px;padding:0 7px;border-radius:5px;
+  background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-primary)}
+/* 状态徽章是"这个岗位当前算什么"，不是复选框（项目里没有批量选择） */
+.jh-state{flex:0 0 auto;font-size:11.5px;font-weight:600;line-height:20px;padding:0 9px;
+  border-radius:999px;background:var(--dsw-alias-bg-overlay);
+  color:var(--dsw-alias-label-secondary)}
 .jh-state-new{background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-brand-text)}
-.jh-state-saved{background:var(--dsw-alias-state-success-primary);color:#fff}
-.jh-state-ignored,.jh-state-archived{opacity:.7}
+.jh-state-saved{background:var(--dsw-alias-state-success-primary);
+  color:var(--dsw-alias-label-primary-foreground)}
+.jh-state-ignored,.jh-state-archived{opacity:.75}
+
+/* 分页器：只有"上一页/下一页"两个文字按钮时，用户不知道总共有多少页 */
+.jh-pager{display:flex;align-items:center;gap:4px;margin-left:auto}
+.jh-pg{min-width:28px;height:28px;padding:0 8px;font-size:12.5px;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;
+  color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
+.jh-pg:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.jh-pg:disabled{opacity:.4;cursor:default}
+.jh-pg-active{border-color:transparent;font-weight:600;
+  background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
+.jh-pg-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}
 
 /* ── U1 岗位库：左列表 / 右详情（2026-09-17 起不再用抽屉）────────────
    这个屏的主任务是"浏览 → 比较 → 决定"，弹层会盖住列表、每看下一个都要先关一次。
    两栏各自滚动：筛选条固定在顶部，左栏 padding-right 与右栏 padding-left 给中间那条
    分隔线留呼吸；分隔线画在右栏的 border-left 上，不再额外占一列宽度。 */
 .jh-jobs-split{display:flex;flex-direction:column;height:100%;box-sizing:border-box;
-  padding:16px 18px;max-width:1560px}
+  padding:16px 18px;max-width:1560px;container-type:inline-size}
 .jh-jobs-cols{display:grid;grid-template-columns:minmax(360px,46%) 1fr;
   flex:1 1 auto;min-height:0}
 .jh-jobs-pane{min-width:0;overflow:auto;padding-right:16px;padding-bottom:16px}
@@ -161,8 +207,10 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-detail-empty-title{font-size:14px;font-weight:600;margin:0;color:var(--dsw-alias-label-primary)}
 .jh-job-active{border-color:var(--dsw-alias-brand-primary);
   background:var(--dsw-alias-interactive-bg-active)}
-/* 面板被拖窄时退回单栏：列表在上、详情在下，整屏一起滚。 */
-@media (max-width:820px){
+/* 面板被拖窄时退回单栏：列表在上、详情在下，整屏一起滚。
+   用 container query 而不是 media query —— 决定"窄不窄"的是**面板**有多宽，
+   不是窗口有多宽：侧栏一展开、对话区一挤，窗口还宽着呢面板已经放不下两栏了。 */
+@container (max-width: 820px){
   .jh-jobs-split{height:auto}
   .jh-jobs-cols{grid-template-columns:1fr}
   .jh-jobs-pane{overflow:visible;padding-right:0}
@@ -195,20 +243,76 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-flag-head{display:flex;align-items:center;gap:8px}
 .jh-evidence{margin:4px 0 0;padding-left:18px;font-size:12px;color:var(--dsw-alias-label-secondary)}
 
-/* ── U2 抽屉 ─────────────────────────────────────────────────────── */
+/* ── U2 详情（右侧内嵌栏与抽屉共用同一份正文）────────────────────────
+   操作按钮原先在正文**最底部** —— 右侧一屏那么长，用户根本滚不到
+   （实测反馈就是"详情页右侧没有任何操作按钮"）。现在做成**吸顶操作条**：
+   标题 + 薪资 + 四个动作永远停在最上面。
+   sticky 相对最近的可滚动祖先（.jh-detail-pane / .jh-drawer-body）定位。 */
+.jh-detail-head{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:10px;
+  align-items:flex-start;justify-content:space-between;padding:12px 0 10px;margin:0 0 12px;
+  background:var(--dsw-alias-bg-base);border-bottom:1px solid var(--dsw-alias-border-l2)}
+.jh-detail-headline{min-width:0;flex:1 1 240px}
+.jh-detail-title{font-size:17px;font-weight:600;margin:0 0 4px;line-height:1.4}
+.jh-detail-salary{margin:0;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.jh-detail-actions{display:flex;flex-wrap:wrap;gap:6px;flex:0 0 auto}
+
+/* 抽屉：临时看一眼用，保持弹层形态 */
 .jh-drawer-layer{position:absolute;inset:0;z-index:30}
 .jh-drawer-backdrop{position:absolute;inset:0;border:0;padding:0;cursor:pointer;
   background:rgba(0,0,0,.28)}
-.jh-drawer{position:absolute;top:0;right:0;bottom:0;width:min(520px,86%);
+.jh-drawer{position:absolute;top:0;right:0;bottom:0;width:min(560px,88%);
   display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);
-  border-left:1px solid var(--dsw-alias-border-l1);box-shadow:-8px 0 28px rgba(0,0,0,.18)}
+  border-left:1px solid var(--dsw-alias-border-l2);box-shadow:-8px 0 28px rgba(0,0,0,.18)}
 .jh-drawer-head{display:flex;align-items:center;gap:8px;padding:10px 14px;
-  border-bottom:1px solid var(--dsw-alias-border-l1)}
+  border-bottom:1px solid var(--dsw-alias-border-l2)}
 .jh-drawer-title{font-weight:600;flex:1 1 auto}
-.jh-drawer-body{flex:1 1 auto;overflow:auto;padding:14px}
-.jh-detail-title{font-size:16px;font-weight:600;margin:0 0 4px}
-.jh-detail-salary{margin:0 0 12px}
-.jh-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 8px}
+.jh-drawer-body{flex:1 1 auto;overflow:auto;padding:0 14px 14px}
+
+/* L1 粗筛分：本项目的特色数据，值得一个看得懂的仪表盘而不是一行灰字 */
+.jh-gauge-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.jh-gauge{position:relative;flex:0 0 auto;width:72px;height:72px}
+.jh-gauge svg{transform:rotate(-90deg)}
+.jh-gauge-track{stroke:var(--dsw-alias-bg-overlay)}
+.jh-gauge-num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;font-size:19px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.jh-gauge-unit{font-size:10px;font-weight:500;color:var(--dsw-alias-label-secondary);margin-top:2px}
+.jh-gauge-band{font-size:12.5px;font-weight:600}
+.jh-gauge-high{color:var(--dsw-alias-state-success-primary)}
+.jh-gauge-mid{color:var(--dsw-alias-state-warn-primary)}
+.jh-gauge-low{color:var(--dsw-alias-label-secondary)}
+.jh-gauge-side{min-width:0;flex:1 1 180px;display:flex;flex-direction:column;gap:6px}
+
+/* 命中/失分逐条：给符号与颜色，而不是只给一个加权数字 */
+.jh-reason-mark{flex:0 0 14px;text-align:center;font-weight:700}
+.jh-reason-ok .jh-reason-mark{color:var(--dsw-alias-state-success-primary)}
+.jh-reason-bad .jh-reason-mark{color:var(--dsw-alias-state-error-primary)}
+
+/* 风险提示用 Alert 框，而不是一排灰字。
+   但"没有命中"**不刷成绿色**：绿色等于宣布"这个岗位没问题"，而规则没命中只说明
+   "没命中已知模式" —— 那恰恰是本项目一路拒绝下的那种结论。 */
+.jh-alert{border:1px solid var(--dsw-alias-border-l2);border-left-width:3px;border-radius:10px;
+  padding:10px 12px;margin:0 0 10px;background:var(--dsw-alias-bg-base)}
+.jh-alert-warn{border-color:var(--dsw-alias-state-warn-secondary);
+  border-left-color:var(--dsw-alias-state-warn-primary);
+  background:var(--dsw-alias-state-warn-tertiary)}
+.jh-alert-error{border-color:var(--dsw-alias-state-error-secondary);
+  border-left-color:var(--dsw-alias-state-error-primary);
+  background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent)}
+.jh-alert-quiet{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-overlay)}
+.jh-alert-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 4px}
+.jh-alert-title{font-weight:600;font-size:13px}
+.jh-alert-body{margin:0;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-primary)}
+
+/* 长解释收进一个小问号：悬浮看全文，正文里只留一句 */
+.jh-hint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+  margin-left:5px;border-radius:50%;cursor:help;font-size:10.5px;font-weight:700;line-height:1;
+  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary);vertical-align:middle}
+.jh-note{margin:0;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary)}
+
+/* 标签分组（技能要求 / 公司福利） */
+.jh-tag-group{margin:0 0 10px}
+.jh-tag-group-name{display:block;font-size:11.5px;font-weight:600;margin:0 0 5px;
+  color:var(--dsw-alias-label-secondary)}
 
 /* ── shell.overlay 浮层（P0-VERIFICATION F1：必须自消失）───────────── */
 .jh-notice{position:fixed;right:18px;bottom:18px;pointer-events:auto;z-index:40;
@@ -285,8 +389,11 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-field>span{font-size:12px;color:var(--dsw-alias-label-secondary)}
 .jh-inline{display:flex;gap:6px}
 .jh-input,.jh-textarea,.jh-select{width:100%;box-sizing:border-box;font:inherit;font-size:13px;
-  padding:5px 8px;border-radius:8px;color:var(--dsw-alias-label-primary);
-  border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base)}
+  padding:6px 10px;border-radius:8px;color:var(--dsw-alias-label-primary);
+  border:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-bg-base)}
+.jh-input:focus,.jh-textarea:focus,.jh-select:focus{outline:none;
+  border-color:var(--dsw-alias-link);box-shadow:0 0 0 3px var(--dsw-alias-state-business-tertiary)}
+.jh-input::placeholder,.jh-textarea::placeholder{color:var(--dsw-alias-label-caption)}
 .jh-input-narrow{max-width:90px}
 .jh-textarea{resize:vertical;line-height:1.6}
 .jh-textarea-tall{min-height:200px;font-family:ui-monospace,Consolas,monospace;font-size:12px}

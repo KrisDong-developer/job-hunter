@@ -33,6 +33,70 @@ const ORDER_OPTIONS: Array<{ value: string; label: string }> = [
 const PAGE_SIZE = 20
 
 /**
+ * 页码列表：页数少就全列；多了只留首尾与当前附近，中间用 … 收。
+ * 只给"上一页/下一页"的话，用户不知道一共有多少页（也就不知道还要不要继续筛）。
+ */
+export function pageNumbers(page: number, pages: number): Array<number | '…'> {
+  if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1)
+  const wanted = [...new Set([1, pages, page - 1, page, page + 1])]
+    .filter((value) => value >= 1 && value <= pages)
+    .sort((a, b) => a - b)
+  const out: Array<number | '…'> = []
+  let previous = 0
+  for (const value of wanted) {
+    if (previous !== 0 && value - previous > 1) out.push('…')
+    out.push(value)
+    previous = value
+  }
+  return out
+}
+
+function Pager(props: {
+  page: number
+  pages: number
+  hasMore: boolean
+  onGo: (page: number) => void
+}) {
+  return (
+    <nav className="jh-pager" aria-label="分页">
+      <button
+        type="button"
+        className="jh-pg"
+        aria-label="上一页"
+        disabled={props.page <= 1}
+        onClick={() => props.onGo(props.page - 1)}
+      >
+        ‹
+      </button>
+      {pageNumbers(props.page, props.pages).map((item, index) =>
+        item === '…' ? (
+          <span key={`gap-${String(index)}`} className="jh-pg-gap">…</span>
+        ) : (
+          <button
+            key={item}
+            type="button"
+            className={`jh-pg${item === props.page ? ' jh-pg-active' : ''}`}
+            aria-current={item === props.page ? 'page' : undefined}
+            onClick={() => props.onGo(item)}
+          >
+            {item}
+          </button>
+        ),
+      )}
+      <button
+        type="button"
+        className="jh-pg"
+        aria-label="下一页"
+        disabled={!props.hasMore}
+        onClick={() => props.onGo(props.page + 1)}
+      >
+        ›
+      </button>
+    </nav>
+  )
+}
+
+/**
  * U1 岗位库 —— 核心工作界面（§5.4）。
  *
  * **左边列表、右边详情，都在同一屏**：这个屏的主任务是"浏览 → 比较 → 决定"，
@@ -81,23 +145,29 @@ export function JobsScreen(props: {
     setPage(1)
   }
 
+  const total = state.status === 'ok' ? state.data.total : 0
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
   return (
     <div className="jh-jobs-split">
       <form className="jh-filters" onSubmit={submit}>
         <input
-          className="jh-input"
+          className="jh-input jh-input-grow"
           placeholder="关键词（岗位名）"
+          aria-label="关键词"
           value={draft.q}
           onChange={(event) => setDraft({ ...draft, q: event.target.value })}
         />
         <input
-          className="jh-input jh-input-narrow"
+          className="jh-input jh-input-sm"
           placeholder="城市"
+          aria-label="城市"
           value={draft.city}
           onChange={(event) => setDraft({ ...draft, city: event.target.value })}
         />
         <select
-          className="jh-input jh-input-narrow"
+          className="jh-select jh-input-sm"
+          aria-label="状态"
           value={draft.state}
           onChange={(event) => setDraft({ ...draft, state: event.target.value })}
         >
@@ -109,14 +179,16 @@ export function JobsScreen(props: {
           ))}
         </select>
         <input
-          className="jh-input jh-input-narrow"
+          className="jh-input jh-input-sm"
           placeholder="最低月薪"
+          aria-label="最低月薪"
           inputMode="numeric"
           value={draft.minSalary}
           onChange={(event) => setDraft({ ...draft, minSalary: event.target.value.replace(/[^0-9]/g, '') })}
         />
         <select
-          className="jh-input jh-input-narrow"
+          className="jh-select jh-input-sm"
+          aria-label="排序"
           value={draft.orderBy}
           onChange={(event) => setDraft({ ...draft, orderBy: event.target.value })}
         >
@@ -126,8 +198,9 @@ export function JobsScreen(props: {
             </option>
           ))}
         </select>
-        <button type="submit" className="jh-btn jh-btn-inline">筛选</button>
-        <button type="button" className="jh-btn jh-btn-inline" onClick={reset}>重置</button>
+        {/* 主次分明：筛选是主操作（实心），重置是三级动作（无边框） */}
+        <button type="submit" className="jh-btn jh-btn-inline jh-btn-primary">筛选</button>
+        <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={reset}>重置</button>
       </form>
 
       <div className="jh-jobs-cols">
@@ -156,25 +229,9 @@ export function JobsScreen(props: {
             <>
               <div className="jh-listbar">
                 <span className="jh-muted">
-                  共 {state.data.total} 条 · 第 {state.data.page} 页
+                  共 {state.data.total} 条 · 第 {state.data.page} / {pages} 页
                 </span>
-                <span className="jh-spacer" />
-                <button
-                  type="button"
-                  className="jh-btn jh-btn-inline"
-                  disabled={page <= 1}
-                  onClick={() => setPage((value) => Math.max(1, value - 1))}
-                >
-                  上一页
-                </button>
-                <button
-                  type="button"
-                  className="jh-btn jh-btn-inline"
-                  disabled={!state.data.hasMore}
-                  onClick={() => setPage((value) => value + 1)}
-                >
-                  下一页
-                </button>
+                <Pager page={state.data.page} pages={pages} hasMore={state.data.hasMore} onGo={setPage} />
               </div>
 
               <ul className="jh-jobs">

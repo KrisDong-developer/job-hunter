@@ -36,3 +36,28 @@ export function salaryDetail(job: JobDto): string | null {
       : `${String(job.salaryMin)}-${String(job.salaryMax)}`
   return `${range} 元/月${job.salaryMonths === null ? '' : ` · ${String(job.salaryMonths)} 薪`}`
 }
+
+/**
+ * 福利 / 待遇类措辞 —— **只用于展示分组**，把平台给的平铺标签分成
+ * 「技能要求」与「公司福利」两组。
+ *
+ * 这是展示层的启发式，不是新的领域概念：平台返回的 `tags` 本来就是一串平铺文本，
+ * 这里只按措辞归组。**判不出来的一律留在「技能要求」**——宁可少分一组，
+ * 也不要把不确定的东西硬塞进"福利"里去误导人。
+ */
+const BENEFIT_KEYWORDS = [
+  '五险', '一金', '公积金', '年终', '奖金', '提成', '补贴', '补助', '福利', '体检',
+  '旅游', '团建', '年假', '双休', '弹性', '住宿', '包吃', '包住', '班车', '培训',
+  '股票', '期权', '餐饮', '节日', '生日', '下午茶', '健身', '补充医疗', '意外险', '带薪',
+]
+
+/** 把标签拆成两组；顺序保持平台给的原始顺序。 */
+export function splitJobTags(tags: string[]): { skills: string[]; benefits: string[] } {
+  const skills: string[] = []
+  const benefits: string[] = []
+  for (const tag of tags) {
+    if (BENEFIT_KEYWORDS.some((keyword) => tag.includes(keyword))) benefits.push(tag)
+    else skills.push(tag)
+  }
+  return { skills, benefits }
+}
