@@ -428,9 +428,21 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-mode-active{background:var(--dsw-alias-interactive-bg-active);
   color:var(--dsw-alias-label-primary);font-weight:600}
 .jh-work-body{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;flex:1 1 auto;min-height:0}
-.jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-.jh-mode-edit .jh-work-preview{display:none}
-.jh-mode-preview .jh-work-editor{display:none}
+/* 分屏：窄时**上下堆叠**，中间那条灰条可以拖动改比例。
+   同一个 --jh-split 服务两种排法（宽时是左右分屏，见下面的 container query）。 */
+.jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr);
+  grid-template-rows:var(--jh-split,55%) 10px minmax(0,1fr);gap:0}
+.jh-mode-edit .jh-work-preview,.jh-mode-edit .jh-work-files,.jh-mode-edit .jh-splitter{display:none}
+.jh-mode-preview .jh-work-editor,.jh-mode-preview .jh-work-files,.jh-mode-preview .jh-splitter{display:none}
+/* 分屏里也不显示附件 —— 它已经是独立子 tab，留在分屏里会白占一个网格行（实测多出 74px 空白） */
+.jh-mode-split .jh-work-files{display:none}
+/* 附件单独一个子 tab：它跟渲染无关，挤在预览下面只会占地方 */
+.jh-mode-files .jh-work-editor,.jh-mode-files .jh-work-preview,.jh-mode-files .jh-splitter{display:none}
+.jh-splitter{display:none;border-radius:5px;background:var(--dsw-alias-bg-overlay);
+  cursor:row-resize;margin:5px 0}
+.jh-mode-split .jh-splitter{display:block}
+.jh-splitter:hover,.jh-splitter:focus-visible{background:var(--dsw-alias-border-l4);outline:none}
+.jh-work-files{overflow:auto;min-height:0;padding-right:4px}
 .jh-work-editor{overflow:auto;min-height:0;padding-right:4px}
 .jh-work-preview{display:flex;flex-direction:column;gap:8px;min-height:0}
 .jh-preview-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
@@ -439,10 +451,12 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   background:var(--dsw-alias-bg-mask-2);padding:18px}
 .jh-paper{display:block;width:100%;max-width:794px;height:1123px;margin:0 auto;border:0;
   border-radius:2px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.3)}
-/* 工作区窄了就把"分屏"退回单栏 —— 判断依据是**面板**宽度，不是窗口宽度 */
-@container (max-width: 900px){
-  .jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr)}
-  .jh-mode-split .jh-work-preview{min-height:420px}
+/* 工作区够宽（>900px）时改成左右分屏：这时拖的是横条，比例仍走 --jh-split。
+   判断依据是**面板**宽度（container query），不是窗口宽度。 */
+@container (min-width: 901px){
+  .jh-mode-split .jh-work-body{grid-template-columns:var(--jh-split,50%) 10px minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr)}
+  .jh-splitter{cursor:col-resize;margin:0 5px}
 }
 
 /* 表单 */

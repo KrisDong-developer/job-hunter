@@ -2636,6 +2636,24 @@ window.__ModuleLoader__.load({
 		  const [error, setError] = (0, import_react9.useState)(null);
 		  const [notice, setNotice] = (0, import_react9.useState)(null);
 		  const [template, setTemplate] = (0, import_react9.useState)("concise");
+		  const [split, setSplit] = (0, import_react9.useState)(55);
+		  const bodyRef = (0, import_react9.useRef)(null);
+		  const startDrag = (clientX, clientY) => {
+		    const body = bodyRef.current;
+		    if (body === null) return;
+		    const rect = body.getBoundingClientRect();
+		    const sideBySide = getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length > 1;
+		    const move2 = (event) => {
+		      const ratio = sideBySide ? (event.clientX - rect.left) / rect.width * 100 : (event.clientY - rect.top) / rect.height * 100;
+		      setSplit(Math.min(80, Math.max(20, ratio)));
+		    };
+		    const stop = () => {
+		      window.removeEventListener("pointermove", move2);
+		      window.removeEventListener("pointerup", stop);
+		    };
+		    window.addEventListener("pointermove", move2);
+		    window.addEventListener("pointerup", stop);
+		  };
 		  (0, import_react9.useEffect)(() => {
 		    if (detail.state.status === "ok") setDraft(detail.state.data);
 		  }, [detail.state]);
@@ -2783,7 +2801,7 @@ window.__ModuleLoader__.load({
 		    ] }),
 		    error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-error", children: error }),
 		    notice === null ? null : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-ok", children: notice }),
-		    issues.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-alert jh-alert-quiet", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-alert-body", children: "\u89C4\u5219\u4F53\u68C0\u6CA1\u6709\u53D1\u73B0\u95EE\u9898\u3002\uFF08\u5B83\u53EA\u67E5\u683C\u5F0F\u4E0E\u5B8C\u6574\u6027\uFF0C\u4E0D\u5224\u65AD\u5185\u5BB9\u597D\u4E0D\u597D\u3002\uFF09" }) }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `jh-alert ${issues.some((issue) => issue.level === "error") ? "jh-alert-error" : "jh-alert-warn"}`, children: [
+		    issues.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `jh-alert ${issues.some((issue) => issue.level === "error") ? "jh-alert-error" : "jh-alert-warn"}`, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-alert-title", children: [
 		        "\u4F53\u68C0\uFF1A",
 		        issues.length,
@@ -2796,7 +2814,7 @@ window.__ModuleLoader__.load({
 		      ] }, `${issue.at}-${String(index)}`)) })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-work-modes", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-modes", role: "tablist", "aria-label": "\u89C6\u56FE\u6A21\u5F0F", children: [["edit", "\u7F16\u8F91"], ["split", "\u5206\u5C4F"], ["preview", "\u9884\u89C8"]].map(([key, label]) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-modes", role: "tablist", "aria-label": "\u89C6\u56FE\u6A21\u5F0F", children: [["edit", "\u7F16\u8F91"], ["split", "\u5206\u5C4F"], ["preview", "\u9884\u89C8"], ["files", "\u9644\u4EF6"]].map(([key, label]) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -2810,11 +2828,12 @@ window.__ModuleLoader__.load({
 		      )) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-muted", children: [
 		        mode === "edit" ? "\u5148\u628A\u5185\u5BB9\u586B\u5B8C\u6574\uFF1B\u5355\u6761\u6210\u679C\u6309\u56DE\u8F66\u53EF\u4EE5\u63A5\u7740\u52A0\u4E00\u6761\u3002" : null,
-		        mode === "split" ? "\u5DE6\u8FB9\u6539\u3001\u53F3\u8FB9\u5B9E\u65F6\u770B \u2014\u2014 \u9884\u89C8\u4E0E\u5BFC\u51FA\u8D70\u7684\u662F\u540C\u4E00\u4E2A\u6E32\u67D3\u5668\u3002" : null,
-		        mode === "preview" ? "\u5BFC\u51FA\u6B63\u5728\u770B\u7684\u8FD9\u4E00\u7248\u3002" : null
+		        mode === "split" ? "\u62D6\u52A8\u4E2D\u95F4\u90A3\u6761\u7070\u6761\u53EF\u4EE5\u8C03\u6574\u4E0A\u4E0B\u6BD4\u4F8B\u3002" : null,
+		        mode === "preview" ? "\u5BFC\u51FA\u6B63\u5728\u770B\u7684\u8FD9\u4E00\u7248\u3002" : null,
+		        mode === "files" ? "\u8FD9\u4E00\u7248\u751F\u6210\u8FC7\u7684\u9644\u4EF6\u90FD\u5728\u8FD9\u513F \u2014\u2014 \u53EA\u6709\u4F60\u663E\u5F0F\u5220\u9664\u624D\u4F1A\u6D88\u5931\u3002" : null
 		      ] })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `jh-work-body jh-mode-${mode}`, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `jh-work-body jh-mode-${mode}`, ref: bodyRef, style: { "--jh-split": `${String(split)}%` }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-work-editor", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("section", { className: "jh-form-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-form-head", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h3", { children: "\u57FA\u672C\u4FE1\u606F" }) }),
@@ -3395,6 +3414,25 @@ window.__ModuleLoader__.load({
 		          ] })
 		        ] })
 		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		        "div",
+		        {
+		          className: "jh-splitter",
+		          role: "separator",
+		          "aria-label": "\u62D6\u52A8\u8C03\u6574\u7F16\u8F91\u4E0E\u9884\u89C8\u7684\u6BD4\u4F8B",
+		          "aria-orientation": "horizontal",
+		          tabIndex: 0,
+		          title: "\u62D6\u52A8\u8C03\u6574\u6BD4\u4F8B",
+		          onPointerDown: (event) => {
+		            event.preventDefault();
+		            startDrag(event.clientX, event.clientY);
+		          },
+		          onKeyDown: (event) => {
+		            if (event.key === "ArrowUp") setSplit((value) => Math.max(20, value - 4));
+		            if (event.key === "ArrowDown") setSplit((value) => Math.min(80, value + 4));
+		          }
+		        }
+		      ),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-work-preview", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-preview-head", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
@@ -3409,22 +3447,26 @@ window.__ModuleLoader__.load({
 		          ),
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-muted", children: "\u9884\u89C8\u4E0E\u5BFC\u51FA\u8D70**\u540C\u4E00\u4E2A\u6E32\u67D3\u5668**\uFF0C\u6A21\u677F\u5373\u6240\u89C1" })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-paper-stage", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("iframe", { className: "jh-paper", title: "\u7B80\u5386\u9884\u89C8", src: previewUrl(props.id, template), sandbox: "" }) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h3", { className: "jh-card-title", children: "\u9644\u4EF6" }),
-		          draft.files.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u751F\u6210\u9644\u4EF6\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("ul", { className: "jh-files", children: draft.files.map((file) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("li", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("a", { className: "jh-link", href: fileUrl(file.id), target: "_blank", rel: "noreferrer", children: file.fileName }),
-		            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-muted", children: [
-		              " ",
-		              file.format,
-		              " \xB7 ",
-		              (file.bytes / 1024).toFixed(0),
-		              " KB \xB7",
-		              " ",
-		              file.createdAt.slice(0, 16).replace("T", " ")
-		            ] })
-		          ] }, file.id)) })
-		        ] })
+		        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-paper-stage", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("iframe", { className: "jh-paper", title: "\u7B80\u5386\u9884\u89C8", src: previewUrl(props.id, template), sandbox: "" }) })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-work-files", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("h3", { className: "jh-card-title", children: [
+		          "\u9644\u4EF6\uFF08",
+		          draft.files.length,
+		          "\uFF09"
+		        ] }),
+		        draft.files.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u751F\u6210\u9644\u4EF6\u3002\u7528\u53F3\u4E0A\u89D2\u7684\u300C\u5BFC\u51FA PDF / \u5BFC\u51FA Word\u300D\u751F\u6210\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("ul", { className: "jh-files", children: draft.files.map((file) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("a", { className: "jh-link", href: fileUrl(file.id), target: "_blank", rel: "noreferrer", children: file.fileName }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-muted", children: [
+		            " ",
+		            file.format,
+		            " \xB7 ",
+		            (file.bytes / 1024).toFixed(0),
+		            " KB \xB7",
+		            " ",
+		            file.createdAt.slice(0, 16).replace("T", " ")
+		          ] })
+		        ] }, file.id)) })
 		      ] })
 		    ] })
 		  ] });
@@ -4400,9 +4442,21 @@ window.__ModuleLoader__.load({
 		.jh-mode-active{background:var(--dsw-alias-interactive-bg-active);
 		  color:var(--dsw-alias-label-primary);font-weight:600}
 		.jh-work-body{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;flex:1 1 auto;min-height:0}
-		.jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-		.jh-mode-edit .jh-work-preview{display:none}
-		.jh-mode-preview .jh-work-editor{display:none}
+		/* \u5206\u5C4F\uFF1A\u7A84\u65F6**\u4E0A\u4E0B\u5806\u53E0**\uFF0C\u4E2D\u95F4\u90A3\u6761\u7070\u6761\u53EF\u4EE5\u62D6\u52A8\u6539\u6BD4\u4F8B\u3002
+		   \u540C\u4E00\u4E2A --jh-split \u670D\u52A1\u4E24\u79CD\u6392\u6CD5\uFF08\u5BBD\u65F6\u662F\u5DE6\u53F3\u5206\u5C4F\uFF0C\u89C1\u4E0B\u9762\u7684 container query\uFF09\u3002 */
+		.jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr);
+		  grid-template-rows:var(--jh-split,55%) 10px minmax(0,1fr);gap:0}
+		.jh-mode-edit .jh-work-preview,.jh-mode-edit .jh-work-files,.jh-mode-edit .jh-splitter{display:none}
+		.jh-mode-preview .jh-work-editor,.jh-mode-preview .jh-work-files,.jh-mode-preview .jh-splitter{display:none}
+		/* \u5206\u5C4F\u91CC\u4E5F\u4E0D\u663E\u793A\u9644\u4EF6 \u2014\u2014 \u5B83\u5DF2\u7ECF\u662F\u72EC\u7ACB\u5B50 tab\uFF0C\u7559\u5728\u5206\u5C4F\u91CC\u4F1A\u767D\u5360\u4E00\u4E2A\u7F51\u683C\u884C\uFF08\u5B9E\u6D4B\u591A\u51FA 74px \u7A7A\u767D\uFF09 */
+		.jh-mode-split .jh-work-files{display:none}
+		/* \u9644\u4EF6\u5355\u72EC\u4E00\u4E2A\u5B50 tab\uFF1A\u5B83\u8DDF\u6E32\u67D3\u65E0\u5173\uFF0C\u6324\u5728\u9884\u89C8\u4E0B\u9762\u53EA\u4F1A\u5360\u5730\u65B9 */
+		.jh-mode-files .jh-work-editor,.jh-mode-files .jh-work-preview,.jh-mode-files .jh-splitter{display:none}
+		.jh-splitter{display:none;border-radius:5px;background:var(--dsw-alias-bg-overlay);
+		  cursor:row-resize;margin:5px 0}
+		.jh-mode-split .jh-splitter{display:block}
+		.jh-splitter:hover,.jh-splitter:focus-visible{background:var(--dsw-alias-border-l4);outline:none}
+		.jh-work-files{overflow:auto;min-height:0;padding-right:4px}
 		.jh-work-editor{overflow:auto;min-height:0;padding-right:4px}
 		.jh-work-preview{display:flex;flex-direction:column;gap:8px;min-height:0}
 		.jh-preview-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
@@ -4411,10 +4465,12 @@ window.__ModuleLoader__.load({
 		  background:var(--dsw-alias-bg-mask-2);padding:18px}
 		.jh-paper{display:block;width:100%;max-width:794px;height:1123px;margin:0 auto;border:0;
 		  border-radius:2px;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.3)}
-		/* \u5DE5\u4F5C\u533A\u7A84\u4E86\u5C31\u628A"\u5206\u5C4F"\u9000\u56DE\u5355\u680F \u2014\u2014 \u5224\u65AD\u4F9D\u636E\u662F**\u9762\u677F**\u5BBD\u5EA6\uFF0C\u4E0D\u662F\u7A97\u53E3\u5BBD\u5EA6 */
-		@container (max-width: 900px){
-		  .jh-mode-split .jh-work-body{grid-template-columns:minmax(0,1fr)}
-		  .jh-mode-split .jh-work-preview{min-height:420px}
+		/* \u5DE5\u4F5C\u533A\u591F\u5BBD\uFF08>900px\uFF09\u65F6\u6539\u6210\u5DE6\u53F3\u5206\u5C4F\uFF1A\u8FD9\u65F6\u62D6\u7684\u662F\u6A2A\u6761\uFF0C\u6BD4\u4F8B\u4ECD\u8D70 --jh-split\u3002
+		   \u5224\u65AD\u4F9D\u636E\u662F**\u9762\u677F**\u5BBD\u5EA6\uFF08container query\uFF09\uFF0C\u4E0D\u662F\u7A97\u53E3\u5BBD\u5EA6\u3002 */
+		@container (min-width: 901px){
+		  .jh-mode-split .jh-work-body{grid-template-columns:var(--jh-split,50%) 10px minmax(0,1fr);
+		    grid-template-rows:minmax(0,1fr)}
+		  .jh-splitter{cursor:col-resize;margin:0 5px}
 		}
 
 		/* \u8868\u5355 */

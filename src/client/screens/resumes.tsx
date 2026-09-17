@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { PLUGIN_ID } from '../../shared/constants.js'
 import { RESUME_TEMPLATES } from '../../shared/enums.js'
 import { RESUME_LANGUAGE_LABEL, RESUME_TEMPLATE_LABEL } from '../../shared/labels.js'
@@ -24,7 +24,7 @@ import {
 } from '../api.js'
 import { useAsync } from '../use-async.js'
 
-type Mode = 'edit' | 'split' | 'preview'
+type Mode = 'edit' | 'split' | 'preview' | 'files'
 
 /** 数组内换位（上移/下移）。越界就原样返回。 */
 function move<T>(items: T[], index: number, delta: number): T[] {
@@ -251,6 +251,35 @@ function ResumeWork(props: {
   const [notice, setNotice] = useState<string | null>(null)
   const [template, setTemplate] = useState<'concise' | 'professional'>('concise')
 
+  /**
+   * 分屏比例（百分比）＋拖拽。
+   *
+   * 同一个比例值服务两种排法：工作区宽时分左右（拖横条、`cursor: col-resize`），
+   * 窄时上下堆叠（拖竖条）。**哪种排法由 container query 决定**，所以拖拽时先量一下
+   * 计算出来的列数，而不是自己去猜断点 —— 否则窗口一改大小就会拖错方向。
+   */
+  const [split, setSplit] = useState(55)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+
+  const startDrag = (clientX: number, clientY: number): void => {
+    const body = bodyRef.current
+    if (body === null) return
+    const rect = body.getBoundingClientRect()
+    const sideBySide = getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length > 1
+    const move = (event: PointerEvent): void => {
+      const ratio = sideBySide
+        ? ((event.clientX - rect.left) / rect.width) * 100
+        : ((event.clientY - rect.top) / rect.height) * 100
+      setSplit(Math.min(80, Math.max(20, ratio)))
+    }
+    const stop = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+  }
+
   useEffect(() => {
     if (detail.state.status === 'ok') setDraft(detail.state.data)
   }, [detail.state])
@@ -403,12 +432,10 @@ function ResumeWork(props: {
       {error === null ? null : <p className="jh-error">{error}</p>}
       {notice === null ? null : <p className="jh-ok">{notice}</p>}
 
-      {/* 体检结果放在**编辑区顶部**：它指导的是"改表单"，不是"看预览" */}
-      {issues.length === 0 ? (
-        <div className="jh-alert jh-alert-quiet">
-          <p className="jh-alert-body">规则体检没有发现问题。（它只查格式与完整性，不判断内容好不好。）</p>
-        </div>
-      ) : (
+      {/* 体检结果放在**编辑区顶部**：它指导的是"改表单"，不是"看预览"。
+          没有问题时不占版面 —— 一行"没有发现问题"既没用又占地方，
+          功能（体检本身）保留：有问题照样在这里逐条列出来。 */}
+      {issues.length === 0 ? null : (
         <div className={`jh-alert ${issues.some((issue) => issue.level === 'error') ? 'jh-alert-error' : 'jh-alert-warn'}`}>
           <div className="jh-alert-head">
             <span className="jh-alert-title">体检：{issues.length} 项待处理</span>
@@ -425,7 +452,9 @@ function ResumeWork(props: {
 
       <div className="jh-work-modes">
         <div className="jh-modes" role="tablist" aria-label="视图模式">
-          {([['edit', '编辑'], ['split', '分屏'], ['preview', '预览']] as Array<[Mode, string]>).map(([key, label]) => (
+          {(
+            [['edit', '编辑'], ['split', '分屏'], ['preview', '预览'], ['files', '附件']] as Array<[Mode, string]>
+          ).map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -440,12 +469,13 @@ function ResumeWork(props: {
         </div>
         <span className="jh-muted">
           {mode === 'edit' ? '先把内容填完整；单条成果按回车可以接着加一条。' : null}
-          {mode === 'split' ? '左边改、右边实时看 —— 预览与导出走的是同一个渲染器。' : null}
+          {mode === 'split' ? '拖动中间那条灰条可以调整上下比例。' : null}
           {mode === 'preview' ? '导出正在看的这一版。' : null}
+          {mode === 'files' ? '这一版生成过的附件都在这儿 —— 只有你显式删除才会消失。' : null}
         </span>
       </div>
 
-      <div className={`jh-work-body jh-mode-${mode}`}>
+      <div className={`jh-work-body jh-mode-${mode}`} ref={bodyRef} style={{ '--jh-split': `${String(split)}%` } as CSSProperties}>
         <div className="jh-work-editor">
           {/* ── 基本信息 ─────────────────────────────────────────── */}
           <section className="jh-form-card">
@@ -874,6 +904,23 @@ function ResumeWork(props: {
           </p>
         </div>
 
+        <div
+          className="jh-splitter"
+          role="separator"
+          aria-label="拖动调整编辑与预览的比例"
+          aria-orientation="horizontal"
+          tabIndex={0}
+          title="拖动调整比例"
+          onPointerDown={(event) => {
+            event.preventDefault()
+            startDrag(event.clientX, event.clientY)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowUp') setSplit((value) => Math.max(20, value - 4))
+            if (event.key === 'ArrowDown') setSplit((value) => Math.min(80, value + 4))
+          }}
+        />
+
         <div className="jh-work-preview">
           <div className="jh-preview-head">
             <select
@@ -894,27 +941,29 @@ function ResumeWork(props: {
             <iframe className="jh-paper" title="简历预览" src={previewUrl(props.id, template)} sandbox="" />
           </div>
 
-          <div>
-            <h3 className="jh-card-title">附件</h3>
-            {draft.files.length === 0 ? (
-              <p className="jh-muted">还没有生成附件。</p>
-            ) : (
-              <ul className="jh-files">
-                {draft.files.map((file) => (
-                  <li key={file.id}>
-                    <a className="jh-link" href={fileUrl(file.id)} target="_blank" rel="noreferrer">
-                      {file.fileName}
-                    </a>
-                    <span className="jh-muted">
-                      {' '}
-                      {file.format} · {(file.bytes / 1024).toFixed(0)} KB ·{' '}
-                      {file.createdAt.slice(0, 16).replace('T', ' ')}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        </div>
+
+        {/* 附件从预览区里抽出来，单独一个子 tab（反馈：它挤在预览下面，与渲染无关） */}
+        <div className="jh-work-files">
+          <h3 className="jh-card-title">附件（{draft.files.length}）</h3>
+          {draft.files.length === 0 ? (
+            <p className="jh-muted">还没有生成附件。用右上角的「导出 PDF / 导出 Word」生成。</p>
+          ) : (
+            <ul className="jh-files">
+              {draft.files.map((file) => (
+                <li key={file.id}>
+                  <a className="jh-link" href={fileUrl(file.id)} target="_blank" rel="noreferrer">
+                    {file.fileName}
+                  </a>
+                  <span className="jh-muted">
+                    {' '}
+                    {file.format} · {(file.bytes / 1024).toFixed(0)} KB ·{' '}
+                    {file.createdAt.slice(0, 16).replace('T', ' ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     </>
