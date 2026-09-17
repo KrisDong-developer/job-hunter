@@ -457,7 +457,11 @@ test('两个模板都产出自洽的文档，且内容一致（只差样式）',
   const textOf = (template: 'concise' | 'professional'): string =>
     entryNamed(readZip(renderResumeDocx(FULL_RESUME, { template })), 'word/document.xml')
       .content.toString('utf8')
+      // 颜色有**两种**写法：run 级的 `<w:color w:val/>`，以及段落边框里作为属性的
+      // `w:color="..."`（页眉那条贯穿线就是后者，且它随模板变色）。
+      // 两种都要剥掉，否则"只差样式"这条会被样式本身误判成内容差异。
       .replace(/<w:color[^/]*\/>/g, '')
+      .replace(/\sw:color="[0-9A-Fa-f]{6}"/g, '')
   assert.equal(textOf('concise'), textOf('professional'), '两个模板的正文文本应当完全一致')
 })
 

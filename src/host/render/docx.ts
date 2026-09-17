@@ -172,13 +172,27 @@ function escapeXml(value: string): string {
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
 }
 
-/** 十六进制颜色：模板差异全部收敛到这一个常量，段落代码不需要知道模板存在。 */
+/**
+ * 模板调色板：**模板差异全部收敛到这里**，段落代码不需要知道模板存在。
+ *
+ * 取值与 HTML 渲染器逐项对齐（那边是 CSS 字面量，这边是 OOXML 的十六进制）：
+ *   正文/姓名 #111827 · 次级（职位）#4B5563 · 元信息（时间/技术栈）#6B7280
+ * 专业模板把姓名、段落标题、页眉贯穿线换成主题色 #1F4E79。
+ */
 interface Palette {
   accent: string
+  /** 页眉下面那条贯穿线。 */
+  rule: string
+  /** 元信息（时间 / 技术栈）的灰。 */
+  muted: string
+  /** 次级信息（职位、角色）的灰。 */
+  subtle: string
 }
 
 function paletteOf(template: ResumeTemplate): Palette {
-  return template === 'professional' ? { accent: '1F4E79' } : { accent: '000000' }
+  return template === 'professional'
+    ? { accent: '1F4E79', rule: '1F4E79', muted: '6B7280', subtle: '4B5563' }
+    : { accent: '111827', rule: '111827', muted: '6B7280', subtle: '4B5563' }
 }
 
 /** 一个 `<w:r>`：可选直接格式 + `xml:space="preserve"`（不必猜哪些文本首尾有空格）。 */
@@ -187,40 +201,75 @@ function run(text: string, props = ''): string {
   return `<w:r>${properties}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`
 }
 
-interface ParaOptions {
-  style?: string
-  align?: 'center'
+/**
+ * 一段文本的局部格式。
+ *
+ * 需要它是因为"公司（粗）+ 职位（常规灰）+ 时间（灰、右对齐）"必须在**同一行**里
+ * 各是各的格式 —— 早先只能整行一种格式，于是只能写成"公司 · 职位"，没有锚点。
+ */
+interface RunSpec {
+  text: string
   bold?: boolean
   color?: string
   /** 字号按半点（half-point）计，这是 OOXML 的规定。 */
   halfPoints?: number
+  /** 标题那条"短线"：Word 里用**文字下划线**表达（段落边框会横贯整行）。 */
+  underline?: boolean
+  /** 字距（二十分之一磅）：对应 HTML 标题的 0.1em。 */
+  spacing?: number
+}
+
+interface ParaOptions extends Omit<RunSpec, 'text'> {
+  text?: string
+  style?: string
+  align?: 'center'
   /** 段间距，单位是二十分之一磅（twip）。 */
   after?: number
   indent?: number
+  /** 段落下边框：页眉那条贯穿线用。 */
   border?: boolean
+  borderColor?: string
+  /** 右对齐制表位（经历抬头把时间顶到右边），单位 twip。 */
+  rightTabAt?: number
+}
+
+/** 整段跑同一套格式时的糖衣（绝大多数段落都是这种）。 */
+function paragraph(text: string, options: ParaOptions = {}): string {
+  return richParagraph([{ ...options, text }], options)
 }
 
 /** 一个 `<w:p>`：所有段落都从这里出去，保证 pPr 顺序合法。 */
-function paragraph(text: string, options: ParaOptions = {}): string {
+function richParagraph(runs: RunSpec[], options: ParaOptions = {}): string {
   const parts: string[] = []
   if (options.style !== undefined) parts.push(`<w:pStyle w:val="${options.style}"/>`)
   if (options.border === true) {
-    parts.push('<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="2" w:color="BFBFBF"/></w:pBdr>')
+    parts.push(
+      `<w:pBdr><w:bottom w:val="single" w:sz="8" w:space="2" w:color="${options.borderColor ?? '111827'}"/></w:pBdr>`,
+    )
   }
   if (options.indent !== undefined) {
     parts.push(`<w:ind w:left="${String(options.indent)}" w:hanging="210"/>`)
+  }
+  if (options.rightTabAt !== undefined) {
+    parts.push(`<w:tabs><w:tab w:val="right" w:pos="${String(options.rightTabAt)}"/></w:tabs>`)
   }
   if (options.align !== undefined) parts.push(`<w:jc w:val="${options.align}"/>`)
   if (options.after !== undefined) parts.push(`<w:spacing w:after="${String(options.after)}"/>`)
 
   const properties = parts.length === 0 ? '' : `<w:pPr>${parts.join('')}</w:pPr>`
-
-  const runProps: string[] = []
-  if (options.bold === true) runProps.push('<w:b/>')
-  if (options.color !== undefined) runProps.push(`<w:color w:val="${options.color}"/>`)
-  if (options.halfPoints !== undefined) runProps.push(`<w:sz w:val="${String(options.halfPoints)}"/>`)
-
-  return `<w:p>${properties}${text === '' ? '' : run(text, runProps.join(''))}</w:p>`
+  const body = runs
+    .map((spec) => {
+      if (spec.text === '') return ''
+      const props: string[] = []
+      if (spec.bold === true) props.push('<w:b/>')
+      if (spec.underline === true) props.push('<w:u w:val="single"/>')
+      if (spec.color !== undefined) props.push(`<w:color w:val="${spec.color}"/>`)
+      if (spec.halfPoints !== undefined) props.push(`<w:sz w:val="${String(spec.halfPoints)}"/>`)
+      if (spec.spacing !== undefined) props.push(`<w:spacing w:val="${String(spec.spacing)}"/>`)
+      return run(spec.text, props.join(''))
+    })
+    .join('')
+  return `<w:p>${properties}${body}</w:p>`
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -241,11 +290,18 @@ function has(value: string | undefined): value is string {
   return value !== undefined && value.trim() !== ''
 }
 
+/** 版心宽度（twip）：A4 宽 11906 − 左右页边距各 794。右对齐制表位落在它的右端。 */
+const CONTENT_WIDTH_TWIP = 11906 - 794 * 2
+
 function basicsParagraphs(basics: ResumeBasics, palette: Palette): string[] {
-  const out: string[] = []
-  if (has(basics.name)) out.push(paragraph(basics.name, { style: 'Title' }))
+  // 先收集成描述、最后统一补边框：页眉那条贯穿线要画在**最后一行**上，
+  // 而最后一行是哪一行取决于用户填了哪些可选字段。
+  const blocks: Array<{ text: string; options: ParaOptions }> = []
+  if (has(basics.name)) {
+    blocks.push({ text: basics.name, options: { bold: true, halfPoints: 40, color: palette.accent, after: 20 } })
+  }
   if (has(basics.title)) {
-    out.push(paragraph(basics.title, { align: 'center', bold: true, halfPoints: 22, color: palette.accent }))
+    blocks.push({ text: basics.title, options: { halfPoints: 21, color: palette.subtle, after: 20 } })
   }
 
   const contacts: string[] = []
@@ -256,66 +312,78 @@ function basicsParagraphs(basics: ResumeBasics, palette: Palette): string[] {
     const label = has(link.label) ? link.label : link.url
     if (has(label)) contacts.push(label)
   }
-  if (contacts.length > 0) out.push(paragraph(contacts.join(' · '), { align: 'center', halfPoints: 19 }))
+  if (contacts.length > 0) {
+    blocks.push({ text: contacts.join(' · '), options: { halfPoints: 19, color: palette.subtle, after: 20 } })
+  }
 
   // docx 与 HTML 的可选字段策略必须一致：默认不写年龄/年限，避免误投。
   const meta: string[] = []
   if (typeof basics.years === 'number') meta.push(`工作经验：${String(basics.years)} 年`)
   if (typeof basics.age === 'number') meta.push(`年龄：${String(basics.age)} 岁`)
-  if (meta.length > 0) out.push(paragraph(meta.join(' · '), { align: 'center', halfPoints: 19 }))
+  if (meta.length > 0) {
+    blocks.push({ text: meta.join(' · '), options: { halfPoints: 19, color: palette.subtle, after: 20 } })
+  }
 
-  return out
+  // 整份文档只留这一条贯穿线（对应 HTML 的 .resume-header），段落标题不再画横线
+  const last = blocks.at(-1)
+  if (last !== undefined) last.options = { ...last.options, border: true, borderColor: palette.rule, after: 90 }
+
+  return blocks.map((block) => paragraph(block.text, block.options))
 }
 
-function experienceParagraphs(experience: ResumeExperience): string[] {
-  const heading = [experience.company, has(experience.title) ? experience.title : '']
-    .filter((part) => part !== '')
-    .join(' · ')
+/**
+ * 经历 / 项目的抬头：公司（粗）＋ 职位（常规灰）…… 时间（灰、右对齐制表位）。
+ *
+ * 用制表位而不是全角空格（早先是 `join('　　')`）：全角空格只是"看起来推到了右边"，
+ * 一旦公司名稍长就会把时间挤到下一行，而且右边界参差不齐。
+ */
+function headingParagraph(left: RunSpec[], tail: string, palette: Palette): string {
+  const runs = [...left]
+  if (tail !== '') runs.push({ text: `\t${tail}`, color: palette.muted, halfPoints: 19 })
+  return richParagraph(runs, { rightTabAt: CONTENT_WIDTH_TWIP, after: 30 })
+}
+
+function experienceParagraphs(experience: ResumeExperience, palette: Palette): string[] {
+  const left: RunSpec[] = []
+  if (has(experience.company)) left.push({ text: experience.company, bold: true })
+  if (has(experience.title)) left.push({ text: `　${experience.title}`, color: palette.subtle })
   const tail = [formatRange(experience.start, experience.end), has(experience.city) ? experience.city : '']
     .filter((part) => part !== '')
     .join(' | ')
 
   const out: string[] = []
-  if (heading !== '' || tail !== '') {
-    out.push(paragraph([heading, tail].filter((part) => part !== '').join('　　'), { style: 'Heading2' }))
-  }
+  if (left.length > 0 || tail !== '') out.push(headingParagraph(left, tail, palette))
   for (const highlight of experience.highlights) {
     out.push(paragraph(`• ${highlight}`, { indent: 210, after: 20 }))
   }
   if ((experience.stack ?? []).length > 0) {
-    out.push(paragraph(`技术栈：${(experience.stack ?? []).join(' / ')}`, { halfPoints: 19, color: '595959' }))
+    out.push(paragraph(`技术栈：${(experience.stack ?? []).join(' / ')}`, { halfPoints: 19, color: palette.muted }))
   }
   return out
 }
 
-function projectParagraphs(project: ResumeProject): string[] {
-  const headingBits = [project.name]
-  if (has(project.role)) headingBits.push(project.role)
-  const heading = headingBits.join(' · ')
+function projectParagraphs(project: ResumeProject, palette: Palette): string[] {
+  const left: RunSpec[] = [{ text: project.name, bold: true }]
+  if (has(project.role)) left.push({ text: `　${project.role}`, color: palette.subtle })
 
-  const out: string[] = []
-  out.push(
-    paragraph([heading, has(project.period) ? project.period : ''].filter((part) => part !== '').join('　　'), {
-      style: 'Heading2',
-    }),
-  )
+  const out: string[] = [headingParagraph(left, has(project.period) ? project.period : '', palette)]
   for (const highlight of project.highlights) {
     out.push(paragraph(`• ${highlight}`, { indent: 210, after: 20 }))
   }
   if ((project.stack ?? []).length > 0) {
-    out.push(paragraph(`技术栈：${(project.stack ?? []).join(' / ')}`, { halfPoints: 19, color: '595959' }))
+    out.push(paragraph(`技术栈：${(project.stack ?? []).join(' / ')}`, { halfPoints: 19, color: palette.muted }))
   }
   return out
 }
 
-function educationParagraphs(education: ResumeEducation): string[] {
+function educationParagraphs(education: ResumeEducation, palette: Palette): string[] {
   const parts = [education.school]
   if (has(education.major)) parts.push(education.major)
   if (has(education.degree)) parts.push(education.degree)
   const range = formatRange(education.start, education.end)
-  return [
-    paragraph([parts.join(' · '), range].filter((part) => part !== '').join('　　'), { bold: true, after: 20 }),
-  ]
+  const runs: RunSpec[] = [{ text: parts.join(' · '), bold: true }]
+  if (range !== '') runs.push({ text: `\t${range}`, color: palette.muted, halfPoints: 19 })
+  return [richParagraph(runs, { rightTabAt: CONTENT_WIDTH_TWIP, after: 20 })]
 }
 
 /**
@@ -325,6 +393,25 @@ function educationParagraphs(education: ResumeEducation): string[] {
  * 空的整段不输出）。两处各写一份映射是权衡后的选择：抽公共模块会让两个渲染器
  * 互相绑死，而它们的差异（配色、分页、缩进）恰恰都长在映射函数里。
  */
+/**
+ * 段落标题：11pt 加粗 + 字距 + **文字下划线**。
+ *
+ * 早先是 `border: true`（段落下边框）—— 那会横贯整个版心，正是"表格模板"观感的来源，
+ * 也是这次在 HTML 侧一起去掉的东西。Word 里段落边框没法只跟到文字末尾，
+ * 所以改用文字下划线：效果最接近 HTML 的 `inline-block` 短横线。
+ */
+function sectionTitle(text: string, palette: Palette): string {
+  return paragraph(text, {
+    style: 'Heading1',
+    bold: true,
+    halfPoints: 22,
+    color: palette.accent,
+    underline: true,
+    spacing: 20,
+    after: 60,
+  })
+}
+
 function documentParagraphs(content: ResumeContent, template: ResumeTemplate): string[] {
   const palette = paletteOf(template)
   const out: string[] = []
@@ -332,40 +419,52 @@ function documentParagraphs(content: ResumeContent, template: ResumeTemplate): s
   out.push(...basicsParagraphs(content.basics, palette))
 
   if (has(content.summary)) {
-    out.push(paragraph('个人简介', { style: 'Heading1', border: true }))
+    out.push(sectionTitle('个人简介', palette))
     out.push(paragraph(content.summary, { after: 60 }))
   }
 
   if (content.skills.length > 0) {
-    out.push(paragraph('技能', { style: 'Heading1', border: true }))
+    out.push(sectionTitle('技能', palette))
+    // 与 HTML 的技能云一致：名字加粗、备注浅灰，成对流动，而不是一行一个
+    const runs: RunSpec[] = []
     for (const skill of content.skills) {
+      if (runs.length > 0) runs.push({ text: '　　' })
+      runs.push({ text: skill.name, bold: true })
       const notes: string[] = []
       if (has(skill.level)) notes.push(skill.level)
       if (typeof skill.years === 'number') notes.push(`${String(skill.years)} 年`)
       if (has(skill.evidence)) notes.push(skill.evidence)
-      out.push(paragraph(notes.length === 0 ? skill.name : `${skill.name}（${notes.join(' · ')}）`, { after: 20 }))
+      if (notes.length > 0) runs.push({ text: ` ${notes.join(' · ')}`, color: palette.muted, halfPoints: 18 })
     }
+    out.push(richParagraph(runs, { after: 60 }))
   }
 
   if (content.experiences.length > 0) {
-    out.push(paragraph('工作经历', { style: 'Heading1', border: true }))
-    for (const experience of content.experiences) out.push(...experienceParagraphs(experience))
+    out.push(sectionTitle('工作经历', palette))
+    for (const experience of content.experiences) out.push(...experienceParagraphs(experience, palette))
   }
 
   if (content.projects.length > 0) {
-    out.push(paragraph('项目经历', { style: 'Heading1', border: true }))
-    for (const project of content.projects) out.push(...projectParagraphs(project))
+    out.push(sectionTitle('项目经历', palette))
+    for (const project of content.projects) out.push(...projectParagraphs(project, palette))
   }
 
   if (content.education.length > 0) {
-    out.push(paragraph('教育', { style: 'Heading1', border: true }))
-    for (const education of content.education) out.push(...educationParagraphs(education))
+    out.push(sectionTitle('教育', palette))
+    for (const education of content.education) out.push(...educationParagraphs(education, palette))
   }
 
   const extras = content.extras.filter((extra) => has(extra.label) && has(extra.text))
   if (extras.length > 0) {
-    out.push(paragraph('其他', { style: 'Heading1', border: true }))
-    for (const extra of extras) out.push(paragraph(`${extra.label}：${extra.text}`, { after: 20 }))
+    out.push(sectionTitle('其他', palette))
+    for (const extra of extras) {
+      out.push(
+        richParagraph(
+          [{ text: extra.label, bold: true }, { text: `　${extra.text}`, color: palette.subtle }],
+          { after: 20 },
+        ),
+      )
+    }
   }
 
   return out
@@ -398,7 +497,7 @@ const DOCUMENT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
  * 字号用半点（21 = 10.5pt）。
  */
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Microsoft YaHei" w:hAnsi="Microsoft YaHei" w:eastAsia="Microsoft YaHei"/><w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="60"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:jc w:val="center"/><w:spacing w:after="40"/></w:pPr><w:rPr><w:b/><w:sz w:val="40"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="160" w:after="60"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="26"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="80" w:after="30"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style></w:styles>`
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Microsoft YaHei" w:hAnsi="Microsoft YaHei" w:eastAsia="Microsoft YaHei"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:color w:val="111827"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="60"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="40"/></w:pPr><w:rPr><w:b/><w:sz w:val="40"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="60"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="80" w:after="30"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style></w:styles>`
 
 /** 文档属性（可选部件）：能让 HR 在文件列表/属性面板里直接看到是谁的简历。 */
 function coreProps(content: ResumeContent): string {
