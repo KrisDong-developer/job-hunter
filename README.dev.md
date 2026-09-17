@@ -47,8 +47,18 @@ cd job-hunter && npm install && npm run build
 dsh plugin --profile web add .
 ```
 
-装完侧栏出现「求职找工作」。**不需要重启 DSH** —— `cordis.patch.yml` 是纯 insert、零 `config:`，
-配置全部自管在 sqlite（`$DSH_HOME/job-hunter/`），所以是装完即热挂载。
+装完**重启一次 DSH**，侧栏出现「求职找工作」。这里没有需要你手填的配置项：`cordis.patch.yml`
+是纯 insert、零 `config:`，配置全部自管在 sqlite（`$DSH_HOME/job-hunter/`）。
+
+> ⚠️ **「装完即热挂载、无需重启」这句话我们并没有验证过**，别按它预期。
+> `P0-VERIFICATION.md` §2.2 自己写着：端到端演示"不重启即生效"需要驱动市场安装流程或
+> `ctx.plugin(HotTree, …)`，**本轮未做**；而 `dshmarket/lib/hot.js` 那条热挂载路径
+> （`parseSimplePatch` / `mountClientOnlyDeps`）只服务**市场界面的安装流程**，
+> 与本仓库的 `dsh plugin add` 命令行路径不是同一条。
+> **实测补注（2026-09-17）**：命令行把插件装进**正在运行**的 `web` profile 后，
+> 组合树（`dsh --profile web --dump-config`）里确实出现了 `dsh-job-hunter` 行、
+> 解析到 `profiles/web/node_modules/dsh-job-hunter`，但**那个正在运行的进程不会因此长出侧栏入口** ——
+> 重启后才有。所以：装完就重启，别赌它会热挂载。
 
 > **为什么把构建产物提交进仓库**：`dsh plugin` 把参数原样转发给 pnpm，而 pnpm 会**拦截** git 依赖的
 > `prepare` 构建脚本 —— 你必须先在 profile 的 `pnpm-workspace.yaml` 里手写 `allowBuilds` 才放行
@@ -885,6 +895,7 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 | 校招平台与海外平台适配 | **不做** | §4.L/§4.M 自己标注"待预研"，§16 能力矩阵全"未知"。没有预研就无法估工，假装做了比不做更糟 |
 | （文档未提） | 工签识别为 `unknown` 时**留 NULL 而不是写 'unknown'** | 筛选时"没识别"与"识别为未识别"是两件事，混在一起就再也分不开 |
 | （文档未提） | 英文简历模块**不提供翻译入口** | §4.M 说机翻是致命错误；提供入口就等于鼓励用它 |
+| 「纯 insert 即可热挂载，无需重启」（C2） | **未实测**：命令行安装后要重启才生效 | `P0-VERIFICATION.md` §2.2 自己标明"端到端演示不重启即生效本轮未做"；`dshmarket` 的热挂载（`hot.js`）只服务市场界面的安装流程，与 `dsh plugin add` 不是同一条路径。实践建议：装完就重启 |
 
 ---
 
