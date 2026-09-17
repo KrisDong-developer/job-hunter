@@ -10,13 +10,21 @@ import {
 } from '../../shared/enums.js'
 import {
   FAILURE_KIND_LABEL,
-  adviceForFailure,
   humanizeFailure,
   type FailureText,
 } from '../../shared/error-text.js'
 import { describeCriteria, type CriteriaDimensionLike } from '../../shared/criteria-label.js'
 import type { PlanDto, PlanSchedule, RecentRunDto, SchedulerStatusDto } from '../../shared/dto.js'
-import { formatClock, formatJitter, formatRelative, formatWeekdays, formatWindow } from '../../shared/time-format.js'
+import {
+  WEEKDAY_PRESETS,
+  clockValueOf,
+  formatClock,
+  formatJitter,
+  formatRelative,
+  formatWeekdays,
+  formatWindow,
+  parseClockValue,
+} from '../../shared/time-format.js'
 import {
   ApiError,
   createPlan,
@@ -41,27 +49,26 @@ import {
 } from '../api.js'
 import { useAsync } from '../use-async.js'
 import { InlineMd } from '../inline-md.js'
+import { Modal } from '../modal.js'
 import { Term } from '../terms.js'
 import { FreshnessBadge } from './freshness.js'
 
 interface Feedback {
   running: boolean
   tone: 'ok' | 'error'
-  /** 文案里可以有 `**强调**` 与 `` `代码` `` —— 渲染时走 `InlineMd`（见文件尾的注释）。 */
   message: string | null
 }
 
 const IDLE: Feedback = { running: false, tone: 'ok', message: null }
 
-/** 表单的本地形状：窗口与条件在这里是字符串，提交前才收敛。 */
+/** 表单的本地形状：条件在这里是字符串，提交前才收敛。 */
 interface PlanForm {
   name: string
   platforms: string[]
   criteria: Record<string, string>
-  windowStartHour: number
-  windowStartMinute: number
-  windowEndHour: number
-  windowEndMinute: number
+  /** `HH:MM`（原生时间选择器的值）。空串 = 用户清空了，**不是** 00:00。 */
+  windowStart: string
+  windowEnd: string
   weekdays: number[]
   scheduleEnabled: boolean
   score: boolean
@@ -75,10 +82,8 @@ function formOf(plan: PlanDto): PlanForm {
     name: plan.name,
     platforms: [...plan.platforms],
     criteria: { ...plan.criteria },
-    windowStartHour: schedule.windowStartHour,
-    windowStartMinute: schedule.windowStartMinute,
-    windowEndHour: schedule.windowEndHour,
-    windowEndMinute: schedule.windowEndMinute,
+    windowStart: clockValueOf(schedule.windowStartHour, schedule.windowStartMinute),
+    windowEnd: clockValueOf(schedule.windowEndHour, schedule.windowEndMinute),
     weekdays: [...schedule.weekdays],
     scheduleEnabled: schedule.enabled,
     score: plan.postProcess.score,
@@ -92,10 +97,8 @@ function emptyForm(platforms: string[]): PlanForm {
     name: '新方案',
     platforms,
     criteria: {},
-    windowStartHour: 9,
-    windowStartMinute: 0,
-    windowEndHour: 11,
-    windowEndMinute: 0,
+    windowStart: '09:00',
+    windowEnd: '11:00',
     weekdays: [1, 2, 3, 4, 5],
     scheduleEnabled: true,
     score: true,
@@ -104,30 +107,33 @@ function emptyForm(platforms: string[]): PlanForm {
   }
 }
 
+/**
+ * 表单 → 写入体。
+ *
+ * 时间在这里解析；解析不出来（用户清空了输入框）就退回默认时段，
+ * 而不是把 `NaN` 发出去 —— `parseClockValue` 返回 null 的语义是"没填"，不是"00:00"。
+ */
 function writeOf(form: PlanForm): PlanWriteInput {
+  const start = parseClockValue(form.windowStart) ?? { hour: 9, minute: 0 }
+  const end = parseClockValue(form.windowEnd) ?? { hour: 11, minute: 0 }
   return {
     name: form.name,
     platforms: form.platforms,
     criteria: form.criteria,
     schedule: {
       enabled: form.scheduleEnabled,
-      windowStartHour: form.windowStartHour,
-      windowStartMinute: form.windowStartMinute,
-      windowEndHour: form.windowEndHour,
-      windowEndMinute: form.windowEndMinute,
+      windowStartHour: start.hour,
+      windowStartMinute: start.minute,
+      windowEndHour: end.hour,
+      windowEndMinute: end.minute,
       weekdays: form.weekdays,
     },
     postProcess: { score: form.score, flag: form.flag, dedup: form.dedup },
   }
 }
 
-/**
- * 状态徽章：**中文 + 色调**，不把 `ok` / `degraded` 这类内部枚举印给用户。
- *
- * 色调与文案都取自 `shared/enums.ts` 的那两张表，所以面板、工具文本、
- * 以后新增的界面必然是同一套词。
- */
-function StateBadge(props: { state: CrawlState | HealthState; kind: 'run' | 'health' }) {
+/** 状态胶囊（成功-绿 / 部分成功-黄 / 失败-红 …），中文，不印内部枚举。 */
+function StateTag(props: { state: CrawlState | HealthState; kind: 'run' | 'health' }) {
   const label =
     props.kind === 'run'
       ? CRAWL_STATE_LABEL[props.state as CrawlState]
@@ -136,25 +142,23 @@ function StateBadge(props: { state: CrawlState | HealthState; kind: 'run' | 'hea
     props.kind === 'run'
       ? CRAWL_STATE_TONE[props.state as CrawlState]
       : HEALTH_STATE_TONE[props.state as HealthState]
-  return <span className={`jh-badge-state jh-tone-${tone}`}>{label}</span>
+  return <span className={`jh-tag jh-tone-${tone}`}>{label}</span>
 }
 
 /**
  * 调度归属的**唯一说法**。
  *
- * 修的是一个真实的状态矛盾：页面上原来同时显示「调度：未启动」和
- * 「下次运行：还有 9 小时」—— 用户无从判断定时到底有没有生效。
- * 根因是 `scheduling`（本实例在不在调度）与"有没有下次运行"是两件事，
- * 而它们被并排放在一个 KV 列表里，看起来就像互相矛盾。
+ * 修的是两个叠在一起的问题：
+ *   1. 「调度：未启动」与「下次运行：还有 9 小时」并排 → 读起来自相矛盾；
+ *   2. 顶部同时出现**三段**黄色提示都在说"定时已暂停"（归属叙述 + 一个 jh-warn 段 + 按钮文案），
+ *      同一句话说三遍，用户反而不知道该看哪一条。
  *
- * 现在合成**一句**主叙述：谁在负责调度、下次什么时候跑、以及为什么。
+ * 现在归属只由 `.jh-story` 说一句；"需要你处理的事"只由**一条** Alert 说。
  */
 interface ScheduleStory {
   owner: string
   tone: 'ok' | 'warn' | 'muted'
-  /** 下一次自动运行的人话；`null` = 没有启用定时的方案。 */
   nextRun: string | null
-  /** 为什么是这个归属（只读时给出下一步）。 */
   detail: string | null
 }
 
@@ -171,27 +175,18 @@ function scheduleStoryOf(status: SchedulerStatusDto, now: Date): ScheduleStory {
           .join(' / ')
 
   if (status.paused) {
-    return {
-      owner: '定时已暂停',
-      tone: 'warn',
-      // 暂停时不写"下次运行 还有 9 小时"那样的肯定句，而是明确标出前提
-      nextRun: nextRun === null ? null : `恢复后会按：${nextRun}`,
-      detail: '暂停只停「到点自动跑」，手动「立即采集」任何时候都能用。',
-    }
+    // 暂停时"下次运行"是**条件句**：不写"还有 9 小时"那种肯定口径
+    return { owner: '定时已暂停', tone: 'warn', nextRun, detail: null }
   }
-
   if (status.readOnly) {
     return {
       owner: '由另一个窗口负责调度',
       tone: 'warn',
-      // 归属是别人，所以这里说的是"那边会跑"，而不是"我们会跑" —— 这正是原来缺的那半句话
       nextRun: nextRun === null ? null : `那个窗口会在 ${nextRun} 自动采集`,
       detail:
-        '同一台电脑只允许一个窗口真正去采集（否则会抢同一份浏览器登录态）。' +
-        '本窗口可以看，但不能触发采集。',
+        '同一台电脑只允许一个窗口真正去采集（否则会抢同一份浏览器登录态）。本窗口可以看，但不能触发采集。',
     }
   }
-
   if (!status.scheduling) {
     return {
       owner: '本窗口负责调度，但还没启动',
@@ -200,7 +195,6 @@ function scheduleStoryOf(status: SchedulerStatusDto, now: Date): ScheduleStory {
       detail: status.readOnlyReason ?? '数据层可能还没就绪，稍等几秒会自动开始。',
     }
   }
-
   return {
     owner: status.armed ? '本窗口负责调度，已排好下一次' : '本窗口负责调度',
     tone: 'ok',
@@ -210,35 +204,29 @@ function scheduleStoryOf(status: SchedulerStatusDto, now: Date): ScheduleStory {
 }
 
 /**
- * U9 数据采集（§5.4 / §4.6.1 的界面落点，tab 显示「采集」）。
+ * U9 数据采集（§5.4 / §4.6.1 的界面落点）。
  *
- * 这一屏承载：采集方案配置、平台状态、触发与"为什么没跑"。
+ * ## 这一版针对界面评审改了什么
  *
- * ## 这次修掉的三类"界面把内部东西漏出来了"
- *
- *   1. **Markdown 当纯文本印**：文案里写了 `**强调**`，界面上直接显示星号。
- *      现在统一走 `InlineMd`（自写的十行行内解析，零新依赖，且**从不**用 HTML 直通 ——
- *      抓来的 JD 是不可信输入，走 HTML 就等于开了注入口子）。
- *   2. **源码 JSON 裸露**：方案条件原来渲染 `JSON.stringify(criteria)`，
- *      用户看到 `{"keyword":"Java","city":"深圳"}`。现在走 `describeCriteria`
- *      变成「关键词：Java · 城市：深圳」。
- *   3. **堆栈直出**：运行历史原来直接印 `errorMsg`，于是页面上是一串
- *      `page.evaluate: ReferenceError ... at ...`。现在走 `humanizeFailure`
- *      给一句"代码语法异常"+ 下一步建议，原始全文收进可展开的详情里（**不隐藏信息**）。
- *
- * 另外补上了原本是"死胡同"的租约提示：给出「重新检测」与「接管调度」两个动作，
- * 但接管**只在对方心跳过期时**才成功 —— 抢活着的实例会让两个调度器同时抓取。
+ * **顶部**：三段重复的黄色提示合并成**一条** Alert（并自带该做的动作）；
+ * 运行历史的错误不再是单元格里的一大段堆栈，而是**胶囊 + 点击弹窗**看全文。
+ * **中部**：方案卡片有明确边框与阴影，"连续失败 N 次"升格为卡片内的警告 Banner；
+ * 按钮分三档权重（主操作 / 次级 / 危险）。
+ * **表单**：从"嵌在页面下方"改成**弹窗**；时间用原生时间选择器（两个而不是四个框）；
+ * 工作日改成分段标签 + 一键预设；长段解释收进 `?` 悬浮释义。
  */
 export function CollectScreen(props: { revision: number; onGoSettings: () => void }) {
   const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision])
   const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision])
   const plans = useAsync((signal) => fetchPlans(signal), [props.revision])
   const reasons = useAsync((signal) => fetchSkipReasons(signal), [props.revision])
-  // 维度声明（SR-41）：既给编辑器渲染筛选器，也给方案列表把条件翻成人话
   const dimensions = useAsync((signal) => fetchCriteriaDimensions([], signal), [props.revision])
+
   const [feedback, setFeedback] = useState<Feedback>(IDLE)
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const [duplicates, setDuplicates] = useState<PlanDuplicateDto[]>([])
+  /** 点开某条运行记录的错误全文（原来是直接摊在单元格里）。 */
+  const [errorDetail, setErrorDetail] = useState<{ run: RecentRunDto; failure: FailureText } | null>(null)
 
   const report = (error: unknown): void => {
     setFeedback({
@@ -273,7 +261,6 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const dimensionList: CriteriaDimensionDto[] =
     dimensions.state.status === 'ok' ? dimensions.state.data.items : []
 
-  // 每次数据刷新都重算一次"相对现在多久" —— 相对时间不重算就会一直显示旧值
   const now = useMemo(() => new Date(), [props.revision])
   const story = status === null ? null : scheduleStoryOf(status, now)
 
@@ -286,9 +273,8 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const trigger = (plan: PlanDto): Promise<void> =>
     act('正在按方案采集…（会打开一个浏览器窗口）', async () => {
       const summary = await runPlan(plan.id)
-      const state = CRAWL_STATE_LABEL[summary.run.state]
       return (
-        `方案「${plan.name}」本轮 ${state}：命中 ${String(summary.run.found)} · ` +
+        `方案「${plan.name}」本轮 ${CRAWL_STATE_LABEL[summary.run.state]}：命中 ${String(summary.run.found)} · ` +
         `新增 ${String(summary.run.inserted)} · 更新 ${String(summary.run.updated)} · ` +
         `隔离 ${String(summary.run.quarantined)}`
       )
@@ -296,6 +282,15 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
 
   const reasonFor = (skipReason: string | null): string | null =>
     skipReason === null ? null : (reasonText[skipReason] ?? skipReason)
+
+  const runBlockTitle =
+    status?.readOnly === true
+      ? `本窗口没有采集权。用下面的「接管调度」，或到另一个窗口（进程 ${String(status.lease.pid ?? '?')}）里操作。`
+      : feedback.running
+        ? '有另一个操作正在进行，请稍候。'
+        : '现在按这个方案采集一次（会打开浏览器窗口）。'
+
+  const enabledPlan = planList.find((plan) => plan.enabled) ?? planList[0]
 
   return (
     <div className="jh-screen">
@@ -317,49 +312,57 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         </div>
       )}
 
-      {/* ── 触发器与抑制（SR-30/26/28）────────────────────────────────── */}
+      {/* ── 一条 Alert 说完"当前需要你处理的事"（原来是三段重复提示）────── */}
+      {status !== null && (
+        <StatusAlert
+          status={status}
+          planName={enabledPlan?.name ?? null}
+          running={feedback.running}
+          onResume={() =>
+            void act('正在恢复定时…', async () => {
+              await setSchedulePaused(false)
+              return '已恢复定时抓取。'
+            })
+          }
+        />
+      )}
+
+      {/* ── 触发与运行 ───────────────────────────────────────────────── */}
       {status !== null && story !== null && (
         <section className="jh-card">
           <div className="jh-form-head">
             <h2 className="jh-card-title">触发与运行</h2>
             <span className="jh-spacer" />
-            <button
-              type="button"
-              className={`jh-btn jh-btn-inline${status.paused ? ' jh-btn-primary' : ''}`}
-              disabled={feedback.running}
-              title={
-                status.paused
-                  ? '恢复「到点自动跑」。手动「立即采集」一直都能用。'
-                  : '只停「到点自动跑」；手动「立即采集」不受影响。'
-              }
-              onClick={() =>
-                void act(status.paused ? '正在恢复定时…' : '正在暂停定时…', async () => {
-                  await setSchedulePaused(!status.paused)
-                  return status.paused
-                    ? '已恢复定时抓取。'
-                    : '已暂停**定时**抓取。手动「立即采集」仍然可用。'
-                })
-              }
-            >
-              {status.paused ? '恢复定时' : '一键暂停定时'}
-            </button>
+            {/* 暂停时这里不放按钮：那条 Alert 已经带了「恢复定时」，
+                两个按钮做同一件事正是这次要消掉的重复。 */}
+            {status.paused ? null : (
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline"
+                disabled={feedback.running}
+                title="只停「到点自动跑」；手动「立即采集」不受影响。"
+                onClick={() =>
+                  void act('正在暂停定时…', async () => {
+                    await setSchedulePaused(true)
+                    return '已暂停**定时**抓取。手动「立即采集」仍然可用。'
+                  })
+                }
+              >
+                一键暂停定时
+              </button>
+            )}
           </div>
 
-          {/* 一句话说清"定时到底生效没有" —— 原来这里是「调度：未启动」+「还有 9 小时」并存 */}
           <p className={`jh-story jh-story-${story.tone}`}>
             <b>{story.owner}</b>
-            {story.nextRun === null ? ' —— 当前没有启用定时的方案。' : `：${story.nextRun}`}
+            {story.nextRun === null
+              ? ' —— 当前没有启用定时的方案。'
+              : status.paused
+                ? `：恢复后将按 ${story.nextRun} 运行`
+                : `：${story.nextRun}`}
           </p>
           {story.detail === null ? null : <p className="jh-note">{story.detail}</p>}
 
-          {status.paused && (
-            <p className="jh-warn">
-              定时已暂停
-              {status.pausedReason === null ? '' : `（${status.pausedReason}）`}。手动触发不受影响。
-            </p>
-          )}
-
-          {/* ── 租约：把"死胡同"变成"下一步"（R20）────────────────────── */}
           <LeasePanel
             status={status}
             now={now}
@@ -401,42 +404,22 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
             </li>
           </ul>
 
-          {/* SR-2：在场触发只提示，不自动跑 */}
-          {status.refreshSuggested && status.refreshHint !== null && (
-            <div className="jh-alert jh-alert-warn">
-              <div className="jh-alert-head">
-                <span className="jh-alert-title">数据偏旧，建议手动刷新一次</span>
-              </div>
-              <p className="jh-alert-body">
-                <InlineMd text={status.refreshHint} />
-              </p>
-              <p className="jh-note">
-                不会自动跑 —— 程序只在你在场时活着，所以这里只提示，由你决定。
-              </p>
-            </div>
-          )}
-
           <RunHistoryTable
             runs={status.recentRuns}
             reasonFor={reasonFor}
-            onGoSettings={props.onGoSettings}
-            onRetry={() => {
-              const first = planList.find((plan) => plan.enabled)
-              if (first !== undefined) void trigger(first)
-            }}
-            retryDisabled={feedback.running || status.readOnly || planList.length === 0}
+            onOpenError={(run, failure) => setErrorDetail({ run, failure })}
           />
         </section>
       )}
 
-      {/* ── 采集方案配置（SR-38/40/41/43/44）───────────────────────────── */}
+      {/* ── 采集方案列表（卡片化 + 按钮分权重）──────────────────────────── */}
       <section className="jh-card">
         <div className="jh-form-head">
           <h2 className="jh-card-title">采集方案</h2>
           <span className="jh-spacer" />
           <button
             type="button"
-            className="jh-btn jh-btn-inline"
+            className="jh-btn jh-btn-inline jh-btn-primary"
             disabled={feedback.running}
             title="新建一个采集方案：决定抓什么（平台 + 筛选条件 + 抓取深度）与什么时候抓。"
             onClick={() => {
@@ -449,31 +432,54 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         </div>
 
         {planList.length === 0 ? (
-          <p className="jh-muted">
-            还没有方案。方案决定抓什么（平台 + 筛选条件 + 抓取深度）与什么时候抓。
-          </p>
+          <p className="jh-muted">还没有方案。方案决定抓什么（平台 + 筛选条件 + 抓取深度）与什么时候抓。</p>
         ) : (
-          <ul className="jh-list jh-plan-list">
+          <ul className="jh-plan-list">
             {planList.map((plan) => {
               const planStatus = status?.planStatus.find((item) => item.planId === plan.id) ?? null
               const decision = planStatus?.lastDecision ?? null
               const runBlocked = feedback.running || (status?.readOnly ?? false)
               return (
-                <li key={plan.id} className="jh-plan-item">
+                <li key={plan.id} className="jh-plan-card">
+                  {/* 核心风险放在卡片**最顶部**：它是这张卡最该被看见的事，
+                      埋在正文里就等于没提示（评审原话：应转化为顶部的警告 Banner）。 */}
+                  {planStatus?.riskPaused === true && (
+                    <div className="jh-banner jh-banner-error">
+                      <span className="jh-banner-title">
+                        <Term term="风控暂停">已被暂停自动采集</Term>
+                      </span>
+                      <span>{planStatus.riskReason ?? '触发风控信号，已停止自动尝试。'}</span>
+                    </div>
+                  )}
+                  {planStatus !== null && planStatus.backoffUntil !== null && (
+                    <div className="jh-banner jh-banner-warn">
+                      <span className="jh-banner-title">
+                        连续失败 {planStatus.failStreak} 次，正在<Term term="退避">退避</Term>
+                      </span>
+                      <span>最早 {formatClock(new Date(planStatus.backoffUntil))} 再试。</span>
+                    </div>
+                  )}
+
                   <div className="jh-plan-head">
-                    <b>{plan.name}</b>
+                    <b className="jh-plan-name">{plan.name}</b>
                     {planStatus === null ? null : (
                       <FreshnessBadge
                         level={planStatus.freshness.level}
                         hours={planStatus.freshness.hoursSinceSuccess}
                       />
                     )}
-                    {planStatus?.riskPaused === true && (
-                      <span className="jh-chip jh-chip-warn">
-                        <Term term="风控暂停">风控暂停</Term>
-                      </span>
-                    )}
+                    {plan.enabled ? null : <span className="jh-tag jh-tone-muted">已停用</span>}
                     <span className="jh-spacer" />
+                    {/* 权重：立即采集 = 主操作；编辑 = 次级；确认恢复 = 警示；删除 = 危险 */}
+                    <button
+                      type="button"
+                      className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-primary"
+                      disabled={runBlocked}
+                      title={runBlockTitle}
+                      onClick={() => void trigger(plan)}
+                    >
+                      立即采集
+                    </button>
                     <button
                       type="button"
                       className="jh-btn jh-btn-inline jh-btn-tiny"
@@ -486,27 +492,10 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                     >
                       编辑
                     </button>
-                    <button
-                      type="button"
-                      className="jh-btn jh-btn-inline jh-btn-tiny"
-                      disabled={runBlocked}
-                      title={
-                        status?.readOnly === true
-                          ? `本窗口没有调度权，无法触发采集。用下面的「接管调度」，或到另一个窗口（进程 ${String(
-                              status.lease.pid ?? '?',
-                            )}）里操作。`
-                          : feedback.running
-                            ? '有另一个操作正在进行，请稍候。'
-                            : '现在按这个方案采集一次（会打开浏览器窗口）。'
-                      }
-                      onClick={() => void trigger(plan)}
-                    >
-                      立即采集
-                    </button>
                     {planStatus?.riskPaused === true && (
                       <button
                         type="button"
-                        className="jh-btn jh-btn-inline jh-btn-tiny"
+                        className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-warn"
                         disabled={feedback.running}
                         title="确认环境已恢复正常，允许这个方案重新被自动采集。系统不会自动恢复。"
                         onClick={() =>
@@ -521,7 +510,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                     )}
                     <button
                       type="button"
-                      className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-quiet"
+                      className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger"
                       disabled={feedback.running}
                       title="删除这个方案。已经抓到的岗位不受影响。"
                       onClick={() =>
@@ -535,12 +524,11 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                     </button>
                   </div>
 
-                  {/* 条件：中文语义标签，而不是源码 JSON */}
-                  <div className="jh-muted jh-plan-meta">
+                  <div className="jh-plan-meta">
                     <span>{plan.platforms.join(' / ')}</span>
                     <CriteriaLine plan={plan} dimensions={dimensionList} />
                   </div>
-                  <div className="jh-muted jh-plan-meta">
+                  <div className="jh-plan-meta">
                     <span>
                       {plan.schedule.enabled
                         ? `${formatWeekdays(plan.schedule.weekdays)} ${formatWindow(
@@ -551,7 +539,6 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                           )}`
                         : '不定时'}
                     </span>
-                    <span>{plan.enabled ? '已启用' : '已停用'}</span>
                     <span>
                       {plan.postProcess.score ? '打分' : '不打分'} ·{' '}
                       {plan.postProcess.flag ? '标注' : '不标注'} ·{' '}
@@ -568,15 +555,69 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                           : '还在等下一个时段'}
                     </div>
                   )}
-                  {planStatus !== null && planStatus.backoffUntil !== null && (
-                    <div className="jh-warn">
-                      <Term term="退避">正在退避</Term>，最早{' '}
-                      {formatClock(new Date(planStatus.backoffUntil))} 再试（连续失败{' '}
-                      {planStatus.failStreak} 次）
-                    </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* ── 平台状态 ─────────────────────────────────────────────────── */}
+      <section className="jh-card">
+        <h2 className="jh-card-title">平台状态</h2>
+        {platforms.state.status === 'error' && <p className="jh-error">{platforms.state.message}</p>}
+        {platformList.length === 0 ? (
+          <p className="jh-muted">还没有注册平台。</p>
+        ) : (
+          <ul className="jh-list">
+            {platformList.map((item) => {
+              const missing = item.fields.filter((field) => field.consecutiveMiss > 0)
+              return (
+                <li key={item.id}>
+                  <code>{item.id}</code> · <StateTag state={item.health} kind="health" />
+                  {' · '}
+                  <span className={item.account.loggedIn ? 'jh-ok' : 'jh-warn'}>
+                    {item.account.loggedIn ? '已登录' : '未登录'}
+                  </span>
+                  {' · '}
+                  {item.login.state === 'running' ? (
+                    <span className="jh-warn">登录检测中…</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="jh-btn jh-btn-inline jh-btn-tiny"
+                      disabled={feedback.running}
+                      title={
+                        feedback.running
+                          ? '有另一个操作正在进行，请稍候。'
+                          : '打开登录页，在弹出的浏览器窗口里完成登录。'
+                      }
+                      onClick={() => void login(item.id)}
+                    >
+                      登录
+                    </button>
                   )}
-                  {planStatus?.riskReason === null || planStatus?.riskReason === undefined ? null : (
-                    <div className="jh-error">{planStatus.riskReason}</div>
+                  {item.login.message === null ? null : <div className="jh-muted">{item.login.message}</div>}
+                  {item.account.hint === null ? null : <div className="jh-muted">{item.account.hint}</div>}
+                  {item.healthReason === null ? null : <div className="jh-muted">{item.healthReason}</div>}
+
+                  {missing.length === 0 ? null : (
+                    <>
+                      <div className="jh-warn">
+                        <Term term="逐字段健康">连续缺失</Term>：
+                        {missing
+                          .map((field) => `${field.field}×${String(field.consecutiveMiss)}`)
+                          .join(' · ')}
+                      </div>
+                      <button
+                        type="button"
+                        className="jh-btn jh-btn-inline jh-btn-tiny"
+                        onClick={props.onGoSettings}
+                        title="看诊断信息（版本、数据路径、计数、工具注册结果）"
+                      >
+                        排查方案
+                      </button>
+                    </>
                   )}
                 </li>
               )
@@ -585,9 +626,9 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         )}
       </section>
 
-      {/* ── 方案编辑（能力驱动的筛选器，SR-41/42）────────────────────────── */}
+      {/* 方案表单：**弹窗**（原来是嵌在页面下方，导致页面过长、主次不分） */}
       {editing === null ? null : (
-        <PlanEditor
+        <PlanEditorModal
           key={String(editing)}
           planId={editing === 'new' ? null : editing}
           initial={
@@ -630,84 +671,124 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         />
       )}
 
-      {/* ── 平台状态（从「今日」整块搬过来，SR-16）────────────────────── */}
-      <section className="jh-card">
-        <h2 className="jh-card-title">平台状态</h2>
-        {platforms.state.status === 'error' && <p className="jh-error">{platforms.state.message}</p>}
-        {platformList.length === 0 ? (
-          <p className="jh-muted">还没有注册平台。</p>
-        ) : (
-          <ul className="jh-list">
-            {platformList.map((item) => {
-              const missing = item.fields.filter((field) => field.consecutiveMiss > 0)
-              return (
-                <li key={item.id}>
-                  <code>{item.id}</code> · <StateBadge state={item.health} kind="health" />
-                  {' · '}
-                  <span className={item.account.loggedIn ? 'jh-ok' : 'jh-warn'}>
-                    {item.account.loggedIn ? '已登录' : '未登录'}
-                  </span>
-                  {' · '}
-                  {item.login.state === 'running' ? (
-                    <span className="jh-warn">登录检测中…</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="jh-btn jh-btn-inline jh-btn-tiny"
-                      disabled={feedback.running}
-                      title={
-                        feedback.running
-                          ? '有另一个操作正在进行，请稍候。'
-                          : '打开登录页，在弹出的浏览器窗口里完成登录。'
-                      }
-                      onClick={() => void login(item.id)}
-                    >
-                      登录
-                    </button>
-                  )}
-                  {item.login.message === null ? null : <div className="jh-muted">{item.login.message}</div>}
-                  {item.account.hint === null ? null : <div className="jh-muted">{item.account.hint}</div>}
-                  {item.healthReason === null ? null : <div className="jh-muted">{item.healthReason}</div>}
-
-                  {/* SR-16/41：逐字段健康 —— "哪个字段整页缺了"比"适配器坏了"有用得多 */}
-                  {missing.length === 0 ? null : (
-                    <div className="jh-warn">
-                      <Term term="逐字段健康">连续缺失</Term>：
-                      {missing
-                        .map((field) => `${field.field}×${String(field.consecutiveMiss)}`)
-                        .join(' · ')}
-                    </div>
-                  )}
-                  {missing.length === 0 ? null : (
-                    <Troubleshooting
-                      text={humanizeFailure('NO_RECORDS', null)}
-                      onGoSettings={props.onGoSettings}
-                    />
-                  )}
-                </li>
-              )
-            })}
+      {/* 错误全文弹窗：堆栈不再摊在表格单元格里 */}
+      {errorDetail === null ? null : (
+        <Modal
+          title={`运行失败 · ${CRAWL_STATE_LABEL[errorDetail.run.state]}`}
+          label="运行失败详情"
+          size="lg"
+          onClose={() => setErrorDetail(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline jh-btn-quiet"
+                onClick={() => setErrorDetail(null)}
+              >
+                关闭
+              </button>
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline"
+                onClick={() => {
+                  setErrorDetail(null)
+                  props.onGoSettings()
+                }}
+              >
+                去设置看诊断
+              </button>
+            </>
+          }
+        >
+          <ul className="jh-kv">
+            <li>
+              <span>平台</span>
+              <span>
+                <code>{errorDetail.run.platformId}</code>
+              </span>
+            </li>
+            <li>
+              <span>开始时间</span>
+              <span>{new Date(errorDetail.run.startedAt).toLocaleString()}</span>
+            </li>
+            <li>
+              <span>类别</span>
+              <span>{FAILURE_KIND_LABEL[errorDetail.failure.kind]}</span>
+            </li>
           </ul>
-        )}
-      </section>
+          <p className="jh-note">{errorDetail.failure.advice}</p>
+          {errorDetail.failure.detail === null ? null : (
+            <>
+              <p className="jh-note">原始信息（技术细节）：</p>
+              <pre className="jh-pre">{errorDetail.failure.detail}</pre>
+            </>
+          )}
+        </Modal>
+      )}
     </div>
   )
 }
 
 /**
- * 条件的一行中文呈现。
+ * 一条 Alert 说清"现在需要你处理什么"，并**自带该做的动作**。
  *
- * 修的是"源码 JSON 裸露"：原来这里是 `JSON.stringify(plan.criteria)`，
- * 用户看到 `{"keyword":"Java","city":"深圳"}` —— 那是给机器看的。
- * 现在渲染成「关键词：Java · 城市：深圳」，取值域里的值还会翻成中文
- * （`sort: "2"` → 「排序方式：最新发布」）。
+ * 合并的原来是三段（归属叙述里的"定时已暂停" + 一个 jh-warn 段 + 按钮文案），
+ * 内容高度重叠 —— 用户看到同一句话说三遍。
+ * 优先级：**已暂停 > 数据偏旧**。同一时刻只说一件最需要处理的事。
  */
+function StatusAlert(props: {
+  status: SchedulerStatusDto
+  planName: string | null
+  running: boolean
+  onResume: () => void
+}) {
+  if (props.status.paused) {
+    return (
+      <div className="jh-alert jh-alert-warn">
+        <div className="jh-alert-head">
+          <span className="jh-alert-title">定时已手动暂停</span>
+          <span className="jh-spacer" />
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-primary"
+            disabled={props.running}
+            title="恢复「到点自动跑」。手动「立即采集」一直都能用。"
+            onClick={props.onResume}
+          >
+            恢复定时
+          </button>
+        </div>
+        <p className="jh-alert-body">
+          {props.status.pausedReason === null ? '' : `${props.status.pausedReason}。`}
+          {props.planName === null
+            ? '恢复后会按各方案配置的时段自动采集。'
+            : `恢复后将自动按「${props.planName}」方案运行。`}
+          手动「立即采集」不受影响。
+        </p>
+      </div>
+    )
+  }
+
+  if (props.status.refreshSuggested && props.status.refreshHint !== null) {
+    return (
+      <div className="jh-alert jh-alert-warn">
+        <div className="jh-alert-head">
+          <span className="jh-alert-title">数据偏旧，建议手动刷新一次</span>
+        </div>
+        <p className="jh-alert-body">
+          <InlineMd text={props.status.refreshHint} />
+        </p>
+        <p className="jh-note">不会自动跑 —— 程序只在你在场时活着，所以这里只提示，由你决定。</p>
+      </div>
+    )
+  }
+
+  return null
+}
+
+/** 条件的一行中文呈现（不是源码 JSON）。 */
 function CriteriaLine(props: { plan: PlanDto; dimensions: readonly CriteriaDimensionLike[] }) {
-  // 只喂**这个方案选中平台**声明过的维度，避免用别的平台的取值域去翻译
-  const scoped: CriteriaDimensionLike[] = props.dimensions.filter((dimension) => {
-    const item = props.plan.criteria[dimension.key]
-    return item !== undefined
-  })
+  const scoped = props.dimensions.filter((dimension) => props.plan.criteria[dimension.key] !== undefined)
   const items = describeCriteria(props.plan.criteria, scoped)
   if (items.length === 0) return <span className="jh-muted">条件：不限</span>
   return (
@@ -723,14 +804,10 @@ function CriteriaLine(props: { plan: PlanDto; dimensions: readonly CriteriaDimen
 }
 
 /**
- * 租约面板（R20）。
+ * 租约面板（R20）。把"死胡同"提示换成带动作的面板。
  *
- * 原来的文案是「非租约持有者连手动跑也会被拒绝」—— 一句**死胡同**话：
- * 用户知道了原因，但没有任何下一步。这里补上两个动作：
- *   * **重新检测**：对方刚被关掉时立刻重试（原来要干等最长 90 秒心跳过期）；
- *   * **接管调度**：只在对方心跳**已过期**时才可用 —— 抢一个还活着的实例
- *     会让两个调度器同时抓取，那正是这把锁要防的事，所以它不能是"强抢"按钮。
- *     对方活着时按钮置灰，并用 `title` 说清为什么、以及该怎么做。
+ * 「接管调度」**只在对方心跳已过期时**才可用：抢一个还活着的实例会让两个调度器同时抓取，
+ * 那正是这把锁要防的事。所以它不能是"强抢"按钮 —— 对方活着时置灰，并说清该怎么做。
  */
 function LeasePanel(props: {
   status: SchedulerStatusDto
@@ -740,8 +817,7 @@ function LeasePanel(props: {
   onTakeover: () => void
 }) {
   const { lease } = props.status
-  const heartbeat =
-    lease.heartbeatAt === null ? null : new Date(lease.heartbeatAt)
+  const heartbeat = lease.heartbeatAt === null ? null : new Date(lease.heartbeatAt)
   const takeoverPossible = !lease.held && lease.stale
 
   return (
@@ -800,17 +876,15 @@ function LeasePanel(props: {
 /**
  * 最近运行小表（SR-28）。
  *
- * 三处布局/表达上的修正：
- *   * **「触发」列全为 `—` 时整列隐藏** —— 一列全是空的占位符只会挤掉"原因"的宽度；
- *   * 数值列右对齐（`.jh-num` + 等宽数字），便于纵向比对；
- *   * 状态用中文徽章，原因用 `humanizeFailure` 的人话 + 可展开的原始信息。
+ * 两处针对评审的改动：
+ *   * 错误不再把一整段堆栈摊在单元格里 —— 单元格只放**状态胶囊 + 一句人话**，
+ *     点开是弹窗（`Modal`）看完整 trace 与排查步骤；
+ *   * 「触发」列全为 `—` 时整列隐藏；数值列右对齐。
  */
 function RunHistoryTable(props: {
   runs: RecentRunDto[]
   reasonFor: (skipReason: string | null) => string | null
-  onGoSettings: () => void
-  onRetry: () => void
-  retryDisabled: boolean
+  onOpenError: (run: RecentRunDto, failure: FailureText) => void
 }) {
   if (props.runs.length === 0) {
     return (
@@ -834,7 +908,7 @@ function RunHistoryTable(props: {
             {showReason ? <th>触发</th> : null}
             <th className="jh-num">新增</th>
             <th className="jh-num">更新</th>
-            <th>原因</th>
+            <th>结果说明</th>
           </tr>
         </thead>
         <tbody>
@@ -848,7 +922,7 @@ function RunHistoryTable(props: {
                   {formatClock(new Date(run.startedAt))}
                 </td>
                 <td>
-                  <StateBadge state={run.state} kind="run" />
+                  <StateTag state={run.state} kind="run" />
                 </td>
                 {showReason ? <td>{runReasonLabel(run.reason) ?? '—'}</td> : null}
                 <td className="jh-num">{run.inserted}</td>
@@ -859,47 +933,16 @@ function RunHistoryTable(props: {
                   ) : failure === null ? (
                     <span className="jh-muted">—</span>
                   ) : (
-                    <>
-                      <span className={failure.kind === 'unknown' ? 'jh-warn' : 'jh-error'}>
-                        {failure.short}
-                      </span>
-                      {failure.looksTechnical ? (
-                        <span className="jh-chip jh-chip-quiet">{FAILURE_KIND_LABEL[failure.kind]}</span>
-                      ) : null}
-                      <details className="jh-details">
-                        {/* 原始信息**完整保留**在可展开处：简化显示不等于藏起来 */}
-                        <summary>详情与排查</summary>
-                        <p className="jh-note">{failure.advice}</p>
-                        {failure.detail === null ? null : (
-                          <>
-                            <span className="jh-note">原始信息（技术细节）：</span>
-                            <pre className="jh-pre">{failure.detail}</pre>
-                          </>
-                        )}
-                        <div className="jh-details-actions">
-                          <button
-                            type="button"
-                            className="jh-btn jh-btn-inline jh-btn-tiny"
-                            disabled={props.retryDisabled}
-                            title={
-                              props.retryDisabled
-                                ? '本窗口没有调度权，或已有操作在进行 —— 先在另一个窗口里重试。'
-                                : '立刻再跑一次，看是否已经恢复。'
-                            }
-                            onClick={props.onRetry}
-                          >
-                            再跑一次
-                          </button>
-                          <button
-                            type="button"
-                            className="jh-btn jh-btn-inline jh-btn-tiny"
-                            onClick={props.onGoSettings}
-                          >
-                            去设置看诊断
-                          </button>
-                        </div>
-                      </details>
-                    </>
+                    // 单元格里只留一句人话；点开是弹窗
+                    <button
+                      type="button"
+                      className="jh-err-chip"
+                      title={failure.detail === null ? failure.short : failure.detail.split('\n')[0]}
+                      onClick={() => props.onOpenError(run, failure)}
+                    >
+                      {failure.short}
+                      <span className="jh-err-chip-more">详情</span>
+                    </button>
                   )}
                 </td>
               </tr>
@@ -911,24 +954,25 @@ function RunHistoryTable(props: {
   )
 }
 
-/** 「排查方案」折叠块（异常指引的落点）。 */
-function Troubleshooting(props: { text: FailureText | null; onGoSettings: () => void }) {
-  const advice = props.text === null ? adviceForFailure('selector') : props.text.advice
+/** 一个收纳在问号里的说明（取代输入框下方的长段解释）。 */
+function FieldHint(props: { text: string }) {
   return (
-    <details className="jh-details">
-      <summary>排查方案</summary>
-      <p className="jh-note">{advice}</p>
-      <div className="jh-details-actions">
-        <button type="button" className="jh-btn jh-btn-inline jh-btn-tiny" onClick={props.onGoSettings}>
-          去设置看诊断
-        </button>
-      </div>
-    </details>
+    <span className="jh-field-hint" title={props.text} aria-label={props.text}>
+      ?
+    </span>
   )
 }
 
-/** 方案编辑器：筛选器按**适配器声明**渲染（SR-41）。 */
-function PlanEditor(props: {
+/**
+ * 方案编辑器（**弹窗**）。
+ *
+ * 评审后的三处重构都在这里：
+ *   * 时间：四个数字框 → **两个原生时间选择器** + 中间一个"至"；
+ *   * 运行日：六个勾选框 → **分段标签**，外加 工作日/周末/每天/清空 一键预设；
+ *   * 说明：输入框下方的长段解释 → 收进字段标题旁的 `?`（悬浮可读）。
+ * 「检查是否重复」按评审意见挪到**方案名同一行右侧**（它校验的就是这份配置是否重复）。
+ */
+function PlanEditorModal(props: {
   planId: number | null
   initial: PlanForm
   available: Array<{ id: string; displayName: string }>
@@ -964,37 +1008,65 @@ function PlanEditor(props: {
   }
 
   const duplicates = [...props.duplicates, ...localDuplicates]
+  const startMissing = parseClockValue(form.windowStart) === null
+  const endMissing = parseClockValue(form.windowEnd) === null
 
   return (
-    <section className="jh-card jh-card-editing">
-      <div className="jh-form-head">
-        <h2 className="jh-card-title">{props.planId === null ? '新增方案' : '编辑方案'}</h2>
-        <span className="jh-spacer" />
-        <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={props.onCancel}>
-          取消
-        </button>
-        <button
-          type="button"
-          className="jh-btn jh-btn-inline jh-btn-primary"
-          disabled={props.running}
-          title={props.running ? '正在保存，请稍候。' : '保存这个方案（与模型工具、接口走同一套校验）。'}
-          onClick={() => void props.onSubmit(form)}
-        >
-          保存
-        </button>
+    <Modal
+      title={props.planId === null ? '新增采集方案' : '编辑采集方案'}
+      label="采集方案"
+      size="lg"
+      onClose={props.onCancel}
+      footer={
+        <>
+          <span className="jh-muted jh-modal-foot-note">保存前会按同一套规则校验（与模型工具、接口一致）。</span>
+          <span className="jh-spacer" />
+          <button type="button" className="jh-btn jh-btn-inline" onClick={props.onCancel}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline jh-btn-primary"
+            disabled={props.running}
+            title={props.running ? '正在保存，请稍候。' : '保存这个方案。'}
+            onClick={() => void props.onSubmit(form)}
+          >
+            保存
+          </button>
+        </>
+      }
+    >
+      {/* 方案名 + 检查重复：同一行右侧（它校验的就是这份配置是否重复） */}
+      <div className="jh-field">
+        <span className="jh-field-label">方案名</span>
+        <div className="jh-field-row">
+          <input
+            className="jh-input"
+            value={form.name}
+            onChange={(event) => patch({ name: event.target.value })}
+          />
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline jh-btn-tiny"
+            disabled={props.running}
+            title="检查这份配置（平台 + 筛选条件）是否与现有方案重复；只提示，不会写入任何东西。"
+            onClick={() => {
+              void props
+                .onValidate(form)
+                .then((result) => setLocalDuplicates(result))
+                .catch(() => setLocalDuplicates([]))
+            }}
+          >
+            检查是否重复
+          </button>
+        </div>
       </div>
 
-      <label className="jh-field">
-        <span>方案名</span>
-        <input
-          className="jh-input"
-          value={form.name}
-          onChange={(event) => patch({ name: event.target.value })}
-        />
-      </label>
-
       <div className="jh-field">
-        <span>平台（来自已注册的适配器）</span>
+        <span className="jh-field-label">
+          平台
+          <FieldHint text="只列出已注册的适配器。未注册的平台在配置层面就不可选 —— 多平台是工程量问题（每个平台一个适配器），不是配置问题。" />
+        </span>
         <div className="jh-chips">
           {props.available.length === 0 ? (
             <span className="jh-muted">还没有已注册的平台。</span>
@@ -1013,15 +1085,17 @@ function PlanEditor(props: {
         </div>
       </div>
 
-      {/* SR-41：不支持的维度**禁用而非隐藏**，并给出原因 */}
+      <div className="jh-section-title">筛选条件与抓取深度</div>
       <div className="jh-grid2">
         {items.map((dimension) => {
           const value = form.criteria[dimension.key] ?? ''
+          const hint = dimension.supported ? dimension.hint : (dimension.disabledReason ?? dimension.hint)
           return (
             <label className="jh-field" key={dimension.key}>
-              <span>
+              <span className="jh-field-label">
                 {dimension.label}
-                {dimension.supported ? '' : '（当前平台不支持）'}
+                {dimension.supported ? null : <em className="jh-field-flag">当前平台不支持</em>}
+                <FieldHint text={hint} />
               </span>
               {dimension.numeric ? (
                 <input
@@ -1031,6 +1105,7 @@ function PlanEditor(props: {
                   max={dimension.max ?? undefined}
                   disabled={!dimension.supported}
                   value={value}
+                  placeholder={dimension.supported ? '不限' : '不支持'}
                   onChange={(event) => setCriteria(dimension.key, event.target.value)}
                 />
               ) : dimension.values.length === 0 ? (
@@ -1038,7 +1113,7 @@ function PlanEditor(props: {
                   className="jh-input"
                   disabled={!dimension.supported}
                   value={value}
-                  placeholder={dimension.supported ? '自由文本' : (dimension.disabledReason ?? '不支持')}
+                  placeholder={dimension.supported ? '不限' : '不支持'}
                   onChange={(event) => setCriteria(dimension.key, event.target.value)}
                 />
               ) : (
@@ -1048,7 +1123,7 @@ function PlanEditor(props: {
                   value={value}
                   onChange={(event) => setCriteria(dimension.key, event.target.value)}
                 >
-                  <option value="">（不限）</option>
+                  <option value="">不限</option>
                   {dimension.values.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -1056,85 +1131,89 @@ function PlanEditor(props: {
                   ))}
                 </select>
               )}
-              <span className="jh-note">
-                {dimension.supported ? dimension.hint : (dimension.disabledReason ?? dimension.hint)}
-              </span>
             </label>
           )
         })}
       </div>
 
-      {/* SR-1/32：偏好时段，**没有单点时刻**这一项 */}
       <fieldset className="jh-fieldset">
         <legend>
-          偏好<InlineMd text="**时段**" />（本地时间，时段内随机选点）
+          偏好时段
+          <FieldHint text="触发时刻会在这段时间内随机选点，具体到哪一分钟不固定 —— 每天固定同一分钟去访问最容易被平台识别成自动化。这里刻意没有「精确到某分某秒」的选项。" />
         </legend>
-        <div className="jh-grid3">
-          <label className="jh-field">
-            <span>起（时）</span>
-            <input
-              className="jh-input"
-              type="number"
-              min={0}
-              max={23}
-              value={form.windowStartHour}
-              onChange={(event) => patch({ windowStartHour: Number(event.target.value) })}
-            />
-          </label>
-          <label className="jh-field">
-            <span>起（分）</span>
-            <input
-              className="jh-input"
-              type="number"
-              min={0}
-              max={59}
-              value={form.windowStartMinute}
-              onChange={(event) => patch({ windowStartMinute: Number(event.target.value) })}
-            />
-          </label>
-          <label className="jh-field">
-            <span>止（时）</span>
-            <input
-              className="jh-input"
-              type="number"
-              min={0}
-              max={23}
-              value={form.windowEndHour}
-              onChange={(event) => patch({ windowEndHour: Number(event.target.value) })}
-            />
-          </label>
-          <label className="jh-field">
-            <span>止（分）</span>
-            <input
-              className="jh-input"
-              type="number"
-              min={0}
-              max={59}
-              value={form.windowEndMinute}
-              onChange={(event) => patch({ windowEndMinute: Number(event.target.value) })}
-            />
-          </label>
+        <div className="jh-timerange">
+          <input
+            className="jh-input jh-time"
+            type="time"
+            aria-label="时段起点"
+            value={startMissing ? '' : form.windowStart}
+            onChange={(event) => {
+              const text = event.target.value
+              // 空串是"用户清空了"（保留空值以便提示），非空则必须是合法时间；
+              // 非法值直接**忽略**，不要让一次误触把配置改成别的时刻
+              if (text === '' || parseClockValue(text) !== null) patch({ windowStart: text })
+            }}
+          />
+          <span className="jh-timerange-sep">至</span>
+          <input
+            className="jh-input jh-time"
+            type="time"
+            aria-label="时段终点"
+            value={endMissing ? '' : form.windowEnd}
+            onChange={(event) => {
+              const text = event.target.value
+              if (text === '' || parseClockValue(text) !== null) patch({ windowEnd: text })
+            }}
+          />
+          {startMissing || endMissing ? (
+            <span className="jh-warn">时段没填完整，保存时会退回默认的 09:00–11:00。</span>
+          ) : null}
         </div>
+
         <div className="jh-field">
-          <span>工作日（不选 = 每天）</span>
-          <div className="jh-chips">
+          <span className="jh-field-label">
+            运行日
+            <FieldHint text="一天都不选等于每天都跑。时段跨零点也可以（例如 22:00 至 02:00）。" />
+          </span>
+          <div className="jh-segmented" role="group" aria-label="运行日">
             {['日', '一', '二', '三', '四', '五', '六'].map((label, day) => (
-              <label key={label} className="jh-check">
-                <input
-                  type="checkbox"
-                  checked={form.weekdays.includes(day)}
-                  onChange={() => {
-                    const next = form.weekdays.includes(day)
-                      ? form.weekdays.filter((item) => item !== day)
-                      : [...form.weekdays, day].sort((a, b) => a - b)
-                    patch({ weekdays: next })
-                  }}
-                />
+              <button
+                key={label}
+                type="button"
+                className={`jh-seg${form.weekdays.includes(day) ? ' jh-seg-on' : ''}`}
+                aria-pressed={form.weekdays.includes(day)}
+                title={`周${label}`}
+                onClick={() => {
+                  const next = form.weekdays.includes(day)
+                    ? form.weekdays.filter((item) => item !== day)
+                    : [...form.weekdays, day].sort((a, b) => a - b)
+                  patch({ weekdays: next })
+                }}
+              >
                 周{label}
-              </label>
+              </button>
             ))}
           </div>
+          <div className="jh-chips jh-presets">
+            {WEEKDAY_PRESETS.map((preset) => {
+              const active = form.weekdays.join(',') === preset.days.join(',')
+              return (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={`jh-btn jh-btn-tiny${active ? ' jh-btn-active' : ''}`}
+                  aria-pressed={active}
+                  title={preset.days.length === 0 ? '清空（等于每天）' : `设为${preset.label}`}
+                  onClick={() => patch({ weekdays: [...preset.days] })}
+                >
+                  {preset.label}
+                </button>
+              )
+            })}
+            <span className="jh-muted">当前：{form.weekdays.length === 0 ? '每天' : formatWeekdays(form.weekdays)}</span>
+          </div>
         </div>
+
         <label className="jh-check">
           <input
             type="checkbox"
@@ -1143,19 +1222,18 @@ function PlanEditor(props: {
           />
           启用定时
         </label>
-        <p className="jh-note">
-          具体到哪一分钟会在上面这段时间里
-          <Term term="抖动">随机浮动</Term>
-          。<InlineMd text="这里**没有**「精确到某分某秒」的选项" />
-          —— 每天固定同一分钟去访问，最容易被平台识别成自动化。
-        </p>
       </fieldset>
 
-      {/* SR-44：抓取后处理开关 */}
       <fieldset className="jh-fieldset">
-        <legend>抓取后处理（默认全开）</legend>
+        <legend>
+          抓取后处理
+          <FieldHint text="三项默认全开。关掉打分后不再写匹配分；关掉标注后不再产出风险/黑话标记；跨平台去重要有多个平台才生效。" />
+        </legend>
         <div className="jh-chips">
-          <label className="jh-check" title="算出「这个岗位跟你简历有多匹配」并给出逐条理由。关掉后岗位库里不再显示匹配分。">
+          <label
+            className="jh-check"
+            title="算出「这个岗位跟你简历有多匹配」并给出逐条理由。关掉后岗位库里不再显示匹配分。"
+          >
             <input
               type="checkbox"
               checked={form.score}
@@ -1163,7 +1241,10 @@ function PlanEditor(props: {
             />
             打分
           </label>
-          <label className="jh-check" title="识别「疑似外包 / 高风险 / 僵尸岗位 / 薪资虚标 / 行业黑话」并标出来。">
+          <label
+            className="jh-check"
+            title="识别「疑似外包 / 高风险 / 僵尸岗位 / 薪资虚标 / 行业黑话」并标出来。"
+          >
             <input
               type="checkbox"
               checked={form.flag}
@@ -1193,20 +1274,6 @@ function PlanEditor(props: {
           —— 合并会替你把两个意图抹成一个。
         </p>
       )}
-      <button
-        type="button"
-        className="jh-btn jh-btn-inline"
-        disabled={props.running}
-        title="先检查这份配置与现有方案是否重复；不会写入任何东西。"
-        onClick={() => {
-          void props
-            .onValidate(form)
-            .then((result) => setLocalDuplicates(result))
-            .catch(() => setLocalDuplicates([]))
-        }}
-      >
-        检查重复
-      </button>
-    </section>
+    </Modal>
   )
 }

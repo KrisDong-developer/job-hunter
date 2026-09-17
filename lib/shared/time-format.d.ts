@@ -49,4 +49,34 @@ export declare function formatHourMinute(hour: number, minute: number): string;
  * 那看起来像一个不存在的负长度区间。
  */
 export declare function formatWindow(startHour: number, startMinute: number, endHour: number, endMinute: number): string;
+/**
+ * `时/分` → `<input type="time">` 需要的值（`HH:MM`，24 小时制）。
+ *
+ * 存在的理由：偏好时段原来是**四个独立的数字框**（起时/起分/止时/止分），
+ * 改一个时段要点四次、还得自己想清楚 09 和 00 各填哪里。
+ * 换成原生时间选择器之后，这一对函数就是**唯一的转换点**（也可离线测）。
+ */
+export declare function clockValueOf(hour: number, minute: number): string;
+/**
+ * 解析时间选择器的值。
+ *
+ * **越界或格式不对一律返回 `null`**，由调用方决定保留旧值 ——
+ * 悄悄钳到 23:59 会让"我明明填的是 25:00"变成一次没人发现的静默改动。
+ * 空字符串同样返回 `null`（用户清空了输入框，那时不该当成 00:00）。
+ */
+export declare function parseClockValue(text: string): {
+    hour: number;
+    minute: number;
+} | null;
+/**
+ * 常用工作日组合（界面上"一键切换"用它）。
+ *
+ * 放在 shared 里而不是 JSX 里：这四组数字是**产品决定**（我们怎么定义"工作日"），
+ * 散在组件里就会在下一次改界面时漂移。
+ */
+export declare const WEEKDAY_PRESETS: ReadonlyArray<{
+    key: string;
+    label: string;
+    days: number[];
+}>;
 //# sourceMappingURL=time-format.d.ts.map

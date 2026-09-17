@@ -103,5 +103,5 @@
 设计文档是 `ARCHITECTURE.md` 与 `REQUIREMENTS.md`；适配器坏了怎么修在 `docs/ADAPTERS.md`。
 
 技术栈一句话：DSH 插件（宿主半 + 浏览器界面半），用 Node.js 内置 sqlite 存数据，用 Playwright
-复用你自己的浏览器登录态采集。**478 个离线测试**，`npm test` 一条命令跑完，
+复用你自己的浏览器登录态采集。**485 个离线测试**，`npm test` 一条命令跑完，
 测试绝不访问真实招聘网站。

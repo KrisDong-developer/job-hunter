@@ -705,9 +705,6 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   padding:0 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);
   color:var(--dsw-alias-label-primary)}
 
-/* 中文状态徽章（替代直接印 ok / partial / degraded）*/
-.jh-badge-state{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
-  padding:0 8px;border-radius:999px;white-space:nowrap}
 .jh-tone-ok{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
 .jh-tone-warn{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}
 .jh-tone-error{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
@@ -744,4 +741,92 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 
 /* 方案条件那一行：标签之间用 · 分隔，不要挤成一块 */
 .jh-plan-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px}
+
+/* ── 界面评审第二轮：弹窗 / 胶囊 / Banner / 分段控件 / 时间选择器 ───── */
+
+/* 状态胶囊（中文 + 色调，不印内部枚举）。只此一份 —— 上一轮曾同时存在
+   jh-badge-state / jh-tag 两个同义类，那会让"这个类还有人用吗"变得查不清。 */
+.jh-tag{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
+  padding:0 9px;border-radius:999px;white-space:nowrap}
+
+/* 弹窗：层 + 遮罩 + 对话框。
+   遮罩用 button 而不是 div —— 它天然可聚焦、可被读屏识别为"关闭"。 */
+.jh-modal-layer{position:absolute;inset:0;z-index:40;display:flex;align-items:flex-start;
+  justify-content:center;padding:36px 16px;box-sizing:border-box;overflow:auto}
+.jh-modal-backdrop{position:absolute;inset:0;border:0;padding:0;cursor:pointer;
+  background:color-mix(in srgb, var(--dsw-alias-label-primary) 28%, transparent)}
+.jh-modal{position:relative;display:flex;flex-direction:column;max-height:calc(100% - 24px);
+  width:100%;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
+  background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.22);
+  outline:none}
+.jh-modal-md{max-width:520px}
+.jh-modal-lg{max-width:720px}
+.jh-modal-head{display:flex;align-items:center;gap:8px;padding:12px 16px;
+  border-bottom:1px solid var(--dsw-alias-border-l1);flex:0 0 auto}
+.jh-modal-title{font-size:14.5px;font-weight:600;margin:0}
+.jh-modal-body{padding:14px 16px;overflow:auto;flex:1 1 auto;min-height:0}
+.jh-modal-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 16px;
+  border-top:1px solid var(--dsw-alias-border-l1);flex:0 0 auto}
+.jh-modal-foot-note{font-size:12px}
+
+/* 字段标题 + 收纳在问号里的说明（取代输入框下方的长段解释）*/
+.jh-field-label{display:inline-flex;align-items:center;gap:5px;font-size:12px;
+  color:var(--dsw-alias-label-secondary)}
+.jh-field-hint{display:inline-flex;align-items:center;justify-content:center;
+  width:14px;height:14px;flex:none;font-size:10px;font-weight:700;line-height:1;cursor:help;
+  border-radius:50%;border:1px solid var(--dsw-alias-border-l3);
+  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-tertiary)}
+.jh-field-hint:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-text)}
+.jh-field-flag{font-style:normal;font-size:11px;padding:0 6px;border-radius:999px;
+  background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
+.jh-field-row{display:flex;align-items:center;gap:6px}
+.jh-field-row .jh-input{flex:1 1 auto;min-width:0}
+.jh-section-title{font-size:12px;font-weight:600;margin:14px 0 8px;
+  color:var(--dsw-alias-label-secondary)}
+
+/* 时间范围选择器：两个原生 time 输入 + 中间一个"至"，替掉原来的四个数字框 */
+.jh-timerange{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.jh-time{width:118px}
+.jh-timerange-sep{font-size:12.5px;color:var(--dsw-alias-label-secondary)}
+
+/* 分段标签组（运行日）+ 一键预设 */
+.jh-segmented{display:inline-flex;gap:2px;padding:2px;border-radius:9px;
+  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-overlay)}
+.jh-seg{border:0;background:transparent;cursor:pointer;font:inherit;font-size:12.5px;
+  padding:4px 10px;border-radius:7px;color:var(--dsw-alias-label-secondary)}
+.jh-seg:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.jh-seg-on{background:var(--dsw-alias-interactive-bg-active);
+  color:var(--dsw-alias-label-primary);font-weight:600}
+.jh-presets{margin-top:8px}
+
+/* 卡片内的警告 Banner（把"连续失败 N 次"这类核心风险抬出来）*/
+.jh-banner{display:flex;flex-direction:column;gap:2px;margin-top:8px;padding:7px 10px;
+  border-radius:8px;font-size:12.5px;line-height:1.6}
+.jh-banner-title{font-weight:600}
+.jh-banner-warn{background:var(--dsw-alias-state-warn-tertiary);
+  color:var(--dsw-alias-state-warn-primary)}
+.jh-banner-error{background:var(--dsw-alias-state-error-tertiary);
+  color:var(--dsw-alias-state-error-primary)}
+
+/* 方案卡片：明确边框 + 阴影，与卡片背景拉开层次 */
+.jh-plan-card{padding:11px 13px;border-radius:10px;border:1px solid var(--dsw-alias-border-l3);
+  background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 3px rgba(0,0,0,.07);font-size:12.5px}
+.jh-plan-name{font-size:13.5px}
+
+/* 按钮权重：危险 / 警示。主操作复用已有的 .jh-btn-primary。
+   颜色一律走主题变量（§5.3），不写死 red。 */
+.jh-btn-danger{border-color:var(--dsw-alias-state-error-secondary);
+  color:var(--dsw-alias-state-error-primary)}
+.jh-btn-danger:hover:not(:disabled){background:var(--dsw-alias-state-error-tertiary)}
+.jh-btn-warn{border-color:var(--dsw-alias-state-warn-secondary);
+  color:var(--dsw-alias-state-warn-primary)}
+.jh-btn-warn:hover:not(:disabled){background:var(--dsw-alias-state-warn-tertiary)}
+
+/* 表格里的错误：只留一个胶囊，点开才是弹窗（原来是整段堆栈摊在单元格里）*/
+.jh-err-chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:inherit;
+  font-size:12px;padding:1px 8px;border-radius:999px;
+  border:1px solid var(--dsw-alias-state-error-secondary);
+  background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+.jh-err-chip:hover{filter:brightness(.97)}
+.jh-err-chip-more{font-size:10.5px;opacity:.75;text-decoration:underline}
 `
