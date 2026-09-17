@@ -160,7 +160,7 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
       }
     },
 
-    attribution(): AttributionDto {
+    attribution(filter: AnalyticsFilter = {}): AttributionDto {
       const applications = store.pipeline.listApplications({ limit: 1000 })
       const greetings = store.pipeline.listGreetings({ limit: 1000 })
 
@@ -176,6 +176,9 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
       ): AttributionRowDto[] => {
         const buckets = new Map<string, ApplicationRecord[]>()
         for (const record of applications) {
+          // 归因的口径是"每一次投递"，所以时间窗与简历维度都直接作用在这一层
+          if (!inWindow(record.sentAt, filter)) continue
+          if (!matchesResume(record, filter)) continue
           const key = keyOf(record)
           const list = buckets.get(key) ?? []
           list.push(record)
