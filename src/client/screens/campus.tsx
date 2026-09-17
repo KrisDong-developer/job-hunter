@@ -25,6 +25,7 @@ import {
   setAssessmentState,
   setTripartiteState,
 } from '../api.js'
+import { InlineMd } from '../inline-md.js'
 import { useAsync } from '../use-async.js'
 
 /**
@@ -97,7 +98,7 @@ export function CampusScreen(props: { revision: number; onChanged: () => void })
       <div className="jh-row-head">
         <h2 className="jh-card-title">校招支线</h2>
         <span className="jh-muted">
-          秋招春招是**硬时间窗**，笔试与三方是**不可逆节点** —— 这一屏的重心就是别错过。
+          <InlineMd text="秋招春招是**硬时间窗**，笔试与三方是**不可逆节点** —— 这一屏的重心就是别错过。" />
         </span>
       </div>
 
@@ -317,7 +318,7 @@ export function CampusScreen(props: { revision: number; onChanged: () => void })
       <div className="jh-card">
         <h3 className="jh-card-title">三方协议</h3>
         <p className="jh-muted">
-          三方是**不可逆**节点：签署前后必须显著区分，违约有真实代价。真的违约请标「违约」，不要改回待签。
+          <InlineMd text="三方是**不可逆**节点：签署前后必须显著区分，违约有真实代价。真的违约请标「违约」，不要改回待签。" />
         </p>
         {tripartite.state.status === 'ok' && tripartite.state.data.items.length > 0 ? (
           <ul className="jh-tailor-notes">

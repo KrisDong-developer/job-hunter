@@ -148,6 +148,26 @@ export interface HostRuntime {
   setSchedulePaused(paused: boolean, reason?: string): void
   /** SR-21：人工确认恢复风控暂停的方案。 */
   resumeRisk(planId: number): void
+  /**
+   * 重新检测一次租约（R20）。
+   *
+   * 为什么需要：界面在对方进程被关掉后仍会显示"另一个实例正在运行"，直到心跳过期
+   * （默认 90 秒）。让用户干等并且没有任何反馈是糟糕的体验。
+   * 这个动作只**重新读一次**并尝试接管（对方的租约真要过期了才会成功）——
+   * 它绝不可能抢走一个还活着的实例的租约。
+   *
+   * @returns 检测后的调度状态（界面直接重渲染，不用再请求一次）
+   */
+  recheckLease(): SchedulerStatusDto
+  /**
+   * 人工**接管**租约（R20 的逃生出口）。
+   *
+   * **只在对方心跳已过期时才允许**：一个还活着的实例绝不能被抢走租约，
+   * 否则两个调度器会同时抓取、抢同一个浏览器 profile —— 那正是 R20 要防的事。
+   * 所以这个动作的语义是"我确认那个实例已经死了"，而不是"我要强抢"。
+   * 对方还活着时它**如实拒绝**并告诉用户该怎么办。
+   */
+  takeoverLease(): SchedulerStatusDto
   /** 实时事件总线（ADR-24：事件只作提示）。 */
   events(): EventBus
 
@@ -1168,6 +1188,54 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       const instance = scheduler
       if (instance === undefined) throw dataNotReady(runtime)
       instance.resumeRisk(planId)
+    },
+
+    recheckLease(): SchedulerStatusDto {
+      // 只读实例不能躺平等：上一个实例可能刚被关掉，这里立刻重试一次
+      if (!lease.held()) {
+        const verdict = lease.acquire()
+        if (verdict.held) {
+          logger?.info(
+            `[${PLUGIN_ID}] 重新检测后接管了租约（原持有者 pid ${String(verdict.other?.pid ?? '?')}）`,
+          )
+          bus.publish('lease.acquired', { pid: process.pid })
+          onLeaseAcquired?.()
+        }
+      }
+      return runtime.schedulerStatus()
+    },
+
+    takeoverLease(): SchedulerStatusDto {
+      if (lease.held()) return runtime.schedulerStatus()
+      const before = lease.status()
+      // 对方心跳**新鲜** = 它还活着 → 拒绝，并把「怎么办」说清楚。
+      // 这是这个接口存在的全部意义：它绝不能变成"抢活人的锁"的按钮。
+      if (!before.stale) {
+        const beat =
+          before.heartbeatAt === null ? '未知' : new Date(before.heartbeatAt).toLocaleTimeString()
+        throw new DomainError(
+          'CONFLICT',
+          `另一个实例（进程 ${String(before.pid ?? '?')}）还在运行，不能接管`,
+          {
+            hint:
+              `它的心跳是 ${beat}，说明那个窗口还活着。请在那个窗口里操作，或者关掉它 —— ` +
+              '关掉之后本实例会在 90 秒内自动接管（不需要重启），也可以点「重新检测」立刻重试。',
+            detail: { pid: before.pid, heartbeatAt: before.heartbeatAt },
+          },
+        )
+      }
+      const verdict = lease.acquire()
+      if (!verdict.held) {
+        throw new DomainError('CONFLICT', '接管租约失败', {
+          hint: '另一个实例刚刚又活过来了。点「重新检测」看看当前状态。',
+        })
+      }
+      logger?.warn(
+        `[${PLUGIN_ID}] 人工接管了租约（原持有者 pid ${String(verdict.other?.pid ?? '?')} 心跳已过期）`,
+      )
+      bus.publish('lease.acquired', { pid: process.pid })
+      onLeaseAcquired?.()
+      return runtime.schedulerStatus()
     },
 
     async runPlan(planId, reason): Promise<CrawlSummaryDto> {

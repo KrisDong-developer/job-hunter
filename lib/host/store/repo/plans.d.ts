@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../../shared/dto.js';
+import { detectTimezone } from '../../util/time.js';
 /**
  * 默认排程（D-19 / SR-1）：**工作日 09:00–11:00 之间随机选点**。
  *
@@ -13,9 +14,9 @@ export declare const DEFAULT_POST_PROCESS: PlanPostProcess;
 /**
  * 本机时区名（SR-5：存本地墙钟 + 时区快照）。
  *
- * 拿不到就退回 `'UTC'` 而不是抛错：时区拿不到不该让方案存不进去。
+ * 实现搬到了 `util/time.ts`（调度器也要用它），这里转出去让既有调用方不用改。
  */
-export declare function detectTimezone(): string;
+export { detectTimezone };
 /**
  * 把外部传进来的 schedule 收敛成合法值 —— 定时配置坏掉会静默不跑，必须拦住。
  *

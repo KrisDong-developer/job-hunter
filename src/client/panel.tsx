@@ -147,7 +147,7 @@ export function JobHunterPanel() {
             onGoCollect={() => setScreen('collect')}
           />
         ) : screen === 'collect' ? (
-          <CollectScreen revision={revision} />
+          <CollectScreen revision={revision} onGoSettings={() => setScreen('settings')} />
         ) : screen === 'settings' ? (
           <SettingsScreen revision={revision} />
         ) : screen === 'pipeline' ? (

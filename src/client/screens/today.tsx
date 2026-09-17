@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CRAWL_STATE_LABEL } from '../../shared/enums.js'
 import { formatClock, formatJitter, formatRelative } from '../../shared/time-format.js'
 import {
   ApiError,
@@ -11,6 +12,7 @@ import {
   startLogin,
   type TodayDto,
 } from '../api.js'
+import { InlineMd } from '../inline-md.js'
 import { useAsync } from '../use-async.js'
 import { FreshnessBadge } from './freshness.js'
 
@@ -81,7 +83,7 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void; onG
       const summary = await runDefaultPlan()
       const run = summary.run
       return (
-        `方案「${summary.planName}」本轮 ${run.state}：命中 ${String(run.found)} · ` +
+        `方案「${summary.planName}」本轮 ${CRAWL_STATE_LABEL[run.state]}：命中 ${String(run.found)} · ` +
         `新增 ${String(run.inserted)} · 更新 ${String(run.updated)} · 隔离 ${String(run.quarantined)}` +
         (run.errorCode === null ? '' : ` · ${run.errorCode}`)
       )
@@ -90,7 +92,7 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void; onG
   const catchUp = (planId: number): Promise<void> =>
     act('正在补跑错过的轮次…', async () => {
       const summary = await runPlan(planId, true)
-      return `补跑完成：${summary.run.state} · 新增 ${String(summary.run.inserted)}`
+      return `补跑完成：${CRAWL_STATE_LABEL[summary.run.state]} · 新增 ${String(summary.run.inserted)}`
     })
 
   const login = (platformId: string): Promise<void> =>
@@ -177,7 +179,7 @@ export function TodayScreen(props: { revision: number; onGoJobs: () => void; onG
                 : `下次自动采集：${formatClock(new Date(nextTrigger.nextRunAt))}（${formatRelative(new Date(nextTrigger.nextRunAt), now)}）` +
                   `${formatJitter(nextTrigger.jitterMs) === null ? '' : ` · ${String(formatJitter(nextTrigger.jitterMs))}`}` +
                   ` · 方案「${nextTrigger.planName}」`}
-              {sched?.paused === true ? ' · **定时已暂停**（手动仍然可用）' : ''}
+              {sched?.paused === true ? <InlineMd text=" · **定时已暂停**（手动仍然可用）" /> : null}
             </p>
 
             {/* SR-2：在场触发只提示，不自动跑 */}

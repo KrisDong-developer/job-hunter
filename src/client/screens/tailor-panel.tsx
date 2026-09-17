@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { TailoringDto } from '../../shared/resume.js'
 import { adoptTailoring, ApiError, exportResume, fetchTailorings, tailorResume } from '../api.js'
+import { InlineMd } from '../inline-md.js'
 
 /**
  * U4：岗位详情里的简历定制（§13）。
@@ -107,7 +108,7 @@ export function TailorPanel(props: { jobId: number; revision: number; onChanged:
 
       {latest === undefined ? (
         <p className="jh-muted">
-          还没有针对这个岗位的定制建议。定制只改**顺序与措辞**，不会新增任何你没写过的经历。
+          <InlineMd text="还没有针对这个岗位的定制建议。定制只改**顺序与措辞**，不会新增任何你没写过的经历。" />
         </p>
       ) : (
         <div className="jh-card jh-card-tight">

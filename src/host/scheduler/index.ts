@@ -30,7 +30,7 @@ import type { PlanService } from '../domain/plans.js'
 import type { EventBus } from '../http/sse.js'
 import type { Store } from '../store/store.js'
 import { DomainError, messageOf } from '../util/errors.js'
-import { systemClock, type Clock } from '../util/time.js'
+import { detectTimezone, systemClock, type Clock } from '../util/time.js'
 import {
   currentWindowStart,
   insideWindow,
@@ -414,8 +414,28 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     }
   }
 
+  /**
+   * 「这次不让做」类错误，**不是**「抓取失败」。
+   *
+   * 区分它们很重要：离线闸门、租约拒绝、配置非法都属于「动作被拒绝」，
+   * 它们既不该被算进连续失败（否则跑几次离线测试就把方案推到风控暂停），
+   * 也不该被包成一句 INTERNAL 500（用户会以为程序坏了，而真相是"这条路本来就不让走"）。
+   */
+  const isRefusal = (error: unknown): boolean => {
+    const code = error instanceof DomainError ? error.code : null
+    return (
+      code === 'BLOCKED' ||
+      code === 'CONFLICT' ||
+      code === 'INVALID_INPUT' ||
+      code === 'NOT_FOUND' ||
+      code === 'DATA_UNAVAILABLE'
+    )
+  }
+
   const finishPlanRun = (plan: PlanDto, summary: CrawlSummaryDto | null, error: unknown): void => {
     const at = clock()
+    // 被拒绝 ≠ 失败：不改退避、不加连续失败计数。
+    if (error !== null && isRefusal(error)) return
     const failed = error !== null || (summary !== null && summary.run.state === 'failed')
     const engine = deps.store.plan.engineState(plan.id)
 
@@ -529,8 +549,10 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
             })
           } catch (error) {
             // 单个平台失败不阻断其它平台；失败本身已经在 crawl 里记了健康与待办
-            failure = error
-            recordPlatformFailure(platformId, deps.store.plan.engineState(plan.id).failStreak + 1)
+            if (failure === null) failure = error
+            if (!isRefusal(error)) {
+              recordPlatformFailure(platformId, deps.store.plan.engineState(plan.id).failStreak + 1)
+            }
             deps.logger?.warn(`[scheduler] ${plan.name} / ${platformId} 抓取失败：${messageOf(error)}`)
             deps.events.publish('plan.failed', { planId: plan.id, platformId, message: messageOf(error) })
           }
@@ -683,7 +705,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
         running,
         plans,
         lease: deps.leaseStatus(),
-        timezone: plans[0]?.timezone ?? 'UTC',
+        // 没有任何方案时也如实说本机时区（排程就是按本地墙钟算的）
+        timezone: plans[0]?.timezone ?? detectTimezone(),
         jitterMs: plans[0]?.schedule.jitterMs ?? 0,
         paused: isPaused(),
         pausedReason: pausedReason(),
@@ -725,26 +748,31 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       }
 
       let last: CrawlSummaryDto | null = null
-      let failure: unknown = null
+      let firstFailure: unknown = null
       for (const platformId of plan.platforms) {
         try {
           last = await deps.run({ planId, platformId, criteria: plan.criteria, reason })
           // SR-20：成功了就把这个平台的冷却清掉，否则一次抖动会让它停一整天
           clearPlatformCooldown(platformId)
         } catch (error) {
-          failure = error
-          recordPlatformFailure(platformId, deps.store.plan.engineState(planId).failStreak + 1)
+          if (firstFailure === null) firstFailure = error
+          // 被拒绝（离线/租约/配置）不是失败，不记账
+          if (!isRefusal(error)) {
+            recordPlatformFailure(platformId, deps.store.plan.engineState(planId).failStreak + 1)
+          }
           deps.logger?.warn(`[scheduler] 手动跑 ${plan.name} / ${platformId} 失败：${messageOf(error)}`)
         }
       }
 
       record(planId, { kind: 'run', reason: null }, null)
-      finishPlanRun(plan, last, failure)
+      finishPlanRun(plan, last, firstFailure)
 
+      // 一个平台都没跑成：**把原始错误原样抛出去**，而不是包成一句 INTERNAL。
+      // 实测踩到：离线闸门返回的是 BLOCKED，被包成 INTERNAL 之后接口回了 500，
+      // 用户看到"程序坏了"，而真相是"离线模式下这条路不让走"——连错误码都丢了。
       if (last === null) {
-        throw new DomainError('INTERNAL', `方案「${plan.name}」没能跑出结果`, {
-          ...(failure === null ? {} : { hint: messageOf(failure) }),
-        })
+        if (firstFailure !== null) throw firstFailure
+        throw new DomainError('INTERNAL', `方案「${plan.name}」没能跑出结果`)
       }
       return last
     },

@@ -353,6 +353,32 @@ export async function resumePlanRisk(id: number): Promise<PlanDto> {
   return result.plan
 }
 
+/**
+ * R20：重新检测一次租约。
+ *
+ * 对方进程刚被关掉时，界面本来要干等最长 90 秒（心跳过期）才会变；
+ * 这个动作让它**立刻**重试一次。它抢不走活着的实例的租约。
+ */
+export async function recheckLease(): Promise<SchedulerStatusDto> {
+  const result = await request<{ ok: boolean; status: SchedulerStatusDto }>(
+    '/schedule/lease/recheck',
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+  return result.status
+}
+
+/**
+ * R20：人工接管租约。**只在对方心跳已过期时才会成功** ——
+ * 抢一个活着的实例会造成两个调度器同时抓取，那正是这条锁要防的事。
+ */
+export async function takeoverLease(): Promise<SchedulerStatusDto> {
+  const result = await request<{ ok: boolean; status: SchedulerStatusDto }>(
+    '/schedule/lease/takeover',
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+  return result.status
+}
+
 /** SR-17/26：跳过原因 → 人话。宿主是唯一来源，界面不自己写一套。 */
 export async function fetchSkipReasons(
   signal?: AbortSignal,

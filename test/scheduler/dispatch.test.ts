@@ -544,6 +544,46 @@ test('SR-12：不持有租约的实例连手动跑都拒绝，并给人话原因
 
 // ── SR-28：运行历史带触发原因 ─────────────────────────────────────────
 
+test('被拒绝 ≠ 失败：离线/租约这类拒绝必须**原样抛出**，且不计入连续失败', async () => {
+  // 实测踩到：多平台循环里的 try/catch 把"离线闸门拒绝"包成了 INTERNAL 500，
+  // 用户看到的是"程序坏了"，而真相是"离线模式下这条路本来就不让走"，连错误码都丢了。
+  const refusal = new DomainError('BLOCKED', '离线模式：不允许抓取招聘网站', {
+    hint: '这是「自动化测试绝不访问真实招聘站」的开关在起作用。',
+  })
+  const h = harness({ outcome: async () => { throw refusal } })
+  try {
+    h.scheduler.start()
+    await assert.rejects(
+      h.scheduler.runPlan(h.planId, 'manual'),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'BLOCKED' &&
+        error.message.includes('离线模式'),
+    )
+
+    const engine = h.store.plan.engineState(h.planId)
+    assert.equal(engine.failStreak, 0, '被拒绝不该算连续失败 —— 否则跑几次离线测试就把方案推到风控暂停')
+    assert.equal(engine.riskPaused, false)
+    assert.equal(engine.backoffUntil, null, '被拒绝也不该进退避')
+    assert.equal(h.store.todo.listOpen().length, 0, '被拒绝不该弹风控待办')
+  } finally {
+    h.close()
+  }
+})
+
+test('真正的抓取失败仍然是失败：抛 INTERNAL 之外还照常记账', async () => {
+  const h = harness({ outcome: async () => { throw new Error('断网了') } })
+  try {
+    h.scheduler.start()
+    await assert.rejects(h.scheduler.runPlan(h.planId, 'manual'))
+    const engine = h.store.plan.engineState(h.planId)
+    assert.equal(engine.failStreak, 1, '普通失败要记账（与"被拒绝"区分开）')
+    assert.ok(engine.backoffUntil !== null)
+  } finally {
+    h.close()
+  }
+})
+
 test('SR-28：手动与补跑的触发原因区分得出来', async () => {
   const h = harness()
   try {

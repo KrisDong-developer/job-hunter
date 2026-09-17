@@ -8,8 +8,35 @@ export const JOB_STATES = ['new', 'seen', 'saved', 'ignored', 'archived'] as con
 export type JobState = (typeof JOB_STATES)[number]
 
 /** 抓取运行态 —— `crawl_run.state`。 */
+/** 抓取运行态 —— `crawl_run.state`。 */
 export const CRAWL_STATES = ['queued', 'running', 'ok', 'partial', 'failed', 'aborted'] as const
 export type CrawlState = (typeof CRAWL_STATES)[number]
+
+/**
+ * 运行态的中文标签。**界面上一律用这一份。**
+ *
+ * 把 `ok` / `partial` / `failed` 直接印给用户看等于漏出内部枚举 ——
+ * 而非技术用户读不懂 `partial` 到底是成了还是没成。
+ * 放在 shared 里，所以面板上的词与模型工具返回文本里的词必然一致。
+ */
+export const CRAWL_STATE_LABEL: Record<CrawlState, string> = {
+  queued: '排队中',
+  running: '进行中',
+  ok: '成功',
+  partial: '部分成功',
+  failed: '失败',
+  aborted: '已中止',
+}
+
+/** 状态徽章的色调（界面据此上色，不自己猜）。 */
+export const CRAWL_STATE_TONE: Record<CrawlState, 'ok' | 'warn' | 'error' | 'muted'> = {
+  queued: 'muted',
+  running: 'muted',
+  ok: 'ok',
+  partial: 'warn',
+  failed: 'error',
+  aborted: 'muted',
+}
 
 /**
  * 适配器健康态（§4.2.3）：
@@ -17,6 +44,35 @@ export type CrawlState = (typeof CRAWL_STATES)[number]
  */
 export const HEALTH_STATES = ['healthy', 'degraded', 'broken'] as const
 export type HealthState = (typeof HEALTH_STATES)[number]
+
+/** 健康态的中文标签（同上：不把 `degraded` 直接印出来）。 */
+export const HEALTH_STATE_LABEL: Record<HealthState, string> = {
+  healthy: '正常',
+  degraded: '降级',
+  broken: '失效',
+}
+
+export const HEALTH_STATE_TONE: Record<HealthState, 'ok' | 'warn' | 'error'> = {
+  healthy: 'ok',
+  degraded: 'warn',
+  broken: 'error',
+}
+
+/** 触发原因（`crawl_run.reason`）—— 运行历史里要说清"这次是谁让它跑的"。 */
+export const RUN_REASONS = ['schedule', 'manual', 'catch-up'] as const
+export type RunReasonKey = (typeof RUN_REASONS)[number]
+
+export const RUN_REASON_LABEL: Record<RunReasonKey, string> = {
+  schedule: '定时',
+  manual: '手动',
+  'catch-up': '补跑',
+}
+
+/** 触发原因的中文标签；不认识的取值**原样返回**（不静默变成"—"）。 */
+export function runReasonLabel(reason: string | null): string | null {
+  if (reason === null || reason === '') return null
+  return (RUN_REASON_LABEL as Record<string, string | undefined>)[reason] ?? reason
+}
 
 /**
  * 核心字段（§4.2.4）：每个适配器都必须声明的一组字段。

@@ -10,6 +10,7 @@ import {
   type LlmCallDto,
   type SettingsDto,
 } from '../api.js'
+import { InlineMd } from '../inline-md.js'
 import { useAsync } from '../use-async.js'
 
 /**
@@ -140,7 +141,8 @@ export function SettingsScreen(props: { revision: number }) {
               </li>
             </ul>
             <p className="jh-note">
-              模型**不能**修改这些键：{current.derived.modelForbidden.join(' / ')}
+              <InlineMd text="模型**不能**修改这些键：" />
+              {current.derived.modelForbidden.join(' / ')}
               ；模型能改的只有：{current.derived.modelEditable.join(' / ')}。这是硬编码的校验，不是约定。
             </p>
           </>

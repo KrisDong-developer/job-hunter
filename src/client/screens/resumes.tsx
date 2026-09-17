@@ -23,6 +23,7 @@ import {
   setDefaultResume,
   updateResume,
 } from '../api.js'
+import { InlineMd } from '../inline-md.js'
 import { useAsync } from '../use-async.js'
 
 type Mode = 'edit' | 'split' | 'preview' | 'files'
@@ -405,7 +406,7 @@ function ResumeWork(props: {
             type="button"
             className="jh-btn jh-btn-inline jh-btn-info"
             disabled={busy !== null || dirty}
-            title={dirty ? '导出渲染的是**已保存**的内容 —— 先点「保存」' : '按当前模板导出 A4 PDF'}
+            title={dirty ? '导出渲染的是已保存的内容 —— 先点「保存」' : '按当前模板导出 A4 PDF'}
             onClick={() => void run('导出 PDF', async () => await exportResume(props.id, { format: 'pdf', template }), () => 'PDF 已生成')}
           >
             导出 PDF
@@ -414,7 +415,7 @@ function ResumeWork(props: {
             type="button"
             className="jh-btn jh-btn-inline"
             disabled={busy !== null || dirty}
-            title={dirty ? '导出渲染的是**已保存**的内容 —— 先点「保存」' : '按当前模板导出 Word'}
+            title={dirty ? '导出渲染的是已保存的内容 —— 先点「保存」' : '按当前模板导出 Word'}
             onClick={() => void run('导出 Word', async () => await exportResume(props.id, { format: 'docx', template }), () => 'Word 已生成')}
           >
             导出 Word
@@ -524,7 +525,9 @@ function ResumeWork(props: {
             </div>
             <p className="jh-info">
               <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
-              <span>手机与邮箱在**发给模型之前会被摘掉**，只在导出与预览里出现。</span>
+              <span>
+                <InlineMd text="手机与邮箱在**发给模型之前会被摘掉**，只在导出与预览里出现。" />
+              </span>
             </p>
           </section>
 
@@ -934,7 +937,9 @@ function ResumeWork(props: {
                 <option key={item} value={item}>{RESUME_TEMPLATE_LABEL[item]}</option>
               ))}
             </select>
-            <span className="jh-muted">预览与导出走**同一个渲染器**，模板即所见</span>
+            <span className="jh-muted">
+              <InlineMd text="预览与导出走**同一个渲染器**，模板即所见" />
+            </span>
           </div>
 
           {/* 预览与真正导出走**同一个渲染器**：预览好看、导出走样是最难查的一类 bug */}

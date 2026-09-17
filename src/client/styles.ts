@@ -685,4 +685,63 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-box-scale{display:flex;justify-content:space-between;font-size:11.5px;
   color:var(--dsw-alias-label-secondary)}
 .jh-baseline{margin-top:14px;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l1)}
+
+/* ── 采集页可用性修复：术语释义 / 行内标记 / 中文徽章 / 明细折叠 ───── */
+
+/* 术语释义：词本身照常显示（它确实是把事情说准的那个词），后面跟一个小小的问号。
+   title 同时挂在**整个词组**上，所以悬停在词上也有解释 —— 不用非得瞄准那个问号。 */
+.jh-term{border-bottom:1px dashed var(--dsw-alias-border-l4);cursor:help}
+.jh-term-mark{display:inline-flex;align-items:center;justify-content:center;
+  width:13px;height:13px;margin-left:3px;font-size:9px;font-weight:700;line-height:1;
+  border-radius:50%;background:var(--dsw-alias-bg-layer-3);
+  color:var(--dsw-alias-label-secondary);vertical-align:super}
+
+/* 屏幕阅读器专用：释义文本要让读屏能念出来，但不占版面 */
+.jh-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* 行内标记（粗体与代码两种）—— 原来这些标记是原样印出来的 */
+.jh-inline-code{font-family:ui-monospace,Consolas,monospace;font-size:12px;
+  padding:0 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);
+  color:var(--dsw-alias-label-primary)}
+
+/* 中文状态徽章（替代直接印 ok / partial / degraded）*/
+.jh-badge-state{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
+  padding:0 8px;border-radius:999px;white-space:nowrap}
+.jh-tone-ok{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
+.jh-tone-warn{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}
+.jh-tone-error{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+.jh-tone-muted{background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
+
+/* 调度归属的"唯一说法"：一句话讲清谁在调度、下次什么时候跑。
+   原来这里是「调度：未启动」与「下次运行：还有 9 小时」并排，读起来自相矛盾。 */
+.jh-story{margin:2px 0 4px;font-size:13px;line-height:1.7}
+.jh-story-ok{color:var(--dsw-alias-label-primary)}
+.jh-story-warn{color:var(--dsw-alias-state-warn-primary)}
+.jh-story-muted{color:var(--dsw-alias-label-secondary)}
+
+/* 租约面板：把"死胡同"提示换成带动作的面板 */
+.jh-lease{margin:8px 0;padding:8px 10px;border-radius:9px;
+  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
+.jh-lease-warn{border-color:var(--dsw-alias-state-warn-secondary)}
+.jh-lease-ok{border-color:var(--dsw-alias-state-success-secondary)}
+.jh-lease-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px}
+
+/* 明细折叠（原来的堆栈直出改成一句人话 + 可展开的原始信息）*/
+.jh-details{margin-top:5px;font-size:12px}
+.jh-details>summary{cursor:pointer;color:var(--dsw-alias-brand-text);font-size:12px;
+  padding:1px 0;user-select:none}
+.jh-details>summary:hover{text-decoration:underline}
+.jh-details .jh-pre{margin:6px 0 0;max-height:220px}
+.jh-details-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+
+/* 数值列右对齐 + 等宽数字：纵向比对时位数才能对齐。
+   注意选择器要写成 .jh-table td.jh-num —— 只写 .jh-num 会被上面的 .jh-table td{text-align:left}
+   按特异性压过去（实测踩到：类选择器 0,1,0 输给 0,1,1，计算样式仍然是 left）。 */
+.jh-table td.jh-num,.jh-table th.jh-num{text-align:right;font-variant-numeric:tabular-nums}
+.jh-num{font-variant-numeric:tabular-nums}
+.jh-table-runs td:first-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* 方案条件那一行：标签之间用 · 分隔，不要挤成一块 */
+.jh-plan-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px}
 `

@@ -75,6 +75,26 @@ export interface HostRuntime {
     setSchedulePaused(paused: boolean, reason?: string): void;
     /** SR-21：人工确认恢复风控暂停的方案。 */
     resumeRisk(planId: number): void;
+    /**
+     * 重新检测一次租约（R20）。
+     *
+     * 为什么需要：界面在对方进程被关掉后仍会显示"另一个实例正在运行"，直到心跳过期
+     * （默认 90 秒）。让用户干等并且没有任何反馈是糟糕的体验。
+     * 这个动作只**重新读一次**并尝试接管（对方的租约真要过期了才会成功）——
+     * 它绝不可能抢走一个还活着的实例的租约。
+     *
+     * @returns 检测后的调度状态（界面直接重渲染，不用再请求一次）
+     */
+    recheckLease(): SchedulerStatusDto;
+    /**
+     * 人工**接管**租约（R20 的逃生出口）。
+     *
+     * **只在对方心跳已过期时才允许**：一个还活着的实例绝不能被抢走租约，
+     * 否则两个调度器会同时抓取、抢同一个浏览器 profile —— 那正是 R20 要防的事。
+     * 所以这个动作的语义是"我确认那个实例已经死了"，而不是"我要强抢"。
+     * 对方还活着时它**如实拒绝**并告诉用户该怎么办。
+     */
+    takeoverLease(): SchedulerStatusDto;
     /** 实时事件总线（ADR-24：事件只作提示）。 */
     events(): EventBus;
     /** 情报引擎（P4）。 */

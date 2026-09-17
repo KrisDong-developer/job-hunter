@@ -4,6 +4,7 @@ import { ApiError, fetchJobDetail, markJob } from '../api.js'
 import { JOB_ACTION_LABEL, JOB_STATE_LABEL, salaryDetail, splitJobTags } from '../labels.js'
 import { TailorPanel } from './tailor-panel.js'
 import { OverseasPanel } from './campus.js'
+import { InlineMd } from '../inline-md.js'
 import { useAsync } from '../use-async.js'
 
 /** 详情里给得出的动作（不提供"标为新"——回退到未读没有意义）。 */
@@ -173,7 +174,7 @@ export function JobDetailBody(props: { id: number; revision: number; onChanged: 
                 {job.matchScore >= 70 ? '本轮规则里靠前' : job.matchScore >= 45 ? '中等' : '偏低'}
               </span>
               <p className="jh-note">
-                按规则算出来的**粗筛分**，下面是逐条加减分。
+                <InlineMd text="按规则算出来的**粗筛分**，下面是逐条加减分。" />
                 <Hint
                   text={
                     '纯规则打分（城市 / 薪资 / 关键词命中率），全量适用、零成本。' +
@@ -214,8 +215,7 @@ export function JobDetailBody(props: { id: number; revision: number; onChanged: 
               <span className="jh-alert-title">没有命中任何已知风险特征</span>
             </div>
             <p className="jh-alert-body">
-              这不等于「没问题」。识别依据分两层：**文本层**来自词表命中的原文片段，
-              **统计层**来自公司维度（岗位数、地域跨度、驻场比例）；两者都没有命中时，这里是空的。
+              <InlineMd text="这不等于「没问题」。识别依据分两层：**文本层**来自词表命中的原文片段，**统计层**来自公司维度（岗位数、地域跨度、驻场比例）；两者都没有命中时，这里是空的。" />
             </p>
           </div>
         ) : (
@@ -290,8 +290,7 @@ export function JobDetailBody(props: { id: number; revision: number; onChanged: 
 
       {job.scoreStale ? (
         <p className="jh-warn">
-          这个匹配分是**旧版简历**下算出来的 —— 简历改过之后它就不再有效。
-          用「重算」或在对话里让模型跑 job_match_explain 才是当前分数。
+          <InlineMd text="这个匹配分是**旧版简历**下算出来的 —— 简历改过之后它就不再有效。用「重算」或在对话里让模型跑 `job_match_explain` 才是当前分数。" />
         </p>
       ) : null}
 
@@ -324,7 +323,7 @@ export function JobDetailPane(props: {
         <p className="jh-detail-empty-title">从左侧选一个岗位</p>
         <p className="jh-note">详情会显示在这里，列表保持不动，方便一个个往下比。</p>
         <p className="jh-note">
-          列表上的「粗筛分」与风险标注只是初筛；点进来能看到每一条结论的**原文依据**。
+          <InlineMd text="列表上的「粗筛分」与风险标注只是初筛；点进来能看到每一条结论的**原文依据**。" />
         </p>
       </section>
     )

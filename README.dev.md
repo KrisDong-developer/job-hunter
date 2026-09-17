@@ -110,7 +110,7 @@ npm install          # 安装构建与测试依赖
 npm run typecheck    # 只做类型检查
 npm run build        # → lib/**（宿主 ESM）+ client/client.js（__ModuleLoader__ 工厂）
 npm run verify       # 构建产物契约自检（不启动 DSH）
-npm test             # 460 个测试（node --test，离线，绝不访问真实招聘网站）
+npm test             # 478 个测试（node --test，离线，绝不访问真实招聘网站）
 npm run crawl:fixture # 用保存的 51job 页面跑一次完整采集入库
 ```
 
@@ -376,7 +376,7 @@ L1 粗筛分做成环形仪表 + ✓/✗ 逐条理由；长解释收进 `?`；�
 
 验收脚本**不在本仓库**（它与开发机上的 DSH profile、Playwright 安装位置、`?token=` 入口绑定，
 没有做成可复现的分发形态），使用时形如 `node jh-e2e.mjs "http://127.0.0.1:4399/?token=…"`。
-仓库内可复现的是那 460 个离线单测（`npm test`）。
+仓库内可复现的是那 478 个离线单测（`npm test`）。
 
 ---
 
@@ -958,6 +958,55 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 `maxPages` / `weekdays` / `windowStartHour` / `windowEndHour` / `score|flag|dedup`，
 外加 `dimensions` / `pause` / `resume` 三个动作）；`job_report` 扩出 `box` / `baseline` / `resume`。
 
+### 采集页可用性修复（2026-09-17 第二轮）
+
+用户报了三类"界面把内部东西漏出来了"，逐条修掉，并且都抽成了**纯函数**以便离线断言：
+
+| 报的问题 | 根因 | 修法 | 落地 |
+|---|---|---|---|
+| 顶部警告显示 `**连手动跑也会被拒绝**` | 文案里写了 Markdown，而界面**从来没有解析过**（同一问题在今日/简历/看板/校招都有） | 自写十行**行内** Markdown（只认 `**粗体**` 与 `` `代码` ``），返回 React 节点，**从不**用 `dangerouslySetInnerHTML`（抓来的 JD 是不可信输入，走 HTML 直通等于开注入口子）。同时把 `title=` 里的标记换成 `stripInlineMd` | `src/client/inline-md.tsx` |
+| 方案条件显示 `{"keyword":"Java","city":"深圳"}` | 直接渲染了 `JSON.stringify(criteria)` | `describeCriteria()` 翻成「关键词：Java · 城市：深圳」，取值域里的值再翻一层（`sort:"2"` → 「排序方式：最新发布」）；未声明的键**原样显示**而不是消失 | `src/shared/criteria-label.ts`（host 工具共用） |
+| 运行记录里堆着 `page.evaluate: ReferenceError… at …` | 直接印了 `errorMsg` | `humanizeFailure()` 给一句人话（"代码语法异常"）+ **对症的下一步建议**，原始全文完整收进可展开的 `details`（简化显示≠藏起来） | `src/shared/error-text.ts`（host 工具共用） |
+
+另外三件事：
+
+* **状态矛盾**：「调度：未启动」和「下次运行：还有 9 小时」并排出现。根因是 `scheduling`（本实例在不在调度）
+  与"有没有下次运行"是两件事，被塞进了同一个 KV 列表。现在合成**一句**「调度归属」叙述
+  （本窗口负责 / 由另一个窗口负责 / 定时已暂停），并在只读时明确说"那个窗口会在 … 自动采集"。
+* **英文枚举直出**：`ok`/`partial`/`failed`/`degraded` 变成中文徽章（成功/部分成功/失败/正常/降级/失效），
+  标签表放在 `shared/enums.ts` —— 面板与模型工具返回文本共用同一份，所以两边不会说两套话。
+* **极客术语**：`pid`、`租约`、`抖动`、`退避`、`风控暂停`、`逐字段健康` 等都带上了悬浮释义
+  （`src/client/terms.tsx`），并且**用户可见文本里的 `SR-x` / `R-xx` 需求编号全部删掉** —— 那是我们内部的账。
+* **死胡同提示**："非租约持有者连手动跑也会被拒绝" 补上了下一步：租约面板给「重新检测」与「接管调度」两个动作，
+  并写明"怎么解决"。接管**只在对方心跳已过期时才成功** —— 抢一个活着的实例会让两个调度器同时抓取，
+  那正是这把锁要防的事，所以它不能是"强抢"按钮（对方活着时置灰并解释原因）。
+  新增接口：`POST /schedule/lease/recheck`、`POST /schedule/lease/takeover`。
+* **异常指引**：选择器失效/脚本异常/平台降级的行尾有「排查方案」折叠块（含具体核对步骤与「去设置看诊断」跳转）。
+* **表格**：「触发」列全为 `—` 时**整列隐藏**（实测确实会全空：schema v7 之前的历史运行没有 `reason`）；
+  数值列右对齐 + 等宽数字。
+
+> **踩到并立刻修正的两处**（都是这份文档 §1.3 已经点名的坑）：
+> ① CSS 注释里写了反引号 —— 直接把 `const CSS = \`…\`` 模板截断，typecheck 报出一堆莫名其妙的错。
+> **同一轮里踩了两次**，说明"改完 styles.ts 要数一遍反引号"必须变成动作而不是记忆。
+> ② `.jh-num{text-align:right}` 被 `.jh-table td{text-align:left}` 按特异性压过去
+> （类 0,1,0 输给 0,1,1），计算样式实测仍是 `left`；改成 `.jh-table td.jh-num` 才对。
+> **教训**："我加了样式"不等于"样式生效了"，要用 `getComputedStyle` 验。
+
+#### 顺带修掉的一个真 bug：**「被拒绝」被当成「抓取失败」**
+
+为 SR-18（一个平台失败不阻断其它平台）加的多平台 `try/catch`，把**离线闸门的拒绝**
+（`BLOCKED`）包成了一句 `INTERNAL：方案没能跑出结果` —— 接口回 **500**，用户看到"程序坏了"，
+而真相是"离线模式下这条路本来就不让走"，连错误码都丢了。
+现在：`isRefusal()` 把 `BLOCKED`/`CONFLICT`/`INVALID_INPUT`/`NOT_FOUND`/`DATA_UNAVAILABLE`
+识别为"动作被拒绝"，**原样抛出**并且**不进退避、不加连续失败计数、不弹风控待办**。
+（否则跑几次离线测试就能把方案推到 `risk_paused`。）有两条行为测试钉住这个区分。
+
+#### 另一个准确性问题：时区显示成 `UTC`
+
+`schema v7` 之前的方案行没有 `timezone` 快照，而 `toDto` 的兜底写的是字符串 `'UTC'` ——
+**那是假的**：排程用的是本地墙钟（实测本机是 `Asia/Shanghai`）。改成兜底时**真的问一次本机时区**
+（`detectTimezone()` 搬到 `util/time.ts`，调度器与仓储共用）。
+
 ### 真实实例验收（2026-09-17）
 
 离线闸门（`DSH_JOB_HUNTER_NO_NETWORK=1`）+ `--profile p5test --port 4399`，**不碰招聘站**：
@@ -968,6 +1017,7 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 | `jh-e2e.mjs`（基线，**总体通过**） | 断言数从 31 → **34**（见下面的"期望搬走"说明） |
 | `jh-p8-e2e.mjs`（**总体通过**，28 条） | 顺带修掉脚本自己的一个老 bug：它等的是 `.jh-drawer`，而岗位库的详情一直是**右侧内嵌栏**（抽屉只服务流水线/消息/面试）—— 于是这条**一直在超时**，P8 的 27 条断言其实早就全过。现在改成等 `.jh-detail-pane`，这条验证才真的在验东西 |
 | `jh-jobs-ui.mjs` / `jh-resume-ui.mjs` / `jh-resume-quick.mjs` | 全部 `pageErrors: []` |
+| `jh-collect-ui.mjs`（第二轮新增） | **26/26 通过**（含"**没有任何 `**` 标记被原样显示**"、"没有源码 JSON"、"没有裸堆栈"、"数值列右对齐（读计算样式）"、"所有置灰按钮都有悬浮解释"、"接管按钮在对方活着时置灰并解释"） |
 
 > **期望搬走 ≠ 放松断言**（§5 的纪律）。「定时抓取」与「平台与登录」两块按 D6 迁到了 U9 采集页，
 > 所以 `jh-e2e.mjs` 里那两条详细断言**搬到采集页继续验**，并且**加严**：

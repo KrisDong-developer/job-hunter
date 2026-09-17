@@ -702,6 +702,24 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     })
   }
 
+  // ── R20：租约的"重新检测"与"人工接管"────────────────────────────
+  //
+  // 界面上原来只有一句"非租约持有者连手动跑也会被拒绝"—— 那是**死胡同**提示：
+  // 用户知道了原因，却没有任何下一步可做。这两条接口就是那个下一步。
+  if (segments.length === 3 && segments[0] === 'schedule' && segments[1] === 'lease') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '租约操作只支持 POST')
+    requireData(runtime)
+    if (segments[2] === 'recheck') {
+      return json(200, { ok: true, status: runtime.recheckLease() })
+    }
+    if (segments[2] === 'takeover') {
+      return json(200, { ok: true, status: runtime.takeoverLease() })
+    }
+    throw new DomainError('INVALID_INPUT', `不认识的租约操作：${segments[2] ?? ''}`, {
+      hint: '合法取值：recheck / takeover',
+    })
+  }
+
   // ── B3/SR-30：全局一键暂停（**只停定时**，手动永远可用）──────────────
   if (segments.length === 2 && segments[0] === 'schedule' && segments[1] === 'pause') {
     if (method !== 'POST') throw new DomainError('INVALID_INPUT', '暂停/恢复只支持 POST')

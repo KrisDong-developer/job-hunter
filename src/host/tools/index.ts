@@ -19,8 +19,12 @@
  * 同时：注册失败**不再被静默吞掉**，会记进 `ToolRegistrationReport` 并经 `/health` 暴露。
  */
 import { PLUGIN_ID } from '../../shared/constants.js'
-// 窗口说明与星期标签在 host 与 client 是同一份实现 —— 对话里说的和面板上写的必须一致
-import { formatWeekdays } from '../../shared/time-format.js'
+// 窗口说明、条件标签、状态词在 host 与 client 之间**共用同一份实现** ——
+// 对话里说的和面板上写的必须一致（否则用户在两个地方看到两套说法，只会信其中一套）。
+import { formatCriteriaLine } from '../../shared/criteria-label.js'
+import { humanizeFailure } from '../../shared/error-text.js'
+import { CRAWL_STATE_LABEL, HEALTH_STATE_LABEL, runReasonLabel } from '../../shared/enums.js'
+import { formatLocalMoment, formatWeekdays } from '../../shared/time-format.js'
 import { describeWindow } from '../scheduler/schedule.js'
 import {
   APPLICATION_CHANNELS,
@@ -475,7 +479,7 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
                   : ''
               return (
                 `#${String(plan.id)} ${plan.name}｜${plan.platforms.join(',')}｜` +
-                `${JSON.stringify(plan.criteria)}｜${plan.enabled ? '已启用' : '已停用'}｜` +
+                `${formatCriteriaLine(plan.criteria) ?? '条件：不限'}｜${plan.enabled ? '已启用' : '已停用'}｜` +
                 `${window}｜新鲜度 ${freshness}${hold}${why}`
               )
             }),
@@ -695,16 +699,32 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
         const status = runtime.crawlStatus()
         const scheduler = runtime.schedulerStatus()
         const platforms = runtime.platforms()
+        const now = new Date()
+        // 调度归属只说一句话：/「未运行」+「下次还有 9 小时」并排会让模型转述出互相矛盾的话
+        const owner = scheduler.paused
+          ? '定时已暂停（手动仍可用）'
+          : scheduler.readOnly
+            ? `由另一个实例负责（本实例只读：${scheduler.readOnlyReason ?? '原因未知'}）`
+            : scheduler.scheduling
+              ? '本实例负责'
+              : '未启动（数据层可能还没就绪）'
+        const skipNotes = scheduler.planStatus
+          .filter((item) => item.lastDecision?.decision === 'skipped')
+          .map(
+            (item) =>
+              `· ${item.name}：${item.lastDecision?.message ?? item.lastDecision?.reason ?? '原因未知'}`,
+          )
         const lines = [
           `抓取：${status.busy ? '正在跑' : '空闲'}`,
-          `调度：${scheduler.scheduling ? '运行中' : '未运行'}` +
-            `${scheduler.readOnly ? `（只读：${scheduler.readOnlyReason ?? '原因未知'}）` : ''}` +
-            `${scheduler.nextRunAt === null ? '' : `，下次 ${scheduler.nextRunAt}`}`,
-          `租约：${scheduler.lease.held ? `本实例持有（pid ${String(scheduler.lease.pid ?? '?')}）` : '本实例只读'}`,
+          `调度：${owner}` +
+            `${scheduler.nextRunAt === null ? '' : `，下次 ${formatLocalMoment(scheduler.nextRunAt, now) ?? ''}`}` +
+            `${scheduler.planStatus.length === 0 ? '' : `｜新鲜度 ${scheduler.planStatus.map((item) => `${item.name} ${item.freshness.level}`).join('、')}`}`,
+          `租约：${scheduler.lease.held ? `本实例持有（进程 ${String(scheduler.lease.pid ?? '?')}）` : `另一个实例持有（进程 ${String(scheduler.lease.pid ?? '?')}）`}`,
+          ...(skipNotes.length === 0 ? [] : ['上次到点没跑：', ...skipNotes]),
           '平台：',
           ...platforms.map(
             (platform) =>
-              `· ${platform.displayName}｜健康 ${platform.health}｜` +
+              `· ${platform.displayName}｜健康 ${HEALTH_STATE_LABEL[platform.health]}｜` +
               `${platform.account.loggedIn ? '已登录' : '未登录'}｜` +
               `${platform.account.hiddenFromCurrentEmployer === true ? '已设隐身' : '隐身未确认'}` +
               `${platform.healthReason === null ? '' : `｜${platform.healthReason}`}`,
@@ -713,13 +733,18 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
             ? ['最近抓取：还没有记录']
             : [
                 '最近抓取：',
-                ...status.recentRuns
-                  .slice(0, 5)
-                  .map(
-                    (run) =>
-                      `· ${run.startedAt} ${run.platformId} ${run.state}｜` +
-                      `发现 ${String(run.found)} 新增 ${String(run.inserted)} 更新 ${String(run.updated)}`,
-                  ),
+                ...status.recentRuns.slice(0, 5).map((run) => {
+                  const reason = runReasonLabel(run.reason)
+                  // 失败原因转成人话：模型转述一串堆栈对用户毫无帮助
+                  const failure = humanizeFailure(run.errorCode, run.errorMsg)
+                  return (
+                    `· ${formatLocalMoment(run.startedAt, now) ?? run.startedAt}` +
+                    `${reason === null ? '' : `（${reason}）`} ${run.platformId} ` +
+                    `${CRAWL_STATE_LABEL[run.state]}｜发现 ${String(run.found)} ` +
+                    `新增 ${String(run.inserted)} 更新 ${String(run.updated)}` +
+                    `${failure === null ? '' : `｜${failure.short}`}`
+                  )
+                }),
               ]),
         ]
         return { text: lines.join('\n') }

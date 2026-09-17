@@ -6,14 +6,34 @@
 export declare const JOB_STATES: readonly ["new", "seen", "saved", "ignored", "archived"];
 export type JobState = (typeof JOB_STATES)[number];
 /** 抓取运行态 —— `crawl_run.state`。 */
+/** 抓取运行态 —— `crawl_run.state`。 */
 export declare const CRAWL_STATES: readonly ["queued", "running", "ok", "partial", "failed", "aborted"];
 export type CrawlState = (typeof CRAWL_STATES)[number];
+/**
+ * 运行态的中文标签。**界面上一律用这一份。**
+ *
+ * 把 `ok` / `partial` / `failed` 直接印给用户看等于漏出内部枚举 ——
+ * 而非技术用户读不懂 `partial` 到底是成了还是没成。
+ * 放在 shared 里，所以面板上的词与模型工具返回文本里的词必然一致。
+ */
+export declare const CRAWL_STATE_LABEL: Record<CrawlState, string>;
+/** 状态徽章的色调（界面据此上色，不自己猜）。 */
+export declare const CRAWL_STATE_TONE: Record<CrawlState, 'ok' | 'warn' | 'error' | 'muted'>;
 /**
  * 适配器健康态（§4.2.3）：
  *   healthy ──连续失败 N 次──→ degraded ──仍失败──→ broken ──修复并自检──→ healthy
  */
 export declare const HEALTH_STATES: readonly ["healthy", "degraded", "broken"];
 export type HealthState = (typeof HEALTH_STATES)[number];
+/** 健康态的中文标签（同上：不把 `degraded` 直接印出来）。 */
+export declare const HEALTH_STATE_LABEL: Record<HealthState, string>;
+export declare const HEALTH_STATE_TONE: Record<HealthState, 'ok' | 'warn' | 'error'>;
+/** 触发原因（`crawl_run.reason`）—— 运行历史里要说清"这次是谁让它跑的"。 */
+export declare const RUN_REASONS: readonly ["schedule", "manual", "catch-up"];
+export type RunReasonKey = (typeof RUN_REASONS)[number];
+export declare const RUN_REASON_LABEL: Record<RunReasonKey, string>;
+/** 触发原因的中文标签；不认识的取值**原样返回**（不静默变成"—"）。 */
+export declare function runReasonLabel(reason: string | null): string | null;
 /**
  * 核心字段（§4.2.4）：每个适配器都必须声明的一组字段。
  * 任一字段**连续 3 次缺失**即触发降级；不合格的**单条**记录不写主表，进 `pending_repair`。

@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../../shared/dto.js'
+import { detectTimezone } from '../../util/time.js'
 import { asBool, asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 /**
@@ -26,16 +27,9 @@ export const DEFAULT_POST_PROCESS: PlanPostProcess = { score: true, flag: true, 
 /**
  * 本机时区名（SR-5：存本地墙钟 + 时区快照）。
  *
- * 拿不到就退回 `'UTC'` 而不是抛错：时区拿不到不该让方案存不进去。
+ * 实现搬到了 `util/time.ts`（调度器也要用它），这里转出去让既有调用方不用改。
  */
-export function detectTimezone(): string {
-  try {
-    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    return typeof zone === 'string' && zone !== '' ? zone : 'UTC'
-  } catch {
-    return 'UTC'
-  }
-}
+export { detectTimezone }
 
 /** 一天 24 小时的分钟表示，用来比较窗口边界。 */
 function minuteOfDay(hour: number, minute: number): number {
@@ -195,7 +189,9 @@ function toDto(row: Row): PlanDto {
     lastSuccessAt,
     lastRunAt: lastSuccessAt,
     nextRunAt: asTextOrNull(row['next_run_at']),
-    timezone: asTextOrNull(row['timezone']) ?? 'UTC',
+    // 没有快照时**真的问一次本机时区**，而不是退回字符串 'UTC' ——
+    // 那是假的：排程用的是本地墙钟，显示 UTC 会让用户以为时间算错了。
+    timezone: asTextOrNull(row['timezone']) ?? detectTimezone(),
     postProcess: normalizePostProcess(asJson<Partial<PlanPostProcess>>(row['post_process_json'], {})),
     createdAt: asText(row['created_at']),
   }
