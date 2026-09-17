@@ -487,10 +487,12 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-chip-x:hover{color:var(--dsw-alias-state-error-primary)}
 .jh-chip-input{width:150px}
 
-/* 输入控件：浅灰底 = "这里能输入"；聚焦回白底 + 主题色描边 */
+/* 输入控件：白底，与卡片同一层级（反馈：大块文本框的浅灰底和卡片"不是一套"）。
+   可输入性改由**描边**承担：常态 12% 黑、悬停 16%、聚焦主题色 + 3px 光环 ——
+   比当初被否掉的那版（4% 黑、无聚焦态）强得多，所以去掉填充不会回到"看不出哪里能输入"。 */
 .jh-input,.jh-textarea,.jh-select{width:100%;box-sizing:border-box;font:inherit;font-size:13px;
   padding:6px 10px;border-radius:8px;color:var(--dsw-alias-label-primary);
-  border:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-markdown-tag)}
+  border:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-bg-base)}
 .jh-input:hover,.jh-textarea:hover,.jh-select:hover{border-color:var(--dsw-alias-border-l4)}
 .jh-input:focus,.jh-textarea:focus,.jh-select:focus{outline:none;background:var(--dsw-alias-bg-base);
   border-color:var(--dsw-alias-link);box-shadow:0 0 0 3px var(--dsw-alias-state-business-tertiary)}
