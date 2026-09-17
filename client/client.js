@@ -2695,16 +2695,23 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		        "input",
 		        {
-		          className: "jh-input jh-work-name",
+		          className: "jh-input jh-editable",
 		          "aria-label": "\u7248\u672C\u540D",
+		          title: "\u70B9\u51FB\u6539\u540D\uFF0C\u56DE\u8F66\u4FDD\u5B58",
 		          value: draft.name,
 		          onChange: (event) => {
 		            setDraft({ ...draft, name: event.target.value });
 		            setDirty(true);
+		          },
+		          onKeyDown: (event) => {
+		            if (event.key !== "Enter") return;
+		            event.preventDefault();
+		            if (dirty) save();
 		          }
 		        }
 		      ),
-		      dirty ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-chip jh-chip-warn", children: "\u6709\u672A\u4FDD\u5B58\u7684\u6539\u52A8" }) : null,
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u270E" }),
+		      dirty ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-chip jh-chip-dirty", children: "\u6709\u672A\u4FDD\u5B58\u7684\u6539\u52A8" }) : null,
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-work-actions", children: [
 		        draft.isDefault ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-badge", children: "\u5F53\u524D\u542F\u7528" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		          "button",
@@ -2738,6 +2745,28 @@ window.__ModuleLoader__.load({
 		              props.onDeleted();
 		            },
 		            children: "\u5220\u9664"
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: "jh-btn jh-btn-inline jh-btn-info",
+		            disabled: busy !== null || dirty,
+		            title: dirty ? "\u5BFC\u51FA\u6E32\u67D3\u7684\u662F**\u5DF2\u4FDD\u5B58**\u7684\u5185\u5BB9 \u2014\u2014 \u5148\u70B9\u300C\u4FDD\u5B58\u300D" : "\u6309\u5F53\u524D\u6A21\u677F\u5BFC\u51FA A4 PDF",
+		            onClick: () => void run("\u5BFC\u51FA PDF", async () => await exportResume(props.id, { format: "pdf", template }), () => "PDF \u5DF2\u751F\u6210"),
+		            children: "\u5BFC\u51FA PDF"
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: "jh-btn jh-btn-inline",
+		            disabled: busy !== null || dirty,
+		            title: dirty ? "\u5BFC\u51FA\u6E32\u67D3\u7684\u662F**\u5DF2\u4FDD\u5B58**\u7684\u5185\u5BB9 \u2014\u2014 \u5148\u70B9\u300C\u4FDD\u5B58\u300D" : "\u6309\u5F53\u524D\u6A21\u677F\u5BFC\u51FA Word",
+		            onClick: () => void run("\u5BFC\u51FA Word", async () => await exportResume(props.id, { format: "docx", template }), () => "Word \u5DF2\u751F\u6210"),
+		            children: "\u5BFC\u51FA Word"
 		          }
 		        ),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
@@ -2883,7 +2912,10 @@ window.__ModuleLoader__.load({
 		              )
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-note", children: "\u624B\u673A\u4E0E\u90AE\u7BB1\u5728**\u53D1\u7ED9\u6A21\u578B\u4E4B\u524D\u4F1A\u88AB\u6458\u6389**\uFF0C\u53EA\u5728\u5BFC\u51FA\u4E0E\u9884\u89C8\u91CC\u51FA\u73B0\u3002" })
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { className: "jh-info", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "\u624B\u673A\u4E0E\u90AE\u7BB1\u5728**\u53D1\u7ED9\u6A21\u578B\u4E4B\u524D\u4F1A\u88AB\u6458\u6389**\uFF0C\u53EA\u5728\u5BFC\u51FA\u4E0E\u9884\u89C8\u91CC\u51FA\u73B0\u3002" })
+		          ] })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("section", { className: "jh-form-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-form-head", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h3", { children: "\u4E2A\u4EBA\u7B80\u4ECB" }) }),
@@ -2916,7 +2948,10 @@ window.__ModuleLoader__.load({
 		              })
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-note", children: "\u53EA\u5199\u4F60\u771F\u7684\u80FD\u8BB2\u6E05\u695A\u7684 \u2014\u2014 \u9762\u8BD5\u5B98\u4F1A\u6311\u7740\u95EE\u3002" })
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { className: "jh-info", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "\u53EA\u5199\u4F60\u771F\u7684\u80FD\u8BB2\u6E05\u695A\u7684 \u2014\u2014 \u9762\u8BD5\u5B98\u4F1A\u6311\u7740\u95EE\u3002" })
+		          ] })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("section", { className: "jh-form-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-form-head", children: [
@@ -2938,7 +2973,7 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          content.experiences.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u7ECF\u5386\u3002\u70B9\u53F3\u4E0A\u89D2\u300C\u6DFB\u52A0\u4E00\u6BB5\u300D\u3002" }) : null,
+		          content.experiences.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u7ECF\u5386 \u2014\u2014 \u70B9\u4E0B\u9762\u7684\u865A\u7EBF\u6846\u52A0\u7B2C\u4E00\u6BB5\u3002" }) : null,
 		          content.experiences.map((experience, index) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
 		            BlockCard,
 		            {
@@ -3058,7 +3093,19 @@ window.__ModuleLoader__.load({
 		              ]
 		            },
 		            `exp-${String(index)}`
-		          ))
+		          )),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-drop",
+		              onClick: () => patchContent({
+		                ...content,
+		                experiences: [...content.experiences, { company: "", title: "", highlights: [""] }]
+		              }),
+		              children: "\uFF0B \u6DFB\u52A0\u5DE5\u4F5C\u7ECF\u5386"
+		            }
+		          )
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("section", { className: "jh-form-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-form-head", children: [
@@ -3147,7 +3194,16 @@ window.__ModuleLoader__.load({
 		              ]
 		            },
 		            `prj-${String(index)}`
-		          ))
+		          )),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-drop",
+		              onClick: () => patchContent({ ...content, projects: [...content.projects, { name: "", highlights: [""] }] }),
+		              children: "\uFF0B \u6DFB\u52A0\u9879\u76EE\u7ECF\u5386"
+		            }
+		          )
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("section", { className: "jh-form-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-form-head", children: [
@@ -3252,7 +3308,16 @@ window.__ModuleLoader__.load({
 		              ]
 		            },
 		            `edu-${String(index)}`
-		          ))
+		          )),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-drop",
+		              onClick: () => patchContent({ ...content, education: [...content.education, { school: "" }] }),
+		              children: "\uFF0B \u6DFB\u52A0\u6559\u80B2\u7ECF\u5386"
+		            }
+		          )
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("section", { className: "jh-form-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-form-head", children: [
@@ -3310,12 +3375,24 @@ window.__ModuleLoader__.load({
 		              ] })
 		            },
 		            `ext-${String(index)}`
-		          ))
+		          )),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-drop",
+		              onClick: () => patchContent({ ...content, extras: [...content.extras, { label: "", text: "" }] }),
+		              children: "\uFF0B \u6DFB\u52A0\u4E00\u6761"
+		            }
+		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { className: "jh-note", children: [
-		          "\u9644\u4EF6\u53EA\u7531\u4F60\u663E\u5F0F\u5220\u9664 \u2014\u2014 \u7B80\u5386\u662F\u8D44\u4EA7\uFF0C\u4EFB\u4F55\u81EA\u52A8\u6E05\u7406\u90FD\u4E0D\u4F1A\u78B0\u5B83\uFF08",
-		          PLUGIN_ID,
-		          "\uFF09\u3002"
+		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { className: "jh-info", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { children: [
+		            "\u9644\u4EF6\u53EA\u7531\u4F60\u663E\u5F0F\u5220\u9664 \u2014\u2014 \u7B80\u5386\u662F\u8D44\u4EA7\uFF0C\u4EFB\u4F55\u81EA\u52A8\u6E05\u7406\u90FD\u4E0D\u4F1A\u78B0\u5B83\uFF08",
+		            PLUGIN_ID,
+		            "\uFF09\u3002"
+		          ] })
 		        ] })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-work-preview", children: [
@@ -3330,27 +3407,7 @@ window.__ModuleLoader__.load({
 		              children: RESUME_TEMPLATES.map((item) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: item, children: RESUME_TEMPLATE_LABEL[item] }, item))
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-spacer" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline jh-btn-primary",
-		              disabled: busy !== null,
-		              onClick: () => void run("\u5BFC\u51FA PDF", async () => await exportResume(props.id, { format: "pdf", template }), () => "PDF \u5DF2\u751F\u6210"),
-		              children: "\u5BFC\u51FA PDF"
-		            }
-		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline",
-		              disabled: busy !== null,
-		              onClick: () => void run("\u5BFC\u51FA Word", async () => await exportResume(props.id, { format: "docx", template }), () => "Word \u5DF2\u751F\u6210"),
-		              children: "\u5BFC\u51FA Word"
-		            }
-		          )
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-muted", children: "\u9884\u89C8\u4E0E\u5BFC\u51FA\u8D70**\u540C\u4E00\u4E2A\u6E32\u67D3\u5668**\uFF0C\u6A21\u677F\u5373\u6240\u89C1" })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-paper-stage", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("iframe", { className: "jh-paper", title: "\u7B80\u5386\u9884\u89C8", src: previewUrl(props.id, template), sandbox: "" }) }),
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
@@ -4318,11 +4375,18 @@ window.__ModuleLoader__.load({
 		.jh-resume-chips{display:flex;flex-wrap:wrap;gap:4px}
 		.jh-chip{font-style:normal;font-size:11px;line-height:18px;padding:0 7px;border-radius:5px;
 		  background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-secondary)}
-		.jh-chip-warn{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-label-primary);
-		  cursor:help}
+		/* \u4F53\u68C0\u5F02\u5E38\uFF1A\u9AD8\u9971\u548C\u6A59\u5E95 \u2014\u2014 \u5B83\u662F**\u544A\u8B66**\uFF0C\u4E0D\u662F\u72B6\u6001\uFF0C\u6240\u4EE5\u8BE5\u523A\u773C\u3002
+		   \uFF08\u72B6\u6001\u7C7B\u7684"\u542F\u7528\u4E2D"\u8D70\u7684\u662F\u6D45\u7EFF\u5E95\uFF0C\u4E24\u8005\u523B\u610F\u4E0D\u540C\u8BED\u6CD5\u3002\uFF09 */
+		.jh-chip-warn{background:var(--dsw-alias-state-warn-primary);
+		  color:var(--dsw-alias-label-primary-foreground);font-weight:600;cursor:help}
+		/* "\u6709\u672A\u4FDD\u5B58\u7684\u6539\u52A8"\u662F\u63D0\u9192\u4E0D\u662F\u544A\u8B66\uFF0C\u7528\u6D45\u5E95\uFF0C\u522B\u548C\u4F53\u68C0\u62A2 */
+		.jh-chip-dirty{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-label-primary)}
 		.jh-chip-quiet{background:transparent;border:1px dashed var(--dsw-alias-border-l3)}
 
-		/* \u53F3\u5DE5\u4F5C\u533A */
+		/* \u53F3\u5DE5\u4F5C\u533A\u3002
+		   \u5438\u9876\u4E0D\u53D8\u91CF\uFF082026-09-17 \u5B9E\u6D4B\uFF09\uFF1A**\u6EDA\u52A8\u5BB9\u5668\u662F .jh-work-editor\uFF0C\u6807\u9898\u680F\u5728\u5B83\u5916\u9762**\uFF0C
+		   \u6240\u4EE5\u628A\u7F16\u8F91\u5668\u6EDA\u5230\u5E95\uFF08scrollTop 928\uFF09\u540E\u6807\u9898\u680F top \u4ECD\u662F 110\u3001\u4F4D\u79FB 0\u3002
+		   \u522B\u518D\u7ED9\u6807\u9898\u680F\u52A0 overflow/height\uFF0C\u5426\u5219"\u4FDD\u5B58"\u5C31\u4F1A\u8DDF\u7740\u6EDA\u8D70\u3002 */
 		.jh-resume-work{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;
 		  container-type:inline-size}
 		.jh-work-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
@@ -4391,6 +4455,26 @@ window.__ModuleLoader__.load({
 		.jh-input::placeholder,.jh-textarea::placeholder{color:var(--dsw-alias-label-caption)}
 		.jh-input-narrow{max-width:90px}
 		.jh-textarea{resize:vertical;line-height:1.7}
+		/* \u5185\u8054\u53EF\u7F16\u8F91\u7684\u6807\u9898\uFF1A\u5E73\u65F6\u957F\u5F97\u50CF\u6807\u9898\uFF0C\u60AC\u505C/\u805A\u7126\u624D\u9732\u51FA"\u8FD9\u91CC\u80FD\u6539" */
+		.jh-editable{width:auto;min-width:180px;max-width:320px;font-size:14.5px;font-weight:600;
+		  padding:4px 8px;border-color:transparent;background:transparent}
+		.jh-editable:hover{border-color:var(--dsw-alias-border-l3);background:var(--dsw-alias-markdown-tag)}
+		.jh-editable:focus{background:var(--dsw-alias-bg-base);border-color:var(--dsw-alias-link)}
+		/* \u4E3B\u6309\u94AE\u4E8C\u53F7\uFF1A\u5BFC\u51FA\u7528\u7684"\u4FE1\u606F\u84DD"\uFF0C\u4E0E\u4FDD\u5B58\uFF08\u8FD1\u9ED1\uFF09\u533A\u5206\u5F00\uFF0C\u4F46\u540C\u6837\u662F\u5B9E\u5FC3 */
+		.jh-btn-info{border-color:transparent;font-weight:600;
+		  background:var(--dsw-alias-button-info-fill);color:var(--dsw-alias-label-primary-foreground)}
+		.jh-btn-info:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}
+		/* \u52A0\u6A21\u5757\uFF1A\u6574\u884C\u865A\u7EBF\u6846\uFF0C\u7A7A\u7684\u65F6\u5019\u770B\u5F97\u89C1\u3001\u5FD9\u7684\u65F6\u5019\u597D\u70B9 */
+		.jh-drop{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+		  padding:10px;border:1.5px dashed var(--dsw-alias-border-l4);border-radius:9px;
+		  background:transparent;cursor:pointer;font:inherit;font-size:13px;
+		  color:var(--dsw-alias-label-secondary)}
+		.jh-drop:hover{border-color:var(--dsw-alias-link);color:var(--dsw-alias-label-primary);
+		  background:var(--dsw-alias-interactive-bg-hover)}
+		/* \u8F85\u52A9\u8BF4\u660E\uFF1A\u524D\u7F6E\u4E00\u4E2A \u24D8\uFF0C\u989C\u8272\u7528 secondary\uFF08#61666b \u2014\u2014 \u6BD4\u5EFA\u8BAE\u7684 #888 \u66F4\u6DF1\uFF09 */
+		.jh-info{display:flex;align-items:flex-start;gap:6px;margin:6px 0 0;font-size:12.5px;
+		  line-height:1.7;color:var(--dsw-alias-label-secondary)}
+		.jh-info-icon{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}
 		.jh-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
 		.jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
 		.jh-link{color:var(--dsw-alias-link);text-decoration:underline}

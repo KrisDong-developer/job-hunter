@@ -320,16 +320,24 @@ function ResumeWork(props: {
   return (
     <>
       <header className="jh-work-head">
+        {/* 标题直接可改：回车即保存 —— 文档类工具里"点标题改名"是肌肉记忆 */}
         <input
-          className="jh-input jh-work-name"
+          className="jh-input jh-editable"
           aria-label="版本名"
+          title="点击改名，回车保存"
           value={draft.name}
           onChange={(event) => {
             setDraft({ ...draft, name: event.target.value })
             setDirty(true)
           }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            if (dirty) save()
+          }}
         />
-        {dirty ? <span className="jh-chip jh-chip-warn">有未保存的改动</span> : null}
+        <span className="jh-info-icon" aria-hidden="true">✎</span>
+        {dirty ? <span className="jh-chip jh-chip-dirty">有未保存的改动</span> : null}
         <div className="jh-work-actions">
           {draft.isDefault ? (
             <span className="jh-badge">当前启用</span>
@@ -362,6 +370,24 @@ function ResumeWork(props: {
             }}
           >
             删除
+          </button>
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline jh-btn-info"
+            disabled={busy !== null || dirty}
+            title={dirty ? '导出渲染的是**已保存**的内容 —— 先点「保存」' : '按当前模板导出 A4 PDF'}
+            onClick={() => void run('导出 PDF', async () => await exportResume(props.id, { format: 'pdf', template }), () => 'PDF 已生成')}
+          >
+            导出 PDF
+          </button>
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline"
+            disabled={busy !== null || dirty}
+            title={dirty ? '导出渲染的是**已保存**的内容 —— 先点「保存」' : '按当前模板导出 Word'}
+            onClick={() => void run('导出 Word', async () => await exportResume(props.id, { format: 'docx', template }), () => 'Word 已生成')}
+          >
+            导出 Word
           </button>
           <button
             type="button"
@@ -465,8 +491,9 @@ function ResumeWork(props: {
                   onChange={(event) => patchBasics({ email: event.target.value === '' ? undefined : event.target.value })} />
               </label>
             </div>
-            <p className="jh-note">
-              手机与邮箱在**发给模型之前会被摘掉**，只在导出与预览里出现。
+            <p className="jh-info">
+              <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+              <span>手机与邮箱在**发给模型之前会被摘掉**，只在导出与预览里出现。</span>
             </p>
           </section>
 
@@ -496,7 +523,10 @@ function ResumeWork(props: {
                 })
               }
             />
-            <p className="jh-note">只写你真的能讲清楚的 —— 面试官会挑着问。</p>
+            <p className="jh-info">
+              <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+              <span>只写你真的能讲清楚的 —— 面试官会挑着问。</span>
+            </p>
           </section>
 
           {/* ── 工作经历 ─────────────────────────────────────────── */}
@@ -521,7 +551,7 @@ function ResumeWork(props: {
               </button>
             </div>
             {content.experiences.length === 0 ? (
-              <p className="jh-muted">还没有工作经历。点右上角「添加一段」。</p>
+              <p className="jh-muted">还没有工作经历 —— 点下面的虚线框加第一段。</p>
             ) : null}
             {content.experiences.map((experience, index) => (
               <BlockCard
@@ -609,6 +639,18 @@ function ResumeWork(props: {
                 </div>
               </BlockCard>
             ))}
+            <button
+              type="button"
+              className="jh-drop"
+              onClick={() =>
+                patchContent({
+                  ...content,
+                  experiences: [...content.experiences, { company: '', title: '', highlights: [''] }],
+                })
+              }
+            >
+              ＋ 添加工作经历
+            </button>
           </section>
 
           {/* ── 项目经历 ─────────────────────────────────────────── */}
@@ -680,6 +722,15 @@ function ResumeWork(props: {
                 </div>
               </BlockCard>
             ))}
+            <button
+              type="button"
+              className="jh-drop"
+              onClick={() =>
+                patchContent({ ...content, projects: [...content.projects, { name: '', highlights: [''] }] })
+              }
+            >
+              ＋ 添加项目经历
+            </button>
           </section>
 
           {/* ── 教育经历 ─────────────────────────────────────────── */}
@@ -755,6 +806,13 @@ function ResumeWork(props: {
                 </div>
               </BlockCard>
             ))}
+            <button
+              type="button"
+              className="jh-drop"
+              onClick={() => patchContent({ ...content, education: [...content.education, { school: '' }] })}
+            >
+              ＋ 添加教育经历
+            </button>
           </section>
 
           {/* ── 其他 ─────────────────────────────────────────────── */}
@@ -801,10 +859,18 @@ function ResumeWork(props: {
                 </div>
               </BlockCard>
             ))}
+            <button
+              type="button"
+              className="jh-drop"
+              onClick={() => patchContent({ ...content, extras: [...content.extras, { label: '', text: '' }] })}
+            >
+              ＋ 添加一条
+            </button>
           </section>
 
-          <p className="jh-note">
-            附件只由你显式删除 —— 简历是资产，任何自动清理都不会碰它（{PLUGIN_ID}）。
+          <p className="jh-info">
+            <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+            <span>附件只由你显式删除 —— 简历是资产，任何自动清理都不会碰它（{PLUGIN_ID}）。</span>
           </p>
         </div>
 
@@ -820,23 +886,7 @@ function ResumeWork(props: {
                 <option key={item} value={item}>{RESUME_TEMPLATE_LABEL[item]}</option>
               ))}
             </select>
-            <span className="jh-spacer" />
-            <button
-              type="button"
-              className="jh-btn jh-btn-inline jh-btn-primary"
-              disabled={busy !== null}
-              onClick={() => void run('导出 PDF', async () => await exportResume(props.id, { format: 'pdf', template }), () => 'PDF 已生成')}
-            >
-              导出 PDF
-            </button>
-            <button
-              type="button"
-              className="jh-btn jh-btn-inline"
-              disabled={busy !== null}
-              onClick={() => void run('导出 Word', async () => await exportResume(props.id, { format: 'docx', template }), () => 'Word 已生成')}
-            >
-              导出 Word
-            </button>
+            <span className="jh-muted">预览与导出走**同一个渲染器**，模板即所见</span>
           </div>
 
           {/* 预览与真正导出走**同一个渲染器**：预览好看、导出走样是最难查的一类 bug */}

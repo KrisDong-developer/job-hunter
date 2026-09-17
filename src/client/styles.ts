@@ -403,11 +403,18 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-resume-chips{display:flex;flex-wrap:wrap;gap:4px}
 .jh-chip{font-style:normal;font-size:11px;line-height:18px;padding:0 7px;border-radius:5px;
   background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-secondary)}
-.jh-chip-warn{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-label-primary);
-  cursor:help}
+/* 体检异常：高饱和橙底 —— 它是**告警**，不是状态，所以该刺眼。
+   （状态类的"启用中"走的是浅绿底，两者刻意不同语法。） */
+.jh-chip-warn{background:var(--dsw-alias-state-warn-primary);
+  color:var(--dsw-alias-label-primary-foreground);font-weight:600;cursor:help}
+/* "有未保存的改动"是提醒不是告警，用浅底，别和体检抢 */
+.jh-chip-dirty{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-label-primary)}
 .jh-chip-quiet{background:transparent;border:1px dashed var(--dsw-alias-border-l3)}
 
-/* 右工作区 */
+/* 右工作区。
+   吸顶不变量（2026-09-17 实测）：**滚动容器是 .jh-work-editor，标题栏在它外面**，
+   所以把编辑器滚到底（scrollTop 928）后标题栏 top 仍是 110、位移 0。
+   别再给标题栏加 overflow/height，否则"保存"就会跟着滚走。 */
 .jh-resume-work{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;
   container-type:inline-size}
 .jh-work-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
@@ -476,6 +483,26 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-input::placeholder,.jh-textarea::placeholder{color:var(--dsw-alias-label-caption)}
 .jh-input-narrow{max-width:90px}
 .jh-textarea{resize:vertical;line-height:1.7}
+/* 内联可编辑的标题：平时长得像标题，悬停/聚焦才露出"这里能改" */
+.jh-editable{width:auto;min-width:180px;max-width:320px;font-size:14.5px;font-weight:600;
+  padding:4px 8px;border-color:transparent;background:transparent}
+.jh-editable:hover{border-color:var(--dsw-alias-border-l3);background:var(--dsw-alias-markdown-tag)}
+.jh-editable:focus{background:var(--dsw-alias-bg-base);border-color:var(--dsw-alias-link)}
+/* 主按钮二号：导出用的"信息蓝"，与保存（近黑）区分开，但同样是实心 */
+.jh-btn-info{border-color:transparent;font-weight:600;
+  background:var(--dsw-alias-button-info-fill);color:var(--dsw-alias-label-primary-foreground)}
+.jh-btn-info:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}
+/* 加模块：整行虚线框，空的时候看得见、忙的时候好点 */
+.jh-drop{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+  padding:10px;border:1.5px dashed var(--dsw-alias-border-l4);border-radius:9px;
+  background:transparent;cursor:pointer;font:inherit;font-size:13px;
+  color:var(--dsw-alias-label-secondary)}
+.jh-drop:hover{border-color:var(--dsw-alias-link);color:var(--dsw-alias-label-primary);
+  background:var(--dsw-alias-interactive-bg-hover)}
+/* 辅助说明：前置一个 ⓘ，颜色用 secondary（#61666b —— 比建议的 #888 更深） */
+.jh-info{display:flex;align-items:flex-start;gap:6px;margin:6px 0 0;font-size:12.5px;
+  line-height:1.7;color:var(--dsw-alias-label-secondary)}
+.jh-info-icon{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}
 .jh-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
 .jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
 .jh-link{color:var(--dsw-alias-link);text-decoration:underline}
