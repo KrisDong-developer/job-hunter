@@ -110,7 +110,7 @@ npm install          # 安装构建与测试依赖
 npm run typecheck    # 只做类型检查
 npm run build        # → lib/**（宿主 ESM）+ client/client.js（__ModuleLoader__ 工厂）
 npm run verify       # 构建产物契约自检（不启动 DSH）
-npm test             # 408 个测试（node --test，离线，绝不访问真实招聘网站）
+npm test             # 460 个测试（node --test，离线，绝不访问真实招聘网站）
 npm run crawl:fixture # 用保存的 51job 页面跑一次完整采集入库
 ```
 
@@ -141,6 +141,11 @@ src/
 ├── host/              # ── 宿主半（Node）
 │   ├── index.ts       # cordis 插件入口：name / inject / apply（立即返回）
 │   ├── runtime.ts     # 宿主侧装配：store + 注册表 + 互斥 + 浏览器 + 领域/安全/模型服务
+│   │                  # 含 platformGate（SR-16 每平台前置：离线/健康/登录/冷却/配额）
+│   ├── scheduler/     # 自排程（§4.6 / D-19）
+│   │   ├── schedule.ts   # **纯函数**：偏好时段 → 窗口内触发点（稳定哈希，可离线断言）
+│   │   ├── index.ts      # 触发/跳过/退避/风控暂停/一键暂停/新鲜度
+│   │   └── timer-port.ts # 可取消定时器（Cordis timer / 原生 / 测试手动）
 │   ├── settings.ts    # 插件配置门面（改 guard 配置必须持令牌）
 │   ├── http.ts        # 唯一前缀路由的**传输层**（Node req/res + SSE 挂流）
 │   ├── http/
@@ -157,6 +162,8 @@ src/
 │   │                  # audit / llm-calls
 │   ├── domain/        # 领域服务（唯一实现）
 │   │   ├── jobs.ts / companies.ts / plans.ts / today.ts
+│   │   ├── plan-config.ts # **采集方案校验的唯一实现**（SR-45：GUI/工具/HTTP 共用）
+│   │   ├── dedupe.ts  # 跨平台去重落到分组（SR-44 的 dedup 开关；保守到宁可不合并）
 │   │   ├── crawl.ts   # 一次抓取的完整编排（§6.1）
 │   │   ├── intel.ts   # 标注 + 公司画像 + L1 可解释匹配（P4；偏好来源含简历）
 │   │   ├── outreach.ts# 打招呼话术（**只生成，不发送**）
@@ -369,7 +376,7 @@ L1 粗筛分做成环形仪表 + ✓/✗ 逐条理由；长解释收进 `?`；�
 
 验收脚本**不在本仓库**（它与开发机上的 DSH profile、Playwright 安装位置、`?token=` 入口绑定，
 没有做成可复现的分发形态），使用时形如 `node jh-e2e.mjs "http://127.0.0.1:4399/?token=…"`。
-仓库内可复现的是那 408 个离线单测（`npm test`）。
+仓库内可复现的是那 460 个离线单测（`npm test`）。
 
 ---
 
@@ -895,6 +902,64 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 
 ---
 
+## P9 定时模型与采集配置面（D-19 / SR-1…SR-45）
+
+> 需求依据：`REQUIREMENTS.md` **D-19**；实现级需求：`ARCHITECTURE.md` **§4.6.1**。
+> 逐条落地状态见 §4.6.1 后面那张表。
+
+这一轮不是"加功能"，而是把定时与采集从**固定单点 + 写在客户端的条件**改成
+**偏好时段 + 方案驱动**。四条最容易搞错的地方单独写下来：
+
+### 1. 窗口内随机点为什么是哈希，不是 `Math.random()`
+
+`next_run_at` 要落库（NFR-4），而且会被**反复重算**：启动一次、每次 tick、每次 `status()` 查询。
+用随机数的话同一个窗口每次算出不同的时刻，后果是两个：
+
+* 界面上的"下次运行"会在刷新之间自己跳动，用户没法判断到底什么时候跑；
+* **定时器会自旋** —— 武装到 A 点，tick 时重算却得到 B 点，永远追不上。
+
+所以偏移由 `hash(FNV-1a('YYYY-MM-DD#planId'))` 派生：**同一窗口恒定、不同窗口不同、不同方案不同**。
+它同时满足 SR-1 的两条验收（连续 5 天互不相同 + 都在窗口内）与"落库之后不再变"。
+
+### 2. `last_attempt_at` 与 `last_success_at` 必须分开
+
+原来只有一个 `last_run_at`，失败也推进它 —— 于是**新鲜度永远看起来是新鲜的**，
+而那是最坏的一种谎：用户以为数据是今天的，其实是三天前那次失败之前的。
+现在只有 `state === 'ok'` 才推进 `last_success_at`；失败推进 attempt 与退避。
+
+### 3. 跳过**不写** `crawl_run`
+
+`crawl_run` 记录的是"真的去抓了一轮"，而跳过连浏览器都没开。
+硬写一条会让运行历史混进一堆 `found=0` 的假运行，**反而掩盖真正失败的那几条** ——
+而那正是这张表要回答的问题。跳过的去向是 `planStatus.lastDecision`（界面显示"为什么没跑"）
+与 SSE 的 `plan.skipped` 事件。
+
+### 4. 三条入口共用同一份校验
+
+`domain/plan-config.ts` 是**唯一实现**，GUI / 模型工具 / HTTP 都调它。
+否则"界面拦住了、对话里绕过去了"是必然的，而用户只会相信**严的那一套**，
+于是界面上过一个条件、工具上报一个错，两边都不可信。
+
+### 新增/改动的接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/crawl` | **A2**："抓取一次"改走默认方案（不再写死 `{51job, 深圳, Java}`），返回里带 `planId`/`planName` |
+| POST | `/plans/:id/validate` | SR-45：只校验、不写库（界面保存前先问一次，与写入路径同一份校验） |
+| POST | `/plans/:id/resume` | SR-21：**人工确认**恢复风控暂停（系统不会自动恢复） |
+| POST | `/schedule/pause` | SR-30：全局一键暂停（**只停定时**，手动永远可用） |
+| GET | `/schedule/reasons` | SR-17/26：跳过原因 → 人话（宿主是唯一来源，界面不自己写一套） |
+| GET | `/criteria/dimensions` | SR-41：当前平台声明了哪些筛选维度（界面据此渲染） |
+| GET | `/analytics/salary/box` | F1：箱线图（`basis` **必填**：`monthly_min` / `annualized`） |
+| GET | `/analytics/salary/baseline` | F2：与**自己岗位库**的基准对比（不联网、不编行业数据） |
+| GET | `/analytics/resume/compare` | F3：简历版本 A/B 对比（每格带样本量，不做显著性） |
+
+`job_plan_manage` 工具同步扩到与新配置面对等（`platforms` / `sort` / `postedWithinDays` /
+`maxPages` / `weekdays` / `windowStartHour` / `windowEndHour` / `score|flag|dedup`，
+外加 `dimensions` / `pause` / `resume` 三个动作）；`job_report` 扩出 `box` / `baseline` / `resume`。
+
+---
+
 ## 包契约（改代码前先读）
 
 | 契约 | 内容 | 依据 |
@@ -1004,6 +1069,14 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 | 「纯 insert 即可热挂载，无需重启」（C2） | **未实测**：命令行安装后要重启才生效 | `P0-VERIFICATION.md` §2.2 自己标明"端到端演示不重启即生效本轮未做"；`dshmarket` 的热挂载（`hot.js`）只服务市场界面的安装流程，与 `dsh plugin add` 不是同一条路径。实践建议：装完就重启 |
 | 侧栏入口的排版由 shell 的槽位决定 | 图标盒子固定 `24×22`、宽侧栏补 `2px` 左边距，向**手插 DOM** 的社区插件对齐 | shell 的 `.panelGlyph` **没有宽度**，标签起点跟着我们的 glyph 走：不补是 `8+16+8=32px`，邻居是 `10+24+8=42px`（差 10px，肉眼就是"不左对齐"）。高度退回 22px 是为了让行高与邻居的 `height:36px` 一致（24px 会把行撑到 38px，实测过）。数字与推导写在 `src/client/entry-icon.tsx` 顶部与 `styles.ts` 的 `.jh-entry-glyph` 注释里 |
 | Word（docx）与 HTML/PDF 的模板分叉不同步 | docx 侧**不做**经历块的左侧框线；"段落标题的短线"在 Word 里用**文字下划线**表达 | 两条都是 OOXML 的能力边界：段落左边框在带缩进的段落上会落在缩进处，一行一个位置 → 得到一条参差不齐的竖线；段落下边框又只能横贯版心（正是要摆脱的"表格观感"）。所以专业模板在 Word 里靠**主色**（姓名/标题/页眉线）区分，concise 靠灰阶 |
+| 时区"跟着人走"（SR-5） | 排程按**本地墙钟**（`getHours()` 这一族），`plan.timezone` 只作为写入时的**快照**回传给界面显示 | 纯 JS 里没有"按任意 IANA 时区算墙上时间"的原生能力（要引入 `Intl` 的重型用法或一个时区库，而 C5 禁止新增运行时依赖）。而插件跑在用户自己的机器上，**本地就是用户的时区** —— 改系统时区后 `next_run_at` 下次重算即按新时区走，这正是 SR-5 要的效果 |
+| U9"筛选维度**发现**与人工覆盖"（§4.2.2 的 `discovery.ts`） | 只落地**声明式**那一半：适配器 `criteriaDimensions` 声明 + 界面据此渲染 + 未声明键报错。DOM 遍历自动发现**未实现** | 51job 的"字段→URL 参数"映射本来就是**无法自动推导**的（§4.2.2 自己写了这句），人工建一次才是设计意图；自动发现只对"选项集合会变"（如城市列表）有额外价值，而那属于下一轮 |
+| §4.6.1 说"`skipped` 落 `crawl_run`" | 跳过**不写** `crawl_run`，只进 `planStatus.lastDecision` + SSE `plan.skipped` | `crawl_run` 记录的是"真的去抓了一轮"，而跳过连浏览器都没开。硬写一条会让运行历史混进一堆 `found=0` 的假运行，**反而掩盖真正失败的那几条** —— 而那正是这张表要回答的问题 |
+| 定时"窗口内随机"用随机数 | 用**稳定哈希** `FNV-1a(YYYY-MM-DD#planId)` 派生窗口内偏移 | `next_run_at` 要落库（NFR-4）且会被反复重算（启动/每次 tick/`status()`）。用 `Math.random()` 的话同一个窗口每次算出不同的点：① 界面上的"下次运行"会自己跳动；② **定时器会自旋**（武装到 A 点，tick 重算得到 B 点，永远追不上）。稳定哈希同时满足"同窗口恒定"与"连续 5 天互不相同" |
+| `PlanSchedule.hour/minute`（单点时刻） | 换成 `windowStart/End*` 四个字段 | SR-32 明确不提供"精确到分钟的单点时刻"。HTTP 收到 `hour`/`minute` 会**显式报错**并指向窗口字段（静默忽略会让调用方以为自己配成功了） |
+| 全局暂停是一个布尔开关 | 存 `{ paused, reason }` 对象 | 要记住"谁暂停的、为什么"。**踩过**：读取时拿它跟 `true` 直接比，于是暂停看起来生效了（`armed` 变 false）而每次判定都当没暂停、定时照跑 —— 被 `dispatch.test.ts` 的行为测试抓住 |
+| §4.10.1 提到 `domain/dedupe.ts` | 之前**不存在**（只有 `util/dedupe.ts` 的判定函数）；2026-09-17 补上 | 判定纯函数与"怎么落到分组、可不可逆"是两件事；补上之后 SR-44 的 `dedup` 开关才有真实作用点 |
+| 每平台冷却只提"退避" | **计划级**退避 + **平台级**冷却两份 | 风控是按平台算的：51job 被限流不该让另一个平台的方案跟着停，反过来 51job 被限流后**任何**方案去碰它都该被拦住。平台级状态存 `setting`（`scope=platform`）而不是加列 —— 它是几小时就过期的短命状态，不值得一次 schema 迁移 |
 
 ---
 

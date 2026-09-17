@@ -369,3 +369,168 @@ function emptyResume() {
     extras: [],
   }
 }
+
+// ── 批次 F：箱线图 / 本地基准 / 简历 A/B ──────────────────────────────
+
+test('F1：箱线图的两个口径算出**不同**的中位数，且都标明口径与单位', () => {
+  withStore((store) => {
+    // 三条：下限不同，月数不同
+    seedJob(store, { platformJobId: 'f1-a', salaryMin: 10000, salaryMax: 20000, salaryMonths: 12 })
+    seedJob(store, { platformJobId: 'f1-b', salaryMin: 20000, salaryMax: 30000, salaryMonths: 15 })
+    seedJob(store, { platformJobId: 'f1-c', salaryMin: 30000, salaryMax: 40000, salaryMonths: null })
+
+    const analytics = createAnalyticsService({ store })
+
+    const monthly = analytics.salaryBox({ basis: 'monthly_min' })
+    assert.equal(monthly.box.basis, 'monthly_min')
+    assert.equal(monthly.box.basisLabel.includes('元/月'), true, '单位必须写出来')
+    assert.equal(monthly.box.count, 3)
+    assert.equal(monthly.box.median, 20000)
+    assert.equal(monthly.box.min, 10000)
+    assert.equal(monthly.box.max, 30000)
+
+    const annual = analytics.salaryBox({ basis: 'annualized' })
+    assert.equal(annual.box.basis, 'annualized')
+    assert.equal(annual.box.basisLabel.includes('元/年'), true)
+    // 年薪 = 区间中点 × 月数：15000×12=180000 / 25000×15=375000 / 35000×12=420000
+    assert.equal(annual.box.min, 180000)
+    assert.equal(annual.box.median, 375000)
+    assert.equal(annual.box.max, 420000)
+    assert.notEqual(monthly.box.median, annual.box.median, '两个口径当然不一样 —— 所以口径必须显式')
+
+    // 另一个口径作为 alternate 一起给，界面切换时不必再请求
+    assert.equal(monthly.alternate?.basis, 'annualized')
+  })
+})
+
+test('F1：箱体（P25–P75）里装了多少条要有据可查', () => {
+  withStore((store) => {
+    for (const [index, salaryMin] of [10000, 20000, 30000, 40000].entries()) {
+      seedJob(store, { platformJobId: `f1-box-${String(index)}`, salaryMin, salaryMax: salaryMin + 5000 })
+    }
+    const box = createAnalyticsService({ store }).salaryBox({ basis: 'monthly_min' }).box
+    assert.equal(box.p25, 17500)
+    assert.equal(box.p75, 32500)
+    // [17500, 32500] 里落着 20000 与 30000 两条
+    assert.equal(box.withinBox, 2)
+    assert.ok(box.withinBox <= box.count)
+  })
+})
+
+test('F1：全部样本同值时不会除零（给一个满宽箱体，而不是 NaN）', () => {
+  withStore((store) => {
+    seedJob(store, { platformJobId: 'f1-same-1', salaryMin: 20000, salaryMax: 20000 })
+    seedJob(store, { platformJobId: 'f1-same-2', salaryMin: 20000, salaryMax: 20000 })
+    const box = createAnalyticsService({ store }).salaryBox({ basis: 'monthly_min' }).box
+    assert.equal(box.min, 20000)
+    assert.equal(box.max, 20000)
+    assert.equal(box.median, 20000)
+    assert.equal(box.min === box.max, true)
+  })
+})
+
+test('F2：本地基准只用**自己的岗位库**，并如实说明投递样本不足', () => {
+  withStore((store) => {
+    for (const [index, salaryMin] of [10000, 15000, 20000, 25000, 30000].entries()) {
+      seedJob(store, { platformJobId: `f2-${String(index)}`, salaryMin, salaryMax: salaryMin + 5000 })
+    }
+    const analytics = createAnalyticsService({ store })
+
+    // 一条投递都没有 → applied 空、medianGap 为 null、且 note 说清"基准是本地库"
+    const none = analytics.salaryBaseline()
+    assert.equal(none.all.count, 5)
+    assert.equal(none.applied.count, 0)
+    assert.equal(none.medianGap, null)
+    assert.equal(none.enoughSample, false)
+    assert.ok(none.note.includes('你自己抓到的岗位库'), '必须写明基准来源，否则用户会当成行业数据')
+    assert.ok(none.note.includes('不是行业数据'), '更要说清它**不是**什么')
+    assert.ok(none.note.includes('没有数据源'), '并说明为什么不可能有')
+  })
+})
+
+test('F2：投递过的岗位按**岗位**去重计入基准 —— 投两次不该把它算两遍', async () => {
+  await withStore(async (store) => {
+    const ids = [10000, 20000, 30000, 40000, 50000].map((salaryMin, index) =>
+      seedJob(store, { platformJobId: `f2b-${String(index)}`, salaryMin, salaryMax: salaryMin + 5000 }),
+    )
+    // 同一个岗位投两次
+    store.pipeline.createApplication({ jobId: ids[4] as number, channel: 'platform', actor: 'gui' }, T)
+    store.pipeline.createApplication({ jobId: ids[4] as number, channel: 'referral', actor: 'gui' }, T)
+
+    const baseline = createAnalyticsService({ store }).salaryBaseline()
+    assert.equal(baseline.applied.count, 1, '按岗位去重：同一个岗位的两次投递只算一次')
+    assert.equal(baseline.applied.median, 50000)
+    assert.equal(baseline.medianGap, 50000 - 30000)
+    assert.equal(baseline.enoughSample, false, `1 条 < ${String(MIN_SAMPLE)}`)
+  })
+})
+
+test('F3：简历对比每格给**分子/分母**，薄样本格子被显式标出', () => {
+  withStore((store) => {
+    const resumeId = store.resume.create(
+      {
+        name: '前端版 · 2026',
+        content: emptyResume() as never,
+        isDefault: true,
+      },
+      T,
+    ).id
+    const jobIds = [1, 2, 3].map((index) =>
+      seedJob(store, { platformJobId: `f3-${String(index)}` }),
+    )
+
+    // 三条投递，用同一版简历，两条推进到面试中
+    for (const [index, jobId] of jobIds.entries()) {
+      const application = store.pipeline.createApplication(
+        { jobId, resumeId, channel: 'platform', actor: 'gui' },
+        T,
+      )
+      if (index < 2) store.pipeline.advanceApplication(application.id, 'interviewing', T)
+    }
+
+    const compare = createAnalyticsService({ store }).resumeCompare()
+    assert.equal(compare.sampleSize, 3)
+    assert.equal(compare.enoughSample, false, `3 < ${String(MIN_SAMPLE)}`)
+
+    const row = compare.rows.find((item) => item.resumeId === resumeId)
+    assert.ok(row !== undefined)
+    assert.equal(row.label, '前端版 · 2026')
+    assert.equal(row.total, 3)
+    assert.equal(row.enoughSample, false)
+
+    const interviewing = row.cells.find((cell) => cell.stage === 'interviewing')
+    assert.equal(interviewing?.count, 2)
+    assert.equal(interviewing?.thin, true, `2 < ${String(MIN_SAMPLE)}：这一格必须被标出来`)
+    const sent = row.cells.find((cell) => cell.stage === 'sent')
+    assert.equal(sent?.count, 1)
+    assert.equal(sent?.rate, 1 / 3, '比率照给，但样本量同时给')
+
+    // 阶段列是一整条时间线，不是枚举顺序
+    assert.deepEqual(
+      compare.stages.slice(0, 3).map((stage) => stage.stage),
+      ['sent', 'viewed', 'interviewing'],
+    )
+    assert.ok(compare.note.includes('不做显著性检验'), '小样本必须明说不要看显著性')
+  })
+})
+
+test('F3：没有投递时不假装有结论', () => {
+  withStore((store) => {
+    const compare = createAnalyticsService({ store }).resumeCompare()
+    assert.deepEqual(compare.rows, [])
+    assert.equal(compare.sampleSize, 0)
+    assert.equal(compare.enoughSample, false)
+    assert.ok(compare.note.includes('还没有投递记录'))
+  })
+})
+
+test('F3：没有记录简历版本的投递单独成行，不混进任何一版', () => {
+  withStore((store) => {
+    const jobId = seedJob(store, { platformJobId: 'f3-null' })
+    store.pipeline.createApplication({ jobId, channel: 'platform', actor: 'gui' }, T)
+    const compare = createAnalyticsService({ store }).resumeCompare()
+    assert.equal(compare.rows.length, 1)
+    assert.equal(compare.rows[0]?.resumeId, null)
+    assert.ok((compare.rows[0]?.label ?? '').includes('未记录'))
+  })
+})

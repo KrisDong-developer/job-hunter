@@ -12,7 +12,7 @@
  * "哪版简历/哪个渠道转化好"必须以**每一次投递**为单位：
  * 同一个岗位可能投了两次、用了不同简历；按岗位聚合会把它们糊在一起。
  */
-import type { AnalyticsFilter, AttributionDto, FunnelDto, SalaryBandDto } from '../../shared/dto.js';
+import type { AnalyticsFilter, AttributionDto, FunnelDto, ResumeCompareDto, SalaryBandDto, SalaryBaselineDto, SalaryBasis, SalaryBoxChartDto, SalaryBoxDto } from '../../shared/dto.js';
 import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../shared/enums.js';
 import type { ApplicationStage } from '../../shared/enums.js';
 import type { Store } from '../store/store.js';
@@ -33,12 +33,28 @@ export interface AnalyticsService {
         from?: string;
         to?: string;
     }): SalaryBandDto;
+    /** F1：薪资箱线图（P25–P75 高亮）+ 口径切换。 */
+    salaryBox(options?: {
+        city?: string;
+        keyword?: string;
+        basis?: SalaryBasis;
+    }): SalaryBoxChartDto;
+    /** F2：本地基准对比 —— 用**自己抓到的岗位库**当基准，不联网、不编行业数据。 */
+    salaryBaseline(filter?: AnalyticsFilter): SalaryBaselineDto;
+    /** F3：简历版本 A/B 对比（每格带样本量，不做显著性）。 */
+    resumeCompare(filter?: AnalyticsFilter): ResumeCompareDto;
 }
 export interface AnalyticsDeps {
     store: Store;
     clock?: Clock;
 }
 export declare function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService;
+/** F1：一个口径下的箱体（含"箱里装了多少条"）。 */
+export declare function salaryBoxOf(jobs: ReadonlyArray<{
+    salaryMin: number | null;
+    salaryMax: number | null;
+    salaryMonths: number | null;
+}>, basis: SalaryBasis): SalaryBoxDto;
 export { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL };
 export type { ApplicationStage };
 //# sourceMappingURL=analytics.d.ts.map

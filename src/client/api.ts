@@ -32,7 +32,11 @@ import type {
   InterviewDto,
   InterviewPrepDto,
   MessageDto,
+  ResumeCompareDto,
   SalaryBandDto,
+  SalaryBaselineDto,
+  SalaryBasis,
+  SalaryBoxChartDto,
   StageEventDto,
   TalkSessionDto,
   TimezoneDisplayDto,
@@ -663,7 +667,11 @@ export type {
   InterviewDto,
   InterviewPrepDto,
   MessageDto,
+  ResumeCompareDto,
   SalaryBandDto,
+  SalaryBaselineDto,
+  SalaryBasis,
+  SalaryBoxChartDto,
   StageEventDto,
 }
 
@@ -837,6 +845,44 @@ export async function fetchSalaryBand(
   signal?: AbortSignal,
 ): Promise<SalaryBandDto> {
   return await request<SalaryBandDto>(`/analytics/salary${analyticsQuery(filter)}`, signal === undefined ? {} : { signal })
+}
+
+// ── 批次 F：箱线图 / 本地基准 / 简历 A/B ─────────────────────────────
+
+/** F1：薪资箱线图。`basis` 必须显式给 —— 两个口径算出来的中位数不一样。 */
+export async function fetchSalaryBox(
+  filter: AnalyticsFilter = {},
+  basis: SalaryBasis = 'monthly_min',
+  signal?: AbortSignal,
+): Promise<SalaryBoxChartDto> {
+  const query = analyticsQuery(filter)
+  const separator = query === '' ? '?' : '&'
+  return await request<SalaryBoxChartDto>(
+    `/analytics/salary/box${query}${separator}basis=${basis}`,
+    signal === undefined ? {} : { signal },
+  )
+}
+
+/** F2：本地基准对比（基准 = 自己抓到的岗位库）。 */
+export async function fetchSalaryBaseline(
+  filter: AnalyticsFilter = {},
+  signal?: AbortSignal,
+): Promise<SalaryBaselineDto> {
+  return await request<SalaryBaselineDto>(
+    `/analytics/salary/baseline${analyticsQuery(filter)}`,
+    signal === undefined ? {} : { signal },
+  )
+}
+
+/** F3：简历版本 A/B 对比（每格带样本量）。 */
+export async function fetchResumeCompare(
+  filter: AnalyticsFilter = {},
+  signal?: AbortSignal,
+): Promise<ResumeCompareDto> {
+  return await request<ResumeCompareDto>(
+    `/analytics/resume/compare${analyticsQuery(filter)}`,
+    signal === undefined ? {} : { signal },
+  )
 }
 
 export async function fetchFollowUps(signal?: AbortSignal): Promise<{ items: FollowUpDto[] }> {

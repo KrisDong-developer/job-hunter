@@ -22,6 +22,7 @@ import type { PageSource, RawJob, SearchCriteria, SiteAdapter } from '../platfor
 import { partitionByRequiredFields, type FieldPresence } from '../platform/validate.js'
 import type { Store } from '../store/store.js'
 import type { CompanyService } from './companies.js'
+import { applyDedup, dedupCandidateOf } from './dedupe.js'
 import type { JobService } from './jobs.js'
 
 export interface CrawlDeps {
@@ -303,6 +304,42 @@ async function executeCrawl(
     }
   }
 
+  // ── SR-44：跨平台去重（可关）───────────────────────────────────────
+  //
+  // 只在**不同平台**之间做，且键必须完全一致 —— 见 `domain/dedupe.ts` 的保守规则。
+  // 目前只有 51job 一个适配器，所以这里实际上是空转；它存在的意义是
+  // **第二个适配器落地那天不需要再改抓取主链**。
+  let dedupGroups = 0
+  if (postProcess.dedup) {
+    for (const jobId of writtenJobIds) {
+      try {
+        const job = store.job.detail(jobId)
+        if (job === undefined) continue
+        const candidate = dedupCandidateOf(job)
+        if (candidate === undefined) continue
+        const outcome = applyDedup(
+          {
+            dedupGroup: store.dedupGroup,
+            candidatesFor: (self) =>
+              (job.companyId === null
+                ? []
+                : store.job
+                    .query({ companyId: job.companyId })
+                    .map(dedupCandidateOf)
+                    .filter((item): item is NonNullable<typeof item> => item !== undefined)
+              ).filter((item) => item.id !== self.id && item.platformId !== self.platformId),
+          },
+          candidate,
+          now(),
+        )
+        if (outcome.groupId !== null) dedupGroups += 1
+      } catch (error) {
+        // 去重失败不能让整轮抓取显示成失败：岗位已经在库里了
+        deps.logger?.warn(`[crawl] 去重判定失败（job ${String(jobId)}）：${messageOf(error)}`)
+      }
+    }
+  }
+
   const quarantined = partition.rejected.length
   const suspicious = collected.length === 0 && pages > 0
   const state: CrawlState = suspicious || quarantined > 0 || paused ? 'partial' : 'ok'
@@ -336,7 +373,9 @@ async function executeCrawl(
   const run = requireRun(store.crawlRun.get(runId), runId)
   deps.logger?.info(
     `[crawl] ${adapter.id} 第 ${String(runId)} 轮：${state} · 页面 ${String(pages)} · ` +
-      `命中 ${String(collected.length)} · 新增 ${String(inserted)} · 更新 ${String(updated)} · 隔离 ${String(quarantined)}`,
+      `命中 ${String(collected.length)} · 新增 ${String(inserted)} · 更新 ${String(updated)} · ` +
+      `隔离 ${String(quarantined)}` +
+      (dedupGroups > 0 ? ` · 跨平台合并 ${String(dedupGroups)} 组` : ''),
   )
 
   return {

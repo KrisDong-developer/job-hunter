@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { APPLICATION_CHANNEL_LABEL, APPLICATION_STAGE_LABEL } from '../../shared/enums.js'
 import type { ApplicationStage } from '../../shared/enums.js'
-import type { AnalyticsFilter, BoardCardDto, FollowUpDto } from '../../shared/dto.js'
+import {
+  SALARY_BASES,
+  SALARY_BASIS_LABEL,
+  type AnalyticsFilter,
+  type BoardCardDto,
+  type FollowUpDto,
+  type SalaryBasis,
+  type SalaryBoxDto,
+} from '../../shared/dto.js'
 import {
   advanceApplication,
   ApiError,
@@ -11,8 +19,11 @@ import {
   fetchBoard,
   fetchFollowUps,
   fetchFunnel,
+  fetchResumeCompare,
   fetchResumes,
   fetchSalaryBand,
+  fetchSalaryBaseline,
+  fetchSalaryBox,
 } from '../api.js'
 import { useAsync } from '../use-async.js'
 
@@ -252,9 +263,17 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
       })
   }, [props.revision])
 
+  // F1：口径是**用户选的**，不是服务猜的 —— 两个口径算出来的中位数可以差好几成
+  const [basis, setBasis] = useState<SalaryBasis>('monthly_min')
+
   const funnel = useAsync((signal) => fetchFunnel(filter, signal), [props.revision, filter])
   const attribution = useAsync((signal) => fetchAttribution(filter, signal), [props.revision, filter])
   const salary = useAsync((signal) => fetchSalaryBand(filter, signal), [props.revision, filter])
+  const salaryBox = useAsync((signal) => fetchSalaryBox(filter, basis, signal), [props.revision, filter, basis])
+  // F2：基准来自**自己抓到的岗位库**（不联网、不编行业数据）
+  const baseline = useAsync((signal) => fetchSalaryBaseline(filter, signal), [props.revision, filter])
+  // F3：简历 A/B 对比（每格带样本量，不做显著性）
+  const resumeCompare = useAsync((signal) => fetchResumeCompare(filter, signal), [props.revision, filter])
   // 提前取出数据：TS 不会把 `status === 'ok'` 的收窄带进回调里
   const funnelData = funnel.state.status === 'ok' ? funnel.state.data : null
   const attributionData = attribution.state.status === 'ok' ? attribution.state.data : null
@@ -438,6 +457,142 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
         <p className="jh-muted">正在统计…</p>
       )}
 
+      <h3 className="jh-card-title">薪资分布（箱线图 · 本地基准）</h3>
+      <div className="jh-card">
+        {/* F1：口径切换。**必须显式**：两个口径算出来的中位数可以差好几成 */}
+        <div className="jh-filters">
+          <span className="jh-muted">口径</span>
+          <div className="jh-modes">
+            {SALARY_BASES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`jh-mode${value === basis ? ' jh-mode-active' : ''}`}
+                onClick={() => setBasis(value)}
+              >
+                {SALARY_BASIS_LABEL[value]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {salaryBox.state.status === 'ok' ? (
+          salaryBox.state.data.box.count === 0 ? (
+            <p className="jh-muted">这个范围里没有符合该口径的岗位。</p>
+          ) : (
+            <>
+              <SalaryBoxChart box={salaryBox.state.data.box} />
+              <p className="jh-muted">
+                样本 {salaryBox.state.data.box.count} 条 · 箱体（P25–P75）里装了{' '}
+                {salaryBox.state.data.box.withinBox} 条
+              </p>
+              <p className="jh-info">
+                <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+                <span>{salaryBox.state.data.note}</span>
+              </p>
+            </>
+          )
+        ) : (
+          <p className="jh-muted">正在统计…</p>
+        )}
+
+        {/* F2：本地基准对比 —— 基准只能是自己的岗位库 */}
+        {baseline.state.status === 'ok' && (
+          <div className="jh-baseline">
+            <h4 className="jh-sub-title">我自己投递过的 vs 全部在库（同一口径：月薪下限）</h4>
+            {baseline.state.data.all.count === 0 ? (
+              <p className="jh-muted">岗位库里还没有带薪资的岗位。</p>
+            ) : (
+              <>
+                <table className="jh-table">
+                  <thead>
+                    <tr>
+                      <th>分组</th>
+                      <th>样本</th>
+                      <th>P25</th>
+                      <th>中位</th>
+                      <th>P75</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>全部在库</td>
+                      <td>{baseline.state.data.all.count}</td>
+                      <td>{baseline.state.data.all.p25 ?? '—'}</td>
+                      <td>{baseline.state.data.all.median ?? '—'}</td>
+                      <td>{baseline.state.data.all.p75 ?? '—'}</td>
+                    </tr>
+                    <tr>
+                      <td>我投递过的</td>
+                      <td>{baseline.state.data.applied.count}</td>
+                      <td>{baseline.state.data.applied.p25 ?? '—'}</td>
+                      <td>{baseline.state.data.applied.median ?? '—'}</td>
+                      <td>{baseline.state.data.applied.p75 ?? '—'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p className={baseline.state.data.enoughSample ? 'jh-muted' : 'jh-warn'}>
+                  中位数之差：
+                  {baseline.state.data.medianGap === null
+                    ? '无法计算（有一边没有样本）'
+                    : `${baseline.state.data.medianGap > 0 ? '+' : ''}${String(baseline.state.data.medianGap)} 元/月`}
+                  {baseline.state.data.enoughSample ? '' : ' —— 样本不足，别看差额'}
+                </p>
+                <p className="jh-info">
+                  <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+                  <span>{baseline.state.data.note}</span>
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* F3：简历版本 A/B 对比。**不做显著性**，每格带样本量 */}
+      <h3 className="jh-card-title">简历版本对比</h3>
+      <div className="jh-card">
+        {resumeCompare.state.status === 'ok' ? (
+          <>
+            <table className="jh-table">
+              <thead>
+                <tr>
+                  <th>简历版本</th>
+                  <th>投递数</th>
+                  {resumeCompare.state.data.stages.map((stage) => (
+                    <th key={stage.stage}>{stage.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {resumeCompare.state.data.rows.map((row) => (
+                  <tr key={String(row.resumeId)}>
+                    <td>
+                      {row.label}
+                      {row.enoughSample ? null : <span className="jh-chip jh-chip-quiet">样本少</span>}
+                    </td>
+                    <td>{row.total}</td>
+                    {row.cells.map((cell) => (
+                      // 每格都标出\"分子/分母\"，而不是只给一个百分比 ——
+                      // 2 条样本里的 1 条不是\"50%\"，是\"1/2\"
+                      <td key={cell.stage} className={cell.thin ? 'jh-warn' : undefined}>
+                        {cell.count === 0 ? '—' : `${String(cell.count)}/${String(row.total)}`}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {resumeCompare.state.data.rows.length === 0 && <p className="jh-muted">还没有投递记录。</p>}
+            <p className="jh-info">
+              <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+              <span>{resumeCompare.state.data.note}</span>
+            </p>
+          </>
+        ) : (
+          <p className="jh-muted">正在统计…</p>
+        )}
+      </div>
+
       <h3 className="jh-card-title">薪资分位</h3>
       <div className="jh-card">
         {salary.state.status === 'ok' ? (
@@ -459,6 +614,41 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
           <span>城市与关键词在这里筛的是<b>岗位库</b>；时间窗是<b>岗位抓取时间</b>，不是你的投递时间。</span>
         </p>
       </div>
+    </div>
+  )
+}
+
+/**
+ * 箱线图（F1）。
+ *
+ * 用**横向**画：薪资是"多少"而不是"什么时候"，横向比纵向好读，也和上面的漏斗条形一致。
+ *
+ * 高亮的是 **P25–P75 箱体**（`withinBox` 条样本在里面），
+ * 两端的须是最小/最大值 —— 明确不做离群点剔除：
+ * 剔了会把真实的高薪岗从图上删掉，而用户会以为"这城市没有高薪岗"。
+ */
+function SalaryBoxChart(props: { box: SalaryBoxDto }) {
+  const { min, p25, median, p75, max } = props.box
+  if (min === null || p25 === null || median === null || p75 === null || max === null) return null
+  const span = max - min
+  // 全部样本同值时 span=0：这时给一个满宽的箱体，而不是除零画出 NaN
+  const at = (value: number): number => (span <= 0 ? 50 : ((value - min) / span) * 100)
+
+  return (
+    <div className="jh-box">
+      <div className="jh-box-track">
+        <div className="jh-box-whisker" style={{ left: `${String(at(min))}%`, width: `${String(at(max) - at(min))}%` }} />
+        <div className="jh-box-body" style={{ left: `${String(at(p25))}%`, width: `${String(Math.max(0.5, at(p75) - at(p25)))}%` }} />
+        <div className="jh-box-median" style={{ left: `${String(at(median))}%` }} />
+      </div>
+      <div className="jh-box-scale">
+        <span>{min}</span>
+        <span>P25 {p25}</span>
+        <span>中位 {median}</span>
+        <span>P75 {p75}</span>
+        <span>{max}</span>
+      </div>
+      <p className="jh-note">{props.box.basisLabel} · 高亮段 = P25–P75（箱体）</p>
     </div>
   )
 }

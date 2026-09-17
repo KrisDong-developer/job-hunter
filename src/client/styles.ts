@@ -664,4 +664,25 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-fieldset legend{font-size:12px;font-weight:600;padding:0 4px;color:var(--dsw-alias-label-secondary)}
 .jh-check{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer}
 .jh-check input{cursor:pointer}
+
+/* ── 批次 F：薪资箱线图（横向，P25–P75 高亮）──────────────────────── */
+/* 用**横向**画：薪资回答"多少"而不是"什么时候"，横着比竖着好读，
+   也和上面的漏斗条形同一套视觉语言。高亮的是箱体（P25–P75），
+   两端的须是最小/最大值 —— 刻意不做离群点剔除，剔了会把真实的高薪岗删掉。 */
+.jh-box{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.jh-box-track{position:relative;height:26px}
+.jh-box-whisker{position:absolute;top:11px;height:4px;border-radius:2px;
+  background:var(--dsw-alias-border-l3)}
+.jh-box-whisker::before,.jh-box-whisker::after{content:'';position:absolute;top:-5px;width:2px;height:14px;
+  background:var(--dsw-alias-border-l4)}
+.jh-box-whisker::before{left:0}
+.jh-box-whisker::after{right:0}
+.jh-box-body{position:absolute;top:3px;height:20px;border-radius:5px;
+  background:var(--dsw-alias-state-business-tertiary);
+  border:1px solid var(--dsw-alias-state-business-primary)}
+.jh-box-median{position:absolute;top:1px;width:2px;height:24px;
+  background:var(--dsw-alias-state-business-primary)}
+.jh-box-scale{display:flex;justify-content:space-between;font-size:11.5px;
+  color:var(--dsw-alias-label-secondary)}
+.jh-baseline{margin-top:14px;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l1)}
 `

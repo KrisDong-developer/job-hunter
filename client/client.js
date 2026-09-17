@@ -641,6 +641,26 @@ window.__ModuleLoader__.load({
 		async function fetchSalaryBand(filter = {}, signal) {
 		  return await request(`/analytics/salary${analyticsQuery(filter)}`, signal === void 0 ? {} : { signal });
 		}
+		async function fetchSalaryBox(filter = {}, basis = "monthly_min", signal) {
+		  const query = analyticsQuery(filter);
+		  const separator = query === "" ? "?" : "&";
+		  return await request(
+		    `/analytics/salary/box${query}${separator}basis=${basis}`,
+		    signal === void 0 ? {} : { signal }
+		  );
+		}
+		async function fetchSalaryBaseline(filter = {}, signal) {
+		  return await request(
+		    `/analytics/salary/baseline${analyticsQuery(filter)}`,
+		    signal === void 0 ? {} : { signal }
+		  );
+		}
+		async function fetchResumeCompare(filter = {}, signal) {
+		  return await request(
+		    `/analytics/resume/compare${analyticsQuery(filter)}`,
+		    signal === void 0 ? {} : { signal }
+		  );
+		}
 		async function fetchFollowUps(signal) {
 		  return await request("/followups", signal === void 0 ? {} : { signal });
 		}
@@ -2224,6 +2244,15 @@ window.__ModuleLoader__.load({
 
 		// src/client/screens/pipeline.tsx
 		var import_react8 = require("react");
+
+		// src/shared/dto.ts
+		var SALARY_BASES = ["monthly_min", "annualized"];
+		var SALARY_BASIS_LABEL = {
+		  monthly_min: "\u6708\u85AA\u4E0B\u9650\uFF08\u5143/\u6708\uFF09",
+		  annualized: "\u5E74\u85AA\u6298\u7B97\uFF08\u5143/\u5E74\uFF0C\u6309 12 \u4E2A\u6708\u515C\u5E95\uFF09"
+		};
+
+		// src/client/screens/pipeline.tsx
 		var import_jsx_runtime8 = require("react/jsx-runtime");
 		function PipelineScreen(props) {
 		  const board = useAsync((signal) => fetchBoard(signal), [props.revision]);
@@ -2417,9 +2446,13 @@ window.__ModuleLoader__.load({
 		    }).catch(() => {
 		    });
 		  }, [props.revision]);
+		  const [basis, setBasis] = (0, import_react8.useState)("monthly_min");
 		  const funnel = useAsync((signal) => fetchFunnel(filter, signal), [props.revision, filter]);
 		  const attribution = useAsync((signal) => fetchAttribution(filter, signal), [props.revision, filter]);
 		  const salary = useAsync((signal) => fetchSalaryBand(filter, signal), [props.revision, filter]);
+		  const salaryBox = useAsync((signal) => fetchSalaryBox(filter, basis, signal), [props.revision, filter, basis]);
+		  const baseline = useAsync((signal) => fetchSalaryBaseline(filter, signal), [props.revision, filter]);
+		  const resumeCompare = useAsync((signal) => fetchResumeCompare(filter, signal), [props.revision, filter]);
 		  const funnelData = funnel.state.status === "ok" ? funnel.state.data : null;
 		  const attributionData = attribution.state.status === "ok" ? attribution.state.data : null;
 		  const salaryData = salary.state.status === "ok" ? salary.state.data : null;
@@ -2596,6 +2629,103 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: attributionData.note })
 		      ] })
 		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { className: "jh-card-title", children: "\u85AA\u8D44\u5206\u5E03\uFF08\u7BB1\u7EBF\u56FE \xB7 \u672C\u5730\u57FA\u51C6\uFF09" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-filters", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-muted", children: "\u53E3\u5F84" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "jh-modes", children: SALARY_BASES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-mode${value === basis ? " jh-mode-active" : ""}`,
+		            onClick: () => setBasis(value),
+		            children: SALARY_BASIS_LABEL[value]
+		          },
+		          value
+		        )) })
+		      ] }),
+		      salaryBox.state.status === "ok" ? salaryBox.state.data.box.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u8303\u56F4\u91CC\u6CA1\u6709\u7B26\u5408\u8BE5\u53E3\u5F84\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(SalaryBoxChart, { box: salaryBox.state.data.box }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-muted", children: [
+		          "\u6837\u672C ",
+		          salaryBox.state.data.box.count,
+		          " \u6761 \xB7 \u7BB1\u4F53\uFF08P25\u2013P75\uFF09\u91CC\u88C5\u4E86",
+		          " ",
+		          salaryBox.state.data.box.withinBox,
+		          " \u6761"
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-info", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: salaryBox.state.data.note })
+		        ] })
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }),
+		      baseline.state.status === "ok" && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-baseline", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h4", { className: "jh-sub-title", children: "\u6211\u81EA\u5DF1\u6295\u9012\u8FC7\u7684 vs \u5168\u90E8\u5728\u5E93\uFF08\u540C\u4E00\u53E3\u5F84\uFF1A\u6708\u85AA\u4E0B\u9650\uFF09" }),
+		        baseline.state.data.all.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u5C97\u4F4D\u5E93\u91CC\u8FD8\u6CA1\u6709\u5E26\u85AA\u8D44\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { className: "jh-table", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "\u5206\u7EC4" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "\u6837\u672C" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "P25" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "\u4E2D\u4F4D" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "P75" })
+		            ] }) }),
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tbody", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: "\u5168\u90E8\u5728\u5E93" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.all.count }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.all.p25 ?? "\u2014" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.all.median ?? "\u2014" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.all.p75 ?? "\u2014" })
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: "\u6211\u6295\u9012\u8FC7\u7684" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.applied.count }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.applied.p25 ?? "\u2014" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.applied.median ?? "\u2014" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: baseline.state.data.applied.p75 ?? "\u2014" })
+		              ] })
+		            ] })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: baseline.state.data.enoughSample ? "jh-muted" : "jh-warn", children: [
+		            "\u4E2D\u4F4D\u6570\u4E4B\u5DEE\uFF1A",
+		            baseline.state.data.medianGap === null ? "\u65E0\u6CD5\u8BA1\u7B97\uFF08\u6709\u4E00\u8FB9\u6CA1\u6709\u6837\u672C\uFF09" : `${baseline.state.data.medianGap > 0 ? "+" : ""}${String(baseline.state.data.medianGap)} \u5143/\u6708`,
+		            baseline.state.data.enoughSample ? "" : " \u2014\u2014 \u6837\u672C\u4E0D\u8DB3\uFF0C\u522B\u770B\u5DEE\u989D"
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-info", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: baseline.state.data.note })
+		          ] })
+		        ] })
+		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { className: "jh-card-title", children: "\u7B80\u5386\u7248\u672C\u5BF9\u6BD4" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "jh-card", children: resumeCompare.state.status === "ok" ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { className: "jh-table", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "\u7B80\u5386\u7248\u672C" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "\u6295\u9012\u6570" }),
+		          resumeCompare.state.data.stages.map((stage) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: stage.label }, stage.stage))
+		        ] }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("tbody", { children: resumeCompare.state.data.rows.map((row) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+		            row.label,
+		            row.enoughSample ? null : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-chip jh-chip-quiet", children: "\u6837\u672C\u5C11" })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: row.total }),
+		          row.cells.map((cell) => (
+		            // 每格都标出\"分子/分母\"，而不是只给一个百分比 ——
+		            // 2 条样本里的 1 条不是\"50%\"，是\"1/2\"
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { className: cell.thin ? "jh-warn" : void 0, children: cell.count === 0 ? "\u2014" : `${String(cell.count)}/${String(row.total)}` }, cell.stage)
+		          ))
+		        ] }, String(row.resumeId))) })
+		      ] }),
+		      resumeCompare.state.data.rows.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6295\u9012\u8BB0\u5F55\u3002" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-info", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: resumeCompare.state.data.note })
+		      ] })
+		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { className: "jh-card-title", children: "\u85AA\u8D44\u5206\u4F4D" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-card", children: [
 		      salary.state.status === "ok" ? salary.state.data.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u8303\u56F4\u91CC\u6CA1\u6709\u5E26\u85AA\u8D44\u4E0B\u9650\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-muted", children: [
@@ -2625,6 +2755,39 @@ window.__ModuleLoader__.load({
 		          "\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002"
 		        ] })
 		      ] })
+		    ] })
+		  ] });
+		}
+		function SalaryBoxChart(props) {
+		  const { min, p25, median, p75, max } = props.box;
+		  if (min === null || p25 === null || median === null || p75 === null || max === null) return null;
+		  const span = max - min;
+		  const at = (value) => span <= 0 ? 50 : (value - min) / span * 100;
+		  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-box", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-box-track", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "jh-box-whisker", style: { left: `${String(at(min))}%`, width: `${String(at(max) - at(min))}%` } }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "jh-box-body", style: { left: `${String(at(p25))}%`, width: `${String(Math.max(0.5, at(p75) - at(p25)))}%` } }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "jh-box-median", style: { left: `${String(at(median))}%` } })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-box-scale", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: min }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
+		        "P25 ",
+		        p25
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
+		        "\u4E2D\u4F4D ",
+		        median
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { children: [
+		        "P75 ",
+		        p75
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: max })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "jh-note", children: [
+		      props.box.basisLabel,
+		      " \xB7 \u9AD8\u4EAE\u6BB5 = P25\u2013P75\uFF08\u7BB1\u4F53\uFF09"
 		    ] })
 		  ] });
 		}
@@ -5730,6 +5893,27 @@ window.__ModuleLoader__.load({
 		.jh-fieldset legend{font-size:12px;font-weight:600;padding:0 4px;color:var(--dsw-alias-label-secondary)}
 		.jh-check{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer}
 		.jh-check input{cursor:pointer}
+
+		/* \u2500\u2500 \u6279\u6B21 F\uFF1A\u85AA\u8D44\u7BB1\u7EBF\u56FE\uFF08\u6A2A\u5411\uFF0CP25\u2013P75 \u9AD8\u4EAE\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+		/* \u7528**\u6A2A\u5411**\u753B\uFF1A\u85AA\u8D44\u56DE\u7B54"\u591A\u5C11"\u800C\u4E0D\u662F"\u4EC0\u4E48\u65F6\u5019"\uFF0C\u6A2A\u7740\u6BD4\u7AD6\u7740\u597D\u8BFB\uFF0C
+		   \u4E5F\u548C\u4E0A\u9762\u7684\u6F0F\u6597\u6761\u5F62\u540C\u4E00\u5957\u89C6\u89C9\u8BED\u8A00\u3002\u9AD8\u4EAE\u7684\u662F\u7BB1\u4F53\uFF08P25\u2013P75\uFF09\uFF0C
+		   \u4E24\u7AEF\u7684\u987B\u662F\u6700\u5C0F/\u6700\u5927\u503C \u2014\u2014 \u523B\u610F\u4E0D\u505A\u79BB\u7FA4\u70B9\u5254\u9664\uFF0C\u5254\u4E86\u4F1A\u628A\u771F\u5B9E\u7684\u9AD8\u85AA\u5C97\u5220\u6389\u3002 */
+		.jh-box{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+		.jh-box-track{position:relative;height:26px}
+		.jh-box-whisker{position:absolute;top:11px;height:4px;border-radius:2px;
+		  background:var(--dsw-alias-border-l3)}
+		.jh-box-whisker::before,.jh-box-whisker::after{content:'';position:absolute;top:-5px;width:2px;height:14px;
+		  background:var(--dsw-alias-border-l4)}
+		.jh-box-whisker::before{left:0}
+		.jh-box-whisker::after{right:0}
+		.jh-box-body{position:absolute;top:3px;height:20px;border-radius:5px;
+		  background:var(--dsw-alias-state-business-tertiary);
+		  border:1px solid var(--dsw-alias-state-business-primary)}
+		.jh-box-median{position:absolute;top:1px;width:2px;height:24px;
+		  background:var(--dsw-alias-state-business-primary)}
+		.jh-box-scale{display:flex;justify-content:space-between;font-size:11.5px;
+		  color:var(--dsw-alias-label-secondary)}
+		.jh-baseline{margin-top:14px;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l1)}
 		`;
 
 		// src/client/toolviews/greeting-card.tsx

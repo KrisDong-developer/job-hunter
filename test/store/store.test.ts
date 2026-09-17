@@ -279,3 +279,158 @@ test('字段健康计数：连续缺失累加、命中清零', () => {  const di
     cleanup(dir)
   }
 })
+
+// ── SR-15（A3）：崩溃安全 —— 悬挂的 running 必须被收敛 ─────────────────
+
+test('SR-15：超过阈值的 running 会被收敛为 failed，并说明原因', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const now = '2026-09-16T12:00:00.000Z'
+
+    // 三小时前开始的一轮（进程被强杀，finish 没机会跑）
+    const orphan = store.crawlRun.start({ platformId: '51job', planId: null }, '2026-09-16T09:00:00.000Z')
+    // 刚刚开始的一轮（正常在跑）
+    const live = store.crawlRun.start({ platformId: '51job', planId: null }, '2026-09-16T11:55:00.000Z')
+
+    assert.equal(store.crawlRun.countRunning(), 2)
+
+    const reaped = store.crawlRun.reapStale(now)
+    assert.equal(reaped, 1, '只收敛超过 2 小时的那一条')
+
+    const after = store.crawlRun.get(orphan)
+    assert.equal(after?.state, 'failed', '悬挂的 running 必须是终态，不能永远显示"正在跑"')
+    assert.equal(after?.errorCode, 'ORPHANED')
+    assert.ok((after?.errorMsg ?? '').includes('进程'), '原因要可读，不能只给一个错误码')
+    assert.ok(after?.endedAt !== null, '收敛时必须补上结束时刻')
+
+    const stillLive = store.crawlRun.get(live)
+    assert.equal(stillLive?.state, 'running', '**还在跑的那一轮绝不能被误判** —— 那会让用户以为数据是坏的')
+    assert.equal(store.crawlRun.countRunning(), 1)
+
+    // 幂等：再收敛一次不会重复计数
+    assert.equal(store.crawlRun.reapStale(now), 0)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('SR-15：阈值可注入，边界上的记录不被误收敛', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const start = '2026-09-16T09:00:00.000Z'
+    const id = store.crawlRun.start({ platformId: '51job', planId: null }, start)
+    // 恰好等于阈值那一刻：不算超时（`<` 而不是 `<=`）
+    assert.equal(store.crawlRun.reapStale('2026-09-16T11:00:00.000Z', 2 * 60 * 60 * 1000), 0)
+    assert.equal(store.crawlRun.get(id)?.state, 'running')
+    // 超过一秒就收敛
+    assert.equal(store.crawlRun.reapStale('2026-09-16T11:00:01.000Z', 2 * 60 * 60 * 1000), 1)
+    assert.equal(store.crawlRun.get(id)?.state, 'failed')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+// ── SR-34（A4）：重抓不得覆盖用户处置态 ────────────────────────────────
+
+test('SR-34：四种处置态在重抓之后**一个都不能变**', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    // saved 那条已在上面覆盖过；这里把 ignored / archived / seen 也钉住 ——
+    // "只看 saved 就够了"是错的：用户忽略一个岗位的意图和收藏一样强，
+    // 而重抓把它变回 new 会让他以为"我明明忽略过了"。
+    for (const state of ['seen', 'saved', 'ignored', 'archived'] as const) {
+      const created = store.job.upsert(jobInput({ platformJobId: `state-${state}` }), T1)
+      store.job.mark(created.id, state)
+    }
+
+    for (const state of ['seen', 'saved', 'ignored', 'archived'] as const) {
+      store.job.upsert(
+        jobInput({ platformJobId: `state-${state}`, title: `改过标题-${state}`, salaryMin: 9000 }),
+        T2,
+      )
+      const row = store.job.query({ platformId: '51job' }).find((job) => job.platformJobId === `state-${state}`)
+      assert.equal(row?.state, state, `${state} 不能被重抓覆盖`)
+      assert.equal(row?.title, `改过标题-${state}`, '抓取字段**要**更新')
+      assert.equal(row?.salaryMin, 9000, '抓取字段**要**更新')
+      assert.equal(row?.firstSeenAt, T1, '首次见到的时间是事实，不能被覆盖')
+    }
+  } finally {
+    cleanup(dir)
+  }
+})
+
+// ── schema v7：调度字段与运行原因 ─────────────────────────────────────
+
+test('v7：plan 的引擎字段与 crawl_run 的 reason 可写可读', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const at = '2026-09-16T01:00:00.000Z'
+    const plan = store.plan.create(
+      { name: '引擎测试', platforms: ['51job'], criteria: { keyword: 'Java' } },
+      at,
+    )
+    assert.equal(plan.lastAttemptAt, null)
+    assert.equal(plan.lastSuccessAt, null)
+    assert.equal(plan.timezone.length > 0, true, 'SR-5：创建时就记下时区快照')
+    assert.deepEqual(plan.postProcess, { score: true, flag: true, dedup: true })
+
+    // SR-7：失败只推进 attempt，不推进 success
+    store.plan.setEngine(plan.id, { lastAttemptAt: '2026-09-16T02:00:00.000Z', failStreak: 1 })
+    let after = store.plan.get(plan.id)
+    assert.equal(after?.lastAttemptAt, '2026-09-16T02:00:00.000Z')
+    assert.equal(after?.lastSuccessAt, null, '失败绝不能推进 last_success_at —— 那会让新鲜度永远看起来是新鲜的')
+
+    // 成功才推进 success，并清零退避
+    store.plan.setEngine(plan.id, {
+      lastAttemptAt: '2026-09-16T03:00:00.000Z',
+      lastSuccessAt: '2026-09-16T03:00:00.000Z',
+      failStreak: 0,
+      backoffUntil: null,
+    })
+    after = store.plan.get(plan.id)
+    assert.equal(after?.lastSuccessAt, '2026-09-16T03:00:00.000Z')
+    assert.equal(after?.lastRunAt, '2026-09-16T03:00:00.000Z', '兼容字段跟着 success 走')
+
+    // 退避与风控暂停要能**清掉**（清不掉就是永远不退避 → 永远不再试）
+    store.plan.setEngine(plan.id, { backoffUntil: '2026-09-16T04:00:00.000Z', failStreak: 2 })
+    assert.equal(store.plan.engineState(plan.id).backoffUntil, '2026-09-16T04:00:00.000Z')
+    store.plan.setEngine(plan.id, { backoffUntil: null })
+    assert.equal(store.plan.engineState(plan.id).backoffUntil, null, '退避必须能被清掉')
+
+    store.plan.setEngine(plan.id, { riskPaused: true, riskReason: '风控' })
+    assert.equal(store.plan.engineState(plan.id).riskPaused, true)
+    store.plan.setEngine(plan.id, { riskPaused: false, riskReason: null })
+    assert.equal(store.plan.engineState(plan.id).riskPaused, false)
+
+    // SR-28/29：触发原因与跳过原因随运行记录落库
+    const runId = store.crawlRun.start({ platformId: '51job', planId: plan.id, reason: 'schedule' }, at)
+    store.crawlRun.finish(runId, { state: 'aborted', reason: 'schedule', skipReason: 'not_logged_in' }, at)
+    const run = store.crawlRun.get(runId)
+    assert.equal(run?.reason, 'schedule')
+    assert.equal(run?.skipReason, 'not_logged_in')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('v7 迁移：老库的 last_run_at 被回填成 attempt + success', () => {
+  const dir = tempDataDir()
+  try {
+    // 造一个停在 v6 的库：直接把 v7 之前的迁移跑完，再插一条 plan 行
+    const store = openTestStore(dir)
+    const at = '2026-09-10T01:00:00.000Z'
+    const plan = store.plan.create({ name: '老方案', platforms: ['51job'] }, at)
+    // 模拟"老库只有 last_run_at"：直接写底层列，把新列清空
+    store.db.prepare('UPDATE plan SET last_run_at = ?, last_attempt_at = NULL, last_success_at = NULL WHERE id = ?')
+      .run('2026-09-12T07:00:00.000Z', plan.id)
+    const row = store.plan.get(plan.id)
+    assert.equal(row?.lastAttemptAt, '2026-09-12T07:00:00.000Z', '回退到 last_run_at，而不是显示"从未跑过"')
+    assert.equal(row?.lastSuccessAt, '2026-09-12T07:00:00.000Z')
+  } finally {
+    cleanup(dir)
+  }
+})

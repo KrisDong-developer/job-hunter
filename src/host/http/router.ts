@@ -19,6 +19,7 @@ import type {
   JobDto,
   PlanSchedule,
 } from '../../shared/dto.js'
+import { SALARY_BASES, type SalaryBasis } from '../../shared/dto.js'
 import type { JobState } from '../../shared/enums.js'
 import {
   APPLICATION_STAGES,
@@ -1300,6 +1301,40 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
         ...(filter.to === undefined ? {} : { to: filter.to }),
       }),
     )
+  }
+
+  // ── 批次 F：箱线图 / 本地基准 / 简历 A/B（看板遗留）────────────────
+
+  /** F1：薪资箱线图。口径必须显式传（默认月薪下限），不接受"让服务猜一个"。 */
+  if (method === 'GET' && segments.length === 3 && segments[0] === 'analytics' && segments[1] === 'salary' && segments[2] === 'box') {
+    requireData(runtime)
+    const filter = analyticsFilterOf()
+    const basisRaw = req.query.get('basis')
+    if (basisRaw !== null && basisRaw !== '' && !SALARY_BASES.includes(basisRaw as never)) {
+      throw new DomainError('INVALID_INPUT', `不认识的口径：${basisRaw}`, {
+        hint: `合法取值：${SALARY_BASES.join(' / ')}。这一项必须显式给 —— "月薪下限"与"年薪折算"算出来的中位数可以差几成，不写清就是误导。`,
+      })
+    }
+    return json(
+      200,
+      runtime.analytics().salaryBox({
+        ...(filter.city === undefined ? {} : { city: filter.city }),
+        ...(filter.keyword === undefined ? {} : { keyword: filter.keyword }),
+        ...(basisRaw === null || basisRaw === '' ? {} : { basis: basisRaw as SalaryBasis }),
+      }),
+    )
+  }
+
+  /** F2：本地基准对比 —— 用自己抓到的岗位库当基准（绝不联网、绝不编行业数据）。 */
+  if (method === 'GET' && segments.length === 3 && segments[0] === 'analytics' && segments[1] === 'salary' && segments[2] === 'baseline') {
+    requireData(runtime)
+    return json(200, runtime.analytics().salaryBaseline(analyticsFilterOf()))
+  }
+
+  /** F3：简历版本 A/B 对比（每格带样本量，不做显著性检验）。 */
+  if (method === 'GET' && segments.length === 3 && segments[0] === 'analytics' && segments[1] === 'resume' && segments[2] === 'compare') {
+    requireData(runtime)
+    return json(200, runtime.analytics().resumeCompare(analyticsFilterOf()))
   }
 
   // 跟进建议（U0 今日与流水线页都用）

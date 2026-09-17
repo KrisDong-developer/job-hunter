@@ -784,6 +784,117 @@ export interface SalaryBandDto {
   max: number | null
 }
 
+// ── 看板遗留（批次 F）────────────────────────────────────────────────
+
+/**
+ * 薪资统计的口径（F1）。
+ *
+ * **必须显式**：同一个岗位库按"月薪下限"和按"年薪折算"算出来的中位数可以差好几成，
+ * 而界面上如果不写清用的是哪一个，那个数字就是在骗人。
+ */
+export const SALARY_BASES = ['monthly_min', 'annualized'] as const
+export type SalaryBasis = (typeof SALARY_BASES)[number]
+
+export const SALARY_BASIS_LABEL: Record<SalaryBasis, string> = {
+  monthly_min: '月薪下限（元/月）',
+  annualized: '年薪折算（元/年，按 12 个月兜底）',
+}
+
+/**
+ * 一个箱线图（F1）。
+ *
+ * 除了五数概括，还把 **P25–P75 区间**（箱体本身）单独给出来：
+ * 界面上要把它高亮，而"高亮哪一段"必须是 host 算好的同一个区间，
+ * 不能让前端再算一遍（两边各算一次必然漂移）。
+ */
+export interface SalaryBoxDto {
+  /** 口径标签（含单位），界面直接显示，不再自己拼。 */
+  basis: SalaryBasis
+  basisLabel: string
+  count: number
+  min: number | null
+  p25: number | null
+  median: number | null
+  p75: number | null
+  max: number | null
+  /** 落进 `[p25, p75]` 的样本数 —— 箱体里装了多少条要有据可查。 */
+  withinBox: number
+}
+
+/**
+ * `GET /analytics/salary/box`（F1）。
+ */
+export interface SalaryBoxChartDto {
+  box: SalaryBoxDto
+  /** 供界面画刻度的可选口径（同一个方案在另一种口径下的箱体），`null` = 该口径无样本。 */
+  alternate: SalaryBoxDto | null
+  note: string
+}
+
+/**
+ * `GET /analytics/salary/baseline`（F2）—— **本地基准对比**。
+ *
+ * 硬约束：基准**只能**来自用户自己抓到的岗位库。
+ * 本项目没有服务器、没有行业数据源，编一个"行业基准"就是把假信息画进界面。
+ */
+export interface SalaryBaselineDto {
+  scope: string
+  /** 该城市/关键词下的**全体**岗位分布。 */
+  all: SalaryBoxDto
+  /** 用户**投递过**的那些岗位分布（按岗位去重）。 */
+  applied: SalaryBoxDto
+  /** 两者中位数之差（投递 − 全体）；任一边没样本时为 null。 */
+  medianGap: number | null
+  /** 投递样本是否够下结论（`MIN_SAMPLE`）。不够就**只看分布，不谈高下**。 */
+  enoughSample: boolean
+  note: string
+}
+
+/**
+ * 简历版本 A/B 对比的一格（F3）。
+ *
+ * **每格都带样本量**：这是这张表唯一能防住"用 2 条样本画出显著性"的做法。
+ */
+export interface ResumeCompareCellDto {
+  /** 阶段键（已投递 / 已查看 / 面试中 / …）。 */
+  stage: string
+  label: string
+  count: number
+  /** count / 该行的总数；分母为 0 时为 null。 */
+  rate: number | null
+  /** 这一格是否薄到不该被解读（< `MIN_SAMPLE`）。 */
+  thin: boolean
+}
+
+export interface ResumeCompareRowDto {
+  resumeId: number | null
+  /** 简历版本名；`null` 表示"没记简历版本的投递"。 */
+  label: string
+  total: number
+  cells: ResumeCompareCellDto[]
+  /** 该行样本是否足够做对比（`MIN_SAMPLE`）。 */
+  enoughSample: boolean
+}
+
+export interface ResumeCompareDto {
+  rows: ResumeCompareRowDto[]
+  stages: Array<{ stage: string; label: string }>
+  sampleSize: number
+  /** 是否够谈"显著性"。不够时界面必须显式说"别看显著性"。 */
+  enoughSample: boolean
+  note: string
+}
+
+/**
+ * 简历 A/B 对比的**诚实性**说明（F3）。
+ *
+ * 写在这里而不是服务里，是为了让界面与工具文案共用同一句话 ——
+ * "样本不够就别看显著性"这条规矩必须只有一份。
+ */
+export const RESUME_COMPARE_CAVEAT =
+  '这张表只做**对比**，不做显著性检验：这是本地小样本，任何"某版简历更有效"的说法都可能是噪音。' +
+  '每一格都标了样本量，样本不足的格子会被显式标出来 —— 那时请看数字，别下结论。'
+
 // ── P8：校招与海外支线 ───────────────────────────────────────────────
 
 /** 一个"不可逆 / 硬截止"节点（§4.L L1/L3/L5）。 */

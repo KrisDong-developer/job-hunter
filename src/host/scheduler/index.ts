@@ -169,12 +169,54 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
 
   const now = (): Date => new Date(clock())
 
-  const isPaused = (): boolean => deps.store.setting.get<boolean>(PAUSE_KEY, PAUSE_SCOPE) === true
-  const pausedReason = (): string | null => {
-    const record = deps.store.setting.get<{ reason?: string } | boolean>(PAUSE_KEY, PAUSE_SCOPE)
-    if (record === true) return '定时已被一键暂停'
-    if (record !== null && typeof record === 'object' && typeof record.reason === 'string') return record.reason
-    return isPaused() ? '定时已被一键暂停' : null
+  /**
+   * 读全局暂停开关。
+   *
+   * 写入的是 `{ paused, reason }`（要记住"谁暂停的、为什么"），
+   * 所以读取**不能**拿它跟 `true` 直接比 —— 那会让暂停看起来生效了（`armed` 是 false）
+   * 而实际每次判定都当没暂停，于是定时照跑。这个 bug 真的写出来过，被行为测试抓住。
+   * 裸 `true` 也认，是为了兼容手工写过这个键的库。
+   */
+  const readPause = (): { paused: boolean; reason: string | null } => {
+    const stored = deps.store.setting.get<unknown>(PAUSE_KEY, PAUSE_SCOPE)
+    if (stored === true) return { paused: true, reason: null }
+    if (stored !== null && typeof stored === 'object') {
+      const record = stored as { paused?: unknown; reason?: unknown }
+      return {
+        paused: record.paused === true,
+        reason: typeof record.reason === 'string' && record.reason !== '' ? record.reason : null,
+      }
+    }
+    return { paused: false, reason: null }
+  }
+
+  const isPaused = (): boolean => readPause().paused
+  const pausedReason = (): string | null => (isPaused() ? (readPause().reason ?? '定时已被一键暂停') : null)
+
+  /**
+   * SR-20/23：**每平台独立冷却**。
+   *
+   * 为什么计划级的退避不够：一个方案的退避是"这一轮别再来"，
+   * 但风控是**按平台**算的 —— 51job 被限流不该让另一个平台的方案跟着停，
+   * 反过来，51job 被限流之后**任何**方案去碰它都应该被拦住。
+   *
+   * 存在 `setting` 表（`scope=platform` / `key=cooldown-until`）而不是加列：
+   * 它是个**短命**的运行时状态（几小时），不值得为它做一次 schema 迁移。
+   * 读它的地方在 `runtime.platformGate`（判定统一在那一边），这里只负责写与清。
+   */
+  const recordPlatformFailure = (platformId: string, failStreak: number): void => {
+    const until = new Date(clock()).getTime() + backoffMsFor(failStreak)
+    deps.store.setting.set(
+      'cooldown-until',
+      'platform',
+      platformId,
+      { until: new Date(until).toISOString() },
+      clock(),
+    )
+  }
+
+  const clearPlatformCooldown = (platformId: string): void => {
+    deps.store.setting.remove('cooldown-until', 'platform', platformId)
   }
 
   const enabledPlans = (): PlanDto[] =>
@@ -477,6 +519,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
               criteria: plan.criteria,
               reason: 'schedule',
             })
+            // SR-20：成功即清冷却
+            clearPlatformCooldown(platformId)
             deps.events.publish('plan.finished', {
               planId: plan.id,
               platformId,
@@ -486,6 +530,7 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
           } catch (error) {
             // 单个平台失败不阻断其它平台；失败本身已经在 crawl 里记了健康与待办
             failure = error
+            recordPlatformFailure(platformId, deps.store.plan.engineState(plan.id).failStreak + 1)
             deps.logger?.warn(`[scheduler] ${plan.name} / ${platformId} 抓取失败：${messageOf(error)}`)
             deps.events.publish('plan.failed', { planId: plan.id, platformId, message: messageOf(error) })
           }
@@ -554,7 +599,13 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
 
     setPaused(paused, reason): void {
       if (paused) {
-        deps.store.setting.set(PAUSE_KEY, PAUSE_SCOPE, '', { reason: reason ?? '用户一键暂停' }, clock())
+        deps.store.setting.set(
+          PAUSE_KEY,
+          PAUSE_SCOPE,
+          '',
+          { paused: true, reason: reason ?? '用户一键暂停' },
+          clock(),
+        )
       } else {
         deps.store.setting.remove(PAUSE_KEY, PAUSE_SCOPE, '')
       }
@@ -571,6 +622,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
         backoffUntil: null,
       })
       deps.store.todo.closeByRef('blocked', String(planId), clock())
+      // SR-20：人工确认恢复时把该平台方案的冷却也清掉，否则"确认"之后还要再等 4 小时
+      for (const platformId of deps.store.plan.get(planId)?.platforms ?? []) clearPlatformCooldown(platformId)
       deps.events.publish('plan.resumed', { planId })
       // 恢复后立刻重排一次，用户不必等到明天
       refreshNextRuns(now())
@@ -676,8 +729,11 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       for (const platformId of plan.platforms) {
         try {
           last = await deps.run({ planId, platformId, criteria: plan.criteria, reason })
+          // SR-20：成功了就把这个平台的冷却清掉，否则一次抖动会让它停一整天
+          clearPlatformCooldown(platformId)
         } catch (error) {
           failure = error
+          recordPlatformFailure(platformId, deps.store.plan.engineState(planId).failStreak + 1)
           deps.logger?.warn(`[scheduler] 手动跑 ${plan.name} / ${platformId} 失败：${messageOf(error)}`)
         }
       }
