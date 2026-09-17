@@ -443,6 +443,9 @@ window.__ModuleLoader__.load({
 		function fileUrl(fileId) {
 		  return `${ROUTE_PREFIX}/files/${String(fileId)}`;
 		}
+		async function deleteFile(fileId) {
+		  await request(`/files/${String(fileId)}`, { method: "DELETE" });
+		}
 		async function tailorResume(input) {
 		  const result = await request("/resume/tailor", {
 		    method: "POST",
@@ -3450,23 +3453,54 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "jh-paper-stage", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("iframe", { className: "jh-paper", title: "\u7B80\u5386\u9884\u89C8", src: previewUrl(props.id, template), sandbox: "" }) })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-work-files", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("h3", { className: "jh-card-title", children: [
-		          "\u9644\u4EF6\uFF08",
-		          draft.files.length,
-		          "\uFF09"
+		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-form-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("h3", { children: [
+		            "\u9644\u4EF6\uFF08",
+		            draft.files.length,
+		            "\uFF09"
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-muted", children: "\u5BFC\u51FA\u5728\u53F3\u4E0A\u89D2\u5DE5\u5177\u680F\uFF1B\u8FD9\u91CC\u8D1F\u8D23\u6253\u5F00\u4E0E\u5220\u9664" })
 		        ] }),
-		        draft.files.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u751F\u6210\u9644\u4EF6\u3002\u7528\u53F3\u4E0A\u89D2\u7684\u300C\u5BFC\u51FA PDF / \u5BFC\u51FA Word\u300D\u751F\u6210\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("ul", { className: "jh-files", children: draft.files.map((file) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("a", { className: "jh-link", href: fileUrl(file.id), target: "_blank", rel: "noreferrer", children: file.fileName }),
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-muted", children: [
-		            " ",
-		            file.format,
-		            " \xB7 ",
-		            (file.bytes / 1024).toFixed(0),
-		            " KB \xB7",
-		            " ",
-		            file.createdAt.slice(0, 16).replace("T", " ")
-		          ] })
-		        ] }, file.id)) })
+		        draft.files.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u751F\u6210\u9644\u4EF6\u3002\u7528\u53F3\u4E0A\u89D2\u7684\u300C\u5BFC\u51FA PDF / \u5BFC\u51FA Word\u300D\u751F\u6210\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("ul", { className: "jh-files", children: draft.files.map((file) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("li", { className: "jh-file-row", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `jh-file-badge jh-file-${file.format}`, children: file.format.toUpperCase() }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-file-main", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("a", { className: "jh-link jh-file-name", href: fileUrl(file.id), target: "_blank", rel: "noreferrer", children: file.fileName }),
+		            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-muted jh-file-meta", children: [
+		              (file.bytes / 1024).toFixed(0),
+		              " KB \xB7 ",
+		              file.createdAt.slice(0, 16).replace("T", " ")
+		            ] })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline",
+		              onClick: () => window.open(fileUrl(file.id), "_blank", "noopener"),
+		              children: "\u6253\u5F00"
+		            }
+		          ),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-quiet",
+		              disabled: busy !== null,
+		              onClick: () => {
+		                if (!window.confirm(`\u5220\u9664\u9644\u4EF6\u300C${file.fileName}\u300D\uFF1F\u4E0D\u80FD\u64A4\u9500\u3002`)) return;
+		                void run("\u5220\u9664\u9644\u4EF6", async () => await deleteFile(file.id), () => "\u9644\u4EF6\u5DF2\u5220\u9664").then(
+		                  () => detail.reload()
+		                );
+		              },
+		              children: "\u5220\u9664"
+		            }
+		          )
+		        ] }, file.id)) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { className: "jh-info", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { children: "\u5220\u9664\u8FD9\u4E00\u7248\u7B80\u5386\u65F6\uFF0C\u5B83\u7684\u9644\u4EF6\u4F1A\u4E00\u8D77\u5220\u6389\uFF1B\u9664\u6B64\u4E4B\u5916\u6CA1\u6709\u4EFB\u4F55\u81EA\u52A8\u6E05\u7406\u4F1A\u78B0\u5B83\u4EEC\u3002" })
+		        ] })
 		      ] })
 		    ] })
 		  ] });
@@ -4532,7 +4566,20 @@ window.__ModuleLoader__.load({
 		  line-height:1.7;color:var(--dsw-alias-label-secondary)}
 		.jh-info-icon{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}
 		.jh-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
-		.jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
+		.jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:12px}
+		/* \u9644\u4EF6\u4E00\u884C\uFF1A\u683C\u5F0F\u5FBD\u7AE0 + \u6587\u4EF6\u540D/\u5143\u4FE1\u606F + \u6253\u5F00/\u5220\u9664\u3002\u539F\u5148\u662F\u4E00\u884C\u88F8\u94FE\u63A5\uFF0C\u65E2\u4E0D\u80FD\u5F00\u4E5F\u4E0D\u80FD\u5220\u3002 */
+		.jh-file-row{display:flex;align-items:center;gap:10px;padding:9px 11px;
+		  border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-1)}
+		.jh-file-badge{flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:.04em;
+		  padding:2px 7px;border-radius:5px;background:var(--dsw-alias-markdown-tag);
+		  color:var(--dsw-alias-label-secondary)}
+		.jh-file-pdf{background:var(--dsw-alias-state-error-secondary);
+		  color:var(--dsw-alias-label-primary-foreground)}
+		.jh-file-docx{background:var(--dsw-alias-button-info-fill);
+		  color:var(--dsw-alias-label-primary-foreground)}
+		.jh-file-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+		.jh-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+		.jh-file-meta{font-size:11.5px}
 		.jh-link{color:var(--dsw-alias-link);text-decoration:underline}
 		.jh-footnote{margin-top:14px;font-size:12px}
 		.jh-select{max-width:260px}

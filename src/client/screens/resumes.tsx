@@ -12,6 +12,7 @@ import { emptyResumeContent } from '../../shared/resume.js'
 import {
   ApiError,
   createResume,
+  deleteFile,
   deleteResume,
   duplicateResume,
   exportResume,
@@ -945,25 +946,54 @@ function ResumeWork(props: {
 
         {/* 附件从预览区里抽出来，单独一个子 tab（反馈：它挤在预览下面，与渲染无关） */}
         <div className="jh-work-files">
-          <h3 className="jh-card-title">附件（{draft.files.length}）</h3>
+          <div className="jh-form-head">
+            <h3>附件（{draft.files.length}）</h3>
+            <span className="jh-spacer" />
+            <span className="jh-muted">导出在右上角工具栏；这里负责打开与删除</span>
+          </div>
           {draft.files.length === 0 ? (
             <p className="jh-muted">还没有生成附件。用右上角的「导出 PDF / 导出 Word」生成。</p>
           ) : (
             <ul className="jh-files">
               {draft.files.map((file) => (
-                <li key={file.id}>
-                  <a className="jh-link" href={fileUrl(file.id)} target="_blank" rel="noreferrer">
-                    {file.fileName}
-                  </a>
-                  <span className="jh-muted">
-                    {' '}
-                    {file.format} · {(file.bytes / 1024).toFixed(0)} KB ·{' '}
-                    {file.createdAt.slice(0, 16).replace('T', ' ')}
+                <li key={file.id} className="jh-file-row">
+                  <span className={`jh-file-badge jh-file-${file.format}`}>{file.format.toUpperCase()}</span>
+                  <span className="jh-file-main">
+                    <a className="jh-link jh-file-name" href={fileUrl(file.id)} target="_blank" rel="noreferrer">
+                      {file.fileName}
+                    </a>
+                    <span className="jh-muted jh-file-meta">
+                      {(file.bytes / 1024).toFixed(0)} KB · {file.createdAt.slice(0, 16).replace('T', ' ')}
+                    </span>
                   </span>
+                  <button
+                    type="button"
+                    className="jh-btn jh-btn-inline"
+                    onClick={() => window.open(fileUrl(file.id), '_blank', 'noopener')}
+                  >
+                    打开
+                  </button>
+                  <button
+                    type="button"
+                    className="jh-btn jh-btn-inline jh-btn-quiet"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      if (!window.confirm(`删除附件「${file.fileName}」？不能撤销。`)) return
+                      void run('删除附件', async () => await deleteFile(file.id), () => '附件已删除').then(() =>
+                        detail.reload(),
+                      )
+                    }}
+                  >
+                    删除
+                  </button>
                 </li>
               ))}
             </ul>
           )}
+          <p className="jh-info">
+            <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
+            <span>删除这一版简历时，它的附件会一起删掉；除此之外没有任何自动清理会碰它们。</span>
+          </p>
         </div>
       </div>
     </>

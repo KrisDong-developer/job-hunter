@@ -518,7 +518,20 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   line-height:1.7;color:var(--dsw-alias-label-secondary)}
 .jh-info-icon{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}
 .jh-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
-.jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:12px}
+/* 附件一行：格式徽章 + 文件名/元信息 + 打开/删除。原先是一行裸链接，既不能开也不能删。 */
+.jh-file-row{display:flex;align-items:center;gap:10px;padding:9px 11px;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:9px;background:var(--dsw-alias-bg-layer-1)}
+.jh-file-badge{flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:.04em;
+  padding:2px 7px;border-radius:5px;background:var(--dsw-alias-markdown-tag);
+  color:var(--dsw-alias-label-secondary)}
+.jh-file-pdf{background:var(--dsw-alias-state-error-secondary);
+  color:var(--dsw-alias-label-primary-foreground)}
+.jh-file-docx{background:var(--dsw-alias-button-info-fill);
+  color:var(--dsw-alias-label-primary-foreground)}
+.jh-file-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+.jh-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jh-file-meta{font-size:11.5px}
 .jh-link{color:var(--dsw-alias-link);text-decoration:underline}
 .jh-footnote{margin-top:14px;font-size:12px}
 .jh-select{max-width:260px}

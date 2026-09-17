@@ -473,6 +473,11 @@ export function fileUrl(fileId: number): string {
   return `${ROUTE_PREFIX}/files/${String(fileId)}`
 }
 
+/** 删除一个附件（源文件与记录一起删）。界面上写着"只有你显式删除才会消失"，这就是那个删除。 */
+export async function deleteFile(fileId: number): Promise<void> {
+  await request<{ ok: boolean }>(`/files/${String(fileId)}`, { method: 'DELETE' })
+}
+
 export async function tailorResume(input: {
   jobId: number
   resumeId?: number
