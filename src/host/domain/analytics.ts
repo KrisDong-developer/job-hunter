@@ -182,12 +182,18 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
       )
 
       // 按简历版本 —— 这是 §3.3「已读不回 → 改简历」的直接依据
+      //
+      // 标签里**不再写 rev**：`application` 表只记了 `resume_id`，没有记"投递当时是哪一版"，
+      // 所以拿简历的**当前** rev 去标注历史投递是在说假话（简历改过之后就错了）。
+      // 带上 `#id` 则保证同名简历之间可区分 —— 实测库里就有三份同名的"P7 验收简历"，
+      // 标签只写「名字（rev 1）」时两行看起来完全一样，像重复记录。
+      // 真要显示"当时那一版"，得给 application 加一列（数据模型改动，另议）。
       const byResume = summarize(
         (record) => (record.resumeId === null ? 'none' : String(record.resumeId)),
         (key) => {
           if (key === 'none') return '（未记录简历）'
           const resume = store.resume.get(Number(key))
-          return resume === undefined ? `简历 #${key}（已删除）` : `${resume.name}（rev ${String(resume.rev)}）`
+          return resume === undefined ? `简历 #${key}（已删除）` : `${resume.name} #${key}`
         },
       )
 

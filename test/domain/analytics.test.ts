@@ -282,7 +282,9 @@ test('attribution 按渠道与简历版本归因：0 条的渠道不出现，被
 
     // ── 按简历版本 ──────────────────────────────────────────────────
     const byResume = new Map(attribution.byResume.map((row) => [row.key, row]))
-    assert.equal(byResume.get(String(resume.id))?.label, `Java 后端（rev ${String(resume.rev)}）`)
+    // 标签带 #id 而不是 rev：application 只记了 resume_id，没记"投递当时是哪一版"，
+    // 拿简历的**当前** rev 去标注历史投递会说假话；#id 才能让同名简历彼此可区分。
+    assert.equal(byResume.get(String(resume.id))?.label, `Java 后端 #${String(resume.id)}`)
     assert.equal(byResume.get(String(resume.id))?.total, 2)
     assert.equal(
       byResume.get(String(doomed.id))?.label,
