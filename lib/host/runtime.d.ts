@@ -1,0 +1,160 @@
+import type { CrawlStatusDto, CrawlSummaryDto, DeadlineDto, GreetingDraftDto, HealthDto, LoginStatusDto, PlanDto, PlatformOverviewDto, SchedulerStatusDto, TodayDto } from '../shared/dto.js';
+import type { AiService } from './ai/client.js';
+import type { CompanyService } from './domain/companies.js';
+import type { JobService } from './domain/jobs.js';
+import type { PipelineService, FollowUpSuggestion } from './domain/pipeline.js';
+import type { MessageService } from './domain/messages.js';
+import type { InterviewService } from './domain/interviews.js';
+import type { AnalyticsService } from './domain/analytics.js';
+import type { CampusService } from './domain/campus.js';
+import type { OverseasService } from './domain/overseas.js';
+import type { OutreachService } from './domain/outreach.js';
+import type { ResumeService } from './domain/resumes.js';
+import type { PlanService } from './domain/plans.js';
+import type { IntelService } from './domain/intel.js';
+import { type GreetingSendResult } from './guard/actions/greeting.js';
+import type { Guard } from './guard/index.js';
+import type { Actor } from './guard/types.js';
+import { type EventBus } from './http/sse.js';
+import type { BrowserManager } from './platform/browser.js';
+import type { Mutex } from './platform/mutex.js';
+import type { AdapterRegistry } from './platform/registry.js';
+import type { SearchCriteria } from './platform/types.js';
+import { type RunReason } from './scheduler/index.js';
+import { type TimerLike } from './scheduler/timer-port.js';
+import type { SettingsPatch, SettingsService, SettingsSnapshot } from './settings.js';
+import type { Store } from './store/store.js';
+import type { ToolRegistrationReport } from './tools/index.js';
+import { DomainError } from './util/errors.js';
+export interface RuntimeLogger {
+    info(message: string): void;
+    warn(message: string): void;
+}
+export interface HostRuntimeOptions {
+    dataDir?: string;
+    logger?: RuntimeLogger;
+    /** Cordis 的 timer 服务（可选）。缺失时退到原生定时器，而不是让调度不工作。 */
+    timer?: TimerLike;
+    /**
+     * `ctx.llm`（可选）。缺失时一切模型用途走规则/模板降级 —— 功能降级但不崩（J10、§4.5）。
+     * 类型故意是 `unknown`：装配点是唯一需要形状断言的地方，其余代码只见 `LlmPort`。
+     */
+    llm?: unknown;
+    /** `ctx.agentDefaultModel`（可选）。用于解析默认的 provider/model 路由。 */
+    defaultModel?: unknown;
+    /**
+     * `ctx.approval`（可选）。**这是模型发起高危动作的唯一审批通道**（§22.4）。
+     * 缺失时审批端口一律 fail-closed（拒绝）。
+     */
+    approval?: unknown;
+}
+export interface RuntimeFailure {
+    code: string;
+    message: string;
+    hint?: string;
+}
+export interface HostRuntime {
+    /** 异步就绪。幂等；失败不 reject（失败信息进 `failure()`）。 */
+    ready(): Promise<void>;
+    isReady(): boolean;
+    failure(): RuntimeFailure | null;
+    /** 给 `/health` 用的快照。数据层没就绪时也安全返回。 */
+    health(): HealthDto;
+    /** U0 今日聚合。 */
+    today(): TodayDto;
+    crawlStatus(): CrawlStatusDto;
+    /** 手动触发一次抓取（走真实浏览器）。 */
+    crawl(options: {
+        platformId: string;
+        criteria: SearchCriteria;
+        planId?: number | null;
+    }): Promise<CrawlSummaryDto>;
+    /** 实时事件总线（ADR-24：事件只作提示）。 */
+    events(): EventBus;
+    /** 情报引擎（P4）。 */
+    intel(): IntelService;
+    /** 安全闸门。**唯一**的危险动作入口（GUI 与模型工具共用同一实例）。 */
+    guard(): Guard;
+    /** 模型服务（含隐私闸门与调用留痕）。数据层没就绪时抛 `DATA_UNAVAILABLE`。 */
+    ai(): AiService;
+    /** 话术生成（只生成，不发送）。 */
+    outreach(): OutreachService;
+    settings(): SettingsService;
+    /** 生成话术草稿（不发送）。`tone` 与 `highlights` 可选。 */
+    draftGreeting(input: {
+        jobId: number;
+        tone?: 'formal' | 'warm' | 'concise';
+        highlights?: string[];
+        extra?: string;
+    }): Promise<GreetingDraftDto>;
+    /**
+     * 发送打招呼 —— **高危**（§22.4）。
+     *
+     * `actor === 'gui'` 且 `guiConfirmed !== true` 时抛 `ConfirmRequiredError`（不是拒绝），
+     * 界面上把确认文案显示给用户，用户同意后带 `guiConfirmed: true` 重发。
+     * 模型发起时走 `ctx.approval`；`guiConfirmed` 由模型设置会被直接拒绝。
+     */
+    sendGreeting(input: {
+        jobId: number;
+        text?: string;
+        actor: Actor;
+        guiConfirmed?: boolean;
+    }): Promise<GreetingSendResult>;
+    /** 写插件配置。走 `settings.write` 闸门。 */
+    updateSettings(patch: SettingsPatch, actor: Actor, guiConfirmed?: boolean): Promise<SettingsSnapshot>;
+    /** 简历服务（版本、定制、附件生成）。 */
+    resumes(): ResumeService;
+    /** 附件根目录（`<dataDir>/files`）。 */
+    filesDir(): string;
+    /** PDF 渲染器是否在跑（诊断用；空闲时会自动关闭）。 */
+    pdfRendererRunning(): boolean;
+    pipeline(): PipelineService;
+    messages(): MessageService;
+    interviews(): InterviewService;
+    analytics(): AnalyticsService;
+    /** 跟进建议（未读超时 / 已读未回超时是**两条不同分支**，§12.2）。 */
+    followUps(): FollowUpSuggestion[];
+    /** 未读消息数（U0 与侧栏角标用）。 */
+    unreadCount(): number;
+    campus(): CampusService;
+    overseas(): OverseasService;
+    /**
+     * 所有**不可逆硬截止**（笔试截止 / 网申截止 / 三方签署）。
+     *
+     * U0 与待办系统只认这一种为 urgent —— 校招的笔试错过就出局（§12.7 / 决策记录第 3 条）。
+     */
+    deadlines(): DeadlineDto[];
+    /** 审批通道是否可用（诊断与 `/health` 用）。 */
+    approvalAvailable(): boolean;
+    /**
+     * 记下模型工具的注册结果（由插件入口在注册后调用）。
+     *
+     * 为什么要在 `/health` 里暴露：工具静默少了一个是"模型忽然做不到某件事"里最难查的原因。
+     * 实测就是靠这一条发现了与宿主 `job_list` 的重名。
+     */
+    setToolReport(report: ToolRegistrationReport): void;
+    /** 当前工具注册结果；还没注册时为 null。 */
+    toolReport(): ToolRegistrationReport | null;
+    plans(): PlanService;
+    schedulerStatus(): SchedulerStatusDto;
+    runPlan(planId: number, reason: Exclude<RunReason, 'schedule'>): Promise<CrawlSummaryDto>;
+    /** 直接驱动一次到期检查（测试与诊断用；生产走定时器）。 */
+    schedulerTick(): Promise<void>;
+    platforms(): PlatformOverviewDto[];
+    loginStatuses(): LoginStatusDto[];
+    startLogin(platformId: string): LoginStatusDto;
+    closeTodo(id: number): boolean;
+    store(): Store | undefined;
+    jobs(): JobService | undefined;
+    companies(): CompanyService | undefined;
+    registry(): AdapterRegistry;
+    mutex(): Mutex;
+    browser(): BrowserManager;
+    /** 同步收尾：停调度、关库、放租约、发起关闭浏览器（不阻塞调用方）。 */
+    close(): void;
+}
+/** 数据层未就绪时的统一错误。 */
+export declare function dataNotReady(runtime: HostRuntime): DomainError;
+export declare function createHostRuntime(options?: HostRuntimeOptions): HostRuntime;
+export type { PlanDto };
+//# sourceMappingURL=runtime.d.ts.map

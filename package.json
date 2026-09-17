@@ -3,7 +3,25 @@
   "version": "0.1.0",
   "description": "本地求职情报系统：跑在 DSH 宿主进程里的岗位采集 / 匹配 / 跟进工作台",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "author": "KrisDong-developer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KrisDong-developer/job-hunter.git"
+  },
+  "homepage": "https://github.com/KrisDong-developer/job-hunter#readme",
+  "bugs": {
+    "url": "https://github.com/KrisDong-developer/job-hunter/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "job-hunting",
+    "playwright",
+    "sqlite"
+  ],
   "main": "lib/host/index.js",
   "exports": {
     ".": {
@@ -17,7 +35,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.1.5-rc.1"
+      "dsh": ">=0.1.5-rc.2 <0.2.0"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -31,6 +49,7 @@
     "lib/**/*.d.ts",
     "client/client.js",
     "cordis.patch.yml",
+    "DISCLAIMER.md",
     "package.json"
   ],
   "engines": {

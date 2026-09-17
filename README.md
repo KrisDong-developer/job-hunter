@@ -5,7 +5,7 @@
 用 Playwright 复用你自己的浏览器登录态采集数据，用 sqlite 沉淀画像与历史，用同一套领域逻辑同时服务
 GUI 面板与模型工具。
 
-> **当前状态：P0 ~ P6 已完成。**
+> **当前状态：P0 ~ P8 全部完成（v0.1.0）。** 这是个人学习项目，**不打算上架插件市场**。
 >
 > | 阶段 | 状态 | 内容 |
 > |---|---|---|
@@ -18,13 +18,56 @@ GUI 面板与模型工具。
 > | P6 简历与附件 | ✅ 完成并通过真实 GUI 验收 | 迁移 v4（`resume`/`resume_file`/`tailoring` + `job.score_rev`）、**版本化简历**、**§4.1 分数随简历版本失效**、**真 PDF（headless Chromium）与真 DOCX（自建 OOXML ZIP）**、**三层防编造检查**、U3 简历中心 + U4 定制面板 |
 > | P7 跟进与看板 | ✅ 完成并通过真实 GUI 验收 | 迁移 v5（七张表）、**三套状态机 + `stage_event` 全留痕**、**两条超时分支给不同建议**、投递/回复**高危走审批**、面试撞车与准备包、**漏斗与归因（样本量不足不给结论）**、U5 流水线 / U6 消息 / U7 面试 / U8 看板 |
 > | P8 校招与海外支线 | ✅ P0 需求完成并通过真实 GUI 验收 | 迁移 v6（六张表 + 三个可空识别列）、**校招硬截止（笔试必填截止、错过即终态、三方签署不可逆）**、**工签识别（识别不出来就说识别不出来）**、**时区双重显示**、**英文简历只检查不翻译**、Cover Letter、校招屏 + 海外面板。**平台适配（牛客/实习僧/Indeed/LinkedIn）按文档结论不做** |
-> | P9 上架 | ⏳ 下一步 | README、topic、市场 PR |
+> | P9 上架 | ⏸ 不做 | 原本是 README / topic / 市场 PR。定位为个人学习项目，故不提交市场：**市场收录需要 CI + 维护者人工评审**，而我们不需要「被别人发现」这条渠道 |
 >
 > **需求文档自 v4 起冻结**（§10.4）。实现过程中与文档的差异都记在下面「与 `ARCHITECTURE.md` 的实现差异」表里。
 >
 > 设计与约束依据：`ARCHITECTURE.md`、`REQUIREMENTS.md`；验证记录：`P0-VERIFICATION.md`。
+>
+> **⚠️ 本项目仅供学习与技术研究使用。** 抓取与自动发送都有真实风险（平台条款、账号封禁、个人信息），
+> 使用前请务必读 [`DISCLAIMER.md`](DISCLAIMER.md)。许可是 [`MIT`](LICENSE)。
 
 ---
+
+## 安装
+
+需要 **Node ≥ 24**（`node:sqlite` 是内置模块）、**DSH ≥ 0.1.5-rc.2**（web profile），以及 PATH 上的 **`pnpm`**
+（`dsh plugin` 只是把参数转发给 pnpm）。
+
+```bash
+# ① 从 GitHub 安装（推荐）：仓库里已提交 lib/ 与 client/ 构建产物，装完即可用，不需要本地构建
+dsh plugin --profile web add github:KrisDong-developer/job-hunter
+
+# ② 本地开发：改源码即时生效
+git clone https://github.com/KrisDong-developer/job-hunter
+cd job-hunter && npm install && npm run build
+dsh plugin --profile web add .
+```
+
+装完侧栏出现「求职找工作」。**不需要重启 DSH** —— `cordis.patch.yml` 是纯 insert、零 `config:`，
+配置全部自管在 sqlite（`$DSH_HOME/job-hunter/`），所以是装完即热挂载。
+
+> **为什么把构建产物提交进仓库**：`dsh plugin` 把参数原样转发给 pnpm，而 pnpm 会**拦截** git 依赖的
+> `prepare` 构建脚本 —— 你必须先在 profile 的 `pnpm-workspace.yaml` 里手写 `allowBuilds` 才放行
+> （DSH 自己的错误提示也是这么说的）。与其让你多走一步授权，不如把 `lib/`、`client/` 一起提交。
+> 代价很明确：**改了 `src/` 必须 `npm run build` 之后再提交**，否则别人装到的还是旧产物。
+
+## 截图
+
+| 今日（U0） | 岗位库（U1） |
+|---|---|
+| ![今日](assets/screenshot-today.png) | ![岗位库](assets/screenshot-jobs.png) |
+
+| 岗位详情 + 简历定制（U2 / U4） | 数据看板（U8） |
+|---|---|
+| ![岗位详情](assets/screenshot-detail.png) | ![数据看板](assets/screenshot-board.png) |
+
+| 校招支线（U9） | |
+|---|---|
+| ![校招](assets/screenshot-campus.png) | |
+
+> 截图取自真实 GUI 的端到端验收运行（**离线闸门开启**，数据来自保存的 51job 页面 fixture）。
+> 流水线 / 消息 / 面试三屏的验收断言写在各阶段章节里，没有单独截图。
 
 ## 环境
 
@@ -268,8 +311,9 @@ mutex（全局互斥，忙就立刻失败，不排队）
 ✔ noticeAutoDismissed ✔ backToConversation
 ```
 
-脚本在包外：`D:\DSH-work\jh-e2e.mjs`（依赖该目录的 playwright），用法
-`node jh-e2e.mjs "http://127.0.0.1:4399/?token=…"`。
+验收脚本**不在本仓库**（它与开发机上的 DSH profile、Playwright 安装位置、`?token=` 入口绑定，
+没有做成可复现的分发形态），使用时形如 `node jh-e2e.mjs "http://127.0.0.1:4399/?token=…"`。
+仓库内可复现的是那 408 个离线单测（`npm test`）。
 
 ---
 
@@ -830,3 +874,20 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 | 校招平台与海外平台适配 | **不做** | §4.L/§4.M 自己标注"待预研"，§16 能力矩阵全"未知"。没有预研就无法估工，假装做了比不做更糟 |
 | （文档未提） | 工签识别为 `unknown` 时**留 NULL 而不是写 'unknown'** | 筛选时"没识别"与"识别为未识别"是两件事，混在一起就再也分不开 |
 | （文档未提） | 英文简历模块**不提供翻译入口** | §4.M 说机翻是致命错误；提供入口就等于鼓励用它 |
+
+---
+
+## 许可与免责
+
+- **许可**：[MIT](LICENSE) —— 可自由使用、修改、分发（含商用）。注意这意味着本仓库里的
+  「仅供学习」是**立场与建议**，不是许可限制；要强制禁止商用就得换成非 OSI 的自定义许可。
+- **免责**：本项目**仅供学习与技术研究使用**。完整条款见 [`DISCLAIMER.md`](DISCLAIMER.md)，要点：
+  - 抓取必须遵守目标网站条款与当地法律；项目**刻意不含**任何反检测 / 绕过风控能力（D-17/R18）；
+  - **L3 批量打招呼与 L4 批量投递默认关闭**，开启属于账号风险自担；高危动作一律过审批闸门，
+    不要为了少点一次确认而绕过它；
+  - 数据**全部留在本机**（`$DSH_HOME/job-hunter/`），**没有服务器、不上传、不联网同步**；
+    但简历与联系方式仍由你自己保管，分享数据库或截图前请先自查；
+  - 模型生成内容（话术 / 简历定制 / Cover Letter）必须人工复核，防编造检查只是兜底；
+  - 本项目按**「现状」（AS IS）**提供，不附带任何担保，作者不承担使用后果。
+- 本项目与任何招聘平台（前程无忧、BOSS 直聘、猎聘、智联招聘、牛客、实习僧、Indeed、LinkedIn 等）
+  **没有任何隶属、合作或背书关系**；相关商标归各自所有者。
