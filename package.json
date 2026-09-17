@@ -1,0 +1,61 @@
+{
+  "name": "dsh-job-hunter",
+  "version": "0.1.0",
+  "description": "本地求职情报系统：跑在 DSH 宿主进程里的岗位采集 / 匹配 / 跟进工作台",
+  "type": "module",
+  "license": "UNLICENSED",
+  "main": "lib/host/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/host/index.js"
+    },
+    "./client": {
+      "default": "./client/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.1.5-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "client/client.js",
+    "cordis.patch.yml",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "node scripts/clean.mjs",
+    "verify": "node scripts/verify.mjs",
+    "test": "node scripts/test.mjs",
+    "crawl:fixture": "node scripts/run-ts.mjs test/tools/crawl-fixture.ts"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "dependencies": {
+    "playwright-core": "^1.63.0"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.0",
+    "esbuild": "^0.25.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.2"
+  }
+}

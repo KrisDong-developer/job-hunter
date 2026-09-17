@@ -1,0 +1,11 @@
+# dsh-job-hunter 的 profile bundle patch。
+#
+# 硬约束（ARCHITECTURE §0 C2 / ADR-7）：
+#   这里是**纯 insert、零 config**。带 `config:` 会让装包后必须重启才能生效，
+#   纯 insert 才能被市场热挂载。
+#   → 因此本插件的所有配置都不走 loader，自管在 sqlite（§4.1）。
+#
+# 行 id `job-hunter` 同时是：侧栏入口 id、main 面板 key、路由前缀的语义来源。
+- insert:
+    - id: job-hunter
+      name: 'dsh-job-hunter'

@@ -1,0 +1,1207 @@
+/**
+ * 宿主侧运行时装配（composition root）。
+ *
+ * 把各部件接起来：sqlite store、适配器注册表、全局互斥、浏览器管理器、领域服务、
+ * 单实例租约、登录态、自排程器。入口层（http / tools）只跟这个门面打交道。
+ *
+ * **硬规则（§4.9）**：`apply()` 必须立即返回。所以数据层是**异步就绪**的：
+ * `ready()` 返回一个 promise，而 apply 不 await 它；在它完成之前 `/health` 会如实报告
+ * `dataReady: false` 与失败原因 —— 而不是让插件挂不上、或者让宿主启动被迁移拖慢。
+ */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { PHASE, PLUGIN_ID, REQUEST_DELAY_MAX_MS, REQUEST_DELAY_MIN_MS, ROUTE_PREFIX } from '../shared/constants.js'
+import type {
+  CrawlStatusDto,
+  CrawlSummaryDto,
+  DeadlineDto,
+  GreetingDraftDto,
+  HealthDto,
+  LoginStatusDto,
+  PlanDto,
+  PlatformOverviewDto,
+  SchedulerStatusDto,
+  TodayDto,
+} from '../shared/dto.js'
+import type { AiService } from './ai/client.js'
+import { createAiService } from './ai/client.js'
+import type { LlmSourceLike, ModelSelectorLike } from './ai/llm-port.js'
+import { createLlmPort } from './ai/llm-port.js'
+import type { CompanyService } from './domain/companies.js'
+import { createCompanyService } from './domain/companies.js'
+import { runCrawl } from './domain/crawl.js'
+import type { JobService } from './domain/jobs.js'
+import { createJobService } from './domain/jobs.js'
+import type { PipelineService, FollowUpSuggestion } from './domain/pipeline.js'
+import { createPipelineService } from './domain/pipeline.js'
+import type { MessageService } from './domain/messages.js'
+import { createMessageService } from './domain/messages.js'
+import type { InterviewService } from './domain/interviews.js'
+import { createInterviewService } from './domain/interviews.js'
+import type { AnalyticsService } from './domain/analytics.js'
+import { createAnalyticsService } from './domain/analytics.js'
+import type { CampusService } from './domain/campus.js'
+import { createCampusService } from './domain/campus.js'
+import type { OverseasService } from './domain/overseas.js'
+import { createOverseasService } from './domain/overseas.js'
+import type { OutreachService } from './domain/outreach.js'
+import { createOutreachService } from './domain/outreach.js'
+import type { ResumeService } from './domain/resumes.js'
+import { createResumeService, stripContacts } from './domain/resumes.js'
+import { createPdfRenderer, type PdfRenderer } from './render/pdf.js'
+import type { PlanService } from './domain/plans.js'
+import { createPlanService } from './domain/plans.js'
+import type { IntelService, MatchProfile } from './domain/intel.js'
+import { createIntelService } from './domain/intel.js'
+import { buildToday, buildTodayUnavailable } from './domain/today.js'
+import type { ApprovalAnswer, ApprovalPort } from './guard/approval.js'
+import { createApprovalPort, renderApproval } from './guard/approval.js'
+import { sendGreeting, GREETING_SEND_ACTION, type GreetingSendResult } from './guard/actions/greeting.js'
+import { SETTINGS_WRITE_ACTION } from './guard/actions/settings.js'
+import type { Guard } from './guard/index.js'
+import { createGuard } from './guard/index.js'
+import type { Actor } from './guard/types.js'
+import { createEventBus, type EventBus } from './http/sse.js'
+import { createFiftyOneAdapter, mergeFiftyOneConfig } from './platform/adapters/fiftyone-job.js'
+import type { BrowserManager } from './platform/browser.js'
+import { browserPageSource, createBrowserManager } from './platform/browser.js'
+import { readAdapterHealth } from './platform/health.js'
+import type { LeaseManager } from './platform/lease.js'
+import { createLease } from './platform/lease.js'
+import type { Mutex } from './platform/mutex.js'
+import { createMutex } from './platform/mutex.js'
+import type { AdapterRegistry } from './platform/registry.js'
+import { createAdapterRegistry } from './platform/registry.js'
+import type { LoginFlow, SessionService } from './platform/session.js'
+import { createLoginFlow, createSessionService, toAccountDto } from './platform/session.js'
+import type { SearchCriteria } from './platform/types.js'
+import { createScheduler, type Scheduler, type RunReason } from './scheduler/index.js'
+import { cordisTimerPort, nativeTimerPort, type TimerLike, type TimerPort } from './scheduler/timer-port.js'
+import type { ResumeContent } from '../shared/resume.js'
+import type { SettingsPatch, SettingsService, SettingsSnapshot } from './settings.js'
+import { createSettingsService, describeSettingsPatch } from './settings.js'
+import { resolveDataDir } from './store/db.js'
+import type { Store } from './store/store.js'
+import { openStore } from './store/store.js'
+import { toolExec } from './tools/exec-context.js'
+import type { ToolRegistrationReport } from './tools/index.js'
+import { DomainError, messageOf } from './util/errors.js'
+import { assertNetworkAllowed, isOfflineMode, NO_NETWORK_ENV } from './util/offline.js'
+import { systemClock } from './util/time.js'
+
+export interface RuntimeLogger {
+  info(message: string): void
+  warn(message: string): void
+}
+
+export interface HostRuntimeOptions {
+  dataDir?: string
+  logger?: RuntimeLogger
+  /** Cordis 的 timer 服务（可选）。缺失时退到原生定时器，而不是让调度不工作。 */
+  timer?: TimerLike
+  /**
+   * `ctx.llm`（可选）。缺失时一切模型用途走规则/模板降级 —— 功能降级但不崩（J10、§4.5）。
+   * 类型故意是 `unknown`：装配点是唯一需要形状断言的地方，其余代码只见 `LlmPort`。
+   */
+  llm?: unknown
+  /** `ctx.agentDefaultModel`（可选）。用于解析默认的 provider/model 路由。 */
+  defaultModel?: unknown
+  /**
+   * `ctx.approval`（可选）。**这是模型发起高危动作的唯一审批通道**（§22.4）。
+   * 缺失时审批端口一律 fail-closed（拒绝）。
+   */
+  approval?: unknown
+}
+
+export interface RuntimeFailure {
+  code: string
+  message: string
+  hint?: string
+}
+
+export interface HostRuntime {
+  /** 异步就绪。幂等；失败不 reject（失败信息进 `failure()`）。 */
+  ready(): Promise<void>
+  isReady(): boolean
+  failure(): RuntimeFailure | null
+  /** 给 `/health` 用的快照。数据层没就绪时也安全返回。 */
+  health(): HealthDto
+  /** U0 今日聚合。 */
+  today(): TodayDto
+  crawlStatus(): CrawlStatusDto
+  /** 手动触发一次抓取（走真实浏览器）。 */
+  crawl(options: { platformId: string; criteria: SearchCriteria; planId?: number | null }): Promise<CrawlSummaryDto>
+  /** 实时事件总线（ADR-24：事件只作提示）。 */
+  events(): EventBus
+
+  /** 情报引擎（P4）。 */
+  intel(): IntelService
+
+  // ── P5：安全与工具 ─────────────────────────────────────────────
+  /** 安全闸门。**唯一**的危险动作入口（GUI 与模型工具共用同一实例）。 */
+  guard(): Guard
+  /** 模型服务（含隐私闸门与调用留痕）。数据层没就绪时抛 `DATA_UNAVAILABLE`。 */
+  ai(): AiService
+  /** 话术生成（只生成，不发送）。 */
+  outreach(): OutreachService
+  settings(): SettingsService
+  /** 生成话术草稿（不发送）。`tone` 与 `highlights` 可选。 */
+  draftGreeting(input: {
+    jobId: number
+    tone?: 'formal' | 'warm' | 'concise'
+    highlights?: string[]
+    extra?: string
+  }): Promise<GreetingDraftDto>
+  /**
+   * 发送打招呼 —— **高危**（§22.4）。
+   *
+   * `actor === 'gui'` 且 `guiConfirmed !== true` 时抛 `ConfirmRequiredError`（不是拒绝），
+   * 界面上把确认文案显示给用户，用户同意后带 `guiConfirmed: true` 重发。
+   * 模型发起时走 `ctx.approval`；`guiConfirmed` 由模型设置会被直接拒绝。
+   */
+  sendGreeting(input: {
+    jobId: number
+    text?: string
+    actor: Actor
+    guiConfirmed?: boolean
+  }): Promise<GreetingSendResult>
+  /** 写插件配置。走 `settings.write` 闸门。 */
+  updateSettings(patch: SettingsPatch, actor: Actor, guiConfirmed?: boolean): Promise<SettingsSnapshot>
+
+  // ── P6：简历 ───────────────────────────────────────────────────
+  /** 简历服务（版本、定制、附件生成）。 */
+  resumes(): ResumeService
+  /** 附件根目录（`<dataDir>/files`）。 */
+  filesDir(): string
+  /** PDF 渲染器是否在跑（诊断用；空闲时会自动关闭）。 */
+  pdfRendererRunning(): boolean
+
+  // ── P7：跟进与看板 ─────────────────────────────────────────────
+  pipeline(): PipelineService
+  messages(): MessageService
+  interviews(): InterviewService
+  analytics(): AnalyticsService
+  /** 跟进建议（未读超时 / 已读未回超时是**两条不同分支**，§12.2）。 */
+  followUps(): FollowUpSuggestion[]
+  /** 未读消息数（U0 与侧栏角标用）。 */
+  unreadCount(): number
+
+  // ── P8：校招与海外支线 ─────────────────────────────────────────
+  campus(): CampusService
+  overseas(): OverseasService
+  /**
+   * 所有**不可逆硬截止**（笔试截止 / 网申截止 / 三方签署）。
+   *
+   * U0 与待办系统只认这一种为 urgent —— 校招的笔试错过就出局（§12.7 / 决策记录第 3 条）。
+   */
+  deadlines(): DeadlineDto[]
+  /** 审批通道是否可用（诊断与 `/health` 用）。 */
+  approvalAvailable(): boolean
+  /**
+   * 记下模型工具的注册结果（由插件入口在注册后调用）。
+   *
+   * 为什么要在 `/health` 里暴露：工具静默少了一个是"模型忽然做不到某件事"里最难查的原因。
+   * 实测就是靠这一条发现了与宿主 `job_list` 的重名。
+   */
+  setToolReport(report: ToolRegistrationReport): void
+  /** 当前工具注册结果；还没注册时为 null。 */
+  toolReport(): ToolRegistrationReport | null
+
+  // ── P3 ──────────────────────────────────────────────────────────
+  plans(): PlanService
+  schedulerStatus(): SchedulerStatusDto
+  runPlan(planId: number, reason: Exclude<RunReason, 'schedule'>): Promise<CrawlSummaryDto>
+  /** 直接驱动一次到期检查（测试与诊断用；生产走定时器）。 */
+  schedulerTick(): Promise<void>
+  platforms(): PlatformOverviewDto[]
+  loginStatuses(): LoginStatusDto[]
+  startLogin(platformId: string): LoginStatusDto
+  closeTodo(id: number): boolean
+
+  store(): Store | undefined
+  jobs(): JobService | undefined
+  companies(): CompanyService | undefined
+  registry(): AdapterRegistry
+  mutex(): Mutex
+  browser(): BrowserManager
+  /** 同步收尾：停调度、关库、放租约、发起关闭浏览器（不阻塞调用方）。 */
+  close(): void
+}
+
+/** 数据层未就绪时的统一错误。 */
+export function dataNotReady(runtime: HostRuntime): DomainError {
+  const failure = runtime.failure()
+  return new DomainError('DATA_UNAVAILABLE', failure?.message ?? '数据层尚未就绪', {
+    ...(failure?.hint === undefined ? {} : { hint: failure.hint }),
+  })
+}
+
+/** 从包清单读版本；读不到就退化，绝不因此让插件挂不上。 */
+function readVersion(): string {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { version?: unknown }
+    return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
+
+/** 租约心跳间隔。比 `LEASE_STALE_MS` 小得多，留足抖动余量。 */
+const HEARTBEAT_MS = 30_000
+
+export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime {
+  const logger = options.logger
+  const startedAt = Date.now()
+  const version = readVersion()
+  const dataDir = resolveDataDir(options.dataDir)
+  const clock = systemClock
+  const timerPort: TimerPort = options.timer === undefined ? nativeTimerPort() : cordisTimerPort(options.timer)
+
+  const registry = createAdapterRegistry()
+  const mutex = createMutex()
+  const bus = createEventBus()
+  const lease: LeaseManager = createLease({
+    path: join(dataDir, 'lease.json'),
+    pid: process.pid,
+    label: PLUGIN_ID,
+  })
+  const browser = createBrowserManager({
+    profileDir: join(dataDir, 'browser-profile'),
+    ...(logger === undefined ? {} : { logger }),
+  })
+
+  let store: Store | undefined
+  let jobs: JobService | undefined
+  let companies: CompanyService | undefined
+  let plans: PlanService | undefined
+  let session: SessionService | undefined
+  let loginFlow: LoginFlow | undefined
+  let scheduler: Scheduler | undefined
+  let intel: IntelService | undefined
+  let guard: Guard | undefined
+  let ai: AiService | undefined
+  let outreach: OutreachService | undefined
+  let settings: SettingsService | undefined
+  let resumes: ResumeService | undefined
+  let pipeline: PipelineService | undefined
+  let messages: MessageService | undefined
+  let interviews: InterviewService | undefined
+  let analytics: AnalyticsService | undefined
+  let campus: CampusService | undefined
+  let overseas: OverseasService | undefined
+  const pdfRenderer: PdfRenderer = createPdfRenderer({
+    ...(logger === undefined ? {} : { logger }),
+  })
+  let toolReport: ToolRegistrationReport | null = null
+  let heartbeatCancel: (() => void) | null = null
+  let failure: RuntimeFailure | null = null
+  let readyPromise: Promise<void> | undefined
+
+  // ── P5：审批端口 ────────────────────────────────────────────────────
+  // 模型发起的高危动作只有一条审批通道：`ctx.approval.request`。
+  // 它要求 `agent` + `toolName`，而那两样只有工具执行期间才知道，
+  // 所以这里从 AsyncLocalStorage 取（见 tools/exec-context.ts）。
+  const approvalService = options.approval
+  const approvalIsUsable = (): boolean =>
+    approvalService !== undefined && toolExec.current() !== undefined
+
+  const approvalPort: ApprovalPort = createApprovalPort({
+    available: approvalIsUsable,
+    ask: async (request): Promise<ApprovalAnswer> => {
+      const exec = toolExec.current()
+      if (approvalService === undefined) throw new Error('宿主没有 approval 服务')
+      if (exec === undefined) throw new Error('不在工具调用上下文里，无法弹出审批')
+      const outcome = await (
+        approvalService as {
+          request(input: {
+            agent: unknown
+            toolName: string
+            callId?: string
+            reason?: string
+            signal?: AbortSignal
+          }): Promise<string>
+        }
+      ).request({
+        agent: exec.agent,
+        toolName: exec.toolName,
+        ...(exec.callId === undefined ? {} : { callId: exec.callId }),
+        // 审批文案就是 `renderApproval` 的结果（含发起者/平台/目标/正文全文/简历版本）
+        reason: renderApproval(request),
+        ...(exec.signal === undefined ? {} : { signal: exec.signal }),
+      })
+      // **如实区分**三种"没放行"：宿主说没有应答者，不等于"用户拒绝了"。
+      // 真实模型在 headless 里跑的时候正是这一点读不出来 —— 它只看到"用户未批准"，
+      // 而真相是那个环境根本没有审批界面（该走 fail-closed + 建待办，而不是当成用户的决定）。
+      switch (outcome) {
+        case 'allowed-once':
+          return true
+        case 'rejected':
+          return false
+        case 'cancelled':
+          return 'cancelled'
+        default:
+          // 'unavailable' 以及任何宿主将来新增的未知取值，一律按"没问到"处理（fail-closed）
+          return 'unavailable'
+      }
+    },
+  })
+
+  /** 是否允许调度：数据层就绪 **且** 持有单实例租约（R20）。 */
+  const canSchedule = (): boolean => store !== undefined && lease.held()
+
+  /** 当前启用简历的标识；没有简历时是 `{null, 0}`（此时分数一律算作"无简历基准"）。 */
+  const currentResumeStamp = (): { resumeId: number | null; rev: number } =>
+    resumes?.scoreStamp() ?? { resumeId: null, rev: 0 }
+
+  /** 从当前简历派生匹配偏好（§4.5.1：简历是最诚实的偏好声源）。 */
+  const resumeProfile = (): Partial<MatchProfile> | undefined => {
+    const current = resumes === undefined ? undefined : safeDefaultResume(resumes)
+    if (current === undefined) return undefined
+    const content = current.content
+    const keywords = [
+      ...content.skills.slice(0, 15).map((skill) => skill.name),
+      ...content.basics.title.split(/[\s/、,，]+/),
+    ].filter((token) => token.trim() !== '')
+    return {
+      keywords: [...new Set(keywords)].slice(0, 20),
+      cities: content.basics.city === undefined ? [] : [content.basics.city],
+    }
+  }
+
+  const readOnlyReason = (): string | null => {
+    if (store === undefined) return failure?.message ?? '数据层尚未就绪'
+    if (!lease.held()) {
+      const status = lease.status()
+      return `另一个实例正在运行（pid ${String(status.pid ?? '?')}）`
+    }
+    return null
+  }
+
+  /** 拿到租约后要做的事（心跳里可能晚一步才拿到）。 */
+  let onLeaseAcquired: (() => void) | null = null
+
+  /** 心跳用 after 自链，两种 TimerPort 都能干净取消（C15）。 */
+  const startHeartbeat = (): void => {
+    const beat = (): void => {
+      if (lease.held()) {
+        lease.heartbeat()
+      } else {
+        // 只读实例不能就此躺平：上一个实例可能已经被强杀，
+        // 等它的心跳过期后我们要能自己接管，而不是必须重启。
+        const verdict = lease.acquire()
+        if (verdict.held) {
+          logger?.info(
+            `[${PLUGIN_ID}] 已接管租约（上一次持有者 pid ${String(verdict.other?.pid ?? '?')} 心跳已过期），开始调度`,
+          )
+          bus.publish('lease.acquired', { pid: process.pid })
+          onLeaseAcquired?.()
+        }
+      }
+      heartbeatCancel = timerPort.after(HEARTBEAT_MS, beat)
+    }
+    heartbeatCancel = timerPort.after(HEARTBEAT_MS, beat)
+  }
+
+  const openDataLayer = (): void => {
+    // 注意作用域：`opened` 必须在 try 之外可见 —— 下面租约与调度都要用它
+    let opened: Store
+    try {
+      opened = openStore({
+        ...(options.dataDir === undefined ? {} : { dataDir: options.dataDir }),
+        ...(logger === undefined ? {} : { logger }),
+      })
+    } catch (error) {
+      const domain = error instanceof DomainError ? error : undefined
+      failure = {
+        code: domain?.code ?? 'INTERNAL',
+        message: messageOf(error),
+        ...(domain?.hint === undefined ? {} : { hint: domain.hint }),
+      }
+      logger?.warn(`[${PLUGIN_ID}] 数据层启动失败：${failure.message}`)
+      bus.publish('data.failed', { message: failure.message, code: failure.code })
+      // 故意不抛出：数据层挂了插件仍要挂上去，
+      // 好让 /health 与面板能告诉用户「为什么没有数据」，而不是静默消失。
+      return
+    }
+
+    store = opened
+    // 简历服务要先建：匹配分要读"当前简历版本"，而 jobs/intel 都需要它（§4.1）
+    const filesDirPath = join(dataDir, 'files')
+    resumes = createResumeService({
+      store: opened,
+      filesDir: filesDirPath,
+      clock,
+      ai,
+      pdf: pdfRenderer,
+      ...(logger === undefined ? {} : { logger }),
+    })
+    jobs = createJobService(opened, { scoreStamp: () => currentResumeStamp() })
+    companies = createCompanyService(opened)
+    plans = createPlanService(opened, clock)
+    session = createSessionService(opened, clock)
+
+    // 适配器配置以 DB 为权威（ADR-19）：DB 覆盖合并到代码默认值之上
+    const override = opened.setting.get<unknown>('adapter-config', 'platform', '51job')
+    registry.register(
+      createFiftyOneAdapter({
+        config: mergeFiftyOneConfig(override),
+        // P5：请求之间要随机延时，别踩出规律性的节奏
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 51job 已注册（配置来源：${override === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // 平台实体随适配器注册一起登记：account_state 有指向 platform 的外键，
+    // 而用户可能在第一次抓取之前就先点「登录」。
+    for (const adapter of registry.list()) {
+      opened.platform.ensure(
+        { id: adapter.id, displayName: adapter.displayName, capabilities: adapter.capabilities },
+        clock(),
+      )
+    }
+
+    // 情报引擎（P4）：先幂等播种内置词表，再装配服务
+    intel = createIntelService(opened, clock, {
+      resumeProfile,
+      scoreStamp: currentResumeStamp,
+    })
+    const seeded = intel.seedDictionary()
+    if (seeded > 0) logger?.info(`[${PLUGIN_ID}] 已播种 ${String(seeded)} 条内置词表`)
+
+    // ── P5：安全与模型层 ────────────────────────────────────────────
+    guard = createGuard({
+      store: opened,
+      session,
+      approval: approvalPort,
+      clock,
+      ...(logger === undefined ? {} : { logger }),
+    })
+
+    // 模型端口可能压根不存在（用户没配模型）—— 那就一切走降级，而不是让插件挂不上
+    const llmPort =
+      options.llm === undefined
+        ? undefined
+        : createLlmPort({
+            llm: options.llm as LlmSourceLike,
+            ...(options.defaultModel === undefined
+              ? {}
+              : { defaultModel: options.defaultModel as ModelSelectorLike }),
+            onWarn: (message: string) => logger?.warn(`[${PLUGIN_ID}] ${message}`),
+          })
+
+    ai = createAiService({
+      store: opened,
+      llm: () => llmPort,
+      onDegrade: (info) => {
+        // 降级必须可见：用户要能知道"这次给你的不是模型结果"（J10）
+        logger?.info(`[${PLUGIN_ID}] 模型用途 ${info.purpose} 降级：${info.reason}`)
+        bus.publish('llm.degraded', { purpose: info.purpose, reason: info.reason })
+      },
+    })
+
+    outreach = createOutreachService({
+      store: opened,
+      ai,
+      ...(logger === undefined ? {} : { logger }),
+      onInjection: (info) => {
+        logger?.warn(
+          `[${PLUGIN_ID}] 岗位 ${String(info.jobId)} 的 JD 命中疑似提示注入：` +
+            info.hits.map((hit) => `${hit.name}(${hit.sample})`).join(' / '),
+        )
+        bus.publish('ai.injection.suspected', {
+          jobId: info.jobId,
+          hits: info.hits.map((hit) => hit.name),
+        })
+      },
+    })
+
+    settings = createSettingsService({ store: opened, ai, clock })
+
+    // ── P7：跟进与看板 ──────────────────────────────────────────────
+    // guardRun 把"走闸门"这件事以回调形式注进去，领域层因此不需要 import guard
+    // （依赖方向保持 domain ← guard，而不是互相依赖）
+    const guardRun = async <T>(
+      input: {
+        action: string
+        actor: string
+        danger: 'low' | 'mid' | 'high'
+        target?: { jobId?: number; platformId?: string; companyId?: number }
+        payload?: Record<string, unknown>
+        guiConfirmed?: boolean
+      },
+      fn: () => Promise<T>,
+    ): Promise<T> => {
+      if (guard === undefined) throw dataNotReady(runtime)
+      return await guard.run(
+        {
+          action: input.action,
+          actor: input.actor as Actor,
+          danger: input.danger,
+          ...(input.target === undefined ? {} : { target: input.target }),
+          ...(input.payload === undefined ? {} : { payload: input.payload }),
+          ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
+        },
+        async () => await fn(),
+      )
+    }
+
+    pipeline = createPipelineService({
+      store: opened,
+      clock,
+      guardRun,
+      ...(logger === undefined ? {} : { logger }),
+    })
+    messages = createMessageService({
+      store: opened,
+      clock,
+      guardRun,
+      ...(logger === undefined ? {} : { logger }),
+    })
+    interviews = createInterviewService({
+      store: opened,
+      clock,
+      ...(logger === undefined ? {} : { logger }),
+    })
+    analytics = createAnalyticsService({ store: opened, clock })
+
+    // ── P8：校招与海外支线 ──────────────────────────────────────────
+    campus = createCampusService({
+      store: opened,
+      clock,
+      ...(logger === undefined ? {} : { logger }),
+    })
+    overseas = createOverseasService({
+      store: opened,
+      ai,
+      clock,
+      ...(logger === undefined ? {} : { logger }),
+    })
+    // 硬截止进待办：这些节点**不可逆**，所以必须是 urgent 而不是普通提示。
+    // 用 createOnce 保证反复 tick 不会堆出一串同样的待办。
+    try {
+      for (const deadline of campus.deadlines()) {
+        if (!deadline.urgent) continue
+        opened.todo.createOnce(
+          {
+            kind: 'deadline',
+            level: 'urgent',
+            title: `${deadline.label}（${deadline.overdue ? '已过期' : `剩 ${String(deadline.hoursLeft)} 小时`}）`,
+            ref: `${deadline.kind}:${String(deadline.refId)}`,
+            detail: {
+              kind: deadline.kind,
+              refId: deadline.refId,
+              dueAt: deadline.dueAt,
+              irreversible: deadline.irreversible,
+              hint: '校招的笔试/网申/三方错过就是终态，没有第二次机会。',
+            },
+          },
+          clock(),
+        )
+      }
+    } catch (error) {
+      logger?.warn(`[${PLUGIN_ID}] 硬截止写待办失败（不影响其它功能）：${messageOf(error)}`)
+    }
+    logger?.info(
+      `[${PLUGIN_ID}] 安全闸门已就绪（审批通道：${approvalService === undefined ? '无 → 高危一律拒绝' : '有'}）；` +
+        `模型：${llmPort === undefined ? '未配置 → 全部降级为规则/模板' : '已接入'}`,
+    )
+    if (isOfflineMode()) {
+      logger?.warn(
+        `[${PLUGIN_ID}] 离线模式已开启（${NO_NETWORK_ENV}）：抓取与登录引导一律拒绝，` +
+          '这是「自动化测试绝不访问真实招聘站」的机制化兜底。',
+      )
+    }
+
+    bus.publish('data.ready', { path: opened.path })
+    // 数据层好了才谈租约与调度
+    const verdict = lease.acquire()
+    if (verdict.held) {
+      if (verdict.stale) {
+        logger?.warn(`[${PLUGIN_ID}] 接管了一个过期租约（上次 pid ${String(verdict.other?.pid ?? '?')}，可能被强杀）`)
+      }
+    } else {
+      logger?.warn(
+        `[${PLUGIN_ID}] 另一个实例正在运行（pid ${String(verdict.other?.pid ?? '?')}）→ ` +
+          '本实例只读：不启动调度、不开浏览器（R20）。对方心跳过期后本实例会自动接管。',
+      )
+    }
+    // 无论持没持有都起心跳：没持有的话，它是「等待接管」的探测循环
+    startHeartbeat()
+
+    loginFlow = createLoginFlow({
+      registry,
+      session: session as SessionService,
+      pageSource: browserPageSource(browser),
+      events: bus,
+      clock,
+      ...(logger === undefined ? {} : { logger }),
+    })
+
+    scheduler = createScheduler({
+      store: opened,
+      plans: plans as PlanService,
+      run: async (input) =>
+        await runtime.crawl({
+          platformId: input.platformId,
+          criteria: input.criteria,
+          planId: input.planId,
+        }),
+      timer: timerPort,
+      events: bus,
+      canSchedule,
+      readOnlyReason,
+      leaseStatus: () => lease.status(),
+      clock,
+      ...(logger === undefined ? {} : { logger }),
+    })
+    onLeaseAcquired = () => {
+      scheduler?.start()
+    }
+    scheduler.start()
+  }
+
+  const runtime: HostRuntime = {
+    ready(): Promise<void> {
+      if (readyPromise !== undefined) return readyPromise
+      // setImmediate：把开库与迁移推到 apply 返回之后再跑（§4.9 / §6.5）
+      readyPromise = new Promise<void>((resolve) => {
+        setImmediate(resolve)
+      }).then(() => {
+        openDataLayer()
+      })
+      return readyPromise
+    },
+
+    isReady(): boolean {
+      return store !== undefined
+    },
+
+    failure(): RuntimeFailure | null {
+      return failure
+    },
+
+    health(): HealthDto {
+      const opened = store
+      const base = {
+        ok: true,
+        name: PLUGIN_ID,
+        version,
+        phase: PHASE,
+        routePrefix: ROUTE_PREFIX,
+        hostUptimeMs: Date.now() - startedAt,
+      }
+
+      if (opened === undefined) {
+        return {
+          ...base,
+          dataReady: false,
+          dataPath: null,
+          jobCount: 0,
+          companyCount: 0,
+          pendingRepairCount: 0,
+          lastCrawl: null,
+          adapters: [],
+          dataError: failure?.message ?? '数据层尚未就绪',
+          offline: isOfflineMode(),
+          tools: toolReport,
+        }
+      }
+
+      return {
+        ...base,
+        dataReady: true,
+        dataPath: opened.path,
+        jobCount: opened.job.count(),
+        companyCount: opened.company.count(),
+        pendingRepairCount: opened.repair.countPending(),
+        lastCrawl: opened.crawlRun.latest() ?? null,
+        adapters: registry.list().map((adapter) => {
+          const snapshot = readAdapterHealth(opened, adapter.id)
+          return {
+            platformId: adapter.id,
+            health: snapshot.health,
+            failStreak: snapshot.failStreak,
+            lastOkAt: snapshot.lastOkAt,
+            fields: snapshot.fields,
+            reason: snapshot.reason,
+          }
+        }),
+        dataError: null,
+        offline: isOfflineMode(),
+        tools: toolReport,
+      }
+    },
+
+    today(): TodayDto {
+      const opened = store
+      if (opened === undefined) {
+        return buildTodayUnavailable(failure?.message ?? '数据层尚未就绪', systemClock())
+      }
+      return buildToday({ store: opened, registry, clock })
+    },
+
+    crawlStatus(): CrawlStatusDto {
+      const opened = store
+      const adapters = registry.list().map((adapter) => {
+        const snapshot =
+          opened === undefined
+            ? { health: 'healthy' as const, failStreak: 0, lastOkAt: null, reason: null, fields: [] }
+            : readAdapterHealth(opened, adapter.id)
+        return {
+          platformId: adapter.id,
+          health: snapshot.health,
+          failStreak: snapshot.failStreak,
+          lastOkAt: snapshot.lastOkAt,
+          fields: snapshot.fields,
+          reason: snapshot.reason,
+        }
+      })
+      return {
+        busy: mutex.isBusy(),
+        paused: adapters.filter((adapter) => adapter.health !== 'healthy').map((adapter) => adapter.platformId),
+        adapters,
+        recentRuns: opened?.crawlRun.list(10) ?? [],
+      }
+    },
+
+    async crawl(options): Promise<CrawlSummaryDto> {
+      // §14 的机制化兜底：离线模式下**绝不**发起真实访问
+      assertNetworkAllowed('抓取招聘网站')
+      const opened = store
+      const jobService = jobs
+      const companyService = companies
+      if (opened === undefined || jobService === undefined || companyService === undefined) {
+        throw dataNotReady(runtime)
+      }
+      // 不持租约就不许驱动浏览器：两个实例抢同一个 profile 会直接报错（R20）
+      if (!lease.held()) {
+        throw new DomainError('CONFLICT', readOnlyReason() ?? '本实例不持有租约', {
+          hint: '另一个实例正在运行 —— 请在那边抓取。',
+        })
+      }
+
+      bus.publish('crawl.started', { platformId: options.platformId, criteria: options.criteria })
+      try {
+        const summary = await runCrawl(
+          {
+            store: opened,
+            registry,
+            mutex,
+            pageSource: browserPageSource(browser),
+            jobs: jobService,
+            companies: companyService,
+            ...(intel === undefined ? {} : { intel }),
+            ...(logger === undefined ? {} : { logger }),
+          },
+          {
+            platformId: options.platformId,
+            criteria: options.criteria,
+            ...(options.planId === undefined ? {} : { planId: options.planId }),
+          },
+        )
+        bus.publish('crawl.finished', {
+          platformId: options.platformId,
+          state: summary.run.state,
+          found: summary.run.found,
+          inserted: summary.run.inserted,
+          updated: summary.run.updated,
+          quarantined: summary.quarantined,
+        })
+        return summary
+      } catch (error) {
+        bus.publish('crawl.failed', { platformId: options.platformId, message: messageOf(error) })
+        throw error
+      }
+    },
+
+    events(): EventBus {
+      return bus
+    },
+
+    intel(): IntelService {
+      if (intel === undefined) throw dataNotReady(runtime)
+      return intel
+    },
+
+    // ── P5：安全与工具 ────────────────────────────────────────────────
+    guard(): Guard {
+      if (guard === undefined) throw dataNotReady(runtime)
+      return guard
+    },
+
+    ai(): AiService {
+      if (ai === undefined) throw dataNotReady(runtime)
+      return ai
+    },
+
+    outreach(): OutreachService {
+      if (outreach === undefined) throw dataNotReady(runtime)
+      return outreach
+    },
+
+    settings(): SettingsService {
+      if (settings === undefined) throw dataNotReady(runtime)
+      return settings
+    },
+
+    approvalAvailable(): boolean {
+      return approvalIsUsable()
+    },
+
+    setToolReport(report): void {
+      toolReport = report
+    },
+
+    toolReport(): ToolRegistrationReport | null {
+      return toolReport
+    },
+
+    resumes(): ResumeService {
+      if (resumes === undefined) throw dataNotReady(runtime)
+      return resumes
+    },
+
+    filesDir(): string {
+      return join(dataDir, 'files')
+    },
+
+    pdfRendererRunning(): boolean {
+      return pdfRenderer.isRunning()
+    },
+
+    pipeline(): PipelineService {
+      if (pipeline === undefined) throw dataNotReady(runtime)
+      return pipeline
+    },
+
+    messages(): MessageService {
+      if (messages === undefined) throw dataNotReady(runtime)
+      return messages
+    },
+
+    interviews(): InterviewService {
+      if (interviews === undefined) throw dataNotReady(runtime)
+      return interviews
+    },
+
+    analytics(): AnalyticsService {
+      if (analytics === undefined) throw dataNotReady(runtime)
+      return analytics
+    },
+
+    followUps(): FollowUpSuggestion[] {
+      return pipeline?.followUpSuggestions() ?? []
+    },
+
+    unreadCount(): number {
+      return messages?.unreadCount() ?? 0
+    },
+
+    campus(): CampusService {
+      if (campus === undefined) throw dataNotReady(runtime)
+      return campus
+    },
+
+    overseas(): OverseasService {
+      if (overseas === undefined) throw dataNotReady(runtime)
+      return overseas
+    },
+
+    deadlines(): DeadlineDto[] {
+      return campus?.deadlines() ?? []
+    },
+
+    async draftGreeting(input): Promise<GreetingDraftDto> {
+      const service = outreach
+      if (service === undefined) throw dataNotReady(runtime)
+      return await service.draft({
+        jobId: input.jobId,
+        ...(input.tone === undefined ? {} : { tone: input.tone }),
+        ...(input.highlights === undefined ? {} : { highlights: input.highlights }),
+        ...(input.extra === undefined ? {} : { extra: input.extra }),
+      })
+    },
+
+    async sendGreeting(input): Promise<GreetingSendResult> {
+      const opened = store
+      const service = outreach
+      const gate = guard
+      const sessionService = session
+      if (opened === undefined || service === undefined || gate === undefined || sessionService === undefined) {
+        throw dataNotReady(runtime)
+      }
+
+      const job = opened.job.detail(input.jobId)
+      if (job === undefined) {
+        throw new DomainError('NOT_FOUND', `岗位不存在：${String(input.jobId)}`, {
+          hint: '它可能已被删除；先用 job_list 看当前有哪些岗位。',
+        })
+      }
+
+      // 文本没给就现生成 —— 生成是**低危**的（不发送），所以它理应发生在闸门之前
+      let text = input.text?.trim() ?? ''
+      let via: 'llm' | 'template' | 'given' = 'given'
+      if (text === '') {
+        const draft = await service.draft({ jobId: job.id })
+        text = draft.text
+        via = draft.via
+      }
+
+      const result = await gate.run(
+        {
+          action: GREETING_SEND_ACTION,
+          actor: input.actor,
+          danger: 'high',
+          target: {
+            jobId: job.id,
+            platformId: job.platformId,
+            ...(job.companyId === null ? {} : { companyId: job.companyId }),
+          },
+          payload: {
+            // 正文只用于**审批展示**；审计里只留长度（§4.1）
+            text,
+            jobTitle: job.title,
+            company: job.companyName ?? '',
+            // §4.4.2 要求审批文案显示"用了哪版简历" —— 打招呼不用简历，如实写出来
+            resumeVersion: '不适用（打招呼只发文本）',
+            draftVia: via,
+          },
+          ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
+        },
+        async (token) =>
+          await sendGreeting(
+            {
+              store: opened,
+              registry,
+              session: sessionService,
+              pageSource: browserPageSource(browser),
+              clock,
+              ...(logger === undefined ? {} : { logger }),
+              // P7：发送**成功后**记一笔接触记录（接触态的载体，§7.0）
+              record: (recorded) => {
+                pipeline?.recordGreetingSent(recorded)
+                bus.publish('greeting.recorded', {
+                  jobId: recorded.jobId,
+                  actor: recorded.actor,
+                })
+              },
+            },
+            token,
+            { jobId: job.id, text },
+          ),
+      )
+
+      bus.publish('greeting.sent', {
+        jobId: result.jobId,
+        platformId: result.platformId,
+        company: result.company,
+        actor: input.actor,
+      })
+      return result
+    },
+
+    async updateSettings(patch, actor, guiConfirmed): Promise<SettingsSnapshot> {
+      const opened = store
+      const service = settings
+      const gate = guard
+      if (opened === undefined || service === undefined || gate === undefined) throw dataNotReady(runtime)
+
+      // 禁止项检查看的是**顶层键**，所以 guard 那半边要摊平传进去
+      //（否则 `requireApproval` 藏在 patch.guard 里就查不到了）。
+      const guardPatch = (patch.guard ?? {}) as Record<string, unknown>
+      const description = describeSettingsPatch(patch)
+
+      return await gate.run(
+        {
+          action: SETTINGS_WRITE_ACTION,
+          actor,
+          danger: 'mid',
+          payload: { patch: guardPatch, description },
+          ...(guiConfirmed === true ? { guiConfirmed: true } : {}),
+        },
+        async (token) => {
+          const next = service.update(patch, token)
+          bus.publish('settings.updated', { by: actor, description })
+          return next
+        },
+      )
+    },
+
+    // ── P3 ────────────────────────────────────────────────────────────
+    plans(): PlanService {
+      if (plans === undefined) throw dataNotReady(runtime)
+      return plans
+    },
+
+    schedulerStatus(): SchedulerStatusDto {
+      if (scheduler === undefined) {
+        return {
+          scheduling: false,
+          readOnly: true,
+          readOnlyReason: readOnlyReason() ?? '数据层尚未就绪',
+          armed: false,
+          nextRunAt: null,
+          lastRunAt: null,
+          running: false,
+          plans: [],
+          lease: lease.status(),
+        }
+      }
+      return scheduler.status()
+    },
+
+    async runPlan(planId, reason): Promise<CrawlSummaryDto> {
+      if (scheduler === undefined) throw dataNotReady(runtime)
+      return await scheduler.runPlan(planId, reason)
+    },
+
+    async schedulerTick(): Promise<void> {
+      if (scheduler === undefined) return
+      await scheduler.tick()
+    },
+
+    platforms(): PlatformOverviewDto[] {
+      const opened = store
+      return registry.list().map((adapter) => {
+        const record = opened?.platform.get(adapter.id)
+        const snapshot =
+          opened === undefined
+            ? { health: 'healthy' as const, failStreak: 0, lastOkAt: null, reason: null, fields: [] }
+            : readAdapterHealth(opened, adapter.id)
+        const account = session?.status(adapter.id) ?? {
+          platformId: adapter.id,
+          loggedIn: false,
+          hiddenFromCurrentEmployer: null,
+          lastCheckAt: null,
+          hint: null,
+          updatedAt: null,
+        }
+        const login = loginFlow?.status(adapter.id)
+        return {
+          id: adapter.id,
+          displayName: adapter.displayName,
+          enabled: record?.enabled ?? true,
+          capabilities: adapter.capabilities,
+          health: snapshot.health,
+          healthReason: snapshot.reason,
+          failStreak: snapshot.failStreak,
+          lastOkAt: snapshot.lastOkAt,
+          account: toAccountDto(account),
+          fields: snapshot.fields,
+          login: { state: login?.state ?? 'idle', message: login?.message ?? null },
+        }
+      })
+    },
+
+    loginStatuses(): LoginStatusDto[] {
+      return registry.list().map((adapter) => {
+        if (loginFlow !== undefined) return loginFlow.status(adapter.id)
+        const account = session?.status(adapter.id)
+        return {
+          platformId: adapter.id,
+          state: 'idle',
+          message: null,
+          startedAt: null,
+          account: toAccountDto(
+            account ?? {
+              platformId: adapter.id,
+              loggedIn: false,
+              hiddenFromCurrentEmployer: null,
+              lastCheckAt: null,
+              hint: null,
+              updatedAt: null,
+            },
+          ),
+        }
+      })
+    },
+
+    startLogin(platformId): LoginStatusDto {
+      // 登录引导会真的打开招聘站页面 —— 同样受离线闸门约束
+      assertNetworkAllowed('打开招聘网站登录页')
+      const flow = loginFlow
+      if (flow === undefined) throw dataNotReady(runtime)
+      return flow.start(platformId)
+    },
+
+    closeTodo(id): boolean {
+      const opened = store
+      if (opened === undefined) throw dataNotReady(runtime)
+      return opened.todo.close(id, clock())
+    },
+
+    store(): Store | undefined {
+      return store
+    },
+    jobs(): JobService | undefined {
+      return jobs
+    },
+    companies(): CompanyService | undefined {
+      return companies
+    },
+    registry(): AdapterRegistry {
+      return registry
+    },
+    mutex(): Mutex {
+      return mutex
+    },
+    browser(): BrowserManager {
+      return browser
+    },
+
+    close(): void {
+      // 顺序有讲究：先停调度（别再排新任务），再关数据层，最后放租约
+      scheduler?.stop()
+      if (heartbeatCancel !== null) {
+        heartbeatCancel()
+        heartbeatCancel = null
+      }
+      loginFlow?.cancelAll()
+      try {
+        store?.close()
+      } catch (error) {
+        logger?.warn(`[${PLUGIN_ID}] 关闭数据库失败：${messageOf(error)}`)
+      }
+      store = undefined
+      jobs = undefined
+      companies = undefined
+      plans = undefined
+      session = undefined
+      loginFlow = undefined
+      scheduler = undefined
+      intel = undefined
+      guard = undefined
+      ai = undefined
+      outreach = undefined
+      settings = undefined
+      resumes = undefined
+      // PDF 渲染器是独立的 headless 实例：不关就是孤儿 Chromium（C12）
+      void pdfRenderer.close().catch(() => undefined)
+      lease.release()
+      // 浏览器关闭是异步的：不阻塞卸载，但必须发起，否则会留孤儿 Chromium（§4.2.1）
+      void browser.close().catch((error: unknown) => {
+        logger?.warn(`[${PLUGIN_ID}] 关闭浏览器失败：${messageOf(error)}`)
+      })
+    },
+  }
+
+  return runtime
+}
+
+/** 从当前简历派生匹配偏好时用的小工具：没有简历就返回 undefined（不是抛错）。 */
+function safeDefaultResume(service: ResumeService): { content: ResumeContent } | undefined {
+  try {
+    const listed = service.list().find((item) => item.isDefault && item.state === 'active')
+    if (listed === undefined) return undefined
+    return { content: service.get(listed.id).content }
+  } catch {
+    // 简历坏了不该让「岗位列表」整个挂掉
+    return undefined
+  }
+}
+
+export type { PlanDto }

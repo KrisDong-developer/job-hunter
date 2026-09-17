@@ -1,0 +1,340 @@
+import type { DatabaseSync, StatementSync } from 'node:sqlite'
+import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/constants.js'
+import type { JobDto } from '../../../shared/dto.js'
+import { JOB_STATES, type JobState } from '../../../shared/enums.js'
+import { asId, asInt, asIntOrNull, asJson, asRealOrNull, asText, asTextOrNull, type Row } from '../row.js'
+
+/** 岗位写入/筛选所需的标量字段（活对象已被适配器剥掉，§4.3 P7）。 */
+export interface JobUpsertInput {
+  platformId: string
+  platformJobId: string
+  title: string
+  companyId: number | null
+  salaryRaw: string
+  salaryMin: number | null
+  salaryMax: number | null
+  salaryMonths: number | null
+  city: string
+  district: string
+  expReq: string
+  eduReq: string
+  tags: string[]
+  sourceUrl: string
+  publishedAt: string | null
+  jdText?: string | null
+}
+
+/**
+ * 算分时"用的是哪一版简历"（§4.1）。
+ *
+ * 单独立一个类型是因为它必须**跟着分数一起写**：只写分数不写版本，
+ * 就没法判断旧分数是否过期 —— 而"展示旧分数误导决策"正是 §4.1 点名的那个坑。
+ */
+export interface MatchStamp {
+  resumeId: number | null
+  rev: number
+}
+
+export interface JobQuery {  state?: JobState
+  platformId?: string
+  city?: string
+  companyId?: number
+  /** 标题模糊匹配（走 LIKE，仅作粗筛）。 */
+  keyword?: string
+  /** 只要月薪下限 ≥ 该值的岗位。 */
+  minSalaryAtLeast?: number
+  orderBy?: 'crawled_at' | 'salary_min' | 'title' | 'last_seen_at'
+  descending?: boolean
+}
+
+export interface JobRepo {
+  /** 幂等写入：按 `(platform_id, platform_job_id)` upsert，重复跑不产生重复数据（§6.1）。 */
+  upsert(input: JobUpsertInput, now: string): { id: number; outcome: 'inserted' | 'updated' }
+  query(filters?: JobQuery, limit?: number, offset?: number): JobDto[]
+  detail(id: number): JobDto | undefined
+  mark(id: number, state: JobState): boolean
+  /** 读 JD 正文（列表页拿不到，P2+ 的详情页才有）。 */
+  jdText(id: number): string | null
+  /** 写匹配分与**逐条理由**（§4.5.1：分数必须可解释）。 */
+  setMatch(id: number, score: number, reasons: unknown, stamp?: MatchStamp | undefined): void
+  /** 读回匹配理由。 */
+  matchReasons(id: number): Array<{ kind: string; text: string; weight: number }>
+  count(): number
+  /** 与 `query` 用同一套 WHERE 的计数（分页 total 用）。 */
+  countMatching(filters?: JobQuery): number
+  /** 首次见到时间 ≥ 该时刻的岗位数（U0 的「今日新增」）。 */
+  countSince(iso: string): number
+  countByState(): Record<string, number>
+  latest(limit?: number): JobDto[]
+}
+
+const SELECT_BASE = `
+SELECT j.*, c.name AS company_name
+FROM job j
+LEFT JOIN company c ON c.id = j.company_id`
+
+/** 排序列白名单 —— 绝不把入参拼进 SQL。 */
+const ORDER_COLUMNS: Record<NonNullable<JobQuery['orderBy']>, string> = {
+  crawled_at: 'j.crawled_at',
+  salary_min: 'j.salary_min',
+  title: 'j.title',
+  last_seen_at: 'j.last_seen_at',
+}
+
+function toDto(row: Row): JobDto {
+  return {
+    id: asInt(row['id']),
+    platformId: asText(row['platform_id']),
+    platformJobId: asText(row['platform_job_id']),
+    title: asText(row['title']),
+    companyId: asIntOrNull(row['company_id']),
+    companyName: asTextOrNull(row['company_name']),
+    salaryRaw: asText(row['salary_raw']),
+    salaryMin: asIntOrNull(row['salary_min']),
+    salaryMax: asIntOrNull(row['salary_max']),
+    salaryMonths: asIntOrNull(row['salary_months']),
+    city: asText(row['city']),
+    district: asText(row['district']),
+    expReq: asText(row['exp_req']),
+    eduReq: asText(row['edu_req']),
+    tags: asJson<string[]>(row['tags_json'], []),
+    sourceUrl: asText(row['source_url']),
+    publishedAt: asTextOrNull(row['published_at']),
+    firstSeenAt: asText(row['first_seen_at']),
+    lastSeenAt: asText(row['last_seen_at']),
+    state: asText(row['state'], 'new') as JobState,
+    matchScore: asRealOrNull(row['match_score']),
+    // §4.1：分数是**简历版本的函数**。记下算分时用的是哪一版、哪个 rev，
+    // 这样简历一改就能判定"这个分过期了"，而不是继续拿旧分误导决策。
+    scoreRev: asInt(row['score_rev'], 0),
+    scoreResumeId: asIntOrNull(row['score_resume_id']),
+    // 真正的过期判定需要"当前版本"，那是领域层的事（这里先给 false）
+    scoreStale: false,
+    // 标注类型由领域层批量补齐（一次 IN 查询，避免列表页 N+1）
+    flagTypes: [],
+  }
+}
+
+export function createJobRepo(db: DatabaseSync): JobRepo {
+  const cache = new Map<string, StatementSync>()
+  const prepare = (sql: string): StatementSync => {
+    const hit = cache.get(sql)
+    if (hit !== undefined) return hit
+    const statement = db.prepare(sql)
+    cache.set(sql, statement)
+    return statement
+  }
+
+  const selectIdByKey = db.prepare(
+    'SELECT id FROM job WHERE platform_id = ? AND platform_job_id = ?',
+  )
+  const insert = db.prepare(
+    `INSERT INTO job (
+       platform_id, platform_job_id, title, company_id, salary_raw, salary_min, salary_max, salary_months,
+       city, district, exp_req, edu_req, tags_json, jd_text, published_at,
+       first_seen_at, last_seen_at, crawled_at, source_url, state
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
+  )
+  // 注意：**不覆盖** state / first_seen_at —— 前者是用户的处置态，后者是“首次见到”的事实。
+  const update = db.prepare(
+    `UPDATE job SET
+       title = ?, company_id = ?, salary_raw = ?, salary_min = ?, salary_max = ?, salary_months = ?,
+       city = ?, district = ?, exp_req = ?, edu_req = ?, tags_json = ?,
+       jd_text = coalesce(?, jd_text), published_at = coalesce(?, published_at),
+       last_seen_at = ?, crawled_at = ?, source_url = ?
+     WHERE id = ?`,
+  )
+  const selectById = db.prepare(`${SELECT_BASE} WHERE j.id = ?`)
+  const markStmt = db.prepare('UPDATE job SET state = ? WHERE id = ?')
+  const jdTextStmt = db.prepare('SELECT jd_text FROM job WHERE id = ?')
+  const setMatchStmt = db.prepare(
+    'UPDATE job SET match_score = ?, match_reasons_json = ?, score_rev = ?, score_resume_id = ? WHERE id = ?',
+  )
+  const reasonsStmt = db.prepare('SELECT match_reasons_json FROM job WHERE id = ?')
+  const countStmt = db.prepare('SELECT count(*) AS n FROM job')
+  const countSinceStmt = db.prepare('SELECT count(*) AS n FROM job WHERE first_seen_at >= ?')
+  const countByStateStmt = db.prepare('SELECT state, count(*) AS n FROM job GROUP BY state')
+
+  const buildWhere = (filters: JobQuery): { clause: string; params: Array<string | number> } => {
+    const where: string[] = []
+    const params: Array<string | number> = []
+
+    if (filters.state !== undefined) {
+      where.push('j.state = ?')
+      params.push(filters.state)
+    }
+    if (filters.platformId !== undefined) {
+      where.push('j.platform_id = ?')
+      params.push(filters.platformId)
+    }
+    if (filters.city !== undefined && filters.city !== '') {
+      where.push('j.city = ?')
+      params.push(filters.city)
+    }
+    if (filters.companyId !== undefined) {
+      where.push('j.company_id = ?')
+      params.push(filters.companyId)
+    }
+    if (filters.keyword !== undefined && filters.keyword !== '') {
+      where.push('j.title LIKE ?')
+      params.push(`%${filters.keyword}%`)
+    }
+    if (filters.minSalaryAtLeast !== undefined) {
+      where.push('j.salary_min >= ?')
+      params.push(filters.minSalaryAtLeast)
+    }
+
+    return { clause: where.length > 0 ? `WHERE ${where.join(' AND ')}` : '', params }
+  }
+
+  const query = (
+    filters: JobQuery = {},
+    limit: number = PAGE_SIZE_DEFAULT,
+    offset = 0,
+  ): JobDto[] => {
+    const { clause, params } = buildWhere(filters)
+    const orderColumn = ORDER_COLUMNS[filters.orderBy ?? 'crawled_at']
+    const direction = filters.descending === false ? 'ASC' : 'DESC'
+    const safeLimit = Math.max(1, Math.min(Math.trunc(limit), PAGE_SIZE_MAX))
+    const safeOffset = Math.max(0, Math.trunc(offset))
+
+    // 强制 LIMIT：禁止无界查询进热路径（§4.1）。NULL 排在最后，避免“面议”占据榜首。
+    const sql = `${SELECT_BASE}
+      ${clause}
+      ORDER BY ${orderColumn} IS NULL, ${orderColumn} ${direction}, j.id DESC
+      LIMIT ? OFFSET ?`
+
+    return (prepare(sql).all(...params, safeLimit, safeOffset) as Row[]).map(toDto)
+  }
+
+  const countMatching = (filters: JobQuery = {}): number => {
+    const { clause, params } = buildWhere(filters)
+    const row = prepare(`SELECT count(*) AS n FROM job j ${clause}`).get(...params) as Row | undefined
+    return asInt(row?.['n'])
+  }
+
+  return {
+    upsert(input, now): { id: number; outcome: 'inserted' | 'updated' } {
+      const tagsJson = JSON.stringify(input.tags)
+      const existing = selectIdByKey.get(input.platformId, input.platformJobId) as Row | undefined
+
+      if (existing !== undefined) {
+        const id = asInt(existing['id'])
+        update.run(
+          input.title,
+          input.companyId,
+          input.salaryRaw,
+          input.salaryMin,
+          input.salaryMax,
+          input.salaryMonths,
+          input.city,
+          input.district,
+          input.expReq,
+          input.eduReq,
+          tagsJson,
+          input.jdText ?? null,
+          input.publishedAt,
+          now,
+          now,
+          input.sourceUrl,
+          id,
+        )
+        return { id, outcome: 'updated' }
+      }
+
+      const result = insert.run(
+        input.platformId,
+        input.platformJobId,
+        input.title,
+        input.companyId,
+        input.salaryRaw,
+        input.salaryMin,
+        input.salaryMax,
+        input.salaryMonths,
+        input.city,
+        input.district,
+        input.expReq,
+        input.eduReq,
+        tagsJson,
+        input.jdText ?? null,
+        input.publishedAt,
+        now,
+        now,
+        now,
+        input.sourceUrl,
+      )
+      return { id: asId(result.lastInsertRowid), outcome: 'inserted' }
+    },
+
+    query,
+
+    detail(id): JobDto | undefined {
+      const row = selectById.get(id) as Row | undefined
+      return row === undefined ? undefined : toDto(row)
+    },
+
+    mark(id, state): boolean {
+      if (!JOB_STATES.includes(state)) return false
+      const result = markStmt.run(state, id)
+      return asInt(result.changes) > 0
+    },
+
+    jdText(id): string | null {
+      const row = jdTextStmt.get(id) as Row | undefined
+      return row === undefined ? null : asTextOrNull(row['jd_text'])
+    },
+
+    setMatch(id, score, reasons, stamp): void {
+      setMatchStmt.run(
+        score,
+        JSON.stringify(reasons ?? []),
+        stamp?.rev ?? 0,
+        stamp?.resumeId ?? null,
+        id,
+      )
+    },
+
+    matchReasons(id): Array<{ kind: string; text: string; weight: number }> {
+      const row = reasonsStmt.get(id) as Row | undefined
+      if (row === undefined) return []
+      const parsed = asJson<unknown[]>(row['match_reasons_json'], [])
+      return parsed.flatMap((item) => {
+        if (item === null || typeof item !== 'object') return []
+        const record = item as Record<string, unknown>
+        return [
+          {
+            kind: typeof record['kind'] === 'string' ? record['kind'] : 'unknown',
+            text: typeof record['text'] === 'string' ? record['text'] : '',
+            weight: typeof record['weight'] === 'number' ? record['weight'] : 0,
+          },
+        ]
+      })
+    },
+
+    count(): number {
+      const row = countStmt.get() as Row | undefined
+      return asInt(row?.['n'])
+    },
+
+    countSince(iso): number {
+      const row = countSinceStmt.get(iso) as Row | undefined
+      return asInt(row?.['n'])
+    },
+
+    countMatching(filters = {}): number {
+      return countMatching(filters)
+    },
+
+    countByState(): Record<string, number> {
+      const out: Record<string, number> = {}
+      for (const row of countByStateStmt.all() as Row[]) {
+        out[asText(row['state'])] = asInt(row['n'])
+      }
+      return out
+    },
+
+    latest(limit = PAGE_SIZE_DEFAULT): JobDto[] {
+      return query({}, limit, 0)
+    },
+  }
+}
