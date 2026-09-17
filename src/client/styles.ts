@@ -19,6 +19,24 @@ export function installStyles(): () => void {
 }
 
 const CSS = `
+/* ── 侧栏入口图标 ─────────────────────────────────────────────────────
+   shell 的 .panelRow 是 padding:7px 8px、gap:8px，而 .panelGlyph **没有宽度**：
+   glyph 占多宽完全由我们决定，标签的起点因此也跟着我们走。
+   同排的社区插件（task-board / skill-explorer）**没用槽位**，是手插 DOM 自带样式：
+   padding:0 10px + 24px 图标盒 + 18px svg →
+     它们的标签起点 = 10 + 24 + 8 = 42px
+     我们若按 shell 给的 16px 画 = 8 + 16 + 8 = 32px   ← 实测差 10px，就是"不左对齐"
+   这里把盒子固定成 24px、图标按 18px 画，再在宽侧栏补 2px（shell 的 8px → 它们的 10px），
+   于是两边都是 42px，图标也落在同一列（13..31px）。
+   折叠态（size=18）**不补**那 2px：那行是 36×36 居中，补了会偏心。
+   高度取 22px 而不是 24px：shell 的 .panelRow 是 min-height:36px + 上下 padding 7px，
+   内容超过 22px 就把行撑到 38px，而邻居是写死的 height:36px（实测 38 vs 36）。
+   宽度必须是 24px（对齐标签列），高度退回 22px（对齐行高）—— 图标仍然居中，看不出来。 */
+.jh-entry-glyph{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:24px;height:22px}
+.jh-entry-glyph[data-wide="1"]{margin-left:2px}
+.jh-entry-glyph svg{display:block}
+
 /* ── 外壳 ─────────────────────────────────────────────────────────── */
 .jh-root{box-sizing:border-box;display:flex;flex-direction:column;height:100%;position:relative;
   background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.7}

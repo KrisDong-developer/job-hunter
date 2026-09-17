@@ -896,6 +896,7 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 | （文档未提） | 工签识别为 `unknown` 时**留 NULL 而不是写 'unknown'** | 筛选时"没识别"与"识别为未识别"是两件事，混在一起就再也分不开 |
 | （文档未提） | 英文简历模块**不提供翻译入口** | §4.M 说机翻是致命错误；提供入口就等于鼓励用它 |
 | 「纯 insert 即可热挂载，无需重启」（C2） | **未实测**：命令行安装后要重启才生效 | `P0-VERIFICATION.md` §2.2 自己标明"端到端演示不重启即生效本轮未做"；`dshmarket` 的热挂载（`hot.js`）只服务市场界面的安装流程，与 `dsh plugin add` 不是同一条路径。实践建议：装完就重启 |
+| 侧栏入口的排版由 shell 的槽位决定 | 图标盒子固定 `24×22`、宽侧栏补 `2px` 左边距，向**手插 DOM** 的社区插件对齐 | shell 的 `.panelGlyph` **没有宽度**，标签起点跟着我们的 glyph 走：不补是 `8+16+8=32px`，邻居是 `10+24+8=42px`（差 10px，肉眼就是"不左对齐"）。高度退回 22px 是为了让行高与邻居的 `height:36px` 一致（24px 会把行撑到 38px，实测过）。数字与推导写在 `src/client/entry-icon.tsx` 顶部与 `styles.ts` 的 `.jh-entry-glyph` 注释里 |
 
 ---
 

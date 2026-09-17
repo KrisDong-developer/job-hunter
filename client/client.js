@@ -49,26 +49,36 @@ window.__ModuleLoader__.load({
 
 		// src/client/entry-icon.tsx
 		var import_jsx_runtime = require("react/jsx-runtime");
+		var GLYPH_MIN = 18;
 		function JobHunterEntryIcon({ size, active }) {
-		  const edge = typeof size === "number" && size > 0 ? size : 18;
-		  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-		    "svg",
+		  const asked = typeof size === "number" && size > 0 ? size : GLYPH_MIN;
+		  const edge = Math.max(asked, GLYPH_MIN);
+		  const wide = asked < GLYPH_MIN;
+		  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+		    "span",
 		    {
-		      className: "jh-entry-icon",
+		      className: "jh-entry-glyph",
 		      "data-job-hunter": "entry",
-		      width: edge,
-		      height: edge,
-		      viewBox: "0 0 16 16",
-		      fill: "none",
-		      stroke: "currentColor",
-		      strokeWidth: active === true ? 1.6 : 1.3,
-		      strokeLinecap: "round",
-		      strokeLinejoin: "round",
-		      "aria-hidden": "true",
-		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", { x: "2", y: "2.5", width: "12", height: "11", rx: "1.5" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M2 6.5h12M6.5 6.5v7" })
-		      ]
+		      ...wide ? { "data-wide": "1" } : {},
+		      children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+		        "svg",
+		        {
+		          className: "jh-entry-icon",
+		          width: edge,
+		          height: edge,
+		          viewBox: "0 0 16 16",
+		          fill: "none",
+		          stroke: "currentColor",
+		          strokeWidth: active === true ? 1.6 : 1.3,
+		          strokeLinecap: "round",
+		          strokeLinejoin: "round",
+		          "aria-hidden": "true",
+		          children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("rect", { x: "2", y: "2.5", width: "12", height: "11", rx: "1.5" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M2 6.5h12M6.5 6.5v7" })
+		          ]
+		        }
+		      )
 		    }
 		  );
 		}
@@ -3096,6 +3106,24 @@ window.__ModuleLoader__.load({
 		  return () => style.remove();
 		}
 		var CSS = `
+		/* \u2500\u2500 \u4FA7\u680F\u5165\u53E3\u56FE\u6807 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   shell \u7684 .panelRow \u662F padding:7px 8px\u3001gap:8px\uFF0C\u800C .panelGlyph **\u6CA1\u6709\u5BBD\u5EA6**\uFF1A
+		   glyph \u5360\u591A\u5BBD\u5B8C\u5168\u7531\u6211\u4EEC\u51B3\u5B9A\uFF0C\u6807\u7B7E\u7684\u8D77\u70B9\u56E0\u6B64\u4E5F\u8DDF\u7740\u6211\u4EEC\u8D70\u3002
+		   \u540C\u6392\u7684\u793E\u533A\u63D2\u4EF6\uFF08task-board / skill-explorer\uFF09**\u6CA1\u7528\u69FD\u4F4D**\uFF0C\u662F\u624B\u63D2 DOM \u81EA\u5E26\u6837\u5F0F\uFF1A
+		   padding:0 10px + 24px \u56FE\u6807\u76D2 + 18px svg \u2192
+		     \u5B83\u4EEC\u7684\u6807\u7B7E\u8D77\u70B9 = 10 + 24 + 8 = 42px
+		     \u6211\u4EEC\u82E5\u6309 shell \u7ED9\u7684 16px \u753B = 8 + 16 + 8 = 32px   \u2190 \u5B9E\u6D4B\u5DEE 10px\uFF0C\u5C31\u662F"\u4E0D\u5DE6\u5BF9\u9F50"
+		   \u8FD9\u91CC\u628A\u76D2\u5B50\u56FA\u5B9A\u6210 24px\u3001\u56FE\u6807\u6309 18px \u753B\uFF0C\u518D\u5728\u5BBD\u4FA7\u680F\u8865 2px\uFF08shell \u7684 8px \u2192 \u5B83\u4EEC\u7684 10px\uFF09\uFF0C
+		   \u4E8E\u662F\u4E24\u8FB9\u90FD\u662F 42px\uFF0C\u56FE\u6807\u4E5F\u843D\u5728\u540C\u4E00\u5217\uFF0813..31px\uFF09\u3002
+		   \u6298\u53E0\u6001\uFF08size=18\uFF09**\u4E0D\u8865**\u90A3 2px\uFF1A\u90A3\u884C\u662F 36\xD736 \u5C45\u4E2D\uFF0C\u8865\u4E86\u4F1A\u504F\u5FC3\u3002
+		   \u9AD8\u5EA6\u53D6 22px \u800C\u4E0D\u662F 24px\uFF1Ashell \u7684 .panelRow \u662F min-height:36px + \u4E0A\u4E0B padding 7px\uFF0C
+		   \u5185\u5BB9\u8D85\u8FC7 22px \u5C31\u628A\u884C\u6491\u5230 38px\uFF0C\u800C\u90BB\u5C45\u662F\u5199\u6B7B\u7684 height:36px\uFF08\u5B9E\u6D4B 38 vs 36\uFF09\u3002
+		   \u5BBD\u5EA6\u5FC5\u987B\u662F 24px\uFF08\u5BF9\u9F50\u6807\u7B7E\u5217\uFF09\uFF0C\u9AD8\u5EA6\u9000\u56DE 22px\uFF08\u5BF9\u9F50\u884C\u9AD8\uFF09\u2014\u2014 \u56FE\u6807\u4ECD\u7136\u5C45\u4E2D\uFF0C\u770B\u4E0D\u51FA\u6765\u3002 */
+		.jh-entry-glyph{display:inline-flex;align-items:center;justify-content:center;flex:none;
+		  width:24px;height:22px}
+		.jh-entry-glyph[data-wide="1"]{margin-left:2px}
+		.jh-entry-glyph svg{display:block}
+
 		/* \u2500\u2500 \u5916\u58F3 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-root{box-sizing:border-box;display:flex;flex-direction:column;height:100%;position:relative;
 		  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.7}
