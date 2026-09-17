@@ -142,7 +142,14 @@ export function JobHunterPanel() {
         ) : screen === 'campus' ? (
           <CampusScreen revision={revision} onChanged={() => setRevision((value) => value + 1)} />
         ) : screen === 'board' ? (
-          <BoardScreen revision={revision} />
+          <BoardScreen
+            revision={revision}
+            // 下钻：漏斗上的数字点下去 → 去「流水线」看那一段的明细（§13 U8 → U5）
+            onDrillDown={() => {
+              setSelected(null)
+              setScreen('pipeline')
+            }}
+          />
         ) : screen === 'resumes' ? (
           <ResumesScreen revision={revision} onChanged={() => setRevision((value) => value + 1)} />
         ) : (

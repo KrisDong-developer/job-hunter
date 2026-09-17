@@ -233,7 +233,7 @@ function FollowUpRow(props: { item: FollowUpDto; onOpen: (id: number) => void })
  * 界面上**先显示样本量，再显示比率** —— 顺序不是小事：
  * 先看到"100% 回复率"再看到"样本 1 条"，人已经形成印象了。
  */
-export function BoardScreen(props: { revision: number }) {
+export function BoardScreen(props: { revision: number; onDrillDown: (step: string) => void }) {
   const funnel = useAsync((signal) => fetchFunnel(signal), [props.revision])
   const attribution = useAsync((signal) => fetchAttribution(signal), [props.revision])
   const [city, setCity] = useState('')
@@ -261,24 +261,53 @@ export function BoardScreen(props: { revision: number }) {
               // 总体切换处画一条分隔线：这两段本来就不可比（跨总体算转化率会 >100%）
               const previous = index === 0 ? undefined : funnelData.steps[index - 1]
               const boundary = previous !== undefined && previous.population !== step.population
+              const samePopulation = previous !== undefined && previous.population === step.population
+              const drop = samePopulation && previous !== undefined ? previous.count - step.count : null
+              const top = funnelData.steps[0]?.count ?? 0
               return (
-                <li key={step.key} className={boundary ? 'jh-funnel-boundary' : undefined}>
-                  <span className="jh-funnel-label">{step.label}</span>
-                  <span
-                    className="jh-funnel-bar"
-                    style={{
-                      width: `${String(funnelWidth(step.count, funnelData.steps[0]?.count ?? 0))}%`,
-                    }}
-                  />
-                  <span className="jh-funnel-count">{step.count}</span>
-                  <span className="jh-muted jh-funnel-rate">
-                    {step.rate === null ? '—' : `${(step.rate * 100).toFixed(0)}%`}
-                  </span>
+                <li key={step.key}>
+                  {index === 0 || boundary ? (
+                    <span className="jh-funnel-seg">
+                      {step.population === 'contact'
+                        ? '接触阶段 · 打招呼链路'
+                        : '投递阶段 · 投递 → 面试 → Offer'}
+                    </span>
+                  ) : null}
+                  <div className="jh-funnel-row">
+                    <span className="jh-funnel-label">{step.label}</span>
+                    <span className="jh-funnel-track">
+                      <span
+                        className={`jh-funnel-bar${step.population === 'application' ? ' jh-funnel-bar-apply' : ''}`}
+                        // max() 是给"0 也看得见一条基线"：全 0 时若宽度就是 0，整张图会像没画
+                        style={{ width: `max(3px, ${String(funnelWidth(step.count, top))}%)` }}
+                      />
+                    </span>
+                    <button
+                      type="button"
+                      className="jh-funnel-count"
+                      title="点开看这一段的明细"
+                      onClick={() => props.onDrillDown(step.key)}
+                    >
+                      {step.count}
+                    </button>
+                    <span className="jh-muted jh-funnel-rate">
+                      {step.rate === null ? '—' : `${(step.rate * 100).toFixed(0)}%`}
+                    </span>
+                    <span className="jh-muted jh-funnel-drop">
+                      {drop === null || drop <= 0 ? '' : `流失 ${String(drop)}`}
+                    </span>
+                  </div>
                 </li>
               )
             })}
           </ul>
-          <p className="jh-muted">{funnelData.note}</p>
+          {/* 说教搬进 Tooltip：版面上只留一个可扫的徽章，要依据时悬停看 */}
+          <span
+            className={`jh-chip ${funnelData.sampleSize < 5 ? 'jh-chip-warn' : 'jh-chip-dirty'}`}
+            title={funnelData.note}
+          >
+            {funnelData.sampleSize < 5 ? '⚠ ' : ''}样本 {funnelData.sampleSize} 条 · 悬停看口径
+          </span>
         </div>
       )}
 

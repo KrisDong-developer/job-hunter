@@ -591,6 +591,22 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-funnel-rate{flex:0 0 48px;text-align:right}
 /* 总体切换：接触漏斗与投递漏斗是两个不可比的总体，画一条线比什么都清楚 */
 .jh-funnel-boundary{border-top:1px dashed var(--dsw-alias-border-l3);padding-top:4px;margin-top:2px}
+/* 总体分段标题：接触链路与投递链路分开写清楚 */
+.jh-funnel-seg{font-size:11px;font-weight:600;letter-spacing:.06em;
+  color:var(--dsw-alias-label-secondary);margin-top:2px}
+.jh-funnel-row{display:flex;align-items:center;gap:9px}
+/* 跑道：0 也画得出来（条本身保底 3px），否则全 0 时整张图像没画 */
+.jh-funnel-track{flex:1 1 auto;min-width:0;height:12px;border-radius:3px;
+  background:var(--dsw-alias-bg-overlay);overflow:hidden}
+.jh-funnel-bar{display:block;height:100%;border-radius:3px;
+  background:var(--dsw-alias-brand-primary);opacity:.75}
+/* 投递阶段换一档色：一眼分得清哪些是"我做的动作"、哪些是招聘方的回应 */
+.jh-funnel-bar-apply{background:var(--dsw-alias-button-info-fill);opacity:1}
+.jh-funnel-count{flex:0 0 40px;text-align:right;font-variant-numeric:tabular-nums;
+  border:0;background:transparent;cursor:pointer;font:inherit;font-weight:600;
+  color:var(--dsw-alias-link);text-decoration:underline;padding:0}
+.jh-funnel-count:hover{color:var(--dsw-alias-label-primary)}
+.jh-funnel-drop{flex:0 0 52px;text-align:right;font-size:11px}
 
 .jh-table{border-collapse:collapse;width:100%;font-size:12px}
 .jh-table th,.jh-table td{border-bottom:1px solid var(--dsw-alias-border-l2);padding:4px 6px;text-align:left}

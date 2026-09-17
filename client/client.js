@@ -2342,22 +2342,48 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("ul", { className: "jh-funnel", children: funnelData.steps.map((step, index) => {
 		        const previous = index === 0 ? void 0 : funnelData.steps[index - 1];
 		        const boundary = previous !== void 0 && previous.population !== step.population;
-		        return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("li", { className: boundary ? "jh-funnel-boundary" : void 0, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-funnel-label", children: step.label }),
-		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
-		            "span",
-		            {
-		              className: "jh-funnel-bar",
-		              style: {
-		                width: `${String(funnelWidth(step.count, funnelData.steps[0]?.count ?? 0))}%`
+		        const samePopulation = previous !== void 0 && previous.population === step.population;
+		        const drop = samePopulation && previous !== void 0 ? previous.count - step.count : null;
+		        const top = funnelData.steps[0]?.count ?? 0;
+		        return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("li", { children: [
+		          index === 0 || boundary ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-funnel-seg", children: step.population === "contact" ? "\u63A5\u89E6\u9636\u6BB5 \xB7 \u6253\u62DB\u547C\u94FE\u8DEF" : "\u6295\u9012\u9636\u6BB5 \xB7 \u6295\u9012 \u2192 \u9762\u8BD5 \u2192 Offer" }) : null,
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-funnel-row", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-funnel-label", children: step.label }),
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-funnel-track", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		              "span",
+		              {
+		                className: `jh-funnel-bar${step.population === "application" ? " jh-funnel-bar-apply" : ""}`,
+		                style: { width: `max(3px, ${String(funnelWidth(step.count, top))}%)` }
 		              }
-		            }
-		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-funnel-count", children: step.count }),
-		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-muted jh-funnel-rate", children: step.rate === null ? "\u2014" : `${(step.rate * 100).toFixed(0)}%` })
+		            ) }),
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "jh-funnel-count",
+		                title: "\u70B9\u5F00\u770B\u8FD9\u4E00\u6BB5\u7684\u660E\u7EC6",
+		                onClick: () => props.onDrillDown(step.key),
+		                children: step.count
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-muted jh-funnel-rate", children: step.rate === null ? "\u2014" : `${(step.rate * 100).toFixed(0)}%` }),
+		            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-muted jh-funnel-drop", children: drop === null || drop <= 0 ? "" : `\u6D41\u5931 ${String(drop)}` })
+		          ] })
 		        ] }, step.key);
 		      }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "jh-muted", children: funnelData.note })
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+		        "span",
+		        {
+		          className: `jh-chip ${funnelData.sampleSize < 5 ? "jh-chip-warn" : "jh-chip-dirty"}`,
+		          title: funnelData.note,
+		          children: [
+		            funnelData.sampleSize < 5 ? "\u26A0 " : "",
+		            "\u6837\u672C ",
+		            funnelData.sampleSize,
+		            " \u6761 \xB7 \u60AC\u505C\u770B\u53E3\u5F84"
+		          ]
+		        }
+		      )
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { className: "jh-card-title", children: "\u5F52\u56E0" }),
 		    attributionData !== null ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
@@ -4036,7 +4062,16 @@ window.__ModuleLoader__.load({
 		        onChanged: () => setRevision((value) => value + 1),
 		        onSelectJob: setSelected
 		      }
-		    ) : screen === "campus" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(CampusScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : screen === "board" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(BoardScreen, { revision }) : screen === "resumes" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ResumesScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		    ) : screen === "campus" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(CampusScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : screen === "board" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		      BoardScreen,
+		      {
+		        revision,
+		        onDrillDown: () => {
+		          setSelected(null);
+		          setScreen("pipeline");
+		        }
+		      }
+		    ) : screen === "resumes" ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ResumesScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
 		      JobsScreen,
 		      {
 		        revision,
@@ -4639,6 +4674,22 @@ window.__ModuleLoader__.load({
 		.jh-funnel-rate{flex:0 0 48px;text-align:right}
 		/* \u603B\u4F53\u5207\u6362\uFF1A\u63A5\u89E6\u6F0F\u6597\u4E0E\u6295\u9012\u6F0F\u6597\u662F\u4E24\u4E2A\u4E0D\u53EF\u6BD4\u7684\u603B\u4F53\uFF0C\u753B\u4E00\u6761\u7EBF\u6BD4\u4EC0\u4E48\u90FD\u6E05\u695A */
 		.jh-funnel-boundary{border-top:1px dashed var(--dsw-alias-border-l3);padding-top:4px;margin-top:2px}
+		/* \u603B\u4F53\u5206\u6BB5\u6807\u9898\uFF1A\u63A5\u89E6\u94FE\u8DEF\u4E0E\u6295\u9012\u94FE\u8DEF\u5206\u5F00\u5199\u6E05\u695A */
+		.jh-funnel-seg{font-size:11px;font-weight:600;letter-spacing:.06em;
+		  color:var(--dsw-alias-label-secondary);margin-top:2px}
+		.jh-funnel-row{display:flex;align-items:center;gap:9px}
+		/* \u8DD1\u9053\uFF1A0 \u4E5F\u753B\u5F97\u51FA\u6765\uFF08\u6761\u672C\u8EAB\u4FDD\u5E95 3px\uFF09\uFF0C\u5426\u5219\u5168 0 \u65F6\u6574\u5F20\u56FE\u50CF\u6CA1\u753B */
+		.jh-funnel-track{flex:1 1 auto;min-width:0;height:12px;border-radius:3px;
+		  background:var(--dsw-alias-bg-overlay);overflow:hidden}
+		.jh-funnel-bar{display:block;height:100%;border-radius:3px;
+		  background:var(--dsw-alias-brand-primary);opacity:.75}
+		/* \u6295\u9012\u9636\u6BB5\u6362\u4E00\u6863\u8272\uFF1A\u4E00\u773C\u5206\u5F97\u6E05\u54EA\u4E9B\u662F"\u6211\u505A\u7684\u52A8\u4F5C"\u3001\u54EA\u4E9B\u662F\u62DB\u8058\u65B9\u7684\u56DE\u5E94 */
+		.jh-funnel-bar-apply{background:var(--dsw-alias-button-info-fill);opacity:1}
+		.jh-funnel-count{flex:0 0 40px;text-align:right;font-variant-numeric:tabular-nums;
+		  border:0;background:transparent;cursor:pointer;font:inherit;font-weight:600;
+		  color:var(--dsw-alias-link);text-decoration:underline;padding:0}
+		.jh-funnel-count:hover{color:var(--dsw-alias-label-primary)}
+		.jh-funnel-drop{flex:0 0 52px;text-align:right;font-size:11px}
 
 		.jh-table{border-collapse:collapse;width:100%;font-size:12px}
 		.jh-table th,.jh-table td{border-bottom:1px solid var(--dsw-alias-border-l2);padding:4px 6px;text-align:left}
