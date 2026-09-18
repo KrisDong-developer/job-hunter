@@ -15,6 +15,7 @@ import {
   buildZhaopinSearchUrl,
   createZhaopinAdapter,
   DEFAULT_ZHAOPIN_CONFIG,
+  extractJobDetailInPage,
   mergeZhaopinConfig,
   ZHAOPIN_CITY_CODES,
   ZHAOPIN_MAX_PAGES,
@@ -29,9 +30,18 @@ const FIXTURE_HTML = readFileSync(
   join(import.meta.dirname, '..', 'fixtures', 'zhaopin-sz.html'),
   'utf8',
 )
+const DETAIL_URL = 'https://www.zhaopin.com/jobdetail/CC320762410J40890686210.htm'
+const DETAIL_FIXTURE_HTML = readFileSync(
+  join(import.meta.dirname, '..', 'fixtures', 'zhaopin-detail.html'),
+  'utf8',
+)
 
 function page(html: string = FIXTURE_HTML): JsdomPage {
   return new JsdomPage({ html, url: SEARCH_URL })
+}
+
+function detailPage(html: string = DETAIL_FIXTURE_HTML): JsdomPage {
+  return new JsdomPage({ html, url: DETAIL_URL })
 }
 
 // ── URL 契约 ────────────────────────────────────────────────────────
@@ -79,6 +89,14 @@ test('DB 覆盖能合并到默认配置上（ADR-19：配置以 DB 为权威）'
   assert.equal(merged.cityCodes['拉萨'], '999')
   assert.equal(merged.cityCodes['深圳'], '765', '城市表是**合并**语义，不是替换')
   assert.deepEqual(mergeZhaopinConfig(null), DEFAULT_ZHAOPIN_CONFIG)
+  // 详情选择器同样是合并语义，未覆盖的键保留默认
+  const mergedDetail = mergeZhaopinConfig({ detailSelectors: { jdText: '.custom-jd' } })
+  assert.equal(mergedDetail.detailSelectors.jdText, '.custom-jd')
+  assert.equal(
+    mergedDetail.detailSelectors.title,
+    DEFAULT_ZHAOPIN_CONFIG.detailSelectors.title,
+    '未覆盖的详情选择器应保留默认',
+  )
 })
 
 test('排序只暴露实测过的那一项 —— 不编没有证据的取值', () => {
@@ -295,6 +313,40 @@ test('hasNextPage 读站点自己生成的无 query path 链接（robots 上更�
   assert.equal(await adapter.crawl.hasNextPage(page(lastPage)), false)
 })
 
+// ── 详情页解析 ────────────────────────────────────────────────────────
+
+test('详情页：借载荷解析出完整 RawJobDetail（jdText 全文，薪资不被 DOM 掩码污染）', async () => {
+  const adapter = createZhaopinAdapter()
+  const detail = (await adapter.detail?.extract(detailPage())) ?? null
+  assert.ok(detail)
+  assert.equal(detail.platformJobId, 'CC320762410J40890686210')
+  assert.equal(detail.title, 'java开发（南网电力）')
+  assert.equal(detail.salaryRaw, '1-1.1万', '薪资来自载荷真值，不是 DOM 的 **-**元')
+  assert.equal(detail.expReq, '3-5年')
+  assert.equal(detail.eduReq, '本科')
+  assert.ok((detail.jdText ?? '').includes('电网管理平台开发'), 'JD 全文')
+  assert.ok((detail.jdText ?? '').includes('SpringBoot'))
+  assert.equal(detail.company, '北京宏天信业信息技术股份有限公司')
+  assert.equal(detail.companySize, '100-299人', '公司标签 li[1] = 规模')
+  assert.equal(detail.industry, '软件/IT服务', '公司标签 li[2] = 行业')
+  assert.equal(detail.companyNature, '未融资', '公司标签 li[0] = 融资状态')
+  assert.equal(detail.sourceUrl, 'https://www.zhaopin.com/jobdetail/CC320762410J40890686210.htm')
+  assert.ok(detail.tags?.includes('五险一金'), '福利标签来自载荷 welfareTags')
+})
+
+test('详情页：载荷缺失时退 DOM，且不把掩码薪资当真值', async () => {
+  // 去掉整份载荷 → title/JD/公司退 DOM；薪资留空（DOM 是 **-**元，不许回流成 salaryRaw）
+  const html = DETAIL_FIXTURE_HTML.replace(/<script>__INITIAL_STATE__[\s\S]*?<\/script>/, '')
+  const adapter = createZhaopinAdapter()
+  const detail = (await adapter.detail?.extract(detailPage(html))) ?? null
+  assert.ok(detail)
+  assert.equal(detail.title, 'java开发（南网电力）', 'DOM H1.summary-planes__title')
+  assert.ok((detail.jdText ?? '').includes('电网管理平台开发'), 'DOM .describtion-card__detail-content 的 textContent 即全文')
+  assert.equal(detail.companySize, '100-299人')
+  assert.equal(detail.salaryRaw, '', '载荷没了 + DOM 掩码 → 留空，不写 **-**元')
+  assert.equal(detail.platformJobId, 'CC320762410J40890686210', '岗位 id 只来自 URL，与载荷无关')
+})
+
 // ── 真路径的回归护栏（与 51job 同一条） ─────────────────────────────
 
 /**
@@ -346,6 +398,15 @@ test('页面函数必须自包含：按源码重建后仍能正常解析、判�
   assert.equal(await adapter.guard.detectBlock(browserPage), null)
   assert.equal(await adapter.crawl.hasNextPage(browserPage), true)
   assert.equal(await adapter.auth?.isLoggedIn(browserPage), false)
+})
+
+test('详情页函数按源码重建后仍能解析（自包含 + 读 location.href 的 id）', async () => {
+  const rebuilt = asSerialized(extractJobDetailInPage)
+  const detailPage = new JsdomPage({ html: DETAIL_FIXTURE_HTML, url: DETAIL_URL })
+  const detail = (await detailPage.evaluate(rebuilt, DEFAULT_ZHAOPIN_CONFIG)) as unknown as Record<string, unknown> | null
+  assert.ok(detail)
+  assert.equal(detail.platformJobId, 'CC320762410J40890686210', '重建后仍能读 location.href 里的岗位 id')
+  assert.ok(String(detail.jdText).includes('SpringBoot'), '重建后仍能解析载荷 JD 全文')
 })
 
 test('撞墙判定在「按源码重建」后同样成立', async () => {

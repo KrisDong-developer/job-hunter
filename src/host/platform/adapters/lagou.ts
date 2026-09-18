@@ -49,7 +49,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
-import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
+import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 列表页选择器（默认射到经典结构，**待 probe:lagou 夹具校准**，DB 可覆盖）。 */
 export interface LagouSelectors {
@@ -75,6 +75,18 @@ export interface LagouSelectors {
   pagination: string
   /** 「下一页」链接。 */
   next: string
+}
+
+/** 详情页选择器集（经典结构，**待含登录夹具校准**，DB 可覆盖）。 */
+export interface LagouDetailSelectors {
+  /** 标题（经典 `//div[@class='name']/h1`）。 */
+  title: string
+  /** 「薪资 / 城市 / 经验 / 学历 / 性质」这一行（经典 `dd.job_request`）。 */
+  request: string
+  /** JD 全文（经典 `dd.job_bt`）。 */
+  jdText: string
+  /** 公司。 */
+  company: string
 }
 
 /** 字段 → URL 参数映射。 */
@@ -103,6 +115,18 @@ export interface LagouConfig {
   infoSeparator: string
   /** 发布时间的文本模式（`YYYY-MM-DD` 形态）。 */
   publishPattern: string
+  /** 详情页选择器（**待含登录夹具校准**）。 */
+  detailSelectors: LagouDetailSelectors
+  /**
+   * v2 接口化解析（对照猎聘/神仙外企双通道）：非空启用时 `readListPage` 先在页面上下文里
+   * POST `positionAjax.json`，拿到的字段比 DOM 富（createTime/companySize/financeStage/industryField），
+   * 失败或空结果自动回退 DOM —— 永不比 v1 差。接口需要页面会话的 anti-forge cookie/token，是否被
+   * 服务端接受**待真实抓取验证**；不接受也无妨，静默走 DOM 通道。
+   */
+  searchApiOrigin: string
+  searchApiPath: string
+  /** 接口是否启用（false = 强制 DOM 通道，校准/排障用）。 */
+  searchApiEnabled: boolean
 }
 
 /** 城市名清单（identity 映射；全过 = 不带 city 参数）。 */
@@ -142,6 +166,17 @@ export const LAGOU_INFO_SEPARATOR = '/'
 /** 发布时间形态：`YYYY-MM-DD`。 */
 export const LAGOU_PUBLISH_PATTERN = '\\d{4}[-/]\\d{2}[-/]\\d{2}'
 
+/** 搜索接口（v2 双通道）：POST `/jobs/positionAjax.json?city=<中文名>&needAddtionalResult=false`。 */
+export const LAGOU_SEARCH_API_PATH = '/jobs/positionAjax.json'
+
+/** 详情页选择器默认值（经典结构，`//div[@class='name']/h1` 等；**待含登录夹具校准**）。 */
+export const DEFAULT_LAGOU_DETAIL_SELECTORS: LagouDetailSelectors = {
+  title: '.name h1',
+  request: 'dd.job_request',
+  jdText: 'dd.job_bt',
+  company: '.info-company .name a, .company-name a',
+}
+
 /** 排序取值域：只有「最新」（`px=new`）有线上证据（搜索页排序区回显 px=new）。 */
 export const LAGOU_SORT_OPTIONS: Array<{ value: string; label: string }> = [{ value: 'new', label: '最新' }]
 
@@ -179,6 +214,10 @@ export const DEFAULT_LAGOU_CONFIG: LagouConfig = {
   jobIdPattern: LAGOU_JOB_ID_PATTERN,
   infoSeparator: LAGOU_INFO_SEPARATOR,
   publishPattern: LAGOU_PUBLISH_PATTERN,
+  detailSelectors: DEFAULT_LAGOU_DETAIL_SELECTORS,
+  searchApiOrigin: 'https://www.lagou.com',
+  searchApiPath: LAGOU_SEARCH_API_PATH,
+  searchApiEnabled: true,
 }
 
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
@@ -195,6 +234,14 @@ export function mergeLagouConfig(override: unknown): LagouConfig {
     jobIdPattern: pattern('jobIdPattern', DEFAULT_LAGOU_CONFIG.jobIdPattern),
     infoSeparator: pattern('infoSeparator', DEFAULT_LAGOU_CONFIG.infoSeparator),
     publishPattern: pattern('publishPattern', DEFAULT_LAGOU_CONFIG.publishPattern),
+    detailSelectors: {
+      ...DEFAULT_LAGOU_CONFIG.detailSelectors,
+      ...(patch.detailSelectors ?? {}),
+    },
+    searchApiOrigin: pattern('searchApiOrigin', DEFAULT_LAGOU_CONFIG.searchApiOrigin),
+    searchApiPath: pattern('searchApiPath', DEFAULT_LAGOU_CONFIG.searchApiPath),
+    searchApiEnabled:
+      typeof patch.searchApiEnabled === 'boolean' ? patch.searchApiEnabled : DEFAULT_LAGOU_CONFIG.searchApiEnabled,
   }
 }
 
@@ -220,6 +267,193 @@ export function buildLagouSearchUrl(config: LagouConfig, criteria: SearchCriteri
   }
   const query = params.toString()
   return query === '' ? base : `${base}?${query}`
+}
+
+/**
+ * 构造搜索接口地址（v2 双通道）：城市在 query（中文名），全国省参。
+ * `POST /jobs/positionAjax.json?city=<中文名>&needAddtionalResult=false`
+ */
+export function buildLagouSearchApiUrl(config: LagouConfig, cityName: string): string {
+  const params = new URLSearchParams()
+  params.set('needAddtionalResult', 'false')
+  if (cityName !== '' && cityName !== '全国') params.set('city', cityName)
+  return `${config.searchApiOrigin}${config.searchApiPath}?${params.toString()}`
+}
+
+/** 搜索接口请求体（`kd` 关键词、`pn` 页码 1 起、`first` 首翻页标记）。 */
+export function buildLagouRequestBody(criteria: SearchCriteria, page: number): Record<string, string> {
+  return {
+    first: page <= 1 ? 'true' : 'false',
+    pn: String(Math.max(1, page)),
+    kd: criteria.keyword ?? '',
+  }
+}
+
+/**
+ * **在页面上下文里**发搜索接口请求（自包含；用页面自己的 fetch 带完整 Cookie/指纹/TLS，
+ * 与猎聘/神仙外企同一铁律：绝不回退宿主 Node 的 fetch）。返回解析后的 JSON；
+ * 任何失败返回 null（调用方走 DOM 兜底）。
+ */
+export function fetchListInPage(arg: { apiPath: string; form: Record<string, string> }): Promise<unknown> {
+  const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch
+  if (typeof fetchImpl !== 'function') return Promise.resolve(null)
+  let body = ''
+  try {
+    body = new URLSearchParams(arg.form).toString()
+  } catch {
+    body = ''
+  }
+  const referer = typeof location !== 'undefined' ? location.href : ''
+  return fetchImpl(arg.apiPath, {
+    method: 'POST',
+    credentials: 'include',
+    // 拉勾 positionAjax 是表单编码；anti-force 头来自经典爬虫 + 页面会话 cookie 配套。
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-Anit-Forge-Code': '0',
+      'X-Anit-Forge-Token': 'None',
+      ...(referer === '' ? {} : { Referer: referer }),
+    },
+    body,
+  })
+    .then((response) => (response.ok ? (response.json() as Promise<unknown>) : null))
+    .catch(() => null)
+}
+
+/**
+ * 解析搜索接口响应（Node 侧纯函数；结构经典：`content.positionResult.result[]`）。
+ * 字段比 DOM 富：createTime（毫秒）/ companySize / financeStage / industryField / positionAdvantage。
+ */
+export function parseSearchApiResponse(payload: unknown): RawJob[] {
+  const out: RawJob[] = []
+  if (payload === null || typeof payload !== 'object') return out
+  const root = payload as { content?: { positionResult?: { result?: unknown[] } } }
+  const result = root.content?.positionResult?.result
+  if (!Array.isArray(result)) return out
+
+  for (const entry of result) {
+    if (entry === null || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    const text = (key: string): string =>
+      item[key] === null || item[key] === undefined
+        ? ''
+        : String(item[key]).replace(/\s+/g, ' ').trim()
+    const rawId = item['positionId']
+    // 广告/异常卡 positionId 可能缺或为 0 —— 跳过（真实岗位 id 是正整数）。
+    if (rawId === null || rawId === undefined || rawId === '' || rawId === 0) continue
+    const platformJobId = String(rawId)
+
+    // createTime 是毫秒时间戳（本地时）→ ISO
+    let publishedAt: string | null = null
+    const rawTime = item['createTime']
+    if (typeof rawTime === 'number' && Number.isFinite(rawTime) && rawTime > 0) {
+      const date = new Date(rawTime)
+      if (!Number.isNaN(date.getTime())) publishedAt = date.toISOString()
+    }
+
+    const company = text('companyFullName') || text('companyName')
+    const sourceUrl = text('positionURL') || `https://www.lagou.com/wn/jobs/${platformJobId}.html`
+    const tags: string[] = []
+    const advantage = text('positionAdvantage')
+    if (advantage !== '') tags.push(advantage)
+
+    const notes: string[] = []
+    if (text('salary') === '') notes.push('薪资未锚定，待校准')
+    if (company === '') notes.push('公司未锚定，待校准')
+
+    out.push({
+      platformJobId,
+      title: text('positionName'),
+      salaryRaw: text('salary'),
+      company,
+      sourceUrl,
+      city: text('city'),
+      district: text('district'),
+      expReq: text('workYear'),
+      eduReq: text('education'),
+      ...(tags.length === 0 ? {} : { tags }),
+      ...(publishedAt === null ? {} : { publishedAt }),
+      industry: text('industryField') === '' ? null : text('industryField'),
+      companySize: text('companySize') === '' ? null : text('companySize'),
+      companyNature: text('financeStage') === '' ? null : text('financeStage'),
+      ...(notes.length === 0 ? {} : { notes }),
+    })
+  }
+  return out
+}
+
+/**
+ * **在页面上下文里**解析详情页（选择器为经典结构，**待含登录夹具校准**）。
+ * ⚠️ 必须完全自包含。详情页选择器未校准且有些字段需登录；打不开时调用方判墙兜底。
+ */
+export function extractDetailInPage(arg: { selectors: LagouDetailSelectors }): RawJobDetail {
+  const pick = (selector: string): string => {
+    try {
+      return (document.querySelector(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim()
+    } catch {
+      return ''
+    }
+  }
+
+  // 「薪资 / 城市 / 经验 / 学历 / 性质」行（经典 dd.job_request 里的 <span> 按序）。
+  let salaryRaw = ''
+  let city = ''
+  let expReq = ''
+  let eduReq = ''
+  try {
+    const requestEl = document.querySelector(arg.selectors.request)
+    if (requestEl !== null) {
+      const spans = Array.from(requestEl.querySelectorAll('span'))
+        .map((span) => (span.textContent ?? '').replace(/\s+/g, '').trim())
+        .filter((text) => text !== '')
+      // 经典顺序：薪资 / 城市·区 / 经验 / 学历 / 性质（`/` 分隔符已被 span 过滤掉）。
+      salaryRaw = spans[0] ?? ''
+      city = spans[1] ?? ''
+      expReq = spans[2] ?? ''
+      eduReq = spans[3] ?? ''
+      if (expReq.startsWith('经验')) expReq = expReq.slice(2)
+    }
+  } catch {
+    salaryRaw = ''
+  }
+
+  // 详情 URL 里抠纯数字 id（`/wn/jobs/<id>.html` 或 `/jobs/<id>.html`）。
+  let platformJobId = ''
+  try {
+    const m = /\/(?:wn\/jobs|jobs)\/(\d+)\.html/.exec(location.href)
+    if (m !== null) platformJobId = m[1] ?? ''
+  } catch {
+    platformJobId = ''
+  }
+
+  return {
+    platformJobId,
+    title: pick(arg.selectors.title),
+    salaryRaw,
+    company: pick(arg.selectors.company),
+    sourceUrl: location.href,
+    ...(city === '' ? {} : { city }),
+    ...(expReq === '' ? {} : { expReq }),
+    ...(eduReq === '' ? {} : { eduReq }),
+    jdText: pick(arg.selectors.jdText),
+  }
+}
+
+/**
+ * 是否处于「已登录」态（用于 `auth.isLoggedIn`）。
+ *
+ * ⚠️ **待含登录夹具校准**。只认**结构性信号**（已登录时头部有用户头像/「我的」入口），
+ * 不认"页面上有没有『登录』两个字" —— 正常结果页右上角一直有登录入口。
+ */
+export function isLoggedInInPage(): boolean {
+  try {
+    return (
+      document.querySelector('.user-nav, [class*="user-avatar"], [class*="head-avatar"], .avatar-box') !== null
+    )
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -511,6 +745,9 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
     else nextUrlByPage.set(page, next)
   }
 
+  /** 上一次 `gotoSearch` 记下的筛选条件：`readListPage(page)` 只拿得到 page，拿不到 criteria。 */
+  const lastCriteria = new WeakMap<object, SearchCriteria>()
+
   const dimensions: CriteriaDimension[] = [
     { key: 'keyword', label: '关键词', values: [], hint: '自由文本，拼进路径段（/jobs/list_<关键词>）' },
     {
@@ -564,6 +801,14 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
       },
     },
 
+    auth: {
+      loginUrl: 'https://www.lagou.com/login',
+      // 结构性信号（待含登录夹具校准）。搜索不需要登录，这个入口只服务登录引导与后续高危动作。
+      async isLoggedIn(page): Promise<boolean> {
+        return await page.evaluate(isLoggedInInPage, undefined as never)
+      },
+    },
+
     crawl: {
       async gotoSearch(page, criteria): Promise<void> {
         let url = buildLagouSearchUrl(config, criteria)
@@ -572,6 +817,7 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
           const next = nextUrlByPage.get(page as object) ?? ''
           if (next !== '') url = next
         }
+        lastCriteria.set(page as object, criteria)
         await page.goto(url as string)
         if (page.waitForSelector !== undefined) {
           await page.waitForSelector(config.selectors.card, options.waitForListMs ?? 15_000)
@@ -582,6 +828,20 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
       },
 
       async readListPage(page): Promise<RawJob[]> {
+        // 双通道（v2 接口化）：先试 positionAjax（字段更富：createTime/companySize/financeStage），
+        // 失败或空结果自动回退 DOM 解析 —— 永不比 v1 差。
+        const remembered = lastCriteria.get(page as object)
+        if (config.searchApiEnabled && remembered !== undefined) {
+          const payload = await page
+            .evaluate(fetchListInPage, {
+              apiPath: buildLagouSearchApiUrl(config, remembered.city ?? ''),
+              form: buildLagouRequestBody(remembered, remembered.page ?? 1),
+            })
+            .catch(() => null)
+          const viaApi = parseSearchApiResponse(payload)
+          if (viaApi.length > 0) return viaApi
+        }
+
         const raw = await page.evaluate(extractJobsInPage, {
           selectors: config.selectors,
           salaryPattern: config.salaryPattern,
@@ -605,13 +865,22 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
       },
     },
 
+    detail: {
+      /** 详情页解析（选择器为经典结构，**待含登录夹具校准**）。 */
+      async extract(page): Promise<RawJobDetail> {
+        return await page.evaluate(extractDetailInPage, { selectors: config.detailSelectors })
+      },
+    },
+
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
         return await page.evaluate(detectBlockInPage, { card: config.selectors.card })
       },
     },
 
-    // ⚠️ 刻意**不实现** `actions.sayHello` / `actions.sendResume`（无真实契约证据，fail-closed）。
-    // ⚠️ 刻意**不声明** `detail`（详情页选择器未做真机校准，无从谈起可靠解析）。
+    // ⚠️ 刻意**不实现** `actions.sayHello` / `actions.sendResume`：
+    // 拉勾的「立即沟通 / 投递」需要登录态 + 页面会话 anti-forge，且按钮层级无真机契约证据。
+    // 按「不编选择器」的原则，宁可让 guard 以 ADAPTER_BROKEN 明确拒绝（fail-closed），
+    // 也不上线一个会误点真实按钮的实现。详见文件头调研记录。
   }
 }

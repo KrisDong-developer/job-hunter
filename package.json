@@ -64,7 +64,9 @@
     "crawl:fixture": "node scripts/run-ts.mjs test/tools/crawl-fixture.ts",
     "probe:liepin": "node scripts/run-ts.mjs test/tools/probe-liepin-v8.ts",
     "probe:lagou": "node scripts/run-ts.mjs test/tools/probe-lagou.ts",
+    "probe:lagou-login": "node scripts/run-ts.mjs test/tools/probe-lagou-login.ts",
     "probe:zhipin": "node scripts/run-ts.mjs test/tools/probe-zhipin.ts",
+    "probe:guopin": "node scripts/run-ts.mjs test/tools/probe-guopin.ts",
     "probe:waiqi": "node scripts/run-ts.mjs test/tools/probe-waiqi.ts"
   },
   "peerDependencies": {

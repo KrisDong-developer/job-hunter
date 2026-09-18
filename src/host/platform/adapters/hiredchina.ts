@@ -43,16 +43,27 @@
  * slate=经验），是**平台自己用来区分字段的稳定约定**，比序号依赖稳。任何一项都可以在 DB 里
  * 覆盖着改（ADR-19），选错只影响该字段、不影响卡片总数。
  *
- * ## 翻页与筛选（已实测）
+ * ## 翻页与筛选（全部已实测）
  *
  * * 翻页：`?page=N`（如 `?page=2`），每页 10 条、共 749 页；分页容器 `nav[aria-label="pagination"]`，
  *   `hasNextPage` 用「分页容器里是否存在页码 > 当前页的链接」判断 —— **不自己拼下一页 URL**。
- * * 类别筛选：`?type=marketing`（实测生效，筛选后 positions found 变少且与 `page` 可叠加）。
- *   Job Type 的四档取值直接来自页面内嵌 i18n 字典（`teaching` / `marketing` / `sales_support` /
- *   `other`），其中 `marketing` 已实测，其余三档是 UI 字典原样、建议用探针逐档确认。
- * * **未确证、故不编**：城市参数键名（探针确认地点会通过 query 参数表达，但没抓到具体键名）、
- *   关键词参数键名、雇佣类型/工作模式的具体参数键。所以 v1 **不声明城市维度**，
- *   带城市直接 `buildSearchUrl` 返回 null（fail-closed，绝不「抓了全国假装抓了深圳」）。
+ * * 关键词：`?kw=<词>`（键名是 **`kw`**，不是 `keyword`）；触发需在搜索框逐字输入 + 回车。
+ * * 类别：`?type=<slug>`，值 `teaching / marketing / sales_support / other`（`marketing` 与
+ *   zh 站「市场营销」都实测映射到 `type=marketing`）。
+ * * 雇佣类型：`?employmentId=1`（Full-time / 全职）、`?employmentId=2`（Part-time / 兼职）。
+ * * 工作模式：`?isOnline=1`（Remote / 远程）、`?isOnline=0`（On-site / 现场）。
+ * * **没有城市 URL 筛选**：页面的地点 quick 按钮（中国/英国…）点击**不产生 URL 参数**，
+ *   纯客户端；「More」下拉给的是 `nationalitieParentN`（国籍/语言过滤，不是城市）——
+ *   所以本适配器**不声明城市维度**，带城市一律 `buildSearchUrl` 返回 null（fail-closed，
+ *   绝不「抓了全国假装抓了深圳」）。
+ *
+ * ## 详情页（2026-09-18 探针注明，待 probe:hiredchina 落盘详情夹具校准）
+ *
+ * 标题 `h1`；薪资在渐变卡片 `div[class*="bg-gradient-to-br"]` 内的 `[class*="text-3xl"]`；
+ * 徽章行 `div.flex.flex-wrap.gap-2` 按「地点 → 行业 → 雇佣类型 → 工作模式 → 语言」顺序；
+ * JD 全文 `div.prose.prose-sm`。⚠️ **本平台详情页没有**签证担保 / 公司规模 / 公司性质 /
+ * relocation 字段 —— 因此 `visa` / `companySize` / `companyNature` 一律不编（该平台没有，
+ * 编了就是臆造）。
  *
  * ## 判定墙
  *
@@ -69,7 +80,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
-import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
+import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 import { platformCriterion } from '../types.js'
 
 /** 用户面向的默认域名（对外入口）。raw HTTP 会吃 Cloudflare 挑战；真浏览器 + 登录态可过。 */
@@ -93,6 +104,18 @@ export const HIREDCHINA_TYPE_OPTIONS: Array<{ value: string; label: string }> = 
   { value: 'teaching', label: 'Teaching' },
   { value: 'sales_support', label: 'Sales Support' },
   { value: 'other', label: 'Other' },
+]
+
+/** 雇佣类型筛选 `?employmentId=`（已实测：1=Full-time/全职，2=Part-time/兼职）。 */
+export const HIREDCHINA_EMPLOYMENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '1', label: '全职（Full-time）' },
+  { value: '2', label: '兼职（Part-time）' },
+]
+
+/** 工作模式筛选 `?isOnline=`（已实测：1=Remote/远程，0=On-site/现场）。 */
+export const HIREDCHINA_WORK_MODE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '1', label: '远程（Remote）' },
+  { value: '0', label: '现场（On-site）' },
 ]
 
 /**
@@ -124,10 +147,23 @@ export interface HiredChinaSelectors {
   pagination: string
 }
 
+/** 详情页选择器（2026-09-18 探针注明，待 explore 详情夹具校准。每项可 DB 覆盖）。 */
+export interface HiredChinaDetailSelectors {
+  title: string
+  /** 薪资：渐变卡片内的金额元素。探针给出卡片容器，具体金额元素是 best-effort。 */
+  salary: string
+  /** JD 全文。 */
+  jdText: string
+  /** 徽章行容器（地点 → 行业 → 雇佣 → 工作模式 → 语言）。 */
+  badgeRow: string
+}
+
 export interface HiredChinaUrlParams {
-  /** 例子参数键名（见文件头：类别已实测、城市/关键词/雇佣/工作模式未确证故不建键）。 */
   jobsPath: string
+  keywordParam: string
   typeParam: string
+  employmentParam: string
+  workModeParam: string
   pageParam: string
 }
 
@@ -135,8 +171,9 @@ export interface HiredChinaConfig {
   webBase: string
   lang: string
   selectors: HiredChinaSelectors
+  detailSelectors: HiredChinaDetailSelectors
   urlParams: HiredChinaUrlParams
-  /** 城市码。调研期未确证 URL 城市参数 → v1 空表，带城市即拒绝（不猜）。 */
+  /** 城市码。⚠️ 本平台**没有城市 URL 筛选**（见文件头）→ 恒空，带城市即拒绝。 */
   cityCodes: Record<string, string>
   jobIdPattern: string
   /** 抓取深度上限（页数）。 */
@@ -158,9 +195,20 @@ export const DEFAULT_HIREDCHINA_CONFIG: HiredChinaConfig = {
     experienceBadge: '[class*="bg-slate-50"]',
     pagination: 'nav[aria-label="pagination"]',
   },
+  detailSelectors: {
+    title: 'h1',
+    // 薪资：渐变卡内的金额元素。探针给出其容器 `div.flex.flex-col.items-start.shrink-0`，
+    // 金额元素 best-effort（用 shrink-0 加 text-3xl 双锚，避免与同样带 text-3xl 的 h1 撞）。
+    salary: '[class*="shrink-0"] [class*="text-3xl"]',
+    jdText: 'div.prose.prose-sm',
+    badgeRow: 'div.flex.flex-wrap.gap-2',
+  },
   urlParams: {
     jobsPath: '/jobs',
+    keywordParam: 'kw',
     typeParam: 'type',
+    employmentParam: 'employmentId',
+    workModeParam: 'isOnline',
     pageParam: 'page',
   },
   cityCodes: {},
@@ -178,6 +226,10 @@ export function mergeHiredChinaConfig(override: unknown): HiredChinaConfig {
     webBase: pattern('webBase', DEFAULT_HIREDCHINA_CONFIG.webBase),
     lang: pattern('lang', DEFAULT_HIREDCHINA_CONFIG.lang),
     selectors: { ...DEFAULT_HIREDCHINA_CONFIG.selectors, ...(patch.selectors ?? {}) },
+    detailSelectors: {
+      ...DEFAULT_HIREDCHINA_CONFIG.detailSelectors,
+      ...(patch.detailSelectors ?? {}),
+    },
     urlParams: { ...DEFAULT_HIREDCHINA_CONFIG.urlParams, ...(patch.urlParams ?? {}) },
     cityCodes: { ...DEFAULT_HIREDCHINA_CONFIG.cityCodes, ...(patch.cityCodes ?? {}) },
     jobIdPattern: pattern('jobIdPattern', DEFAULT_HIREDCHINA_CONFIG.jobIdPattern),
@@ -188,20 +240,27 @@ export function mergeHiredChinaConfig(override: unknown): HiredChinaConfig {
   }
 }
 
-/** 构造列表页 URL：`/<lang>/jobs?type=<类别>&page=<页码>`。 */
+/** 构造列表页 URL：`/<lang>/jobs?kw=&type=&employmentId=&isOnline=&page=`。 */
 export function buildHiredChinaSearchUrl(
   config: HiredChinaConfig,
   criteria: SearchCriteria,
 ): string | null {
-  // 城市筛选 v1 未实现（URL 参数键名未确证）—— 带城市即拒绝，绝不静默搜全国。
+  // 本平台**没有城市 URL 筛选**（见文件头）—— 带城市即拒绝，绝不静默搜全国。
   if (criteria.city !== undefined && criteria.city !== '') {
     const code = config.cityCodes[criteria.city]
     if (code === undefined) return null
   }
 
   const params = new URLSearchParams()
+  if (criteria.keyword !== undefined && criteria.keyword !== '') {
+    params.set(config.urlParams.keywordParam, criteria.keyword)
+  }
   const type = platformCriterion(criteria, 'type')
   if (type !== '') params.set(config.urlParams.typeParam, type)
+  const employment = platformCriterion(criteria, 'employment')
+  if (employment !== '') params.set(config.urlParams.employmentParam, employment)
+  const workMode = platformCriterion(criteria, 'workMode')
+  if (workMode !== '') params.set(config.urlParams.workModeParam, workMode)
   if (criteria.page !== undefined && criteria.page > 1) {
     params.set(config.urlParams.pageParam, String(criteria.page))
   }
@@ -220,6 +279,22 @@ export function extractJobsInPage(arg: HiredChinaConfig): RawJob[] {
   const out: RawJob[] = []
   const clean = (value: unknown): string =>
     value === null || value === undefined ? '' : String(value).replace(/\s+/g, ' ').trim()
+
+  // ⚠️ 这两个词表归一必须在函数体内（自包含）：真路径上 `extractJobsInPage` 会连同它
+  // 一起被序列化送进浏览器，"按源码重建"护栏从源码层面切断对模块作用域的引用。
+  const normalizeEmployment = (value: string): string => {
+    const v = value.toLowerCase().replace(/\s+/g, '')
+    if (/全职|fulltime|full[-\s]?time/.test(v)) return '全职'
+    if (/兼职|parttime|part[-\s]?time/.test(v)) return '兼职'
+    return ''
+  }
+  const normalizeWorkMode = (value: string): string => {
+    const v = value.toLowerCase().replace(/\s+/g, '')
+    if (/远程|remote|在家办公|fullyremote/.test(v)) return '远程'
+    if (/现场|onsite|on[-\s]?site|实地/.test(v)) return '现场'
+    if (/混合|hybrid/.test(v)) return '混合'
+    return ''
+  }
 
   let idRe: RegExp | null = null
   try {
@@ -294,9 +369,15 @@ export function extractJobsInPage(arg: HiredChinaConfig): RawJob[] {
     const workMode = badgeText(box, arg.selectors.workModeBadge)
     const expReq = badgeText(box, arg.selectors.experienceBadge)
 
+    // ── 雇佣类型 / 工作模式的 en/zh 词表归一（自包含，不能引用模块常量）──
+    // 平台有两个语言站，卡片文案随 lang 切换（如 Full-time/全职、Remote/现场）。
+    // 归一到中文稳定值，避免"同一字段两个看似不同标签"污染去重/统计。
+    const employmentNorm = normalizeEmployment(employment)
+    const workModeNorm = normalizeWorkMode(workMode)
+
     const tags: string[] = []
-    if (employment !== '') tags.push(employment)
-    if (workMode !== '') tags.push(workMode)
+    if (employmentNorm !== '') tags.push(employmentNorm)
+    if (workModeNorm !== '') tags.push(workModeNorm)
 
     const notes: string[] = []
     if (platformJobId === '') notes.push('卡片未锚定岗位 UUID，待 probe:hiredchina 校准')
@@ -323,6 +404,69 @@ export function extractJobsInPage(arg: HiredChinaConfig): RawJob[] {
     })
   }
   return out
+}
+
+/**
+ * **在页面上下文里**解析详情页（`/<lang>/job/<uuid>`）。
+ * ⚠️ 自包含。选择器（`h1` / 渐变卡片薪资 / `div.prose.prose-sm` JD）探针注明，待详情夹具校准。
+ *
+ * 平台详情页**没有**签证 / 公司规模 / 公司性质字段 → 一律不编。company 也仅从徽章行外的
+ * 常用锚点 best-effort，捞不到就留空（调用方用列表的公司兜底）。
+ */
+export function extractDetailInPage(arg: { selectors: HiredChinaDetailSelectors }): RawJobDetail {
+  const clean = (value: unknown): string =>
+    value === null || value === undefined ? '' : String(value).replace(/\s+/g, ' ').trim()
+  const pick = (selector: string): string => {
+    try {
+      return clean(document.querySelector(selector)?.textContent)
+    } catch {
+      return ''
+    }
+  }
+
+  const title = pick(arg.selectors.title)
+  const salaryRaw = pick(arg.selectors.salary)
+
+  let employment = ''
+  let workMode = ''
+  let expReq = ''
+  try {
+    const row = document.querySelector(arg.selectors.badgeRow)
+    if (row !== null) {
+      const badges = Array.from(row.querySelectorAll('span'))
+        .map((span) => clean(span.textContent))
+        .filter((text) => text !== '')
+      for (const badge of badges) {
+        const v = badge.toLowerCase().replace(/\s+/g, '')
+        if (employment === '' && /全职|兼职|fulltime|full[-\s]?time|parttime|part[-\s]?time/.test(v)) {
+          employment = /兼职|parttime|part[-\s]?time/.test(v) ? '兼职' : '全职'
+        } else if (workMode === '' && /远程|remote|现场|onsite|on[-\s]?site|混合|hybrid/.test(v)) {
+          if (/远程|remote|在家办公/.test(v)) workMode = '远程'
+          else if (/混合|hybrid/.test(v)) workMode = '混合'
+          else workMode = '现场'
+        } else if (expReq === '' && /\d+\s*[-～~]\s*\d+\s*(?:年|years?)|\d+\s*(?:年|years?)|experience|经验不限/i.test(v)) {
+          expReq = badge
+        }
+      }
+    }
+  } catch {
+    /* 徽章行解析失败不影响其余字段 */
+  }
+
+  const tags: string[] = []
+  if (employment !== '') tags.push(employment)
+  if (workMode !== '') tags.push(workMode)
+
+  return {
+    platformJobId: '',
+    title,
+    salaryRaw,
+    company: '',
+    sourceUrl: location.href,
+    jdText: pick(arg.selectors.jdText),
+    ...(expReq === '' ? {} : { expReq }),
+    tags,
+  }
 }
 
 /**
@@ -414,18 +558,30 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
   const pending = new WeakMap<object, SearchCriteria>()
 
   const dimensions: CriteriaDimension[] = [
-    { key: 'keyword', label: '关键词', values: [], hint: '自由文本（搜索框 placeholder："Search job title, keywords or company…"）' },
+    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，对应 ?kw=（实测键名；需在页面输入触发）' },
     {
       key: 'type',
       label: 'Job Type',
       values: HIREDCHINA_TYPE_OPTIONS,
-      hint: '对应 ?type= 类别筛选；marketing 已实测，teaching / sales_support / other 来自页面 i18n 字典，建议探针逐档确认',
+      hint: '对应 ?type= 类别筛选；marketing 已实测，teaching / sales_support / other 建议 probe 逐档确认',
+    },
+    {
+      key: 'employment',
+      label: '雇佣类型',
+      values: HIREDCHINA_EMPLOYMENT_OPTIONS,
+      hint: '对应 ?employmentId=（已实测：1=全职 / 2=兼职）',
+    },
+    {
+      key: 'workMode',
+      label: '工作模式',
+      values: HIREDCHINA_WORK_MODE_OPTIONS,
+      hint: '对应 ?isOnline=（已实测：1=远程 / 0=现场）；解析时归一到 远程/现场/混合 标签',
     },
     {
       key: 'city',
       label: '城市',
       values: Object.keys(config.cityCodes).map((city) => ({ value: city, label: city })),
-      hint: 'URL 城市参数键名未确证（调研期确认会用 query 参数，但键名未知）→ v1 不筛选；带城市一律拒绝，不猜',
+      hint: '⚠️ 本平台**没有城市 URL 筛选**（地点 quick 按钮纯客户端，More 下拉是国籍过滤）→ 不筛选；带城市一律拒绝，不猜',
     },
     {
       key: 'maxPages',
@@ -508,8 +664,14 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
       },
     },
 
-    // ⚠️ 刻意不实现 `detail.extract`：详情页 /job/<uuid> 的选择器未用夹具验证过，
-    //    按「只实现有已验证证据的细节」原则（见 waiqi/zhipin），不编详情选择器。
+    // 详情页 JD 全文（P2 详情抓取）。选择器（h1 / 渐变卡片薪资 / prose JD）探针注明，
+    // 待 probe:hiredchina 落盘详情夹具校准；该平台无签证/公司规模字段，故不编这些。
+    detail: {
+      async extract(page): Promise<RawJobDetail> {
+        return await page.evaluate(extractDetailInPage, { selectors: config.detailSelectors })
+      },
+    },
+
     // ⚠️ 不实现 `actions`：投递需登录且列表夹具未验证稳定投递契约 → fail-closed。
   }
 }

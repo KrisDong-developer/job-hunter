@@ -29,7 +29,9 @@ import {
   ApiError,
   createPlan,
   deletePlan,
+  deleteDedupGroup,
   fetchCriteriaDimensions,
+  fetchDedupGroups,
   fetchPlans,
   fetchPlatforms,
   fetchSchedulerStatus,
@@ -38,6 +40,7 @@ import {
   resumePlanRisk,
   runPlan,
   setSchedulePaused,
+  splitDedupMember,
   startLogin,
   takeoverLease,
   updatePlan,
@@ -617,6 +620,9 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           </ul>
         )}
       </section>
+
+      {/* 跨平台去重：多平台落地后，"合并/拆分"要可查可逆（§4.10.1） */}
+      <DedupGroupsCard revision={props.revision} />
 
       {/* ── 平台状态 ─────────────────────────────────────────────────── */}
       <section className="jh-card">
@@ -1433,5 +1439,116 @@ function PlanEditorModal(props: {
         </p>
       )}
     </Modal>
+  )
+}
+
+/**
+ * 跨平台去重分组（A2）。
+ *
+ * 多平台落地后，同一岗位可能被多个平台各抓一条并被合并进同一组。这里把它们列出来，
+ * 让"合并了哪些 / 依据是什么 / 能不能拆开"都可查可逆（§4.10.1 铁律 2：去重必须可逆）。
+ */
+function DedupGroupsCard(props: { revision: number }) {
+  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision])
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null)
+
+  const act = async (id: number, fn: () => Promise<void>): Promise<void> => {
+    setBusyId(id)
+    try {
+      await fn()
+      groups.reload()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const items = groups.state.status === 'ok' ? groups.state.data.items : []
+
+  return (
+    <section className="jh-card">
+      <div className="jh-form-head">
+        <h2 className="jh-card-title">跨平台去重</h2>
+        <span className="jh-spacer" />
+        <span className="jh-muted">
+          同一岗位被多个平台各抓一条 → 合并到同一组；这里是**可逆**的，误合并随时可拆。
+        </span>
+      </div>
+
+      {groups.state.status === 'loading' ? (
+        <p className="jh-muted" aria-busy="true">正在读取去重分组…</p>
+      ) : items.length === 0 ? (
+        <p className="jh-muted">
+          目前没有去重分组。多平台同时在抓同一批岗位时，重复的那几条才会被合并到这里。
+        </p>
+      ) : (
+        <ul className="jh-tailor-notes">
+          {items.map((group) => (
+            <li key={group.id}>
+              <span className="jh-muted">组 #{group.id}（{group.basis}）</span>
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger-ghost"
+                disabled={busyId !== null}
+                onClick={() => setPendingDelete(group.id)}
+              >
+                拆组
+              </button>
+              <ul className="jh-tailor-notes">
+                {group.members.map((member) => (
+                  <li key={member.id}>
+                    · {member.isPrimary ? '主' : '从'}｜{member.platformId}｜{member.title}
+                    {member.companyName === null ? '' : `｜${member.companyName}`}
+                    {'　'}({member.city})
+                    {member.isPrimary ? null : (
+                      <button
+                        type="button"
+                        className="jh-link"
+                        disabled={busyId !== null}
+                        onClick={() => void act(group.id, async () => splitDedupMember(group.id, member.id))}
+                      >
+                        拆出
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* 拆组确认：不删岗位，只是整组解散（成员全部独立） */}
+      {pendingDelete === null ? null : (
+        <Modal
+          title="拆散这个去重组"
+          label="拆组确认"
+          onClose={() => setPendingDelete(null)}
+          footer={
+            <>
+              <button type="button" className="jh-btn jh-btn-inline" onClick={() => setPendingDelete(null)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline jh-btn-danger"
+                disabled={busyId !== null}
+                onClick={() => {
+                  const id = pendingDelete
+                  setPendingDelete(null)
+                  void act(id, async () => deleteDedupGroup(id))
+                }}
+              >
+                确认拆组
+              </button>
+            </>
+          }
+        >
+          <p className="jh-alert-body">
+            拆组后这组里的岗位全部变回独立岗位。**岗位本身不会删** —— 只是想撤销一次合并判断。
+          </p>
+        </Modal>
+      )}
+    </section>
   )
 }

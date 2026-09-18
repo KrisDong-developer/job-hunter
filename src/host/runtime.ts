@@ -714,6 +714,21 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       `[${PLUGIN_ID}] 适配器 hiredchina 已注册（配置来源：${hiredchinaOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
     )
 
+    // SinoJobs 中欧招聘（sinojobs.com.cn）：中欧双向求职平台，岗位多为德企/欧洲企业在华
+    // 与海外职位。列表**不在 DOM 里**（AJAX 渲染）—— 与 waiqi 同款「页面内调接口」路线，
+    // `POST /Recruitment/indexAjaxPage.html` 匿名可读、可翻页、筛选参数全部实测生效。
+    const sinojobsOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'sinojobs')
+    registry.register(
+      createSinoJobsAdapter({
+        config: mergeSinoJobsConfig(sinojobsOverride),
+        // P5：请求之间要随机延时，别踩出规律性的节奏
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 sinojobs 已注册（配置来源：${sinojobsOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
     // 平台实体随适配器注册一起登记：account_state 有指向 platform 的外键，
     // 而用户可能在第一次抓取之前就先点「登录」。
     for (const adapter of registry.list()) {

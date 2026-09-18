@@ -98,21 +98,26 @@ function browserLikePage(html: string, url: string): PageLike {
 
 const DEFAULT_URL = 'https://www.hiredchina.com/en/jobs'
 
-test('搜索 URL：type（实测）+ page（实测），城市未实现则拒绝', () => {
+test('搜索 URL：kw + type + employmentId + isOnline + page（全部已实测），城市缺失则拒绝', () => {
   assert.equal(
     buildHiredChinaSearchUrl(DEFAULT_HIREDCHINA_CONFIG, { platform: { type: 'marketing' } }),
     'https://www.hiredchina.com/en/jobs?type=marketing',
   )
+  // 关键词实测键名是 kw
   assert.equal(
     buildHiredChinaSearchUrl(DEFAULT_HIREDCHINA_CONFIG, { keyword: 'teacher' }),
-    'https://www.hiredchina.com/en/jobs',
-    '关键词参数未确证 —— v1 不拼 keyword（诚实，不臆造参数）',
+    'https://www.hiredchina.com/en/jobs?kw=teacher',
+  )
+  // 雇佣类型 employmentId / 工作模式 isOnline
+  assert.equal(
+    buildHiredChinaSearchUrl(DEFAULT_HIREDCHINA_CONFIG, { keyword: 'teacher', platform: { employment: '1', workMode: '1' } }),
+    'https://www.hiredchina.com/en/jobs?kw=teacher&employmentId=1&isOnline=1',
   )
   assert.equal(
     buildHiredChinaSearchUrl(DEFAULT_HIREDCHINA_CONFIG, { platform: { type: 'marketing' }, page: 2 }),
     'https://www.hiredchina.com/en/jobs?type=marketing&page=2',
   )
-  // 城市筛选未实现 → 返回 null（不猜）
+  // 本平台没有城市 URL 筛选 → 返回 null（不猜，绝不静默搜全国）
   assert.equal(buildHiredChinaSearchUrl(DEFAULT_HIREDCHINA_CONFIG, { city: '深圳' }), null)
 })
 
@@ -126,7 +131,7 @@ test('适配器声明符合平台事实：公共可搜、薪资常在（完整�
   assert.equal(adapter.maxPages, 5, '翻页已实测；上限是对 Cloudflare 主站的保守取舍')
   assert.ok(adapter.requiredFields.includes('salary_raw' as never), '薪资常在（含 Negotiable 合法值）→ 进必需字段')
   assert.equal(adapter.actions, undefined, '投递契约未验证 → fail-closed')
-  assert.equal(adapter.detail, undefined, '详情选择器未用夹具验证 → 不声明')
+  assert.ok(adapter.detail !== undefined, '详情页有探针注明锚点（h1 / 渐变薪资 / prose JD）→ 声明 detail')
 })
 
 test('判墙：Cloudflare 挑战 → captcha；频控文案 → rate-limited', async () => {
@@ -155,8 +160,8 @@ test('真实结构夹具解析：按底色徽章区分字段，逐条符合平�
   assert.equal(first.salaryRaw, '20K - 25K RMB per month')
   assert.equal(first.city, 'Shanghai', '地点 "China · Shanghai" 取最后段为城市')
   assert.equal(first.expReq, '1～3 years')
-  assert.ok((first.tags ?? []).includes('Full-time'), '雇佣类型进 tags')
-  assert.ok((first.tags ?? []).includes('On-site'), '工作模式进 tags')
+  assert.ok((first.tags ?? []).includes('全职'), '雇佣类型归一为中文标签（Full-time → 全职）')
+  assert.ok((first.tags ?? []).includes('现场'), '工作模式归一为中文标签（On-site → 现场）')
   assert.equal(
     first.platformJobId,
     '555bb318-bce8-4bf5-9678-7f58097751fa',
@@ -172,12 +177,62 @@ test('真实结构夹具解析：按底色徽章区分字段，逐条符合平�
   assert.equal(second.salaryRaw, 'Negotiable')
   assert.equal(second.city, 'Moscow-Tula')
 
-  // 无额外含 "·" 的纯城市名：第三张是单段 "Shanghai"
+  // 无额外含 "·" 的纯城市名：第三张是单段 "Shanghai"；Part-time/Remote → 兼职/远程
   const third = jobs[2] as (typeof jobs)[number]
   assert.equal(third.city, 'Shanghai')
+  assert.ok((third.tags ?? []).includes('兼职'))
+  assert.ok((third.tags ?? []).includes('远程'))
 
   // hasNextPage：分页容器里存在 page=2 > 当前页 1
   assert.equal(await adapter.crawl.hasNextPage(page), true)
+})
+
+test('en/zh 词表归一：中文站卡片同样归一到 全职/现场/远程（自包含护栏随函数一起重建）', async () => {
+  const adapter = createHiredChinaAdapter()
+  // zh 站：全职 / 现场；第三张 兼职 / 远程 —— 与 en 站归一结果一致
+  const zhHtml = `<!doctype html><html><body>
+  ${card('555bb318-bce8-4bf5-9678-7f58097751fa', '英语阅读教练', '上海会读书', '2万 - 2.5万RMB/月', '中国 · 上海', '全职', '现场', '1～3年')}
+  ${card('3418d6eb-f0fc-4084-babb-7276a3929d61', '海外主播', 'ONYX', '面议', '中国 · 上海', '兼职', '远程', '经验不限')}
+  </body></html>`
+  const page = browserLikePage(zhHtml, 'https://www.hiredchina.com/zh/jobs')
+  const jobs = await adapter.crawl.readListPage(page)
+  assert.equal(jobs.length, 2)
+  assert.ok((jobs[0]?.tags ?? []).includes('全职'))
+  assert.ok((jobs[0]?.tags ?? []).includes('现场'))
+  assert.ok((jobs[1]?.tags ?? []).includes('兼职'))
+  assert.ok((jobs[1]?.tags ?? []).includes('远程'))
+})
+
+test('详情页 extract：h1 / 渐变卡片薪资 / 徽章行归一 / prose JD 全文', async () => {
+  const adapter = createHiredChinaAdapter()
+  const detailUrl = 'https://www.hiredchina.com/en/job/555bb318-bce8-4bf5-9678-7f58097751fa'
+  const DETAIL_HTML = `<!doctype html><html><body>
+    <div class="rounded-xl bg-gradient-to-br from-primary/5 via-background to-background border p-6 md:p-8">
+      <h1 class="text-2xl md:text-3xl font-bold tracking-tight text-foreground">English Teacher</h1>
+      <div class="flex flex-col items-start shrink-0"><span class="text-3xl font-bold">20K - 25K RMB per month</span></div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <span class="inline-flex items-center justify-center rounded-full border">China · Shanghai</span>
+      <span class="inline-flex items-center justify-center rounded-full border">Education</span>
+      <span class="inline-flex items-center justify-center rounded-full border">Full-time</span>
+      <span class="inline-flex items-center justify-center rounded-full border">On-site</span>
+      <span class="inline-flex items-center justify-center rounded-full border">English</span>
+    </div>
+    <div class="space-y-4">
+      <h3 class="text-xl font-semibold">Job Description</h3>
+      <div class="prose prose-sm max-w-none text-muted-foreground">Teach English in Shanghai. Candidates must hold TEFL and have 2 years experience.</div>
+    </div>
+  </body></html>`
+  const page = browserLikePage(DETAIL_HTML, detailUrl)
+  const detailApi = adapter.detail
+  assert.ok(detailApi !== undefined, '适配器应声明 detail')
+  const detail = await detailApi.extract(page)
+  assert.equal(detail.title, 'English Teacher')
+  assert.equal(detail.salaryRaw, '20K - 25K RMB per month')
+  assert.ok(detail.jdText != null && detail.jdText.includes('Teach English in Shanghai'), 'JD 全文应解析出')
+  assert.ok((detail.tags ?? []).includes('全职'), '徽章行 "Full-time" 归一到 全职')
+  assert.ok((detail.tags ?? []).includes('现场'), '徽章行 "On-site" 归一到 现场')
+  assert.equal(detail.sourceUrl, detailUrl)
 })
 
 test('hasNextPage：当前页已是末页时返回 false', async () => {

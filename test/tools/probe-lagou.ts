@@ -16,7 +16,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { chromium, type BrowserContext, type Page } from 'patchright'
+import { chromium, type BrowserContext, type Page, type Response } from 'patchright'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
 
@@ -59,6 +59,23 @@ async function main(): Promise<void> {
   })
   await context.addInitScript({ content: STEALTH_INIT_SCRIPT })
   const page: Page = await context.newPage()
+
+  // 捕获 positionAjax 接口响应（v2 双通道校准样本）。
+  const apiCaptures: Array<{ url: string; body: string | null }> = []
+  page.on('response', (response: Response) => {
+    try {
+      if (!response.url().includes('positionAjax')) return
+      if (response.status() !== 200) return
+      void response
+        .text()
+        .then((text: string) => {
+          apiCaptures.push({ url: response.url(), body: text === '' ? null : text })
+        })
+        .catch(() => undefined)
+    } catch {
+      /* 监听本身不许炸 */
+    }
+  })
 
   // ── 1. 导航 ───────────────────────────────────────────────────────────
   log('导航中…')
@@ -146,6 +163,12 @@ async function main(): Promise<void> {
   const html = await page.content()
   writeFileSync(FIXTURE_PATH, html, 'utf8')
   log(`夹具已保存：${FIXTURE_PATH}（${String(html.length)} 字符）`)
+
+  if (apiCaptures.length > 0) {
+    const apiPath = join(FIXTURE_DIR, 'lagou-search-api.json')
+    writeFileSync(apiPath, JSON.stringify(apiCaptures, null, 2), 'utf8')
+    log(`接口采样已保存：${apiPath}（${String(apiCaptures.length)} 条）—— 供 parseSearchApiResponse 校准`)
+  }
 
   log('✔ 探测完成 —— 跑 npm test，lagou 的离线解析用例会自动用上夹具。')
   await context.close()

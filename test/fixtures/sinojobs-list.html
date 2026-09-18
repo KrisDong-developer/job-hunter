@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>SinoJobs中欧招聘，海外招聘网站 - SinoJobs</title>
+</head>
+<body>
+<nav>
+  <div class="container">
+    <div class="logo fl"><a href="/index.html"><img src="/res/web/img/logo.png"></a></div>
+    <ul class="fl">
+      <li class="current"><a href="/Recruitment/index.html">招聘广告</a></li>
+      <li><a href="/Company/index.html">企业列表</a></li>
+    </ul>
+    <a class="fl sign-out" href="/Ucenter/login.html">登录</a>
+    <a class="fr employer-area" href="/CompanyUcenter/index.html">企业中心</a>
+  </div>
+</nav>
+<div class="search-field">
+  <div class="container">
+    <ul>
+      <li class="li-1">
+        <label>关键词</label>
+        <input id="keywords" type="text" value="">
+      </li>
+      <li class="li-1">
+        <label>行业类别</label>
+        <select id="job_type">
+          <option value="">请选择</option>
+          <option value="574">IT/互联网</option>
+          <option value="611">金融服务</option>
+        </select>
+      </li>
+      <li>
+        <label>工作地点</label>
+        <select class="sh work-city" name="work_city[]" rel="1">
+          <option value="0">请选择</option>
+          <option value="10000">国内</option>
+          <option value="10001">国外</option>
+        </select>
+      </li>
+      <li>
+        <label>工作性质</label>
+        <select id="work_nature">
+          <option value="">请选择</option>
+          <option value="1">全职</option>
+          <option value="2">兼职</option>
+          <option value="3">实习</option>
+        </select>
+      </li>
+      <li>
+        <button id="buttonSearch">搜索</button>
+      </li>
+    </ul>
+  </div>
+</div>
+<div class="recruit-wrap">
+  <div class="container">
+    <div class="salary">
+      <strong>薪资:</strong>
+      <div class="salary-list fl" id="work-salary">
+        <strong rel="0">面议</strong>
+        <strong rel="3">3K以下</strong>
+        <strong rel="5">3K-5K</strong>
+        <strong rel="10">5K-10K</strong>
+        <strong rel="15">10K-15K</strong>
+        <strong rel="25">15K-25K</strong>
+        <strong rel="26">25K+</strong>
+      </div>
+    </div>
+    <div class="salary">
+      <strong>经验:</strong>
+      <div class="salary-list fl" id="work-year">
+        <strong rel="0">不限</strong>
+        <strong rel="1">应届毕业生</strong>
+        <strong rel="2">1年～3年</strong>
+        <strong rel="3">3年～5年</strong>
+        <strong rel="4">5年以上</strong>
+      </div>
+    </div>
+    <div id="recruitmentList">
+      <div class="row company-row">
+        <div class="zp-company fl">
+          <div class="zp-company-con">
+            <h6 class="show-title">公关传播项目经理-全职/兼职</h6>
+            <p class="show-title"><span>KleinS Marketing &amp; Event GmbH</span></p>
+            <p><strong>国外</strong></p>
+          </div>
+        </div>
+        <div class="release-time fl">
+          <div class="time"><span>[发布时间]</span>2026-9-4</div>
+        </div>
+        <div class="now-apply fl">
+          <a class="btn-sq" href="/UserCenter/resumeShow.html?recruitment_id=4322">现在申请</a>
+          <p>
+            <a href="/Company/content.html?id=1008">雇主详情</a>|
+            <a href="/Recruitment/content.html?id=4322">招聘详情</a>
+          </p>
+        </div>
+      </div>
+      <div class="row company-row">
+        <div class="zp-company fl">
+          <div class="zp-company-con">
+            <h6 class="show-title">软件开发工程师（嵌入式方向）</h6>
+            <p class="show-title"><span>Kostal (Shanghai) Management Co., Ltd</span></p>
+            <p><strong>上海</strong></p>
+          </div>
+        </div>
+        <div class="release-time fl">
+          <div class="time"><span>[发布时间]</span>2026-9-3</div>
+        </div>
+        <div class="now-apply fl">
+          <a class="btn-sq" href="/UserCenter/resumeShow.html?recruitment_id=4319">现在申请</a>
+          <p>
+            <a href="/Company/content.html?id=256">雇主详情</a>|
+            <a href="/Recruitment/content.html?id=4319">招聘详情</a>
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="page" id="pageShow">
+      <div class="whj_firstPage whj_border whj_padding whj_bgc whj_hoverDisable" name="whj_firstPage">首页</div>
+      <div class="whj_border whj_padding whj_bgc whj_hoverDisable" name="whj_previousPage">&lt;</div>
+      <div class="whj_border whj_padding whj_bgc whj_checked" name="whj_page" data-page="1">1</div>
+      <div class="whj_border whj_padding whj_bgc whj_hover" name="whj_page" data-page="2">2</div>
+      <div class="whj_border whj_padding whj_bgc whj_hover" name="whj_page" data-page="3">3</div>
+      <div class="whj_border whj_padding whj_bgc whj_hover" name="whj_page" data-page="4">4</div>
+      <div class="whj_border whj_padding whj_bgc whj_hover" name="whj_nextPage">&gt;</div>
+      <div class="whj_lastPage whj_border whj_padding whj_bgc whj_hover" name="whj_lastPage">尾页</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

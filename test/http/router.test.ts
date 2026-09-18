@@ -342,7 +342,7 @@ test('P3：平台概览带出登录态；登录引导与待办关闭', async () 
     // 免得"加了适配器但概览里看不见"这种静默漏注册没人发现。
     assert.deepEqual(
       items.map((item) => item.id).sort(),
-      ['51job', 'guopin', 'indeed', 'lagou', 'liepin', 'waiqi', 'zhaopin', 'zhipin'],
+      ['51job', 'guopin', 'hiredchina', 'indeed', 'lagou', 'liepin', 'sinojobs', 'waiqi', 'zhaopin', 'zhipin'],
     )
     const fiftyone = items.find((item) => item.id === '51job')
     assert.ok(fiftyone)

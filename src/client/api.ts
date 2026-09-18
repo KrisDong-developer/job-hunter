@@ -33,6 +33,7 @@ import type {
   InterviewPrepDto,
   InterviewSuggestionDto,
   MessageDto,
+  ReplyDraftDto,
   ResumeCompareDto,
   SalaryBandDto,
   SalaryBaselineDto,
@@ -87,6 +88,7 @@ import type {
   WeeklyTriggerDto,
 } from '../shared/dto.js'
 import type { JobFlagType, JobState } from '../shared/enums.js'
+import type { ReplyScenario } from '../shared/enums.js'
 import type { ResumeContent } from '../shared/resume.js'
 
 export type {
@@ -735,6 +737,7 @@ export type {
   InterviewPrepDto,
   InterviewSuggestionDto,
   MessageDto,
+  ReplyDraftDto,
   ResumeCompareDto,
   SalaryBandDto,
   SalaryBaselineDto,
@@ -819,6 +822,15 @@ export async function extractInterview(id: number): Promise<InterviewSuggestionD
     { method: 'POST', body: JSON.stringify({}) },
   )
   return result.extraction
+}
+
+/** 按情境拟一段回复草稿（**只生成、不发送**；发送走 reply）。 */
+export async function draftReply(id: number, scenario: ReplyScenario): Promise<ReplyDraftDto> {
+  const result = await request<{ ok: boolean; draft: ReplyDraftDto }>(
+    `/messages/${String(id)}/draft-reply`,
+    { method: 'POST', body: JSON.stringify({ scenario }) },
+  )
+  return result.draft
 }
 
 export async function recordMessage(input: {
@@ -925,6 +937,46 @@ export async function fetchSalaryBand(
   signal?: AbortSignal,
 ): Promise<SalaryBandDto> {
   return await request<SalaryBandDto>(`/analytics/salary${analyticsQuery(filter)}`, signal === undefined ? {} : { signal })
+}
+
+// ── 跨平台去重分组（A2：让"合并/拆分"可逆可查）───────────────────────────
+
+export interface DedupGroupDto {
+  id: number
+  primaryJobId: number
+  basis: string
+  score: number
+  createdAt: string
+  members: Array<{
+    id: number
+    platformId: string
+    title: string
+    companyName: string | null
+    city: string
+    isPrimary: boolean
+  }>
+}
+
+export async function fetchDedupGroups(
+  signal?: AbortSignal,
+): Promise<{ items: DedupGroupDto[]; count: number }> {
+  return await request<{ items: DedupGroupDto[]; count: number }>(
+    '/dedup/groups',
+    signal === undefined ? {} : { signal },
+  )
+}
+
+/** 把一个岗位从去重组里拆出（可逆：拆出后它独立成普通岗位）。 */
+export async function splitDedupMember(groupId: number, jobId: number): Promise<void> {
+  await request<{ ok: boolean }>(`/dedup/groups/${String(groupId)}/split`, {
+    method: 'POST',
+    body: JSON.stringify({ jobId }),
+  })
+}
+
+/** 删除整个去重组（组内岗位全部独立，不删岗位本身）。 */
+export async function deleteDedupGroup(groupId: number): Promise<void> {
+  await request<{ ok: boolean }>(`/dedup/groups/${String(groupId)}`, { method: 'DELETE' })
 }
 
 // ── 批次 F：箱线图 / 本地基准 / 简历 A/B ─────────────────────────────

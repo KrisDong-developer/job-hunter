@@ -192,9 +192,19 @@ query 形式。这样合规面最大，同时保留关键词搜索。
 
 ---
 
-## 8. 未实现的部分（刻意 fail-closed）
+## 8. 详情页已实现；打招呼/投递仍未实现（刻意 fail-closed）
 
-`capabilities.supportsGreeting = false`，**没有** `actions.sayHello` / `actions.sendResume`。
+**详情页（`detail.extract`）已实现**（2026-09-18）：未登录即可访问 `/jobdetail/{id}.htm`
+拿 JD 全文。要点：
+- JD 全文取自 `__INITIAL_STATE__.jobDetail.detailedPosition.description`（纯文本），DOM
+  `.describtion-card__detail-content` 的 `textContent` 兜底（游客 clamp 只是视觉截断，不删 DOM 文本）。
+- ⚠️ 未登录时 **DOM 层薪资/地址会掩码**（`**-**元` / `深圳**********`），但载荷里是真实值
+  （`salary`）。所以薪资/正文**以载荷为准**，绝不把 DOM 掩码当薪资回流。
+- ⚠️ 自动化访问时站点可能加载后重定向到地区页（反爬）。采集侧需在窗口期取值或带合法 UA/Cookie。
+- 公司标签 `.company-summary__list > li` 顺序固定为 `[融资状态, 规模, 行业]`。
+
+**打招呼/投递仍未实现**：`capabilities.supportsGreeting = false`，**没有**
+`actions.sayHello` / `actions.sendResume`。
 
 原因：智联的沟通与投递都要求登录态，而实测未登录 DOM 里**连"在线沟通"按钮都没有**
 （卡片上只有"立即投递"）。在拿到**已登录**页面的真实按钮契约之前，按"不编选择器"的
@@ -203,6 +213,15 @@ query 形式。这样合规面最大，同时保留关键词搜索。
 
 要做这一块，需要：用已登录 profile 抓一份详情页/沟通面板的真实 DOM，
 据此写选择器并补测试，再打开 `supportsGreeting`。
+
+---
+
+## 8.1 无关键词的坑（2026-09-18 实测补记）
+
+**不加关键词**的 `/sou/` 无城市码也同理 —— `/sou/jl<码>` 在**无 `?kw` 时**会被 302 到
+`/jobs?jl=<码>`（热门职位 feed 页，无分页、卡片是 `.job-card`）。本适配器的 AB 分流兜底已能
+覆盖这种落地（载荷有数据照样出数）。若想要"某城市全部岗位"，用关键词或接受 feed 页即可，
+不必为此改 URL 构造。
 
 ---
 

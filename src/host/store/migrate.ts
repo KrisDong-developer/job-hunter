@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { DomainError, messageOf } from '../util/errors.js'
 import { asInt, type Row } from './row.js'
-import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7 } from './schema.js'
+import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8 } from './schema.js'
 
 export interface Migration {
   version: number
@@ -28,6 +28,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 5, name: 'pipeline', sql: SCHEMA_V5 },
   { version: 6, name: 'branches', sql: SCHEMA_V6 },
   { version: 7, name: 'scheduling', sql: SCHEMA_V7 },
+  { version: 8, name: 'indexes', sql: SCHEMA_V8 },
 ]
 
 export interface MigrationReport {

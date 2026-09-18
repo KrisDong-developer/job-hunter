@@ -32,6 +32,13 @@ export interface RawJob {
 /** 详情页解析结果（P2+）。 */
 export interface RawJobDetail extends RawJob {
   jdText?: string | null
+  /**
+   * 投递/报名截止时间（平台原始串）。
+   *
+   * 为后续接入校招「硬截止」（campus `deadlines()`，错过即出局）铺路：
+   * 只有详情页暴露结构化截止点的平台（如国聘「报名截止」）才填，否则省略。
+   */
+  applyDeadline?: string | null
 }
 
 /** 搜索条件 —— 平台无关的键值对。 */

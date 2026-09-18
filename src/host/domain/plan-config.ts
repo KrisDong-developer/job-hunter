@@ -35,7 +35,20 @@ const NUMERIC_KEYS = new Set(['maxPages', 'postedWithinDays'])
  * 适配器读 `criteria.workExp` 就永远读到空 —— 界面上选好了、实际没筛，
  * 正是 SR-42 要防的那种静默失败。
  */
-const PLATFORM_KEYS = new Set(['workExp', 'education', 'type'])
+const PLATFORM_KEYS = new Set([
+  // 神仙外企：workExp / education / type
+  'workExp',
+  'education',
+  'type',
+  // SinoJobs：salaryRange / experience / workNature / jobType
+  'salaryRange',
+  'experience',
+  'workNature',
+  'jobType',
+  // HiredChina：employment（雇佣类型）/ workMode（工作模式）
+  'employment',
+  'workMode',
+])
 
 export interface PlanConfigInput {
   name?: string

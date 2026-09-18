@@ -30,6 +30,12 @@ import type { PlanService } from '../domain/plans.js'
 import type { EventBus } from '../http/sse.js'
 import type { Store } from '../store/store.js'
 import { DomainError, messageOf } from '../util/errors.js'
+import {
+  allPlatformsRiskPaused,
+  clearPlatformRiskPause,
+  readPlatformRiskPause,
+  setPlatformRiskPause,
+} from '../platform/risk-pause.js'
 import { detectTimezone, systemClock, type Clock } from '../util/time.js'
 import {
   currentWindowStart,
@@ -62,7 +68,18 @@ export interface SchedulerLogger {
  * 刻意做成"注入一个判定函数"而不是在调度器里直接读 session/adapter：
  * 调度器不该知道"登录态"是怎么存的，它只该知道"现在能不能跑、不能的话为什么"。
  */
-export type PlatformGate = (platformId: string) => SkipReason | null
+export type PlatformGate = (platformId: string, options?: PlatformGateOptions) => SkipReason | null
+
+export interface PlatformGateOptions {
+  /**
+   * 越过「风控暂停」这一关（SR-21 的既有例外）。
+   *
+   * 只有**补跑**会置它：补跑是用户看到"错过了一轮"之后**显式点**的，
+   * 属于人工确认的一种形式；而手动「立即采集」不置 —— 否则用户点一下
+   * 就又去打风控了，"风控暂停"就成了一句空话。
+   */
+  ignoreRiskPause?: boolean
+}
 
 export interface SchedulerDeps {
   store: Store
@@ -150,10 +167,31 @@ export function freshnessOf(plan: PlanDto, now: Date): FreshnessDto {
   return { level, hoursSinceSuccess: Math.round(hours * 10) / 10, thresholds }
 }
 
-/** 判定与执行之间共享的一小块状态（"为什么没跑"要落库，也要能被 status() 读到）。 */
+/** 一个平台这一次的结论。`reason === null` 表示它可以跑（SR-18）。 */
+export interface PlatformDecision {
+  platformId: string
+  reason: SkipReason | null
+  message: string | null
+}
+
+/**
+ * 判定与执行之间共享的一小块状态（"为什么没跑"要落库，也要能被 status() 读到）。
+ *
+ * `platforms` 是 SR-18 的落地点：**每个平台各有各的结论**。
+ * 只有方案级原因（停用/全局暂停/租约/窗口）时它才是空数组 ——
+ * 那种情况下确实没有"哪个平台"的问题。
+ */
 interface Decision {
   kind: 'run' | 'skip' | 'wait'
   reason: SkipReason | null
+  platforms: PlatformDecision[]
+}
+
+/** 一次 run 里单个平台的结果（成败都由**这个平台自己**的账来记）。 */
+interface PlatformOutcome {
+  platformId: string
+  summary: CrawlSummaryDto | null
+  error: unknown
 }
 
 export function createScheduler(deps: SchedulerDeps): Scheduler {

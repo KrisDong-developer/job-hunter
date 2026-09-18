@@ -640,6 +640,22 @@ export interface InterviewSuggestionDto {
   notes: string[]
 }
 
+/**
+ * 一段「回复草稿」（消息中心的情境拟稿）。
+ *
+ * 与发送做了明显区分：这是**草稿**，真正发出去要用户确认并走闸门 —— 生成绝不等于发送。
+ */
+export interface ReplyDraftDto {
+  messageId: number
+  /** 拟好的回复正文。 */
+  text: string
+  scenario: string
+  /** llm = 模型拟稿；fallback = 内置模板降级。 */
+  via: 'llm' | 'fallback'
+  /** 降级/脱敏等说明。 */
+  notes: string[]
+}
+
 /** 一条打招呼记录（接触态的载体）。 */
 export interface GreetingDto {
   id: number

@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { INTERVIEW_KIND_LABEL, INTERVIEW_KINDS, INTERVIEW_STATE_LABEL } from '../../shared/enums.js'
-import type { InterviewKind, InterviewState } from '../../shared/enums.js'
+import { REPLY_SCENARIOS, REPLY_SCENARIO_LABEL } from '../../shared/enums.js'
+import type { InterviewKind, InterviewState, ReplyScenario } from '../../shared/enums.js'
 import type { MessageDto } from '../../shared/dto.js'
 import {
   ApiError,
   createInterview,
   deleteInterview,
+  draftReply,
   extractInterview,
   fetchInbox,
   fetchInterviewPrep,
@@ -35,6 +37,7 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
   const [encoding, setEncoding] = useState(false)
   const [replyTo, setReplyTo] = useState<number | null>(null)
   const [replyText, setReplyText] = useState('')
+  const [draftingScenario, setDraftingScenario] = useState<ReplyScenario | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -78,6 +81,26 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
       )
     } finally {
       setExtracting(null)
+    }
+  }
+
+  const handleDraftReply = async (id: number, scenario: ReplyScenario): Promise<void> => {
+    setDraftingScenario(scenario)
+    setError(null)
+    try {
+      const draft = await draftReply(id, scenario)
+      setReplyText(draft.text)
+      setNotice(
+        draft.via === 'llm'
+          ? `已按「${REPLY_SCENARIO_LABEL[scenario]}」拟稿（模型）—— 可编辑后发送。`
+          : `已用内置模板拟稿（未配置模型）—— 请改成你的真实语气。`,
+      )
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError ? caught.display : caught instanceof Error ? caught.message : String(caught),
+      )
+    } finally {
+      setDraftingScenario(null)
     }
   }
 
@@ -298,6 +321,20 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
               ) : null}
               {replyTo === message.id ? (
                 <div className="jh-message-reply">
+                  <div className="jh-chips" role="group" aria-label="按情境拟稿">
+                    <span className="jh-muted">拟稿：</span>
+                    {REPLY_SCENARIOS.map((scenario) => (
+                      <button
+                        key={scenario.key}
+                        type="button"
+                        className="jh-btn jh-btn-tiny"
+                        disabled={draftingScenario !== null}
+                        onClick={() => void handleDraftReply(message.id, scenario.key)}
+                      >
+                        {draftingScenario === scenario.key ? '拟稿中…' : REPLY_SCENARIO_LABEL[scenario.key]}
+                      </button>
+                    ))}
+                  </div>
                   <textarea
                     className="jh-textarea"
                     rows={2}
