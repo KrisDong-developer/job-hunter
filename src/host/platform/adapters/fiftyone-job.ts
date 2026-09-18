@@ -15,6 +15,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 51job 列表页的选择器集。**每一项都可以在 UI 里改。** */
@@ -365,6 +366,8 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
 
   return {
     id: '51job',
+    // 成熟度与登录需求来自统一事实表（platform-facts.ts）——见该文件头的填表纪律
+    ...platformFacts('51job'),
     displayName: '前程无忧',
     capabilities: {
       searchWithoutLogin: true,

@@ -221,6 +221,15 @@ window.__ModuleLoader__.load({
 		  if (reason === null || reason === "") return null;
 		  return RUN_REASON_LABEL[reason] ?? reason;
 		}
+		var MATURITY_LEVEL_LABEL = {
+		  stable: "\u53EF\u7528\uFF08\u771F\u5B9E\u5939\u5177 + \u5192\u70DF\u9A8C\u8BC1\uFF09",
+		  calibrated: "\u5DF2\u6821\u51C6\uFF08\u63A2\u9488/\u5939\u5177\u9A8C\u8BC1\uFF0C\u7F3A\u53E3\u89C1\u5907\u6CE8\uFF09",
+		  experimental: "\u5B9E\u9A8C\uFF08\u672A\u9A8C\u8BC1\u6216\u90E8\u5206\u672A\u5B9E\u73B0\uFF0C\u53EF\u80FD\u8FD4\u56DE\u7A7A\uFF09",
+		  disabled: "\u505C\u7528\uFF08\u5E73\u53F0\u4FA7\u4E0D\u53EF\u7528\uFF0C\u9700\u6539\u914D\u7F6E\u624D\u542F\u7528\uFF09"
+		};
+		function maturityNeedsWarning(level) {
+		  return level === "experimental" || level === "disabled";
+		}
 		var JOB_FLAG_TYPES = [
 		  "outsourcing",
 		  "fraud",
@@ -4111,6 +4120,17 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u5E73\u53F0\u6765\u81EA\u9002\u914D\u5668\u6CE8\u518C\u8868\uFF1B\u5F53\u524D\u6CA1\u6709\u4EFB\u4F55\u9002\u914D\u5668\u88AB\u6CE8\u518C\uFF0C\u6240\u4EE5\u65E0\u6CD5\u91C7\u96C6\u3002" })
 		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-list jh-status-list", children: platformList.map((item) => {
 		        const missing = item.fields.filter((field) => field.consecutiveMiss > 0);
+		        const implemented = [
+		          "\u5217\u8868\u91C7\u96C6",
+		          item.implementation.detail ? "\u8BE6\u60C5\u9875" : null,
+		          item.implementation.actions.sayHello ? "\u6253\u62DB\u547C" : null,
+		          item.implementation.actions.readInbox ? "\u6536\u4EF6\u7BB1" : null
+		        ].filter((part) => part !== null);
+		        const supportedNotImplemented = [
+		          item.capabilities.supportsGreeting && !item.implementation.actions.sayHello ? "\u6253\u62DB\u547C" : null,
+		          item.capabilities.supportsInbox && !item.implementation.actions.readInbox ? "\u6536\u4EF6\u7BB1" : null,
+		          item.capabilities.supportsAttachment && !item.implementation.actions.sendResume ? "\u9644\u4EF6\u6295\u9012" : null
+		        ].filter((part) => part !== null);
 		        return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		            "span",
@@ -4139,6 +4159,16 @@ window.__ModuleLoader__.load({
 		          item.login.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.login.message }),
 		          item.account.hint === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.account.hint }),
 		          item.healthReason === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.healthReason }),
+		          maturityNeedsWarning(item.maturity.level) ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-warn", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u6210\u719F\u5EA6", children: MATURITY_LEVEL_LABEL[item.maturity.level] }),
+		            item.maturity.notes === void 0 || item.maturity.notes === "" ? null : `\uFF1A${item.maturity.notes}`
+		          ] }) : null,
+		          !item.implementation.loginCheck && Object.values(item.authRequirement).includes("required") ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-warn", children: "\u8BE5\u5E73\u53F0\u9700\u8981\u767B\u5F55\uFF0C\u4F46\u672C\u673A\u8FD8\u6CA1\u6709\u767B\u5F55\u6001\u68C0\u6D4B \u2014\u2014 \u672A\u767B\u5F55\u65F6\u53EF\u80FD\u9759\u9ED8\u6293\u5230\u7A7A\u7ED3\u679C\u3002" }) : null,
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-muted", children: [
+		            "\u5DF2\u5B9E\u73B0\uFF1A",
+		            implemented.join(" \xB7 "),
+		            supportedNotImplemented.length === 0 ? null : ` \uFF5C \u5E73\u53F0\u652F\u6301\u4F46\u5C1A\u672A\u5B9E\u73B0\uFF1A${supportedNotImplemented.join("\u3001")}`
+		          ] }),
 		          missing.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-warn", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u9010\u5B57\u6BB5\u5065\u5EB7", children: "\u8FDE\u7EED\u7F3A\u5931" }),

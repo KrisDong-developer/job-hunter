@@ -29,6 +29,7 @@
  */
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 列表页选择器集（BossHunter 生产选择器 + 本项目夹具双重验证）。 */
@@ -368,6 +369,7 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
 
   return {
     id: 'zhipin',
+    ...platformFacts('zhipin'),
     displayName: 'BOSS直聘',
     capabilities: {
       // 夹具实测：未登录可见列表；但薪资隐藏 → 如实两说。

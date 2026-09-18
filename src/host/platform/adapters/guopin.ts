@@ -54,6 +54,7 @@
  */
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
 /**
@@ -521,6 +522,7 @@ export function createGuopinAdapter(options: GuopinAdapterOptions = {}): SiteAda
 
   return {
     id: 'guopin',
+    ...platformFacts('guopin'),
     displayName: '国聘网',
     capabilities: {
       // 列表页未登录可看（投递才要登录）。

@@ -48,6 +48,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 结构锚点集（按照 Indeed JCS 稳定语义锚点，2026-09-18；待域校准后写 DB 覆盖）。 */
@@ -346,6 +347,7 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
 
   return {
     id: 'indeed',
+    ...platformFacts('indeed'),
     displayName: 'Indeed',
     capabilities: {
       searchWithoutLogin: true,

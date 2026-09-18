@@ -1167,6 +1167,83 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 
 ---
 
+## P11 适配器契约三轴（2026-09-18）
+
+多平台的第二个问题：**契约里两个字段互相矛盾，而调用方只能绕开它**。
+`51job` 声明 `capabilities.supportsGreeting: true`，而 `actions` 压根是 `undefined` ——
+任何读 `capabilities` 去渲染"打招呼"按钮的地方都会渲染出一个点了就失败的按钮。
+
+### 拆成三个互不替代的轴
+
+| 轴 | 回答的问题 | 怎么得到 |
+|---|---|---|
+| `capabilities` | 这个**平台**有什么能力 | 手写（平台事实） |
+| `implementation` | **我们**实现到哪一步 | **派生**（`adapterImplementationOf`）—— 手写必然漂移 |
+| `maturity` + `authRequirement` | 验证到什么程度 / 哪个环节要登录 | 手写，但**统一登记在一张表** |
+
+第三条是这次的重点：成熟度与登录需求是**人对平台的认知**，最怕的不是写错而是**散**。
+所以集中到 [platform-facts.ts](file:///d:/DSH-work/job-hunter/src/host/platform/platform-facts.ts)：
+
+```
+stable（真实夹具 + 真机冒烟）      51job · zhaopin · liepin
+calibrated（探针/夹具验证，有缺口） zhipin · waiqi · sinojobs · hiredchina
+experimental（未验证/关键契约未证）  lagou · guopin
+disabled（平台侧已不可用）          indeed（cn.indeed.com 停运）
+```
+
+**填表纪律**：`unknown` 是合法且更诚实的取值（"我们不知道它要不要登录"本身就是用户该知道的信息）；
+`verifiedAt` 只在真有真机验证记录时填；`experimental`/`disabled` 必须写清缺口原因。
+
+### 顺带修掉的一个真实缺陷
+
+`auth` 的注释原本写着"不声明 auth 的适配器表示**不需要登录**"，
+而 `liepin` / `zhipin` / `guopin` / `indeed` / `hiredchina` **都没有声明 `auth`** ——
+其中 `liepin` 的搜索接口、`zhipin` 的详情页（`securityId`）其实**需要**登录。
+后果：`platformGate` 的登录检查对这 5 个平台**永远不会触发**，
+一个被登录墙挡住的平台会安静地返回 0 条，而界面显示"采集完成"。
+
+现在这两件事分开表达：**「没实现检测」看 `auth` 有没有，「不需要登录」看 `authRequirement`**。
+采集页对"需要登录但本机没有检测"的平台直接给出提示。
+
+### `actions` 的形状在实现之前就定死
+
+10 个平台的 `actions` 目前全是 fail-closed（`ADAPTER_FAIL_BROKEN`）。
+这是在**实现前**定形状的唯一时机 —— 否则 10 个平台会各写一套返回结构，上层要写 10 个分支。
+关键改动是 `sayHello` / `sendResume` 返回 `ActionResult` 而不是 `{ ok: boolean }`：
+
+```ts
+interface ActionResult {
+  ok: boolean
+  delivery: 'delivered' | 'pending' | 'failed' | 'missing'   // ← 关键
+  evidence: 'dom' | 'inline-state' | 'none'
+  idempotentHit?: boolean
+  message?: string
+}
+```
+
+`ok` 只说明"动作没抛错"，**"消息是否真的进了对方会话"必须单独表达** ——
+发不出去的招呼语与发出去的，后续处理完全不同（重试 vs 不重试、是否记接触态）。
+同时补上 `readInbox` / `detectStage`（文档承诺过、类型里一直没有）。
+
+### 出口标准怎么验的
+
+- **单测 679 个（678 通过 / 1 跳过）**（P10 时 674）。新增 5 条，见
+  [facts.test.ts](file:///d:/DSH-work/job-hunter/test/platform/facts.test.ts)：
+  ① 每个注册平台都必须登记事实行（**不允许靠默认兜底混过去**）；
+  ② 成熟度可核查（`stable` 必须有验证日期、日期必须 `YYYY-MM-DD`、`experimental`/`disabled` 必须写清原因）；
+  ③ `implementation` 由实现派生（合成适配器逐字段验真/假两支）；
+  ④ `capabilities` 与 `implementation` **允许不一致但必须都可见**——
+     并把它写成一条**会在实现 sayHello 时主动失败并告诉你怎么改**的绊线；
+  ⑤ 登录需求自洽（实现了登录检测却把全部环节标 `unknown` → 不自洽）。
+- **界面**：采集页平台列表新增成熟度提示、以及"平台支持但尚未实现"的清单。
+- **typecheck / build / verify 19/19 / test 全绿。**
+
+> **我自己写错并被测试抓住的一条**：最初写的是"`disabled` 的平台不该声明需要登录" ——
+> 而 `indeed` 正是"平台停用 + 若要投递则需登录"，两者并不矛盾。
+> 断言跑红了才想清楚：真正该验的自洽性是**登录需求与登录检测实现之间**的关系，不是与成熟度的关系。
+
+---
+
 ## 包契约（改代码前先读）
 
 | 契约 | 内容 | 依据 |

@@ -321,6 +321,9 @@ interface BrowserManager {
 interface SiteAdapter {
   id: string                          // '51job'
   displayName: string
+
+  // —— 三个**互不替代**的轴（2026-09-18 拆分）——
+  // ① 平台客观能力（"这个平台有什么"）
   capabilities: {
     searchWithoutLogin: boolean
     supportsAttachment: boolean
@@ -330,9 +333,17 @@ interface SiteAdapter {
     fieldCompleteness: 'high' | 'medium' | 'low'
     antiBot: 'low' | 'medium' | 'high'
   }
+  // ② 我们**实现到哪一步** —— 由实现派生（`adapterImplementationOf`），不手写
+  //    （手写必然与实际漂移；51job 曾声明 supportsGreeting 而 actions 是 undefined）
+  implementation: { crawl; detail; actions: { sayHello; sendResume; readInbox; detectStage }; loginCheck }
+  // ③ **成熟度**（验证到什么程度）与**登录需求** —— 平台事实，统一登记在 `platform-facts.ts`
+  maturity: { level: 'stable'|'calibrated'|'experimental'|'disabled'; verifiedAt: string|null; notes?: string }
+  authRequirement: { crawl: 'none'|'required'|'unknown'; detail: …; actions: … }
 
   // —— 认证 ——
-  auth: {
+  // ⚠️ 「没实现检测」与「不需要登录」是两件事：前者看下面的 auth 有没有，
+  //    后者看 authRequirement。混成一个 undefined 会让登录门对需要登录的平台永不触发。
+  auth?: {
     loginUrl: string
     isLoggedIn(page): Promise<boolean>
     ensureHiddenFromCurrentEmployer?(page): Promise<{ ok: boolean; hint?: string }>  // D4 隐身
@@ -1352,6 +1363,7 @@ type DomainError =
 | **P8 明确未做** | 校招平台适配（牛客/实习僧，L9）与海外平台适配（Indeed/LinkedIn，M6） | 需求 §4.L/§4.M 自己把这两项标成"⚠️ 待预研"，§16 平台能力矩阵里它们的每一格都是"未知"。**没有预研就无法估工** —— 按文档结论不做，也不假装做了 |
 | **P9 上架** | README、topic、市场 PR | 通过策展审核 |
 | **P10 多平台治理粒度** | 判定/风控/退避/留痕从方案级下移到平台级：`decide` 逐平台判定不连坐、逐平台留痕（`platformDecisions`）、平台冷却用平台自己的 `fail_streak`、风控暂停落 `platform/risk-pause.ts`（方案级改派生）、`finishPlanRun` 逐平台记账、`resumeRisk` 按平台恢复 + 旧库一次性搬运 | 见 §4.6.1 的「治理粒度修订（2026-09-18）」<br>**✅ 达成**：单测 674（673 通过 / 1 跳过）；SR-18 那条"标题与断言相反"的用例已重写；typecheck / build / verify 19/19 / test 全绿 |
+| **P11 适配器契约三轴** | `capabilities`（平台有什么）/ `implementation`（我们实现了什么，**派生**）/ `maturity` + `authRequirement`（平台事实，统一登记在 `platform-facts.ts`）；`actions` 形状**在实现之前**定死（含 `delivery` 送达语义、`readInbox`、`detectStage`）；`/platforms` 与采集页据此展示"这个平台能用吗、按钮为什么不在" | 见 §4.2.2 的契约与 `platform-facts.ts` 的填表纪律<br>**✅ 达成**：10 个适配器全部登记事实行；`test/platform/facts.test.ts` 钉住（未登记即失败、`stable` 必须有验证日期、`experimental`/`disabled` 必须写清原因、`capabilities` 与 `implementation` 允许不一致但必须都可见）；单测 679（678 通过 / 1 跳过） |
 
 > **P0 的价值**：C7/C8 是静态推断的，**未在浏览器实测过**。用一个空面板先验证这条链路，失败只损失几分钟。
 >

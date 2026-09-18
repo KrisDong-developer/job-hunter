@@ -5,18 +5,31 @@
 
 ## 0. 现状一览（别按文档假设）
 
-| 平台 | 适配器 | 配置来源 | 状态 |
-|---|---|---|---|
-| 前程无忧 51job | `adapters/fiftyone-job.ts` | `adapter-config/51job` | ✅ 可用：列表页 DOM 解析 + 字段级断言 + 降级告警 |
-| 神仙外企 waiqi.com | `adapters/waiqi-job.ts` | `adapter-config/waiqi` | ✅ 可用：**页面内调接口**取数（列表不在 DOM 里）；单页 ≤50 条、`maxPages=1` |
-| 智联招聘 zhaopin.com | `adapters/zhaopin.ts` | `adapter-config/zhaopin` | ✅ 可用：`/sou/` 列表页（DOM + 内嵌载荷），薪资明文、可翻页 |
-| 猎聘 liepin.com | `adapters/liepin.ts` | `adapter-config/liepin` | ✅ 可用（2026-09-18 v8 实测）：patchright 启动式 + stealth 通过风控（页面存活、`navigator.webdriver=false`）；夹具校准 42/42 卡片全字段命中（`data-nick` 结构锚点 + `【】`城市 + 公司盒三段）。风控命中（about:blank）即停。城市码待逐城实测补 DB |
-| BOSS 直聘 / 拉勾 | 无 | — | 实测有风控墙（R4），**未实现**（猎聘路线验证通过后照搬） |
-| 牛客 / 实习僧（校招） | 无 | — | 需求 §4.L 标注"⚠️ 待预研"，**未实现** |
-| HiredChina hiredchina.com | `adapters/hiredchina.ts` | `adapter-config/hiredchina` | ✅ 可用（2026-09-18 真实调研 + 浏览器探针校准）：`/<lang>/jobs` Next.js RSC 服务端渲染可抓 DOM；卡片字段按 Tailwind 底色徽章区分；翻页 `?page=N` 已实测；主站 www 会吃 Cloudflare 挑战（真浏览器可过），探针走同源子域 hcweb.gicexpat.com；城市筛选参数未确证 → v1 不筛 |
-| Indeed / LinkedIn（海外） | `adapters/indeed.ts` | `adapter-config/indeed` | ⚠️ **中国大陆站已停运**（2026-09-18 实测：`cn.indeed.com/jobs` 302 重定向到 `www.indeed.com` 并被 Cloudflare 验证墙拦截）。适配器按 Indeed JCS 稳定语义锚点实现 + 判墙即停（重定向→blank / Cloudflare→captcha），`fieldCompleteness=low`；默认 host 不可用，需 DB 覆盖换仍运营的域并校准夹具后才真实启用。LinkedIn 仍无适配器 |
+> **成熟度与登录需求不在本文档维护。** 它们的权威表是
+> [`src/host/platform/platform-facts.ts`](../src/host/platform/platform-facts.ts) ——
+> 由 `test/platform/facts.test.ts` 钉住，并经 `GET /platforms` 直接呈现给用户。
+> 本文只记**"怎么修"与"已知陷阱"**，这样文档不会与代码各说一套
+> （上一版这里漏记了 4 个已注册平台，还把其中两个写成"未实现"）。
 
-「未实现」= **没有代码**，不是"代码在但没测过"。别把它们当成可用的降级选项。
+注册表里的 10 个适配器（装配在 `runtime.ts`，id 清单由 `test/http/router.test.ts` 钉住）：
+
+| 平台 | id | 文件 |
+|---|---|---|
+| 前程无忧 | `51job` | `adapters/fiftyone-job.ts` |
+| 智联招聘 | `zhaopin` | `adapters/zhaopin.ts` |
+| 猎聘 | `liepin` | `adapters/liepin.ts` |
+| BOSS 直聘 | `zhipin` | `adapters/zhipin.ts` |
+| 拉勾 | `lagou` | `adapters/lagou.ts` |
+| 神仙外企 | `waiqi` | `adapters/waiqi-job.ts` |
+| 国聘网 | `guopin` | `adapters/guopin.ts` |
+| SinoJobs 中欧招聘 | `sinojobs` | `adapters/sinojobs.ts` |
+| Indeed | `indeed` | `adapters/indeed.ts` |
+| HiredChina | `hiredchina` | `adapters/hiredchina.ts` |
+
+**唯一"没有代码"的是**：牛客 / 实习僧（校招，需求 §4.L 标"⚠️ 待预研"）与 LinkedIn（海外）。
+其余 10 个都有代码 —— 但"有代码"≠"能用"，能用程度看 `platform-facts.ts`。
+
+各平台的**已知陷阱**（选择器命名、风控特征、翻页形态）记在 §7；这里不重复。
 
 ## 1. 配置在哪里
 
@@ -123,19 +136,29 @@ npm test
 
 1. 实现 `SiteAdapter`（`platform/types.ts`）：`id` / `displayName` / `capabilities` /
    `criteria` / `crawl` / `guard`（`list()` / `detail()` 是协议里的旧形状，本仓库用 `crawl.*`）；
-2. 解析函数遵守 §2 的自包含约束；
-3. 在**装配处**注册（`runtime.ts` 的 `openDataLayer`；`platform/registry.ts` 的 id 重复会直接抛错，
+2. **在 `platform-facts.ts` 登记一行**（`PLATFORM_FACTS['<id>']`），并给返回对象加 `...platformFacts('<id>')`。
+   这是**必须**的：`test/platform/facts.test.ts` 会断言"每个注册平台都登记了事实行"。
+   填表纪律见该文件头 —— 未验证的环节写 `'unknown'`（比猜一个值更诚实），
+   `experimental` / `disabled` 必须在 `notes` 里写清缺口原因。
+   **只写 `capabilities` 是不够的**：它回答"平台有什么"，回答不了"我们实现了什么"（后者由
+   `adapterImplementationOf` 派生）与"验证到什么程度"（后者是这一行）。
+3. 解析函数遵守 §2 的自包含约束；
+4. 在**装配处**注册（`runtime.ts` 的 `openDataLayer`；`platform/registry.ts` 的 id 重复会直接抛错，
    这是刻意的）；同时按 ADR-19 读一次 DB 覆盖：
    `setting(key='adapter-config', scope='platform', scope_ref='<id>')`；
-4. 加**离线 fixture**（保存的响应/页面）+ 字段级断言测试 + 判墙测试 + 「按源码重建」护栏；
-5. **平台特有筛选维度不要摊平成顶层键**：进 `SearchCriteria.platform` 命名空间
+5. 加**离线 fixture**（保存的响应/页面）+ 字段级断言测试 + 判墙测试 + 「按源码重建」护栏；
+6. **平台特有筛选维度不要摊平成顶层键**：进 `SearchCriteria.platform` 命名空间
    （在 `domain/plan-config.ts` 的 `PLATFORM_KEYS` 里登记键名）。
    摊平会让"某平台才认识的键"被另一个平台的适配器当成自由参数拼进 URL —— 静默的语义污染。
    适配器读取用 `platformCriterion(criteria, 'workExp')`（它同时兼容直接构造的 `SearchCriteria`）；
-6. 若该平台有「打招呼 / 投递」动作，必须在 `guard/actions/` 里实现并配测试。
-   目前 **51job / 神仙外企 / 智联招聘的打招呼动作都未实现**：`greeting_send` 对它们一律返回
+7. 若该平台有「打招呼 / 投递 / 收件箱 / 阶段探测」动作，必须在 `guard/actions/` 里实现并配测试。
+   返回类型是 `ActionResult`（**必须**给 `delivery`：`ok` 只说明"动作没抛错"，
+   而"消息是否真的进了对方会话"是另一件事，也是本系统最不能猜的问题）。
+   目前 **10 个适配器的 `actions` 全部未实现**：`greeting_send` 一律返回
    `ADAPTER_BROKEN`（HTTP 409），文案是「<平台> 的适配器还没实现打招呼动作」。
    这是**刻意的 fail-closed**，不是 bug。
+   ⚠️ 实现之后要**同时**更新 `platform-facts.ts` 的 `notes`，并放宽
+   `test/platform/facts.test.ts` 里那条"平台支持但尚未实现 sayHello"的绊线（它失败时会告诉你该改哪里）。
 
 ## 6. 明确不要做的事
 

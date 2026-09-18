@@ -92,6 +92,7 @@ import type { AdapterRegistry } from './platform/registry.js'
 import { createAdapterRegistry } from './platform/registry.js'
 import type { LoginFlow, SessionService } from './platform/session.js'
 import { createLoginFlow, createSessionService, toAccountDto } from './platform/session.js'
+import { adapterImplementationOf } from './platform/types.js'
 import type { SearchCriteria } from './platform/types.js'
 import { createScheduler, type PlatformGate, type Scheduler, type RunReason } from './scheduler/index.js'
 import { cordisTimerPort, nativeTimerPort, type TimerLike, type TimerPort } from './scheduler/timer-port.js'
@@ -1464,6 +1465,10 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           displayName: adapter.displayName,
           enabled: record?.enabled ?? true,
           capabilities: adapter.capabilities,
+          // 实现度**派生**自实现对象本身 —— 手写一份必然与实际漂移
+          implementation: adapterImplementationOf(adapter),
+          maturity: adapter.maturity,
+          authRequirement: adapter.authRequirement,
           health: snapshot.health,
           healthReason: snapshot.reason,
           failStreak: snapshot.failStreak,

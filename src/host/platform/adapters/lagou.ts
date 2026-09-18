@@ -49,6 +49,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 列表页选择器（默认射到经典结构，**待 probe:lagou 夹具校准**，DB 可覆盖）。 */
@@ -779,6 +780,7 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
 
   return {
     id: 'lagou',
+    ...platformFacts('lagou'),
     displayName: '拉勾',
     capabilities: {
       // 列表公开可爬（SEO 直出页即证据）；但能不能进门要过 WAF 滑块 —— 两件事分开说。

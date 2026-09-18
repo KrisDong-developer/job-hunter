@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createEventBus } from '../../src/host/http/sse.js'
+import { platformFacts } from '../../src/host/platform/platform-facts.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { createLoginFlow, createSessionService } from '../../src/host/platform/session.js'
 import type { PageLike, PageSource, SiteAdapter } from '../../src/host/platform/types.js'
@@ -11,6 +12,8 @@ function fakeAdapter(options: { loggedIn: () => boolean; withAuth?: boolean }): 
   const adapter: SiteAdapter = {
     id: 'fake',
     displayName: 'Fake',
+    // 测试替身也走事实表：未登记的 id 会拿到"保守默认"（实验性 + 全部未验证）
+    ...platformFacts('fake'),
     capabilities: {
       searchWithoutLogin: true,
       supportsAttachment: false,

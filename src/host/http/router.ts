@@ -772,7 +772,19 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       // SR-43：先校验一次，把"与谁重复"如实回给调用方（保存仍然成功 —— 只提示不合并）
       const checked = planService.validate(input)
       const plan = planService.create(input)
-      return json(201, { ok: true, plan, duplicates: checked.duplicates })
+      return json(201, { ok: true, plan, duplicates: checked.duplicates, notices: checked.notices })
+    }
+
+    // 草稿校验（没有 id 的新方案）：新建方案在保存**之前**也需要
+    // "与谁重复 / 哪些平台会返回空"。保存后才提示已经晚了一步。
+    // 与上面那条共用 `planService.validate` —— 三条入口一份实现的约定不变（SR-45）。
+    if (method === 'POST' && segments.length === 2 && segments[1] === 'validate') {
+      const body = await readObject(req)
+      const input = planCreateOf(body)
+      if (input.platforms === undefined || input.platforms.length === 0) {
+        input.platforms = runtime.registry().list().map((adapter) => adapter.id)
+      }
+      return json(200, { ok: true, validation: planService.validate(input) })
     }
 
     const planId = Number.parseInt(segments[1] ?? '', 10)
@@ -817,7 +829,12 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
         },
         planId,
       )
-      return json(200, { ok: true, plan: planService.update(planId, patch), duplicates: checked.duplicates })
+      return json(200, {
+        ok: true,
+        plan: planService.update(planId, patch),
+        duplicates: checked.duplicates,
+        notices: checked.notices,
+      })
     }
 
     if (method === 'DELETE' && segments.length === 2) {

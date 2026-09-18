@@ -47,6 +47,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 import { platformCriterion } from '../types.js'
 
@@ -781,6 +782,7 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
 
   return {
     id: 'sinojobs',
+    ...platformFacts('sinojobs'),
     displayName: 'SinoJobs 中欧招聘',
     capabilities: {
       // 实测：列表接口匿名可读、可翻页、可筛选（关键词/薪资/经验/性质/行业/地点全部生效）。

@@ -6,7 +6,13 @@
  * `auth.*` 登录态、`guard.selfTest`）在 P2~P5 逐个补上 —— 这里**不放假实现**，
  * 缺什么就明确是可选的、还没做。
  */
-import type { BlockKind, CoreField, HealthState } from '../../shared/enums.js'
+import type { BlockKind, ContactStage, CoreField, HealthState } from '../../shared/enums.js'
+import type {
+  AdapterCapabilitiesDto,
+  AdapterImplementationDto,
+  AdapterMaturityDto,
+  AuthRequirementDto,
+} from '../../shared/dto.js'
 
 /** 一页列表里的一条原始岗位。**只含标量**，字段名与核心字段对齐（§4.3 P7）。 */
 export interface RawJob {
@@ -108,14 +114,64 @@ export interface HealthResult {
   detail?: string
 }
 
-export interface AdapterCapabilities {
-  searchWithoutLogin: boolean
-  supportsAttachment: boolean
-  supportsReadReceipt: boolean
-  supportsInbox: boolean
-  supportsGreeting: boolean
-  fieldCompleteness: 'high' | 'medium' | 'low'
-  antiBot: 'low' | 'medium' | 'high'
+/**
+ * 平台**客观能力**（"这个平台有什么"，不是"我们实现了什么"）。
+ *
+ * 与 `AdapterImplementation` 的分工见后者；正身定义在 `shared/dto.ts`（跨层共享形状）。
+ */
+export type AdapterCapabilitiesFact = AdapterCapabilitiesDto
+
+/**
+ * **实现到什么程度**（与"平台有什么能力"分开）。
+ *
+ * 为什么必须分开：`51job` 的 `capabilities` 声明 `supportsGreeting: true`
+ * 而 `actions` 是 `undefined` —— 契约里两个字段互相矛盾，调用方只能靠
+ * `actions === undefined` 绕开它。**让契约说实话**的办法是把两者拆开：
+ * 前者是平台事实，后者由实现**派生**（`adapterImplementationOf`）。
+ */
+export type AdapterImplementation = AdapterImplementationDto
+
+/**
+ * 登录需求与成熟度是**跨层共享的形状**（host 声明、client 展示），
+ * 所以正身定义在 `shared/dto.ts`，这里只做别名。
+ */
+export type AuthRequirementFact = AuthRequirementDto
+export type AdapterMaturityFact = AdapterMaturityDto
+
+/**
+ * 一次动作的结果。
+ *
+ * ⚠️ `delivery` 不是可选的花哨字段，而是**必需信息**：
+ * 「点了按钮」与「消息真的进了对方会话」是两件事，而这是本系统最不能猜的问题。
+ * 只用 `ok: boolean` 无法区分两者 —— 于是"发出去了吗"只能靠猜。
+ */
+export type DeliveryState = 'delivered' | 'pending' | 'failed' | 'missing'
+
+export interface ActionResult {
+  ok: boolean
+  /** 送达状态。适配器没能力验证时给 `'missing'` 并在 `message` 里说明，**不要假装 delivered**。 */
+  delivery: DeliveryState
+  /** 依据来自哪条通道。`'none'` = 只是点了按钮，没有验证手段。 */
+  evidence: 'dom' | 'inline-state' | 'none'
+  /** 会话里已有同文本消息 → 这次**没有**重发（消息级幂等命中）。 */
+  idempotentHit?: boolean
+  message?: string
+}
+
+/** 从适配器**派生**实现度 —— 手写必然与实际漂移。 */
+export function adapterImplementationOf(adapter: SiteAdapter): AdapterImplementation {
+  const actions = adapter.actions
+  return {
+    crawl: true,
+    detail: adapter.detail !== undefined,
+    actions: {
+      sayHello: actions?.sayHello !== undefined,
+      sendResume: actions?.sendResume !== undefined,
+      readInbox: actions?.readInbox !== undefined,
+      detectStage: actions?.detectStage !== undefined,
+    },
+    loginCheck: adapter.auth !== undefined,
+  }
 }
 
 /**
@@ -155,7 +211,18 @@ export interface PageSource {
 export interface SiteAdapter {
   id: string
   displayName: string
-  capabilities: AdapterCapabilities
+  /** 平台客观能力（不描述我们实现了什么 —— 后者用 `adapterImplementationOf`）。 */
+  capabilities: AdapterCapabilitiesFact
+  /**
+   * **成熟度**：验证到什么程度（平台事实，见 `platform-facts.ts` 的统一表）。
+   *
+   * 为什么必须显式声明而不是"默认可用"：注册表里有平台 ≠ 平台能用。
+   * 用户在方案里勾 4 个平台，若其中 3 个是未校准的，他会得到
+   * 「1 个能跑 + 3 个静默返回 0 条」，而界面显示"采集完成"。
+   */
+  maturity: AdapterMaturityFact
+  /** **登录需求**：各环节要不要登录。`unknown` = 没验证过，如实标出来。 */
+  authRequirement: AuthRequirementFact
   /** 本适配器声明的必需字段（§4.2.4）。任一连续缺失即可能触发降级。 */
   requiredFields: readonly CoreField[]
   /**
@@ -174,10 +241,14 @@ export interface SiteAdapter {
   }
 
   /**
-   * 登录态（§4.2.2 的 `auth`，P3 落地）。
+   * 登录态**检测实现**（§4.2.2 的 `auth`，P3 落地）。
    *
    * `isLoggedIn` 只回答一个问题：**当前页面会不会被登录墙挡住**。
-   * 不声明 auth 的适配器表示"不需要登录"，登录引导会明确报错而不是假装成功。
+   *
+   * ⚠️ 「没有实现检测」与「不需要登录」是两件事，别把它们混成一个 `undefined`：
+   * 前者看这里，后者看 `authRequirement`。之前的注释把 `undefined` 解释成
+   * "不需要登录"，而 `liepin` / `zhipin` 其实**需要**登录（详情页要 `securityId`）——
+   * 于是登录门对它们永远不触发，一个被登录墙挡住的平台会安静地返回 0 条。
    */
   auth?: {
     loginUrl: string
@@ -213,19 +284,56 @@ export interface SiteAdapter {
    * ⚠️ 这些方法**不允许被 domain 直接调用**：实现放在 `guard/actions/` 里，
    * 由 guard 校验一次性令牌后才执行（§4.4.1 机制化强制）。
    * 适配器只负责"怎么点"，不负责"该不该点"。
+   *
+   * 形状在**实现之前**就定死，理由是多平台：10 个平台各写一套返回形状，
+   * 上层就得写 10 个分支。这里先把契约固定下来（含"送达"语义），
+   * 实现时只填内容不改形状。
    */
   actions?: {
-    /** 打招呼。返回 `ok:false` 时调用方按失败处理，不重试。 */
+    /**
+     * 打招呼。
+     *
+     * 返回 `ActionResult` 而不是 `{ ok: boolean }`：`ok` 只说明"动作没抛错"，
+     * 而**"消息是否真的进了对方会话"必须单独表达**（`delivery`）。
+     * 发不出去的招呼语与发出去的，后续处理完全不同（重试 vs 不重试、是否记接触态）。
+     */
     sayHello?(
       page: PageLike,
       job: { title: string; company: string; sourceUrl: string },
       text: string,
-    ): Promise<{ ok: boolean; message?: string }>
-    /** 投递简历（含附件）。P6/P7 实现。 */
+    ): Promise<ActionResult>
+    /** 投递简历（含附件）。 */
     sendResume?(
       page: PageLike,
       job: { title: string; company: string; sourceUrl: string },
       filePath: string | null,
-    ): Promise<{ ok: boolean; message?: string }>
+    ): Promise<ActionResult>
+    /**
+     * 读收件箱（HR 消息）。列表页就能拿到"有没有人回复"，
+     * 不必逐个打开会话 —— 见 BossHunter 的"状态节点反推法"。
+     */
+    readInbox?(page: PageLike): Promise<RawInboxMessage[]>
+    /** 探测某个岗位当前的接触阶段（已读/已回复/约面）。 */
+    detectStage?(
+      page: PageLike,
+      job: { title: string; company: string; sourceUrl: string },
+    ): Promise<ContactStage | null>
   }
+}
+
+/** 收件箱里的一条原始消息（只含标量，§4.3 P7）。 */
+export interface RawInboxMessage {
+  /** 会话内标识（平台自己的，用于去重）。 */
+  conversationId: string
+  /** HR 显示名。 */
+  hrName: string
+  company: string
+  /** 最后一条消息的文本。 */
+  lastMessage: string
+  direction: 'hr' | 'me'
+  /** 最后一条消息是否未读。 */
+  unread: boolean
+  at?: string | null
+  /** 平台内岗位 id（能从会话反查到岗位时填）。 */
+  platformJobId?: string
 }

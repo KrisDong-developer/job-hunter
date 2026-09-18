@@ -14,6 +14,7 @@
  * 还有一件**不报错但要说出来**的事：重复方案（SR-43）只提示、不合并。
  */
 import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js'
+import { MATURITY_LEVEL_LABEL, maturityNeedsWarning } from '../../shared/enums.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import type { SearchCriteria } from '../platform/types.js'
 import { DomainError } from '../util/errors.js'
@@ -78,6 +79,14 @@ export interface ValidatedPlanConfig {
   ignoredKeys: string[]
   /** SR-43：与哪些方案重复（只看，不合并）。 */
   duplicates: Array<{ planId: number; name: string; reason: string }>
+  /**
+   * **非致命**但用户必须知道的事（多平台相关）。
+   *
+   * 为什么值得一个专门的通道：它们对应的失败形态都是"平台安静地返回 0 条"，
+   * 从数据里根本查不出来（0 条与 0 条长得一样）。报错太严（用户没法同时选
+   * 能力不同的平台），不报又必然有人踩 —— 所以走"提示但不阻断"。
+   */
+  notices: string[]
 }
 
 /** 关键词/城市这类自由文本维度的值做一次温和的清洗（去首尾空白、折叠内部空白）。 */
@@ -254,6 +263,63 @@ export function validatePlanConfig(
     }
   }
 
+  // ── 非致命、但**必须说出来**的事（notice）──────────────────────────
+  //
+  // 与 `duplicates` 同一族：只提示、不阻断保存。它们针对的是一类最伤用户的
+  // 情况 —— **平台安静地返回 0 条**：用户以为"今天没岗位"，实际是自己勾了
+  // 那个平台不认识的**城市**、或那个平台本身就还没校准、或抓取深度被平台上限截断。
+  // 这类问题从数据里查不出来（0 条和 0 条长得一样），只能在这里说。
+  const notices: string[] = []
+  const plannedPages = criteria['maxPages'] === undefined ? null : Number.parseInt(criteria['maxPages'], 10)
+  const city = criteria['city']
+  for (const platformId of platforms) {
+    const adapter = context.registry.get(platformId)
+    if (adapter === undefined) continue
+    const name = `${adapter.displayName}（${platformId}）`
+
+    // ① 成熟度：勾了实验性/停用平台，大概率就是白跑一趟
+    if (maturityNeedsWarning(adapter.maturity.level)) {
+      notices.push(
+        `${name}${MATURITY_LEVEL_LABEL[adapter.maturity.level]}` +
+          (adapter.maturity.notes === undefined || adapter.maturity.notes === ''
+            ? ''
+            : ` —— ${adapter.maturity.notes}`),
+      )
+    }
+
+    // ② 「不知道抓取要不要登录」+「本机也没有登录检测」= 被登录墙挡住时
+    //    它会安静地返回 0 条，而系统连"未登录"都判断不出来。
+    //    注意只在 crawl 不是确定 `none` 时才提示 —— BOSS 的列表确实不需要登录。
+    const crawlAuth = adapter.authRequirement.crawl
+    if (adapter.auth === undefined && (crawlAuth === 'required' || crawlAuth === 'unknown')) {
+      notices.push(
+        `${name}抓取是否需要登录${crawlAuth === 'required' ? '是' : '尚未验证'}，` +
+          '而本机还没有登录态检测 —— 未登录时可能静默抓到空结果',
+      )
+    }
+
+    // ③ 抓取深度：方案级 maxPages 被平台上限截断。静态截断是**安全**的（不会打平台），
+    //    但用户以为抓了 5 页，实际只抓了 1 页 —— 这件事必须说出来。
+    if (plannedPages !== null && Number.isFinite(plannedPages) && plannedPages > adapter.maxPages) {
+      notices.push(
+        `${name}最多 ${String(adapter.maxPages)} 页，本方案设的 ${String(plannedPages)} 页对它无效` +
+          `（实际只抓 ${String(adapter.maxPages)} 页）`,
+      )
+    }
+
+    // ④ 城市：该平台**声明了**城市取值域，而选的城市不在里面 → 它一定返回空。
+    //    声明了空取值域的（如国聘）表示"自由文本"，不在此列。
+    if (city !== undefined && city !== '') {
+      const dimension = adapter.criteriaDimensions.find((item) => item.key === 'city')
+      const values = dimension?.values.map((item) => item.value) ?? []
+      if (values.length > 0 && !values.includes(city)) {
+        notices.push(
+          `${name}不认识城市「${city}」—— 它会返回空结果，建议去掉这个平台或换成它支持的城市`,
+        )
+      }
+    }
+  }
+
   return {
     name,
     platforms,
@@ -263,6 +329,7 @@ export function validatePlanConfig(
     postProcess: normalizePostProcess(input.postProcess),
     ignoredKeys: [],
     duplicates,
+    notices,
   }
 }
 

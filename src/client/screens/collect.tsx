@@ -4,6 +4,8 @@ import {
   CRAWL_STATE_TONE,
   HEALTH_STATE_LABEL,
   HEALTH_STATE_TONE,
+  MATURITY_LEVEL_LABEL,
+  maturityNeedsWarning,
   runReasonLabel,
   type CrawlState,
   type HealthState,
@@ -229,6 +231,8 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const [feedback, setFeedback] = useState<Feedback>(IDLE)
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const [duplicates, setDuplicates] = useState<PlanDuplicateDto[]>([])
+  /** 非致命提示（多平台：城市不支持 / 平台未校准 / 深度被截断）。 */
+  const [notices, setNotices] = useState<string[]>([])
   /** 点开某条运行记录的错误全文（原来是直接摊在单元格里）。 */
   const [errorDetail, setErrorDetail] = useState<{ run: RecentRunDto; failure: FailureText } | null>(null)
   /**
@@ -667,6 +671,23 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           <ul className="jh-list jh-status-list">
             {platformList.map((item) => {
               const missing = item.fields.filter((field) => field.consecutiveMiss > 0)
+              const implemented = [
+                '列表采集',
+                item.implementation.detail ? '详情页' : null,
+                item.implementation.actions.sayHello ? '打招呼' : null,
+                item.implementation.actions.readInbox ? '收件箱' : null,
+              ].filter((part): part is string => part !== null)
+              const supportedNotImplemented = [
+                item.capabilities.supportsGreeting && !item.implementation.actions.sayHello
+                  ? '打招呼'
+                  : null,
+                item.capabilities.supportsInbox && !item.implementation.actions.readInbox
+                  ? '收件箱'
+                  : null,
+                item.capabilities.supportsAttachment && !item.implementation.actions.sendResume
+                  ? '附件投递'
+                  : null,
+              ].filter((part): part is string => part !== null)
               return (
                 <li key={item.id}>
                   {/* 状态圆点而不是浏览器默认的 list-style 小黑点：
@@ -703,6 +724,35 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                   {item.login.message === null ? null : <div className="jh-muted">{item.login.message}</div>}
                   {item.account.hint === null ? null : <div className="jh-muted">{item.account.hint}</div>}
                   {item.healthReason === null ? null : <div className="jh-muted">{item.healthReason}</div>}
+
+                  {/* 成熟度：注册表里有平台 ≠ 这个平台能用。用户勾它进方案**之前**
+                      就该看到"这个还只是实验性的、可能返回空"，而不是事后对着 0 条发懵。 */}
+                  {maturityNeedsWarning(item.maturity.level) ? (
+                    <div className="jh-warn">
+                      <Term term="成熟度">{MATURITY_LEVEL_LABEL[item.maturity.level]}</Term>
+                      {item.maturity.notes === undefined || item.maturity.notes === ''
+                        ? null
+                        : `：${item.maturity.notes}`}
+                    </div>
+                  ) : null}
+
+                  {/* 需要登录、但本机还没实现登录检测 → 未登录时可能静默抓到空结果。
+                      「没实现检测」与「不需要登录」是两件事，用户得知道是哪一种。 */}
+                  {!item.implementation.loginCheck &&
+                  Object.values(item.authRequirement).includes('required') ? (
+                    <div className="jh-warn">
+                      该平台需要登录，但本机还没有登录态检测 —— 未登录时可能静默抓到空结果。
+                    </div>
+                  ) : null}
+
+                  {/* 平台能做什么 vs 我们实现了什么 —— 两者不一致时要说清，
+                      否则用户会以为"这个平台坏了"。 */}
+                  <div className="jh-muted">
+                    已实现：{implemented.join(' · ')}
+                    {supportedNotImplemented.length === 0
+                      ? null
+                      : ` ｜ 平台支持但尚未实现：${supportedNotImplemented.join('、')}`}
+                  </div>
 
                   {missing.length === 0 ? null : (
                     <>
@@ -1135,18 +1185,24 @@ function PlanEditorModal(props: {
   initial: PlanForm
   available: Array<{ id: string; displayName: string }>
   duplicates: PlanDuplicateDto[]
+  /** 非致命提示（多平台：城市不支持 / 平台未校准 / 深度被截断）。 */
+  notices: string[]
   running: boolean
   onCancel(): void
   onSubmit(form: PlanForm): Promise<void>
-  onValidate(form: PlanForm): Promise<PlanDuplicateDto[]>
+  onValidate(form: PlanForm): Promise<{ duplicates: PlanDuplicateDto[]; notices: string[] }>
 }) {
   const [form, setForm] = useState<PlanForm>(props.initial)
   const [localDuplicates, setLocalDuplicates] = useState<PlanDuplicateDto[]>([])
+  const [localNotices, setLocalNotices] = useState<string[]>([])
 
   const patch = (next: Partial<PlanForm>): void => setForm((current) => ({ ...current, ...next }))
 
   // 总残留重复 = 保存接口返回的 + 本地实时校验得到的。
   const duplicates = [...props.duplicates, ...localDuplicates]
+  // 提示同理：保存后拿到一次，编辑过程中由防抖校验持续刷新 —— 这样"选了国聘 + 成都"
+  // 在**保存之前**就看得见"它会返回空"，而不是等抓完 0 条才发现。
+  const notices = [...new Set([...props.notices, ...localNotices])]
   const startMissing = parseClockValue(form.windowStart) === null
   const endMissing = parseClockValue(form.windowEnd) === null
 
@@ -1159,13 +1215,20 @@ function PlanEditorModal(props: {
   useEffect(() => {
     if (props.planId === null) {
       setLocalDuplicates([])
+      setLocalNotices([])
       return
     }
     const timer = window.setTimeout(() => {
       void props
         .onValidate(form)
-        .then(setLocalDuplicates)
-        .catch(() => setLocalDuplicates([]))
+        .then((result) => {
+          setLocalDuplicates(result.duplicates)
+          setLocalNotices(result.notices)
+        })
+        .catch(() => {
+          setLocalDuplicates([])
+          setLocalNotices([])
+        })
     }, 600)
     return () => window.clearTimeout(timer)
     // form 是当前渲染的引用；依赖只在查重语义变化时更新，见上方 validationKey。

@@ -311,6 +311,8 @@ export interface PlanValidationDto {
   enabled: boolean
   postProcess: PlanPostProcess
   duplicates: PlanDuplicateDto[]
+  /** 非致命但必须让用户知道的事（多平台：城市不支持 / 平台未校准 / 深度被截断）。 */
+  notices: string[]
   dimensions: CriteriaDimensionDto[]
 }
 
@@ -320,18 +322,21 @@ export async function fetchPlans(signal?: AbortSignal): Promise<{ items: PlanDto
 
 export async function createPlan(
   input: PlanWriteInput,
-): Promise<{ plan: PlanDto; duplicates: PlanDuplicateDto[] }> {
-  return await request<{ ok: boolean; plan: PlanDto; duplicates: PlanDuplicateDto[] }>('/plans', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  })
+): Promise<{ plan: PlanDto; duplicates: PlanDuplicateDto[]; notices: string[] }> {
+  return await request<{ ok: boolean; plan: PlanDto; duplicates: PlanDuplicateDto[]; notices: string[] }>(
+    '/plans',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  )
 }
 
 export async function updatePlan(
   id: number,
   input: PlanWriteInput,
-): Promise<{ plan: PlanDto; duplicates: PlanDuplicateDto[] }> {
-  return await request<{ ok: boolean; plan: PlanDto; duplicates: PlanDuplicateDto[] }>(
+): Promise<{ plan: PlanDto; duplicates: PlanDuplicateDto[]; notices: string[] }> {
+  return await request<{ ok: boolean; plan: PlanDto; duplicates: PlanDuplicateDto[]; notices: string[] }>(
     `/plans/${String(id)}`,
     { method: 'PATCH', body: JSON.stringify(input) },
   )
@@ -349,6 +354,20 @@ export async function validatePlan(
     `/plans/${String(id)}/validate`,
     { method: 'POST', body: JSON.stringify(input) },
   )
+  return result.validation
+}
+
+/**
+ * **草稿校验**（没有 id 的新方案）。
+ *
+ * 为什么值得单独一条：新建方案在保存之前也需要"与谁重复 / 哪些平台会返回空" ——
+ * 那正是用户最需要提示的时刻（保存之后才提示，晚了一步：方案已经在列表里了）。
+ */
+export async function validatePlanDraft(input: PlanWriteInput): Promise<PlanValidationDto> {
+  const result = await request<{ ok: boolean; validation: PlanValidationDto }>('/plans/validate', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
   return result.validation
 }
 

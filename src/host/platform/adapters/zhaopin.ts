@@ -49,6 +49,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** `/sou/` 列表页的选择器集。**每一项都可以在 DB 里覆盖着改**（ADR-19）。 */
@@ -948,6 +949,7 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
 
   return {
     id: 'zhaopin',
+    ...platformFacts('zhaopin'),
     displayName: '智联招聘',
     capabilities: {
       // 实测：免登录能按关键词搜、能翻页、薪资明文；但**加任何筛选参数就撞登录墙**。

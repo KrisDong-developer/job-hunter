@@ -51,6 +51,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 import { platformCriterion } from '../types.js'
 
@@ -888,6 +889,7 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
 
   return {
     id: 'waiqi',
+    ...platformFacts('waiqi'),
     displayName: '神仙外企',
     capabilities: {
       // 实测：列表接口匿名可读（第一页 20 条），但页面上有「登录账号，查看更多好职位」遮罩。

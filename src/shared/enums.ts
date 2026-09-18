@@ -107,6 +107,14 @@ export const MATURITY_LEVEL_TONE: Record<MaturityLevel, 'ok' | 'warn' | 'error' 
   disabled: 'muted',
 }
 
+/**
+ * 要不要为此提醒用户（界面与 host 共用**同一份**判断，避免两处漂移）。
+ * `calibrated` 不提醒：它意味着"可用，只是有已知缺口"，缺口写在 notes 里按需查看。
+ */
+export function maturityNeedsWarning(level: MaturityLevel): boolean {
+  return level === 'experimental' || level === 'disabled'
+}
+
 /** 某个环节要不要登录（**平台事实**，`unknown` = 没验证过，不假装知道）。 */
 export const AUTH_REQUIREMENTS = ['none', 'required', 'unknown'] as const
 export type AuthRequirementValue = (typeof AUTH_REQUIREMENTS)[number]

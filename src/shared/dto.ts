@@ -8,6 +8,7 @@ import type {
   ApplicationStage,
   AssessmentKind,
   AssessmentState,
+  AuthRequirementValue,
   CampusBatch,
   CampusStage,
   ContactStage,
@@ -19,6 +20,7 @@ import type {
   InterviewState,
   JobFlagType,
   JobState,
+  MaturityLevel,
   MessageDirection,
   RemoteKind,
   StageSource,
@@ -1067,11 +1069,71 @@ export interface CoverLetterDto {
   createdAt: string
 }
 
-/** `GET /platforms`：U0/U9 需要的平台概览（健康 + 登录态 + 能力）。 */export interface PlatformOverviewDto {
+/**
+ * 平台**客观能力**（"这个平台有什么"）。
+ *
+ * ⚠️ 与 `implementation` 是两件事：这里的 `supportsGreeting: true`
+ * 不代表我们能打招呼 —— 后者看 `implementation.actions.sayHello`。
+ * 界面上凡是要"点了会真的动"的入口，都必须读 `implementation`。
+ */
+export interface AdapterCapabilitiesDto {
+  searchWithoutLogin: boolean
+  supportsAttachment: boolean
+  supportsReadReceipt: boolean
+  supportsInbox: boolean
+  supportsGreeting: boolean
+  fieldCompleteness: 'high' | 'medium' | 'low'
+  antiBot: 'low' | 'medium' | 'high'
+}
+
+/**
+ * 适配器**实现度**（派生自实现，不手写 —— 手写必然与实际漂移）。
+ *
+ * 与 `capabilities` 的分工：后者是"这个平台有什么"（平台事实），
+ * 这里是"我们实现了哪些方法"。`51job` 的 `capabilities.supportsGreeting` 是
+ * `true` 而 `actions` 尚未实现 —— 两个字段各说各的，界面才会撒谎。
+ */
+export interface AdapterImplementationDto {
+  crawl: boolean
+  detail: boolean
+  actions: {
+    sayHello: boolean
+    sendResume: boolean
+    readInbox: boolean
+    detectStage: boolean
+  }
+  loginCheck: boolean
+}
+
+/** 适配器成熟度（平台事实：验证到什么程度）。 */
+export interface AdapterMaturityDto {
+  level: MaturityLevel
+  /** 上次真机验证日期（`YYYY-MM-DD`）。null = 未标注/未验证。 */
+  verifiedAt: string | null
+  /** 已知缺口或陷阱，直接给人看。 */
+  notes?: string
+}
+
+/** 各环节的登录需求（平台事实；`unknown` = 尚未验证，不假装知道）。 */
+export interface AuthRequirementDto {
+  crawl: AuthRequirementValue
+  detail: AuthRequirementValue
+  actions: AuthRequirementValue
+}
+
+/** `GET /platforms`：U0/U9 需要的平台概览（健康 + 登录态 + 能力）。 */
+export interface PlatformOverviewDto {
   id: string
   displayName: string
   enabled: boolean
-  capabilities: unknown
+  /** 平台客观能力（"这个平台有什么"）。 */
+  capabilities: AdapterCapabilitiesDto
+  /** 我们实现到哪一步（派生）。 */
+  implementation: AdapterImplementationDto
+  /** 成熟度（平台事实）—— 用户勾平台前就该看到"这个还只是实验性的"。 */
+  maturity: AdapterMaturityDto
+  /** 各环节要不要登录（平台事实）。 */
+  authRequirement: AuthRequirementDto
   health: HealthState
   healthReason: string | null
   failStreak: number

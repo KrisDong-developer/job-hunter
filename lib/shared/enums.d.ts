@@ -41,6 +41,28 @@ export declare function runReasonLabel(reason: string | null): string | null;
 export declare const CORE_FIELDS: readonly ["title", "salary_raw", "company", "source_url"];
 export type CoreField = (typeof CORE_FIELDS)[number];
 /**
+ * 适配器成熟度（**事实**：这个平台适配到什么程度了）。
+ *
+ * 存在的理由：注册表里有平台 ≠ 这个平台能用。10 个适配器实际分三档
+ * （可用 / 探针校准过 / 还没验过），而 `capabilities` 只描述**平台有什么能力**、
+ * `implementation` 只描述**我们实现了哪些方法** —— 两者都回答不了
+ * 「选它进方案会不会白跑」。没有这一轴，用户勾了 4 个平台会得到
+ * 「1 个能跑 + 3 个静默返回 0 条」，而界面显示"采集完成"。
+ */
+export declare const MATURITY_LEVELS: readonly ["stable", "calibrated", "experimental", "disabled"];
+export type MaturityLevel = (typeof MATURITY_LEVELS)[number];
+export declare const MATURITY_LEVEL_LABEL: Record<MaturityLevel, string>;
+export declare const MATURITY_LEVEL_TONE: Record<MaturityLevel, 'ok' | 'warn' | 'error' | 'muted'>;
+/**
+ * 要不要为此提醒用户（界面与 host 共用**同一份**判断，避免两处漂移）。
+ * `calibrated` 不提醒：它意味着"可用，只是有已知缺口"，缺口写在 notes 里按需查看。
+ */
+export declare function maturityNeedsWarning(level: MaturityLevel): boolean;
+/** 某个环节要不要登录（**平台事实**，`unknown` = 没验证过，不假装知道）。 */
+export declare const AUTH_REQUIREMENTS: readonly ["none", "required", "unknown"];
+export type AuthRequirementValue = (typeof AUTH_REQUIREMENTS)[number];
+export declare const AUTH_REQUIREMENT_LABEL: Record<AuthRequirementValue, string>;
+/**
  * 风控命中类型（§4.2.2 `detectBlock`）。
  *
  * `quota-exhausted`（P1/D-17a 增强）：平台侧"今日额度用完"（如 51job「今日投递太多」、

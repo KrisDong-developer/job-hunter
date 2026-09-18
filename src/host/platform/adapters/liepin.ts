@@ -57,6 +57,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 结构锚点集（2026-09-18 由 v8 探针真实夹具校准）。每一项都可以在 DB 里覆盖着改（ADR-19）。 */
@@ -581,6 +582,7 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
 
   return {
     id: 'liepin',
+    ...platformFacts('liepin'),
     displayName: '猎聘',
     capabilities: {
       searchWithoutLogin: true,

@@ -80,6 +80,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 import { platformCriterion } from '../types.js'
 
@@ -595,6 +596,7 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
 
   return {
     id: 'hiredchina',
+    ...platformFacts('hiredchina'),
     displayName: 'HiredChina',
     capabilities: {
       // 列表公共可看（探针浏览器未登录即可渲染列表）→ 搜索不需要登录。
