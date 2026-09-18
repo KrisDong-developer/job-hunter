@@ -13,6 +13,7 @@ import type {
   AdapterMaturityDto,
   AuthRequirementDto,
 } from '../../shared/dto.js'
+import type { HumanKeyboard, HumanMouse } from './humanize.js'
 
 /** 一页列表里的一条原始岗位。**只含标量**，字段名与核心字段对齐（§4.3 P7）。 */
 export interface RawJob {
@@ -211,9 +212,32 @@ export interface PageLike {
    * 需要它是因为**招聘站点基本都是 SPA**：`load` 事件到达时列表还没渲染完，
    * 立刻解析只会拿到 0 条 —— 而 0 条最容易被误读成「今天没有新岗位」。
    * 夹具实现直接查一次静态 DOM。
+   *
+   * ⚠️ 真路径是 Playwright 的 `waitForSelector`：超时**抛错**而不是返回 false
+   * （离线夹具返回 false）。调用方一律 try/catch 包住再取布尔值。
    * @returns 等到返回 true；超时返回 false（调用方自行决定降级）
    */
   waitForSelector?(selector: string, timeoutMs: number): Promise<boolean>
+  /**
+   * ── 以下三项是**可选交互面**，只有"高危动作"（打招呼/投递）才用得到 ──────
+   *
+   * 为什么要单开一层而不是复用 `evaluate`：`el.click()` / 直接改 `innerHTML`
+   * 产生的是 `isTrusted=false` 的 DOM 事件，是最廉价的自动化特征（§7.2 / D-17a）。
+   * 真正的点击与输入必须走 CDP Input 域（`page.mouse` / `page.keyboard`），
+   * 也就是 `platform/humanize.ts` 的两个最小结构面。
+   *
+   * ⚠️ **缺失时适配器必须 fail-closed，绝不退回 DOM 事件模拟** ——
+   * 悄悄降级成 DOM 点击，等于把"看起来成功了"当成"发出去了"。
+   * 离线夹具可以只实现其中一部分（读类动作根本不需要它们）。
+   */
+  mouse?: HumanMouse
+  keyboard?: HumanKeyboard
+  /**
+   * 给 `input[type=file]` 设置本地文件（附件投递）。
+   *
+   * 真路径 = Playwright `page.setInputFiles(selector, files)`；离线夹具记录调用即可。
+   */
+  setInputFiles?(selector: string, filePaths: readonly string[]): Promise<void>
 }
 
 /** 采集会话的页面来源。浏览器实现与夹具实现都满足它。 */

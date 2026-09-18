@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   AUTH_REQUIREMENT_LABEL,
   CRAWL_STATE_LABEL,
@@ -65,6 +65,7 @@ import { InlineMd } from '../inline-md.js'
 import { Modal } from '../modal.js'
 import { Term } from '../terms.js'
 import { FreshnessBadge } from './freshness.js'
+import { PLAN_KEYWORDS_MAX } from '../../shared/constants.js'
 
 interface Feedback {
   running: boolean
@@ -101,6 +102,12 @@ const COLLECT_TABS: ReadonlyArray<{ key: CollectTab; label: string }> = [
 interface PlanForm {
   name: string
   platforms: string[]
+  /**
+   * 多关键词的**原始文本**（每行一个）。用文本而不是 string[] 承载：
+   * 用户打字过程中随时会出现空行/半截行，拆分与清洗放到 `writeOf` 统一做，
+   * 输入框就不会在编辑中途"自己跳字"。
+   */
+  keywordsText: string
   /**
    * 每平台的覆盖项（批次 3）。表单里 `maxPages` 用**字符串**：
    * 空串表示"用方案级页数"，与"0 页"必须区分得开。
@@ -153,11 +160,30 @@ function buildOverrides(
   return out
 }
 
-function formOf(plan: PlanDto): PlanForm {
+/** 关键词文本 → 列表：trim、丢空行、去重（保首个出现序）。清洗只在这一处。 */
+export function parseKeywordsText(text: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const line of text.split('\n')) {
+    const keyword = line.trim()
+    if (keyword === '' || seen.has(keyword)) continue
+    seen.add(keyword)
+    out.push(keyword)
+  }
+  return out
+}
+
+export function formOf(plan: PlanDto): PlanForm {
   const schedule: PlanSchedule = plan.schedule
   return {
     name: plan.name,
     platforms: [...plan.platforms],
+    // 多关键词方案直接回填列表；老方案把 criteria.keyword 翻成单行 ——
+    // 用户看到的永远是"这个方案实际会跑的关键词"，不用关心新老形态。
+    keywordsText:
+      plan.keywords.length > 0
+        ? plan.keywords.join('\n')
+        : (plan.criteria['keyword'] ?? ''),
     overrides: overridesOf(plan.platforms, plan.platformOverrides),
     criteria: { ...plan.criteria },
     windowStart: clockValueOf(schedule.windowStartHour, schedule.windowStartMinute),
@@ -170,11 +196,16 @@ function formOf(plan: PlanDto): PlanForm {
   }
 }
 
-function emptyForm(platforms: string[]): PlanForm {
+/**
+ * 新建方案的空白表单。**平台默认一个不勾**（用户要求：不需要同时很多平台）——
+ * 第 1 步的门槛会引导选至少一个，勾选时覆盖项自动补上默认条目。
+ */
+export function emptyForm(): PlanForm {
   return {
     name: '新方案',
-    platforms,
-    overrides: overridesOf(platforms, {}),
+    platforms: [],
+    keywordsText: '',
+    overrides: {},
     criteria: {},
     windowStart: '09:00',
     windowEnd: '11:00',
@@ -192,14 +223,19 @@ function emptyForm(platforms: string[]): PlanForm {
  * 时间在这里解析；解析不出来（用户清空了输入框）就退回默认时段，
  * 而不是把 `NaN` 发出去 —— `parseClockValue` 返回 null 的语义是"没填"，不是"00:00"。
  */
-function writeOf(form: PlanForm): PlanWriteInput {
+export function writeOf(form: PlanForm): PlanWriteInput {
   const start = parseClockValue(form.windowStart) ?? { hour: 9, minute: 0 }
   const end = parseClockValue(form.windowEnd) ?? { hour: 11, minute: 0 }
+  const keywords = parseKeywordsText(form.keywordsText)
+  const criteria = { ...form.criteria }
+  // 单一事实源：keywords 非空时 criteria 里不再带 keyword（宿主也会再剔一次）。
+  if (keywords.length > 0) delete criteria['keyword']
   return {
     name: form.name,
     platforms: form.platforms,
+    keywords,
     platformOverrides: buildOverrides(form.overrides),
-    criteria: form.criteria,
+    criteria,
     schedule: {
       enabled: form.scheduleEnabled,
       windowStartHour: start.hour,
@@ -1068,7 +1104,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           planId={editing === 'new' ? null : editing}
           initial={
             editing === 'new'
-              ? emptyForm(platformList.map((item) => item.id))
+              ? emptyForm()
               : formOf(planList.find((plan) => plan.id === editing) as PlanDto)
           }
           available={platformList}
@@ -1279,19 +1315,38 @@ function StatusAlert(props: {
   return null
 }
 
-/** 条件的一行中文呈现（不是源码 JSON）。 */
+/**
+ * 条件的一行中文呈现（不是源码 JSON）。
+ * 多关键词方案把关键词排在最前（它们是一轮里要逐个跑的任务清单），
+ * 其余条件照旧翻人话；两者都没有才写"不限"。
+ */
 function CriteriaLine(props: { plan: PlanDto; dimensions: readonly CriteriaDimensionLike[] }) {
-  const scoped = props.dimensions.filter((dimension) => props.plan.criteria[dimension.key] !== undefined)
+  const scoped = props.dimensions.filter(
+    (dimension) => dimension.key !== 'keyword' && props.plan.criteria[dimension.key] !== undefined,
+  )
   const items = describeCriteria(props.plan.criteria, scoped)
-  if (items.length === 0) return <span className="jh-muted">条件：不限</span>
+  const keywords =
+    props.plan.keywords.length > 0
+      ? props.plan.keywords
+      : props.plan.criteria['keyword'] !== undefined && props.plan.criteria['keyword'] !== ''
+        ? [props.plan.criteria['keyword'] ?? '']
+        : []
+  if (items.length === 0 && keywords.length === 0) return <span className="jh-muted">条件：不限</span>
   return (
     <span>
-      {items.map((item, index) => (
-        <span key={item.key}>
-          {index === 0 ? '' : ' · '}
-          {item.label}：<b>{item.display}</b>
+      {keywords.length === 0 ? null : (
+        <span>
+          关键词：<b>{keywords.join('、')}</b>
+          {items.length > 0 ? ' · ' : ''}
         </span>
-      ))}
+      )}
+      {items
+        .map((item) => (
+          <span key={item.key}>
+            {item.label}：<b>{item.display}</b>
+          </span>
+        ))
+        .reduce<ReactNode[]>((acc, node) => (acc.length === 0 ? [node] : [...acc, ' · ', node]), [])}
     </span>
   )
 }
@@ -2102,7 +2157,9 @@ const PLAN_STEPS = ['基础与平台', '采集与筛选', '调度与后处理'] 
 /**
  * 第 2 步里默认**摊在明面上**的筛选维度。
  *
- * 判据是"改方案时最常动的几个"：搜什么岗位、在哪个城市、什么经验、什么学历、什么薪资。
+ * 判据是"改方案时最常动的几个"。`keyword` **刻意不在维度网格里** —— 它升级成了
+ * 方案级多关键词（每行一个），有自己的专属输入区，网格里再出现一个单值输入
+ * 只会造成"两处都能配关键词"的歧义。
  * 其余维度（排序方式 / 发布时间 / 职位范围 / 各平台特有维度）默认值几乎都是"不限"，
  * 十来个下拉框全摊出来只会把上面这几个淹掉 —— 评审原话："中间 15+ 个下拉框大部分默认不限，
  * 极占空间"。所以它们进「高级筛选」折叠区。
@@ -2111,7 +2168,6 @@ const PLAN_STEPS = ['基础与平台', '采集与筛选', '调度与后处理'] 
  * 折叠区里有生效值时还会自动展开并把项数写在折叠开关上。
  */
 const PRIMARY_CRITERIA_KEYS: readonly string[] = [
-  'keyword',
   'city',
   'workExp',
   'education',
@@ -2344,11 +2400,15 @@ function PlanEditorModal(props: {
   const nameMissing = form.name.trim() === ''
   const stepOneBlocked = nameMissing || includedCount === 0 || enabledCount === 0
   const planPages = form.criteria['maxPages'] ?? ''
+  /** 生效关键词数（清洗后）；超上限 → 保存按钮置灰并就地说明（判据与宿主一致）。 */
+  const keywordCount = parseKeywordsText(form.keywordsText).length
+  const keywordsOverCap = keywordCount > PLAN_KEYWORDS_MAX
 
   // 方案级页数上限在第 1 步与平台表挨着呈现，所以从第 2 步的维度网格里摘出去 ——
   // 同一个输入出现在两处，正是评审要消掉的那种重复。
+  // keyword 同理：它升级成了下面的多关键词输入区，网格里不再出现。
   const pagesDimension = items.find((item) => item.key === 'maxPages')
-  const filterItems = items.filter((item) => item.key !== 'maxPages')
+  const filterItems = items.filter((item) => item.key !== 'maxPages' && item.key !== 'keyword')
   const primaryItems = filterItems.filter(
     (item) => item.supported && PRIMARY_CRITERIA_KEYS.includes(item.key),
   )
@@ -2502,15 +2562,17 @@ function PlanEditorModal(props: {
             <button
               type="button"
               className="jh-btn jh-btn-inline jh-btn-primary"
-              disabled={busy || stepOneBlocked || unchangedSinceSave}
+              disabled={busy || stepOneBlocked || keywordsOverCap || unchangedSinceSave}
               title={
                 stepOneBlocked
                   ? '方案名不能为空，且至少要有一个未暂停的平台 —— 与保存接口的判据一致。'
-                  : unchangedSinceSave
-                    ? '当前内容与上次保存的一致；改动任何一项后可以再次保存。'
-                    : busy
-                      ? '正在保存，请稍候。'
-                      : '保存这个方案。'
+                  : keywordsOverCap
+                    ? `关键词超过上限 ${String(PLAN_KEYWORDS_MAX)} 个 —— 到「采集与筛选」步骤改。`
+                    : unchangedSinceSave
+                      ? '当前内容与上次保存的一致；改动任何一项后可以再次保存。'
+                      : busy
+                        ? '正在保存，请稍候。'
+                        : '保存这个方案。'
               }
               onClick={() => void submit()}
             >
@@ -2853,6 +2915,36 @@ function PlanEditorModal(props: {
 
         {step === 1 ? (
           <>
+            {/* 多关键词（每行一个）：方案级专属输入区，取代维度网格里的单值 keyword。
+                用原始文本承载（见 PlanForm.keywordsText 的注释），清洗只在 writeOf。 */}
+            <div className="jh-field">
+              <span className="jh-field-label">
+                关键词（每行一个，最多 {String(PLAN_KEYWORDS_MAX)} 个）
+                <FieldHint
+                  text={`逐个采集：第 1 个关键词抓完它的页数再抓第 2 个，每个关键词一条独立的运行记录（能看到「Java 12 条、Go 3 条」）。留空 = 不按关键词筛（按平台默认列表抓）。注意：自动调度按站点访问次数计每日额度，N 个关键词 = N 次；手动「立即采集」不占额度。`}
+                />
+              </span>
+              <textarea
+                className="jh-textarea"
+                rows={4}
+                spellCheck={false}
+                aria-label="搜索关键词，每行一个"
+                placeholder={'Java\n前端\n测试'}
+                value={form.keywordsText}
+                onChange={(event) => patch({ keywordsText: event.target.value })}
+              />
+              {keywordCount === 0 ? null : keywordCount > PLAN_KEYWORDS_MAX ? (
+                <span className="jh-error" role="alert">
+                  {String(keywordCount)} 个关键词超过上限 {String(PLAN_KEYWORDS_MAX)} —— 保存会被拒。
+                  需要更多就拆成两个方案（各自的额度与时段独立）。
+                </span>
+              ) : (
+                <span className="jh-filter-note">
+                  {String(keywordCount)} 个关键词 · 一轮按顺序抓 {String(keywordCount)} 遍
+                </span>
+              )}
+            </div>
+
             {/* 高频区：只留"改方案时最常动的几个"。其余进高级筛选 ——
                 它们默认值几乎都是"不限"，摊在明面上只会把上面这几个淹掉。 */}
             <div className="jh-section-title">筛选条件</div>

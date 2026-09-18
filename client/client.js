@@ -41,6 +41,10 @@ window.__ModuleLoader__.load({
 		var PHASE = "P8";
 		var MAX_BODY_BYTES = 64 * 1024;
 		var ROUND_BUDGET_MS = 20 * 60 * 1e3;
+		var PLAN_KEYWORDS_MAX = 10;
+		var CRAWL_ROUND_BUDGET_DEFAULT_MIN = 20;
+		var CRAWL_ROUND_BUDGET_MIN_MIN = 5;
+		var CRAWL_ROUND_BUDGET_MAX_MIN = 240;
 		var BROWSER_IDLE_DEFAULT_MIN = 10;
 		var BROWSER_IDLE_MIN_MIN = 0;
 		var BROWSER_IDLE_MAX_MIN = 240;
@@ -4531,11 +4535,25 @@ window.__ModuleLoader__.load({
 		  }
 		  return out;
 		}
+		function parseKeywordsText(text) {
+		  const seen = /* @__PURE__ */ new Set();
+		  const out = [];
+		  for (const line of text.split("\n")) {
+		    const keyword = line.trim();
+		    if (keyword === "" || seen.has(keyword)) continue;
+		    seen.add(keyword);
+		    out.push(keyword);
+		  }
+		  return out;
+		}
 		function formOf(plan) {
 		  const schedule = plan.schedule;
 		  return {
 		    name: plan.name,
 		    platforms: [...plan.platforms],
+		    // 多关键词方案直接回填列表；老方案把 criteria.keyword 翻成单行 ——
+		    // 用户看到的永远是"这个方案实际会跑的关键词"，不用关心新老形态。
+		    keywordsText: plan.keywords.length > 0 ? plan.keywords.join("\n") : plan.criteria["keyword"] ?? "",
 		    overrides: overridesOf(plan.platforms, plan.platformOverrides),
 		    criteria: { ...plan.criteria },
 		    windowStart: clockValueOf(schedule.windowStartHour, schedule.windowStartMinute),
@@ -4547,11 +4565,12 @@ window.__ModuleLoader__.load({
 		    dedup: plan.postProcess.dedup
 		  };
 		}
-		function emptyForm(platforms) {
+		function emptyForm() {
 		  return {
 		    name: "\u65B0\u65B9\u6848",
-		    platforms,
-		    overrides: overridesOf(platforms, {}),
+		    platforms: [],
+		    keywordsText: "",
+		    overrides: {},
 		    criteria: {},
 		    windowStart: "09:00",
 		    windowEnd: "11:00",
@@ -4565,11 +4584,15 @@ window.__ModuleLoader__.load({
 		function writeOf(form) {
 		  const start = parseClockValue(form.windowStart) ?? { hour: 9, minute: 0 };
 		  const end = parseClockValue(form.windowEnd) ?? { hour: 11, minute: 0 };
+		  const keywords = parseKeywordsText(form.keywordsText);
+		  const criteria = { ...form.criteria };
+		  if (keywords.length > 0) delete criteria["keyword"];
 		  return {
 		    name: form.name,
 		    platforms: form.platforms,
+		    keywords,
 		    platformOverrides: buildOverrides(form.overrides),
-		    criteria: form.criteria,
+		    criteria,
 		    schedule: {
 		      enabled: form.scheduleEnabled,
 		      windowStartHour: start.hour,
@@ -5143,7 +5166,7 @@ window.__ModuleLoader__.load({
 		      PlanEditorModal,
 		      {
 		        planId: editing === "new" ? null : editing,
-		        initial: editing === "new" ? emptyForm(platformList.map((item) => item.id)) : formOf(planList.find((plan) => plan.id === editing)),
+		        initial: editing === "new" ? emptyForm() : formOf(planList.find((plan) => plan.id === editing)),
 		        available: platformList,
 		        duplicates,
 		        notices,
@@ -5319,15 +5342,24 @@ window.__ModuleLoader__.load({
 		  return null;
 		}
 		function CriteriaLine(props) {
-		  const scoped = props.dimensions.filter((dimension) => props.plan.criteria[dimension.key] !== void 0);
+		  const scoped = props.dimensions.filter(
+		    (dimension) => dimension.key !== "keyword" && props.plan.criteria[dimension.key] !== void 0
+		  );
 		  const items = describeCriteria(props.plan.criteria, scoped);
-		  if (items.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u6761\u4EF6\uFF1A\u4E0D\u9650" });
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: items.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
-		    index === 0 ? "" : " \xB7 ",
-		    item.label,
-		    "\uFF1A",
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: item.display })
-		  ] }, item.key)) });
+		  const keywords = props.plan.keywords.length > 0 ? props.plan.keywords : props.plan.criteria["keyword"] !== void 0 && props.plan.criteria["keyword"] !== "" ? [props.plan.criteria["keyword"] ?? ""] : [];
+		  if (items.length === 0 && keywords.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u6761\u4EF6\uFF1A\u4E0D\u9650" });
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
+		    keywords.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
+		      "\u5173\u952E\u8BCD\uFF1A",
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: keywords.join("\u3001") }),
+		      items.length > 0 ? " \xB7 " : ""
+		    ] }),
+		    items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
+		      item.label,
+		      "\uFF1A",
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: item.display })
+		    ] }, item.key)).reduce((acc, node) => acc.length === 0 ? [node] : [...acc, " \xB7 ", node], [])
+		  ] });
 		}
 		function LeasePanel(props) {
 		  const { lease } = props.status;
@@ -5776,7 +5808,6 @@ window.__ModuleLoader__.load({
 		}
 		var PLAN_STEPS = ["\u57FA\u7840\u4E0E\u5E73\u53F0", "\u91C7\u96C6\u4E0E\u7B5B\u9009", "\u8C03\u5EA6\u4E0E\u540E\u5904\u7406"];
 		var PRIMARY_CRITERIA_KEYS = [
-		  "keyword",
 		  "city",
 		  "workExp",
 		  "education",
@@ -5885,8 +5916,10 @@ window.__ModuleLoader__.load({
 		  const nameMissing = form.name.trim() === "";
 		  const stepOneBlocked = nameMissing || includedCount === 0 || enabledCount === 0;
 		  const planPages = form.criteria["maxPages"] ?? "";
+		  const keywordCount = parseKeywordsText(form.keywordsText).length;
+		  const keywordsOverCap = keywordCount > PLAN_KEYWORDS_MAX;
 		  const pagesDimension = items.find((item) => item.key === "maxPages");
-		  const filterItems = items.filter((item) => item.key !== "maxPages");
+		  const filterItems = items.filter((item) => item.key !== "maxPages" && item.key !== "keyword");
 		  const primaryItems = filterItems.filter(
 		    (item) => item.supported && PRIMARY_CRITERIA_KEYS.includes(item.key)
 		  );
@@ -5998,8 +6031,8 @@ window.__ModuleLoader__.load({
 		          {
 		            type: "button",
 		            className: "jh-btn jh-btn-inline jh-btn-primary",
-		            disabled: busy || stepOneBlocked || unchangedSinceSave,
-		            title: stepOneBlocked ? "\u65B9\u6848\u540D\u4E0D\u80FD\u4E3A\u7A7A\uFF0C\u4E14\u81F3\u5C11\u8981\u6709\u4E00\u4E2A\u672A\u6682\u505C\u7684\u5E73\u53F0 \u2014\u2014 \u4E0E\u4FDD\u5B58\u63A5\u53E3\u7684\u5224\u636E\u4E00\u81F4\u3002" : unchangedSinceSave ? "\u5F53\u524D\u5185\u5BB9\u4E0E\u4E0A\u6B21\u4FDD\u5B58\u7684\u4E00\u81F4\uFF1B\u6539\u52A8\u4EFB\u4F55\u4E00\u9879\u540E\u53EF\u4EE5\u518D\u6B21\u4FDD\u5B58\u3002" : busy ? "\u6B63\u5728\u4FDD\u5B58\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u4FDD\u5B58\u8FD9\u4E2A\u65B9\u6848\u3002",
+		            disabled: busy || stepOneBlocked || keywordsOverCap || unchangedSinceSave,
+		            title: stepOneBlocked ? "\u65B9\u6848\u540D\u4E0D\u80FD\u4E3A\u7A7A\uFF0C\u4E14\u81F3\u5C11\u8981\u6709\u4E00\u4E2A\u672A\u6682\u505C\u7684\u5E73\u53F0 \u2014\u2014 \u4E0E\u4FDD\u5B58\u63A5\u53E3\u7684\u5224\u636E\u4E00\u81F4\u3002" : keywordsOverCap ? `\u5173\u952E\u8BCD\u8D85\u8FC7\u4E0A\u9650 ${String(PLAN_KEYWORDS_MAX)} \u4E2A \u2014\u2014 \u5230\u300C\u91C7\u96C6\u4E0E\u7B5B\u9009\u300D\u6B65\u9AA4\u6539\u3002` : unchangedSinceSave ? "\u5F53\u524D\u5185\u5BB9\u4E0E\u4E0A\u6B21\u4FDD\u5B58\u7684\u4E00\u81F4\uFF1B\u6539\u52A8\u4EFB\u4F55\u4E00\u9879\u540E\u53EF\u4EE5\u518D\u6B21\u4FDD\u5B58\u3002" : busy ? "\u6B63\u5728\u4FDD\u5B58\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u4FDD\u5B58\u8FD9\u4E2A\u65B9\u6848\u3002",
 		            onClick: () => void submit(),
 		            children: unchangedSinceSave ? "\u5DF2\u4FDD\u5B58" : busy ? "\u6B63\u5728\u4FDD\u5B58\u2026" : "\u4FDD\u5B58"
 		          }
@@ -6285,6 +6318,42 @@ window.__ModuleLoader__.load({
 		            ] }) : null
 		          ] }) : null,
 		          step === 1 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-field-label", children: [
+		                "\u5173\u952E\u8BCD\uFF08\u6BCF\u884C\u4E00\u4E2A\uFF0C\u6700\u591A ",
+		                String(PLAN_KEYWORDS_MAX),
+		                " \u4E2A\uFF09",
+		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                  FieldHint,
+		                  {
+		                    text: `\u9010\u4E2A\u91C7\u96C6\uFF1A\u7B2C 1 \u4E2A\u5173\u952E\u8BCD\u6293\u5B8C\u5B83\u7684\u9875\u6570\u518D\u6293\u7B2C 2 \u4E2A\uFF0C\u6BCF\u4E2A\u5173\u952E\u8BCD\u4E00\u6761\u72EC\u7ACB\u7684\u8FD0\u884C\u8BB0\u5F55\uFF08\u80FD\u770B\u5230\u300CJava 12 \u6761\u3001Go 3 \u6761\u300D\uFF09\u3002\u7559\u7A7A = \u4E0D\u6309\u5173\u952E\u8BCD\u7B5B\uFF08\u6309\u5E73\u53F0\u9ED8\u8BA4\u5217\u8868\u6293\uFF09\u3002\u6CE8\u610F\uFF1A\u81EA\u52A8\u8C03\u5EA6\u6309\u7AD9\u70B9\u8BBF\u95EE\u6B21\u6570\u8BA1\u6BCF\u65E5\u989D\u5EA6\uFF0CN \u4E2A\u5173\u952E\u8BCD = N \u6B21\uFF1B\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E0D\u5360\u989D\u5EA6\u3002`
+		                  }
+		                )
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                "textarea",
+		                {
+		                  className: "jh-textarea",
+		                  rows: 4,
+		                  spellCheck: false,
+		                  "aria-label": "\u641C\u7D22\u5173\u952E\u8BCD\uFF0C\u6BCF\u884C\u4E00\u4E2A",
+		                  placeholder: "Java\n\u524D\u7AEF\n\u6D4B\u8BD5",
+		                  value: form.keywordsText,
+		                  onChange: (event) => patch({ keywordsText: event.target.value })
+		                }
+		              ),
+		              keywordCount === 0 ? null : keywordCount > PLAN_KEYWORDS_MAX ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-error", role: "alert", children: [
+		                String(keywordCount),
+		                " \u4E2A\u5173\u952E\u8BCD\u8D85\u8FC7\u4E0A\u9650 ",
+		                String(PLAN_KEYWORDS_MAX),
+		                " \u2014\u2014 \u4FDD\u5B58\u4F1A\u88AB\u62D2\u3002 \u9700\u8981\u66F4\u591A\u5C31\u62C6\u6210\u4E24\u4E2A\u65B9\u6848\uFF08\u5404\u81EA\u7684\u989D\u5EA6\u4E0E\u65F6\u6BB5\u72EC\u7ACB\uFF09\u3002"
+		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-filter-note", children: [
+		                String(keywordCount),
+		                " \u4E2A\u5173\u952E\u8BCD \xB7 \u4E00\u8F6E\u6309\u987A\u5E8F\u6293 ",
+		                String(keywordCount),
+		                " \u904D"
+		              ] })
+		            ] }),
 		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-section-title", children: "\u7B5B\u9009\u6761\u4EF6" }),
 		            primaryItems.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u5DF2\u7EB3\u5165\u7684\u5E73\u53F0\u6CA1\u6709\u58F0\u660E\u4EFB\u4F55\u7B5B\u9009\u7EF4\u5EA6 \u2014\u2014 \u4FDD\u5B58\u540E\u5B83\u4EEC\u4F1A\u6309\u5E73\u53F0\u81EA\u5DF1\u7684\u9ED8\u8BA4\u5217\u8868\u6293\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-grid2", children: primaryItems.map(renderDimension) }),
 		            advancedItems.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
@@ -7979,6 +8048,7 @@ window.__ModuleLoader__.load({
 		  };
 		  const idleMinutes = current.browser.idleCloseMinutes;
 		  const closeAfterRun = current.browser.closeAfterRun;
+		  const roundBudgetMinutes = current.crawl.roundBudgetMinutes;
 		  const windowRaw = current.guard.sendWindow.trim();
 		  const parsedWindow = windowRaw === "" ? null : parseWindow(windowRaw);
 		  const defaultWindow = parseWindow(current.derived.defaults.guard.sendWindow);
@@ -8374,6 +8444,38 @@ window.__ModuleLoader__.load({
 		          closeAfterRun ? `\u5F53\u524D\uFF1A\u6BCF\u8F6E\u91C7\u96C6\u7ED3\u675F\u540E\u5173\u95ED\uFF08\u8DD1\u5B8C\u7EA6 ${String(BROWSER_CLOSE_AFTER_RUN_MS / 1e3)} \u79D2\uFF1B\u4E0A\u9762\u7684\u7A7A\u95F2\u65F6\u957F\u6B64\u523B\u4E0D\u8D77\u4F5C\u7528\uFF09\u3002` : idleMinutes <= 0 ? "\u5F53\u524D\uFF1A\u4E0D\u81EA\u52A8\u5173\u95ED \u2014\u2014 \u6D4F\u89C8\u5668\u4F1A\u4E00\u76F4\u5F00\u7740\uFF0C\u76F4\u5230\u4F60\u5173\u6389\u5B83\u6216\u5378\u8F7D\u63D2\u4EF6\u3002" : `\u5F53\u524D\uFF1A\u7A7A\u95F2 ${String(idleMinutes)} \u5206\u949F\u540E\u5173\u95ED\u3002`,
 		          " ",
 		          "\u6B63\u5728\u767B\u5F55\u6216\u6B63\u5728\u91C7\u96C6\u65F6\u4E0D\u4F1A\u88AB\u5173\u6389\u3002"
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u91C7\u96C6\u8282\u594F" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		            "\u5355\u8F6E\u91C7\u96C6\u6700\u591A\u8DD1\u591A\u4E45",
+		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		              FieldHint,
+		              {
+		                text: `\u4E00\u8F6E = \u4E00\u4E2A\u65B9\u6848\u7684\u4E00\u6B21\u8FD0\u884C\uFF1B\u591A\u5173\u952E\u8BCD\u65B9\u6848\u4F1A\u9010\u4E2A\u5173\u952E\u8BCD\u8DD1\uFF0C\u65B0\u5C97\u4F4D\u8FD8\u4F1A\u9010\u6761\u70B9\u8FDB\u8BE6\u60C5\u9875\uFF0C\u6240\u4EE5\u8017\u65F6\u968F\u914D\u7F6E\u653E\u5927\u3002\u5230\u70B9\u540E**\u4E0D\u518D\u5F00\u59CB**\u65B0\u7684\u5E73\u53F0\u6216\u5173\u952E\u8BCD\uFF08\u6B63\u5728\u8DD1\u7684\u90A3\u4E00\u9875\u8DD1\u5B8C\u5C31\u505C\uFF09\uFF0C\u5DF2\u6293\u5230\u7684\u7167\u5E38\u5165\u5E93\uFF0C\u5269\u4E0B\u7684\u7559\u5230\u4E0B\u4E00\u8F6E\u5E76\u6309\u300C\u672C\u8F6E\u5DF2\u5230\u65F6\u9650\u300D\u5982\u5B9E\u663E\u793A\u3002\u9ED8\u8BA4 ${String(CRAWL_ROUND_BUDGET_DEFAULT_MIN)} \u5206\u949F\u3002\u8FD9\u4E0D\u662F\u8282\u6D41\u9600\uFF0C\u662F\u4FDD\u9669\u4E1D \u2014\u2014 \u5BF9\u5E94\u7528\u6237\u80FD\u63A5\u53D7\u7684"\u70B9\u4E00\u4E0B\u6700\u591A\u7B49\u591A\u4E45"\u3002`
+		              }
+		            )
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            NumberField,
+		            {
+		              value: roundBudgetMinutes,
+		              min: CRAWL_ROUND_BUDGET_MIN_MIN,
+		              max: CRAWL_ROUND_BUDGET_MAX_MIN,
+		              unit: "\u5206\u949F",
+		              label: "\u5355\u8F6E\u91C7\u96C6\u6700\u591A\u8DD1\u591A\u5C11\u5206\u949F",
+		              disabled: busy,
+		              onCommit: (next) => write(
+		                { crawl: { roundBudgetMinutes: next } },
+		                `\u5DF2\u628A\u5355\u8F6E\u91C7\u96C6\u9884\u7B97\u6539\u4E3A ${String(next)} \u5206\u949F\uFF08\u4E0B\u4E00\u8F6E\u5F00\u59CB\u751F\u6548\uFF09\u3002`
+		              )
+		            }
+		          )
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-note", children: [
+		          "\u5F53\u524D\uFF1A\u4E00\u8F6E\u6700\u591A ",
+		          String(roundBudgetMinutes),
+		          " \u5206\u949F\u3002\u6539\u5B8C\u4E0D\u7528\u91CD\u542F\uFF0C\u4E0B\u4E00\u8F6E\u5C31\u5730\u751F\u6548\u3002"
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-note", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(InlineMd, { text: "\u6A21\u578B**\u4E0D\u80FD**\u4FEE\u6539\u8FD9\u4E9B\u952E\uFF1A" }),

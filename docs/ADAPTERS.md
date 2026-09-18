@@ -127,7 +127,7 @@ test/tools/probe-guopin.ts(33,33): error TS2305: Module '"../../src/host/platfor
 node scripts/run-ts.mjs test/tools/crawl-fixture.ts --break-selectors --rounds 3
 #    期望：health=degraded、urgent 待办 1 条、主表 0 条脏数据、原始片段进 pending_repair
 
-# ② 更新 fixture：用你自己已登录的浏览器保存一份新的搜索结果页
+# ② 更新夹具 / 复现现场
 #    位置：test/fixtures/51job-sz.html（仓库里已提交一份 51job 深圳 Java 的样本）
 #    ⚠️ 抓取前先确认目标站点条款与 robots；本项目不提供任何反检测能力
 
@@ -142,6 +142,16 @@ ON CONFLICT(key,scope,scope_ref) DO UPDATE SET value_json=excluded.value_json,up
 # ④ 离线全绿（绝不访问真实招聘站）
 npm test
 ```
+
+> **探针覆盖**：10 个适配器现在都有至少一个在线探针（`package.json` 里的 `probe:*`）——
+> 浏览器型：`probe:51job` · `probe:liepin` · `probe:zhipin` · `probe:lagou` · `probe:guopin`
+> · `probe:zhaopin-login`；纯 HTTP 型：`probe:sinojobs` · `probe:hiredchina` · `probe:indeed` · `probe:waiqi`。
+> 它们都是**手动跑一次**的校准工具（§14），产物落到仓库根的 `.probe-<平台>-capture/`
+> （已被 `.gitignore` 的 `.probe*` 忽略），**刻意不覆盖 `test/fixtures/` 里被用例钉住的夹具** ——
+> 那些文件的首条记录标题/条数/源地址被硬编码断言，静默替换只会让测试红在与本次校准无关的地方。
+> 要重新钉住，人工把 capture 复制进 `test/fixtures/` 并**同步改用例里的期望值**。
+> 51job / sinojobs / hiredchina / indeed 这四个还支持 `*_OFFLINE=1`（只离线复跑上一份抓取，不碰网络；
+> `probe:guopin` 的对应开关是 `GUOPIN_OFFLINE=1`），选择器腐烂时先用它排除"网络/风控"的干扰。
 
 > 平台各自的实测记录（端点、参数、取值域、坑）写在 `docs/PLATFORM-WAIQI.md` 这类平台文档里，
 > 本手册只讲**通用机制**。改一个平台前先读它那一份。
@@ -188,11 +198,23 @@ npm test
 7. 若该平台有「打招呼 / 投递 / 收件箱 / 阶段探测」动作，必须在 `guard/actions/` 里实现并配测试。
    返回类型是 `ActionResult`（**必须**给 `delivery`：`ok` 只说明"动作没抛错"，
    而"消息是否真的进了对方会话"是另一件事，也是本系统最不能猜的问题）。
-   目前 **10 个适配器的 `actions` 全部未实现**：`greeting_send` 一律返回
-   `ADAPTER_BROKEN`（HTTP 409），文案是「<平台> 的适配器还没实现打招呼动作」。
-   这是**刻意的 fail-closed**，不是 bug。
-   ⚠️ 实现之后要**同时**更新 `platform-facts.ts` 的 `notes`，并放宽
-   `test/platform/facts.test.ts` 里那条"平台支持但尚未实现 sayHello"的绊线（它失败时会告诉你该改哪里）。
+   **现状（2026-09-18）**：`zhipin` 是**第一个真正实现** `actions` 的适配器
+   （`sayHello` / `readInbox` / `sendResume`，见 `adapters/zhipin.ts` 与
+   `test/platform/zhipin-actions.test.ts`），并且三条都已**接到底**：
+   * `sayHello` → `guard/actions/greeting.ts`（既有）+ tool `greeting_send` / `POST /greeting/send`；
+   * `readInbox` → `guard/actions/inbox.ts`（`inbox.sync`，**低危**、不需审批）
+     + tool `inbox_sync` / `POST /inbox/sync`；
+   * `sendResume` → `guard/actions/application.ts`（`application.send`，**高危**、两段式确认）
+     + tool `application_deliver` / `POST /applications/deliver`。
+   ⚠️ 注意区分：tool `application_send`（既有）是"**记一笔**我投了"（`pipeline.recordApplication`），
+   而 `application_deliver` 是"**真的把简历发出去**"（走适配器）。两者都高危，但一件是记账、一件是对外发东西。
+   其余 9 个平台的 `actions` 仍**刻意 fail-closed**：`greeting_send` 返回 `ADAPTER_BROKEN`（HTTP 409）。
+   这是刻意的，不是 bug。
+   ⚠️ 实现之后要**同时**更新 `platform-facts.ts` 的 `notes`，并检查
+   `test/platform/facts.test.ts` 里那条三轴一致性断言（它要求"实现了就必须声明平台支持"）。
+   高危动作的点击/输入**必须**走 `platform/humanize.ts`（CDP Input 级），页面没有
+   `mouse`/`keyboard` 时 fail-closed —— 这条在 `zhipin.ts` 里有正反两个用例钉住。
+   新增工具名要同步 `test/tools/registry.test.ts` 的 `ALL_TOOL_NAMES`（它就是为此存在的）。
 
 ## 6. 明确不要做的事
 
@@ -236,6 +258,32 @@ npm test
     打成 `pending_repair`（宁可让逐字段健康计数去报警）；
   - **批量打开 >6 个 tab 要错开 1–2 秒**，同时开一批会触发风控；
   - 打招呼平台侧日上限约 150（get_jobs README 经验值）。
+  - **求职者端的打招呼 / 收件箱 / 发简历（2026-09-18 落地，选择器来自 BossHunter 的
+    `executor/sender.py`、`executor/monitor.py` 生产实测）**：
+    - 岗位详情页「立即沟通 / 继续沟通」是**候选序列**（`a[redirect-url*="/web/geek/chat"]`、
+      `a[data-url*="/friend/add"]`、`a.btn-startchat`、`[ka="job_detail_chat"]`、`.op-btn-chat`、
+      `.btn-startchat-wrap`）—— 必须**按可见性打分**取，别盲点第一个；
+    - 点击后有三种分支，**送达语义不同**：① 首次沟通弹窗
+      `.dialog-wrap.startchat-dialog`（要自己填话术 → `.send-message`/`.btn-sure` 提交）；
+      ② 预设招呼语弹窗 `.greet-boss-pop`/`.greet-pop`（点确认即发**平台自带文案**）；
+      ③ 无弹窗（「继续沟通」直接进会话）；
+    - 按钮带 `redirect-url`。点击**可能另开标签页** —— 我们的 `PageLike` 只看得到当前页，
+      所以点击后若当前页没变成会话，要用 `redirect-url` 让当前页自己导航过去
+      （BossHunter `_navigate_to_chat_redirect` 就是为这个坑写的）；
+    - 会话页 `https://www.zhipin.com/web/geek/chat`：输入框 `#chat-input`（contenteditable，
+      挂 Vue 实例）、发送 `.btn-send`、消息列表 `.chat-record`；送达校验 = 自己的消息条目
+      （`.message-item.item-myself`）里出现同文本，`.message-status` 的
+      `status-loading`/`status-error` → 发送中/失败；
+    - 收件箱会话行是 **`li[role=listitem]`**（求职者端；招聘者端才是 `.geek-item-wrap`）：
+      HR 名 `.name-text`，公司名取 `.name-box` 的**第 2 个 span**，最后一条 `.last-msg-text`；
+    - **附件简历只能在平台内选着发**（工具条「发简历」→ `.choose-resume-dialog` →
+       `.list-item` → `.btn-confirm`）。求职者网页端**没有会话内上传本地文件的入口** ——
+       BossHunter 的定制 PDF 也是"生成后人工发送"。所以适配器对非空 `filePath`
+       只在页面真存在 `input[type=file]` 时才上传，否则如实报 `missing`，**不假装发成功了**。
+     - 上面这些选择器的**本仓实测入口**是 `npm run probe:zhipin-chat`（会话页 + 详情页登录态探针，
+       只读、不发消息、不投递）：它落盘 `zhipin-chat-list.html` / `zhipin-chat-conversation.html` /
+       `zhipin-detail.html` 与 `zhipin-chat-report.json`（逐选择器命中数 + 行样本 + 工具条文案）。
+       在 BossHunter 的证据之外，**改选择器前先跑它**；报告里 `count: 0` 的字段就是已经腐烂的那条。
 - **猎聘**（2026-09-18 深度调研，夹具 + 接口采样交叉验证）：
   - 搜索接口 `POST api-c.liepin.com/api/com.liepin.searchfront4c.pc-search-job`，请求体
     `mainSearchPcConditionForm` 含全部筛选参数（city/dq/pubTime/salaryCode/workYearCode/eduLevel/industry…），
@@ -248,7 +296,22 @@ npm test
   - 分页是 AntD 按钮组（`.list-pagination-box li.ant-pagination-next`，disabled 类名判尾页），
     一次搜索约 21 页、40 条/页；广告卡没有 `data-nick='job-detail-job-info'` 链接，天然被跳过；
   - 岗位链接两种形态并存：`/job/<id>.shtml`（普通岗）与 `/a/<id>.shtml`（Agent 类岗），都要收；
+  - **列表与列表接口都不含 JD**（逐键采样确认）→ JD 只能**逐条进详情页**取。详情页是
+    **SSR 直出**、**未登录也可读**（2026-09-18 详情探针，夹具 `test/fixtures/liepin-detail.html`）；
+  - 详情页解析锚点（都已进 `DEFAULT_LIEPIN_CONFIG.selectors`）：
+    - JD 正文：`section.job-intro-container` 里 **`dt` 文案 = `职位介绍`** 的那块 `dl > dd`
+      （实测 1074 字）。**必须用 dt 文案当锚点**：同一容器还有 `dt=其他信息`（语言/行业/部门要求），
+      按类名取会取错块，还要排除 `.ellipsis-1`；
+    - 薪资：`.name-box .salary` —— **必须限定 `.name-box`**，裸 `.salary` 会命中侧栏推荐岗；
+    - 关键信息行：`.job-properties` → `佛山-顺德区 5年以上 本科 招5人 9月17日更新`；
+    - 公司名：`div.company-info-container .company-card .name` —— **不能复用列表页的
+      `data-nick='job-detail-company-info'`**：该属性在详情页出现 20 次且**全部**落在
+      `section.love-job-container`（「猜你喜欢」推荐位），第一个命中是**别家公司**的岗位卡，
+      会静默把公司名写错（回归测试固化）；
   - 聊天按钮需要 **hover 后才出现**（get_jobs 实测）；点击前做鼠标像素微调可显著降低风控命中率。
+  - 详情补抓的边界（`crawl.ts` 的 `fetchNewJobDetails`）：**只补本轮新增**（老岗位 JD 已取过）、
+    每轮上限 `DETAIL_FETCH_MAX_PER_ROUND=20`、与列表同一个单轮预算（到点即停）、
+    命中风控**即整轮停手**（记 `failed` + 平台级信号，绝不硬闯）。
 - **51job**：阿里云 WAF 滑块特征是 `.waf-nc-title` 元素 + `script[name^="aliyunwaf_"]` 脚本名
   （已进判墙选择器）；投递上限 toast 文案"今日投递太多 / 休息一下明天再来"存活极短（<2s），
   **点击后要 200ms 间隔轮询 10 次**才抓得到 —— 一次性 detectBlock 会漏（已进 `quota-exhausted` 判墙）。

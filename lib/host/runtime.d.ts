@@ -14,6 +14,8 @@ import type { ResumeService } from './domain/resumes.js';
 import type { PlanService } from './domain/plans.js';
 import type { IntelService } from './domain/intel.js';
 import { type GreetingSendResult } from './guard/actions/greeting.js';
+import { type ApplicationSendResult } from './guard/actions/application.js';
+import { type InboxSyncResult } from './guard/actions/inbox.js';
 import type { Guard } from './guard/index.js';
 import type { Actor } from './guard/types.js';
 import { type EventBus } from './http/sse.js';
@@ -129,6 +131,28 @@ export interface HostRuntime {
         actor: Actor;
         guiConfirmed?: boolean;
     }): Promise<GreetingSendResult>;
+    /**
+     * 同步收件箱 —— 把平台会话列表读进本地消息表（§13 U6）。
+     *
+     * **低危**（不对外发任何东西），但仍经闸门：它会开一个真实浏览器页面访问平台。
+     * `actor === 'model'` 也不会被要求审批（低危不打扰用户）。
+     */
+    syncInbox(input: {
+        platformId: string;
+        actor: Actor;
+    }): Promise<InboxSyncResult>;
+    /**
+     * 投递简历 —— **高危**（§22.4），走 `application.send` 闸门。
+     *
+     * 与 `pipeline.recordApplication` 的区别：那是"记一笔我投了"，这是**真的投出去**。
+     * `filePath` 省略/null = 用平台内简历（BOSS 求职者网页端只支持这种）。
+     */
+    sendApplication(input: {
+        jobId: number;
+        filePath?: string | null;
+        actor: Actor;
+        guiConfirmed?: boolean;
+    }): Promise<ApplicationSendResult>;
     /** 写插件配置。走 `settings.write` 闸门。 */
     updateSettings(patch: SettingsPatch, actor: Actor, guiConfirmed?: boolean): Promise<SettingsSnapshot>;
     /** 简历服务（版本、定制、附件生成）。 */

@@ -380,6 +380,17 @@ export interface PlanDto {
   name: string
   platforms: string[]
   /**
+   * 多关键词（逐个采集）：第 1 个抓完它的页数 → 第 2 个 → …，每个关键词
+   * 一条独立的 `crawl_run`。空数组 = 用 `criteria.keyword`（单关键词，老形态），
+   * 两者都没有 = 不按关键词筛。
+   *
+   * 为什么是方案级字段而不是 `criteria.keywords`：criteria 的形状是
+   * `Record<string, string>`（适配器按单值拼 URL），塞数组会波及全部适配器与
+   * 校验；展开成"每次抓取一个 keyword"是**调度层**的事 —— 字段放方案级，
+   * 展开点唯一（`keywordsOfPlan`），适配器零改动。
+   */
+  keywords: string[]
+  /**
    * 每平台的覆盖项（**稀疏**：只含用户改过的平台，且只会出现 `platforms` 里的 id）。
    *
    * 为什么不把 `platforms` 直接变成对象数组：它是**集合与顺序**（多处按它遍历），

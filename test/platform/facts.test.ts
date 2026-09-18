@@ -125,22 +125,32 @@ test('implementation 由实现派生，不手写', () => {
 
 test('平台支持 ≠ 我们实现了：capabilities 与 implementation 都暴露，且允许不一致', async () => {
   await withRuntime((runtime) => {
-    const withGreetingCapability = runtime
-      .platforms()
-      .filter((item) => (item.capabilities as { supportsGreeting?: boolean }).supportsGreeting === true)
+    const items = runtime.platforms()
+    const withGreetingCapability = items.filter(
+      (item) => (item.capabilities as { supportsGreeting?: boolean }).supportsGreeting === true,
+    )
     assert.ok(
       withGreetingCapability.length > 0,
       '应当存在"平台支持打招呼"的平台（如 51job）—— 否则这条断言失去意义',
     )
-    for (const item of withGreetingCapability) {
-      // 这正是拆三轴的理由：平台**能**打招呼，但我们**还没实现**。
-      // 两个字段各答各的问题，界面才不会用 capabilities 去渲染一个点了会失败的按钮。
-      assert.equal(
-        item.implementation.actions.sayHello,
-        false,
-        `「${item.id}」已经实现了 sayHello —— 请同时更新 platform-facts 的 notes 与 docs/ADAPTERS.md §0，并放宽这条断言`,
-      )
+    // 这正是拆三轴的理由：平台**能**打招呼，我们**可以还没实现**。
+    // 两个字段各答各的问题，界面才不会用 capabilities 去渲染一个点了会失败的按钮。
+    // 但反方向必须自洽：**实现了就说明平台支持**，不能实现一个平台不支持的动作用于。
+    for (const item of items) {
+      if (item.implementation.actions.sayHello) {
+        assert.equal(
+          (item.capabilities as { supportsGreeting?: boolean }).supportsGreeting,
+          true,
+          `「${item.id}」实现了 sayHello，却把 supportsGreeting 标成 false —— 两处不自洽`,
+        )
+      }
     }
+    // zhipin 是第一个真正实现打招呼的适配器（2026-09-18）：这条断言保证
+    // "有实现"这件事本身可见 —— 全部未实现时它会红，提醒别再当成"都不能发"。
+    assert.ok(
+      items.some((item) => item.implementation.actions.sayHello),
+      '至少应有一个平台实现了 sayHello（zhipin）—— 若全部未实现，请检查是否被回退',
+    )
   })
 })
 

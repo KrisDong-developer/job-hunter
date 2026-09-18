@@ -14,11 +14,14 @@ import type { SettingsWriteDeps } from './guard/actions/settings.js';
 import type { GuardToken } from './guard/token.js';
 import { type GuardConfig } from './guard/rules.js';
 import type { Store } from './store/store.js';
+import type { CrawlConfig } from './crawl-config.js';
 export interface SettingsSnapshot {
     ai: AiConfig;
     guard: GuardConfig;
     /** 浏览器运行期设置（目前只有空闲自关）。**不是**闸门配置。 */
     browser: BrowserConfig;
+    /** 采集运行期设置（单轮预算）。资源/节奏设置，**不是**闸门配置。 */
+    crawl: CrawlConfig;
     /** 供界面展示"这些开关现在是什么状态"的派生信息。 */
     derived: {
         /** 每个用途是否真的可用（总开关 + 用途开关）。 */
@@ -59,6 +62,7 @@ export interface SettingsPatch {
     ai?: AiConfigPatch;
     guard?: Partial<GuardConfig>;
     browser?: Partial<BrowserConfig>;
+    crawl?: Partial<CrawlConfig>;
 }
 export interface SettingsService {
     snapshot(): SettingsSnapshot;
@@ -79,6 +83,11 @@ export interface SettingsDeps extends SettingsWriteDeps {
     browser: {
         read(): BrowserConfig;
         write(patch: Partial<BrowserConfig>): BrowserConfig;
+    };
+    /** 采集运行期设置（单轮预算）。调度器每次开轮都读一次，改完即刻生效。 */
+    crawl: {
+        read(): CrawlConfig;
+        write(patch: Partial<CrawlConfig>): CrawlConfig;
     };
     clock?: () => string;
 }

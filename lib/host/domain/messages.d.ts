@@ -54,6 +54,24 @@ export interface MessageService {
         attachmentRef?: string | null;
         at?: string;
     }): MessageDto;
+    /**
+     * **幂等**记录：同「平台 + 会话 + 方向 + 正文」已存在时返回既有那条（`created: false`）。
+     *
+     * 给收件箱同步用：平台会话列表只给"每个会话的最后一条消息"，反复同步必然重复 ——
+     * `message` 表没有唯一索引，去重只能在这一层做。
+     */
+    recordOnce(input: {
+        platformId: string;
+        direction: MessageDirection;
+        content: string;
+        jobId?: number | null;
+        conversationId?: string;
+        attachmentRef?: string | null;
+        at?: string;
+    }): {
+        message: MessageDto;
+        created: boolean;
+    };
     inbox(filter?: {
         jobId?: number;
         unreadOnly?: boolean;

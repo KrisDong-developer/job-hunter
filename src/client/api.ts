@@ -320,6 +320,8 @@ export async function runCrawl(input: {
 export interface PlanWriteInput {
   name?: string
   platforms?: string[]
+  /** 多关键词（逐个采集）。空数组 = 清空（回到单关键词/不限的老形态）。 */
+  keywords?: string[]
   /** 每平台的覆盖项（批次 3，稀疏）。`maxPages: null` = 用方案级页数。 */
   platformOverrides?: Record<string, { enabled?: boolean; maxPages?: number | null }>
   criteria?: Record<string, string>
@@ -580,6 +582,11 @@ export interface SettingsDto {
     /** 每轮采集结束后就关掉采集浏览器（打开时 `idleCloseMinutes` 被它接管）。 */
     closeAfterRun: boolean
   }
+  /** 采集运行期设置（单轮预算）。资源/节奏设置，模型不可改。 */
+  crawl: {
+    /** 一轮采集（一个方案的一次运行，含多关键词与详情补抓）最多多少分钟。 */
+    roundBudgetMinutes: number
+  }
   derived: {
     purposes: Array<{ purpose: string; label: string; enabled: boolean }>
     modelEditable: string[]
@@ -679,6 +686,7 @@ export async function updateSettings(patch: {
   ai?: Record<string, unknown>
   guard?: Record<string, unknown>
   browser?: Record<string, unknown>
+  crawl?: Record<string, unknown>
 }): Promise<SettingsDto> {
   const result = await request<{ ok: boolean; settings: SettingsDto }>('/settings', {
     method: 'PATCH',
@@ -884,6 +892,51 @@ export async function createApplication(input: {
     body: JSON.stringify(input),
   })
   return result.application
+}
+
+/**
+ * 同步收件箱：把平台会话列表读进本地消息表。低危，不需要确认。
+ */
+export async function syncInbox(input: { platformId: string }): Promise<{
+  platformId: string
+  fetched: number
+  recorded: number
+  duplicates: number
+  unread: number
+}> {
+  const result = await request<{
+    ok: boolean
+    result: { platformId: string; fetched: number; recorded: number; duplicates: number; unread: number }
+  }>('/inbox/sync', { method: 'POST', body: JSON.stringify(input) })
+  return result.result
+}
+
+/**
+ * 投递简历：**真的用适配器把简历发出去**（与 `createApplication` 的"记一笔"不同）。
+ *
+ * 高危，两段式确认：不带 `confirm` 时宿主抛 `NEEDS_CONFIRM`，这里翻译成
+ * `NeedsConfirmError`，界面显示 `confirmText` 后再带 `confirm: true` 重发。
+ */
+export async function deliverApplication(input: {
+  jobId: number
+  filePath?: string | null
+  confirm?: boolean
+}): Promise<Record<string, unknown>> {
+  try {
+    const result = await request<{ ok: boolean; result: Record<string, unknown> }>(
+      '/applications/deliver',
+      { method: 'POST', body: JSON.stringify(input) },
+    )
+    return result.result
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'NEEDS_CONFIRM') {
+      const body = error.body
+      const record = body !== null && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+      const text = typeof record['confirmText'] === 'string' ? record['confirmText'] : error.message
+      throw new NeedsConfirmError(text)
+    }
+    throw error
+  }
 }
 
 export async function advanceApplication(input: {

@@ -31,7 +31,7 @@ import type {
 import type { PlanService } from '../domain/plans.js'
 import type { EventBus } from '../http/sse.js'
 import type { Store } from '../store/store.js'
-import { activePlatformsOf, criteriaForPlatform } from '../store/repo/plans.js'
+import { activePlatformsOf, criteriaForPlatform, keywordsOfPlan } from '../store/repo/plans.js'
 import { runInLanes, type LaneOutcome } from './lanes.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import {
@@ -111,6 +111,12 @@ export interface SchedulerDeps {
   leaseStatus: () => SchedulerStatusDto['lease']
   /** 每平台前置条件（登录态 / 健康 / 风控 / 离线闸门 / 配额）。缺省表示没有额外条件。 */
   platformGate?: PlatformGate
+  /**
+   * 单轮预算（毫秒）。缺省用 `ROUND_BUDGET_MS`（20 分钟）。
+   * 注入的是**读取函数**而不是数值：设置在 store 里、随时可改，
+   * 每次开轮读一次 → 改完立刻生效，不用重启插件（与浏览器空闲设置同一模式）。
+   */
+  roundBudgetMs?: () => number
   clock?: Clock
   logger?: SchedulerLogger
 }
@@ -809,6 +815,76 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     return platforms.map((item) => byId.get(item.platformId) ?? item)
   }
 
+  /**
+   * 一个平台在某趟关键词抓取里**实际使用的条件**：
+   * 方案级条件（+该平台的页数覆盖），关键词由展开循环注入。
+   * `keyword === ''` = 这趟不带关键词（方案既无 keywords 也无 criteria.keyword）。
+   */
+  const unitCriteria = (
+    plan: PlanDto,
+    platformId: string,
+    keyword: string,
+  ): Record<string, string> => {
+    const base = criteriaForPlatform(plan, platformId)
+    return keyword === '' ? base : { ...base, keyword }
+  }
+
+  /**
+   * 按关键词逐个展开执行一轮（多关键词的核心）：
+   * **词间串行**（第 1 个抓完它的全部平台与页数 → 第 2 个），词内平台走泳道并发。
+   * 串行的理由：同平台锁本来就串行；用户对"逐个关键词跑完"的心智模型也是顺序的；
+   * 预算耗尽时截断点清晰（整个剩余关键词留到下一轮，而不是每个词都跑半截）。
+   *
+   * 返回：
+   *   * `outcomes` —— 按**执行序**聚合的逐平台结论（多关键词下同一平台会出现多次，
+   *     `finishPlanRun` 逐条记账，平台级结论幂等）；
+   *   * `cutIds` —— **一次都没跑**的平台（预算在词内被用尽时，lanes 报上来的尾部）。
+   *     词间耗尽时所有平台都已跑过至少一趟 → 不进这个集合 ——
+   *     把跑过的平台记成"没跑"正是 withCut 要消灭的那类谎话；
+   *   * `deferredKeywords` —— 因预算没轮到的关键词（方案级事实，只进日志）。
+   */
+  const runRoundForKeywords = async (input: {
+    plan: PlanDto
+    platforms: readonly string[]
+    keywords: readonly string[]
+    reason: RunReason
+    deadlineAt: string
+    budget: RoundBudget
+    source: string
+  }): Promise<{ outcomes: PlatformOutcome[]; cutIds: string[]; deferredKeywords: string[] }> => {
+    const outcomes: PlatformOutcome[] = []
+    const cutIds = new Set<string>()
+    const exhausted = (): boolean => budgetExhausted(input.budget, new Date(clock()).getTime())
+    const keywords = [...input.keywords]
+
+    for (let index = 0; index < keywords.length; index += 1) {
+      const keyword = keywords[index] ?? ''
+      // 到点了就不再开始**下一个关键词**；当前词内由 lanes 的领取时判定裁尾。
+      if (exhausted()) {
+        return { outcomes, cutIds: [...cutIds], deferredKeywords: keywords.slice(index) }
+      }
+      const { outcomes: batch, cut } = await runInLanes<CrawlSummaryDto>({
+        platforms: [...input.platforms],
+        launch: async (platformId) =>
+          await deps.run({
+            planId: input.plan.id,
+            platformId,
+            criteria: unitCriteria(input.plan, platformId, keyword),
+            reason: input.reason,
+            deadlineAt: input.deadlineAt,
+          }),
+        budgetExhausted: exhausted,
+        onSettled: (outcome) => publishOutcome(input.plan.id, input.plan.name, outcome, input.source),
+      })
+      outcomes.push(...batch.map(toPlatformOutcome))
+      if (cut.length > 0) {
+        for (const platformId of cut) cutIds.add(platformId)
+        return { outcomes, cutIds: [...cutIds], deferredKeywords: keywords.slice(index + 1) }
+      }
+    }
+    return { outcomes, cutIds: [...cutIds], deferredKeywords: [] }
+  }
+
   const tick = async (): Promise<void> => {
     if (running) return
     if (!deps.canSchedule()) return
@@ -851,42 +927,38 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
         deps.events.publish('plan.started', { planId: plan.id, name: plan.name })
         // SR-46：本轮预算**每个方案一份**。同一个 tick 里两个方案同时到期时，
         // 它们各自是一轮 —— 共用一份预算会让先跑的那个把另一个也剪掉，那是另一类串扰。
-        const budget = startRoundBudget(current.getTime())
+        const budget = startRoundBudget(current.getTime(), deps.roundBudgetMs?.())
         const deadlineAt = new Date(budget.deadlineAtMs).toISOString()
         // SR-18：只跑**过了门**的平台；被挡住的那些各自留了原因，不连坐。
-        // 跨平台并发（泳道）：不同平台同时跑，同平台串行由 locks 保证；
-        // 启动序仍是新鲜度序，预算裁剪裁掉的还是"最不需要现在跑"的尾部。
+        // 多关键词：按关键词逐个展开（词间串行、词内平台泳道并发）；
+        // 启动序仍是新鲜度序，预算裁剪裁掉的是"还没轮到的关键词 + 词内尾部"。
         const eligible = decision.platforms
           .filter((platform) => platform.reason === null)
           .map((platform) => platform.platformId)
-        const { outcomes, cut } = await runInLanes<CrawlSummaryDto>({
+        const { outcomes: platformOutcomes, cutIds, deferredKeywords } = await runRoundForKeywords({
+          plan,
           platforms: eligible,
-          launch: async (platformId) =>
-            await deps.run({
-              planId: plan.id,
-              platformId,
-              // 批次 3：这个平台**实际使用的**条件（方案级 + 该平台的页数覆盖）
-              criteria: criteriaForPlatform(plan, platformId),
-              reason: 'schedule',
-              // SR-46：同一个终点交给每个平台 —— 平台内部据此在页与页之间收手
-              deadlineAt,
-            }),
-          budgetExhausted: () => budgetExhausted(budget, new Date(clock()).getTime()),
-          // SSE 事件按**完成时刻**发（不是攒到整轮结束）：界面的实时性靠它。
-          onSettled: (outcome) => publishOutcome(plan.id, plan.name, outcome, '定时'),
+          keywords: keywordsOfPlan(plan),
+          reason: 'schedule',
+          deadlineAt,
+          budget,
+          source: '定时',
         })
-        // 泳道返回的已是启动序（新鲜度序），与串行时代的 outcomes 顺序一致。
-        const platformOutcomes: PlatformOutcome[] = outcomes.map(toPlatformOutcome)
-        const cutDecisions: PlatformDecision[] = cut.map((platformId) => ({
+        const cutDecisions: PlatformDecision[] = cutIds.map((platformId) => ({
           platformId,
           reason: 'round_budget',
           message: SKIP_REASON_LABEL.round_budget,
         }))
-        if (cut.length > 0) {
+        if (cutIds.length > 0) {
           record(plan.id, { kind: 'run', reason: null, platforms: withCut(decision.platforms, cutDecisions) }, null)
+        }
+        // 两种"预算用尽"分开说清：平台一次没跑（判定记录里已如实标 round_budget）
+        // 与 关键词没轮到（平台都跑过，逐平台判定保持 ran —— 那也是事实）。
+        if (cutIds.length > 0 || deferredKeywords.length > 0) {
           deps.logger?.info(
             `[scheduler] ${plan.name} 单轮预算用尽（${String(Math.round(ROUND_BUDGET_MS / 60_000))} 分钟）` +
-              ` → ${cut.join('、')} 留到下一轮`,
+              (cutIds.length > 0 ? ` → ${cutIds.join('、')} 留到下一轮` : '') +
+              (deferredKeywords.length > 0 ? ` → 关键词 ${deferredKeywords.join('、')} 留到下一轮` : ''),
           )
         }
         finishPlanRun(plan, platformOutcomes)
@@ -1139,29 +1211,32 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       // SR-46：手动同样有预算。**不给手动开后门**的理由：手动触发恰恰是最容易
       // 一次点满 8 个平台 × 5 页的场景，也就是最需要保险丝的场景；
       // 用户看到"剩下 3 个平台留到下一轮"是诚实的，看到进程卡住不是。
-      const budget = startRoundBudget(new Date(clock()).getTime())
+      const budget = startRoundBudget(new Date(clock()).getTime(), deps.roundBudgetMs?.())
       const deadlineAt = new Date(budget.deadlineAtMs).toISOString()
-      // 与 tick 同一套泳道（跨平台并发 / 同平台串行 / 结果按启动序）。
-      const { outcomes: laneOutcomes, cut: cutIds } = await runInLanes<CrawlSummaryDto>({
+      // 与 tick 同一套展开（关键词逐个 × 词内平台泳道 / 结果按执行序）。
+      const { outcomes: laneOutcomes, cutIds, deferredKeywords } = await runRoundForKeywords({
+        plan,
         platforms: targets,
-        launch: async (platformId) =>
-          await deps.run({
-            planId,
-            platformId,
-            criteria: criteriaForPlatform(plan, platformId),
-            reason,
-            deadlineAt,
-          }),
-        budgetExhausted: () => budgetExhausted(budget, new Date(clock()).getTime()),
-        onSettled: (outcome) => publishOutcome(planId, plan.name, outcome, '手动跑'),
+        keywords: keywordsOfPlan(plan),
+        reason,
+        deadlineAt,
+        budget,
+        source: '手动跑',
       })
-      const outcomes: PlatformOutcome[] = laneOutcomes.map(toPlatformOutcome)
+      const outcomes: PlatformOutcome[] = laneOutcomes
       const cut: PlatformDecision[] = cutIds.map((platformId) => ({
         platformId,
         reason: 'round_budget',
         message: SKIP_REASON_LABEL.round_budget,
       }))
-      // 「返回最后一个平台的结果」：并发下完成序是随机的，**按启动序**取
+      if (cutIds.length > 0 || deferredKeywords.length > 0) {
+        deps.logger?.info(
+          `[scheduler] 手动跑 ${plan.name}：单轮预算用尽` +
+            (cutIds.length > 0 ? ` → ${cutIds.join('、')} 留到下一轮` : '') +
+            (deferredKeywords.length > 0 ? ` → 关键词 ${deferredKeywords.join('、')} 留到下一轮` : ''),
+        )
+      }
+      // 「返回最后一个平台的结果」：并发下完成序是随机的，**按执行序**取
       // 最后一个成功结论 —— 与串行时代"targets 末位平台"的语义对齐，可预期。
       let last: CrawlSummaryDto | null = null
       for (const outcome of outcomes) {
@@ -1190,10 +1265,6 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
             ),
           },
           null,
-        )
-        deps.logger?.info(
-          `[scheduler] 手动跑 ${plan.name}：单轮预算用尽` +
-            ` → ${cutIds.join('、')} 留到下一轮`,
         )
       }
 

@@ -68,7 +68,11 @@ test('适配器声明符合平台事实：未登录可搜、薪资隐藏（mediu
     !adapter.requiredFields.includes('salary_raw' as never),
     '未登录薪资隐藏，salary_raw 不得进必需字段（否则全部被隔离）',
   )
-  assert.equal(adapter.actions, undefined)
+  // 2026-09-18：打招呼/收件箱/附件投递已按 BossHunter 求职者端生产选择器实现（见 zhipin-actions.test.ts）
+  assert.ok(adapter.actions !== undefined, 'zhipin 是第一个实现 actions 的适配器')
+  assert.equal(adapter.capabilities.supportsGreeting, true)
+  assert.equal(adapter.capabilities.supportsInbox, true)
+  assert.equal(adapter.capabilities.supportsAttachment, true)
   assert.ok(adapter.detail !== undefined, '详情选择器有 BossHunter 验证证据，应声明')
 })
 
@@ -101,6 +105,38 @@ test('滚动加载：静态夹具上不挂死，返回当前卡片数即收手',
   const after = await adapter.crawl.readListPage(page)
   assert.equal(after.length, before.length, '静态夹具不会长出卡片，读到的条数必须不变')
   assert.ok(after.length > 0, 'gotoSearch 不能把已有的列表弄没')
+})
+
+test('详情页解析：标题/薪资/经验学历/公司/规模行业/JD（BossHunter JS_EXTRACT_DETAIL 对齐）', async () => {
+  const adapter = createZhipinAdapter()
+  const html = `
+  <html><head><title>Java工程师_某某科技有限公司招聘</title></head><body>
+    <div class="job-detail">
+      <div class="info-primary">
+        <div class="name"><h1>Java工程师</h1></div>
+        <span class="salary">20-35K</span>
+        <ul class="tag-list"><span>3-5年</span><span>本科</span></ul>
+      </div>
+      <div class="job-sec-text">负责后端服务的设计与开发，熟悉 Spring Boot 与 MySQL。</div>
+    </div>
+    <div class="sider-company">
+      <div class="company-info"><a href="/gongsi/xxx.html">某某科技有限公司</a></div>
+      <div class="res-industry-item">互联网</div>
+      <div class="res-industry-item">500-999人</div>
+    </div>
+  </body></html>`
+  const page = browserLikePage(html, 'https://www.zhipin.com/job_detail/abc123.html?securityId=xyz')
+
+  const detail = await adapter.detail?.extract(page)
+
+  assert.equal(detail?.title, 'Java工程师')
+  assert.equal(detail?.salaryRaw, '20-35K')
+  assert.equal(detail?.expReq, '3-5年', 'tag-list 顺序固定：先经验')
+  assert.equal(detail?.eduReq, '本科', 'tag-list 顺序固定：后学历')
+  assert.equal(detail?.company, '某某科技有限公司', '公司名取 sider-company 的第一个非链接文本')
+  assert.equal(detail?.industry, '互联网')
+  assert.equal(detail?.companySize, '500-999人', '含「人」的标签是规模')
+  assert.equal(detail?.jdText, '负责后端服务的设计与开发，熟悉 Spring Boot 与 MySQL。')
 })
 
 test('判墙：BOSS 滑块页 URL → captcha；频控/配额文案', async () => {

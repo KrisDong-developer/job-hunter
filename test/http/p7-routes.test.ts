@@ -29,6 +29,7 @@ import type {
 } from '../../src/shared/dto.js'
 import type { RouteRequest, RouteResult } from '../../src/host/http/router.js'
 import { routeRequest } from '../../src/host/http/router.js'
+import { writeGuardConfig } from '../../src/host/guard/rules.js'
 import { createHostRuntime, type HostRuntime } from '../../src/host/runtime.js'
 import { openDatabase, resolveDbPath } from '../../src/host/store/db.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
@@ -799,6 +800,150 @@ test('迁移 v5：老库升上来，七张 P7 表就位且为空，重开不再�
       again.close()
     }
   } finally {
+    cleanup(dir)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// 适配器动作入口：/inbox/sync（低危）与 /applications/deliver（高危，两段式）
+//
+// 这两个入口 2026-09-18 才补上，把适配器的 readInbox / sendResume 接到了 HTTP 上。
+// ⚠️ 用例一律挑**没有实现该动作**的平台（51job）来断言失败路径 ——
+// 这样请求会停在"适配器缺能力"处，**不会真的去启动浏览器**（离线测试的红线）。
+// ─────────────────────────────────────────────────────────────────────
+
+/** 把闸门里会随时段漂移的项关掉，并按需打开投递分层。 */
+function relaxGuard(runtime: HostRuntime, options: { l4Application?: boolean } = {}): void {
+  const store = storeOf(runtime)
+  writeGuardConfig(
+    store,
+    {
+      sendWindow: '',
+      dayOffProbability: 0,
+      levels: { l3Greeting: true, l4Application: options.l4Application === true, l4Reply: true },
+    },
+    T,
+  )
+}
+
+test('POST /inbox/sync：适配器没实现收件箱读取 → 如实失败，不返回 0 条', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    const store = storeOf(runtime)
+    store.account.upsert(
+      { platformId: '51job', loggedIn: true, hiddenFromCurrentEmployer: true, hint: null },
+      T,
+    )
+    const result = await call(runtime, 'POST', '/inbox/sync', { body: { platformId: '51job' } })
+    assert.equal(result.status, 409)
+    const body = result.body as { code: string; message: string }
+    assert.equal(body.code, 'ADAPTER_BROKEN')
+    assert.ok(body.message.includes('收件箱'), body.message)
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('POST /inbox/sync：未登录 → 403 NOT_LOGGED_IN；缺 platformId → 400', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    const notLoggedIn = await call(runtime, 'POST', '/inbox/sync', { body: { platformId: 'zhipin' } })
+    assert.equal(notLoggedIn.status, 403)
+    assert.equal((notLoggedIn.body as { code: string }).code, 'NOT_LOGGED_IN')
+
+    const missing = await call(runtime, 'POST', '/inbox/sync', { body: {} })
+    assert.equal(missing.status, 400)
+    assert.equal((missing.body as { code: string }).code, 'INVALID_INPUT')
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('POST /applications/deliver：投递分层默认关闭 → 开关先拦，不白问用户一次', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    relaxGuard(runtime) // l4Application 保持默认 false
+    const store = storeOf(runtime)
+    store.account.upsert(
+      { platformId: '51job', loggedIn: true, hiddenFromCurrentEmployer: true, hint: null },
+      T,
+    )
+    const jobId = seedJob(runtime)
+    const result = await call(runtime, 'POST', '/applications/deliver', { body: { jobId } })
+    assert.equal(result.status, 403)
+    const body = result.body as { code: string; message: string }
+    assert.equal(body.code, 'GUARD_DENIED')
+    assert.ok(body.message.includes('分层') || body.message.includes('l4Application'), body.message)
+    // 被规则拦下会留一条 **denied** 审计（不是"已执行"）—— 这正是审计该记的东西
+    const records = store.audit.list(10)
+    assert.equal(records.length, 1)
+    assert.equal(records[0]?.action, 'application.send')
+    assert.equal(records[0]?.result, 'denied')
+    assert.equal(store.pipeline.listApplications().length, 0, '没投出去就不能有投递记录')
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('POST /applications/deliver：两段式确认 → 确认后执行，适配器缺能力则如实失败', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    relaxGuard(runtime, { l4Application: true })
+    const store = storeOf(runtime)
+    store.account.upsert(
+      { platformId: '51job', loggedIn: true, hiddenFromCurrentEmployer: true, hint: null },
+      T,
+    )
+    const jobId = seedJob(runtime)
+
+    // ① 还没确认：409 + 文案，不执行、不留"已执行"审计
+    const first = await call(runtime, 'POST', '/applications/deliver', { body: { jobId } })
+    assert.equal(first.status, 409)
+    const asked = first.body as { code: string; confirmText: string; action: string; danger: string }
+    assert.equal(asked.code, 'NEEDS_CONFIRM')
+    assert.equal(asked.action, 'application.send')
+    assert.equal(asked.danger, 'high')
+    // §4.4.2：确认文案必须写清用了哪版简历
+    assert.ok(asked.confirmText.includes('使用简历版本'), asked.confirmText)
+    assert.equal(store.audit.list(10).length, 0)
+
+    // ② 确认后：真的执行 → 51job 没有 sendResume → ADAPTER_BROKEN（不是假成功）
+    const second = await call(runtime, 'POST', '/applications/deliver', {
+      body: { jobId, confirm: true },
+    })
+    assert.equal(second.status, 409)
+    const failure = second.body as { code: string; message: string }
+    assert.equal(failure.code, 'ADAPTER_BROKEN')
+    assert.ok(failure.message.includes('投递动作'), failure.message)
+
+    const records = store.audit.list(10)
+    assert.equal(records.length, 1, '确认后的那一次要留痕')
+    assert.equal(records[0]?.action, 'application.send')
+    assert.equal(records[0]?.result, 'error', '适配器缺能力 → 审计记 error，不是 ok')
+    assert.equal(store.pipeline.listApplications().length, 0, '没投出去就不能有投递记录')
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('POST /applications/deliver：缺 jobId / 岗位不存在 → 400 / 404', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    relaxGuard(runtime, { l4Application: true })
+    const missing = await call(runtime, 'POST', '/applications/deliver', { body: {} })
+    assert.equal(missing.status, 400)
+
+    const notFound = await call(runtime, 'POST', '/applications/deliver', {
+      body: { jobId: 99999, confirm: true },
+    })
+    assert.equal(notFound.status, 404)
+    assert.equal((notFound.body as { code: string }).code, 'NOT_FOUND')
+  } finally {
+    runtime.close()
     cleanup(dir)
   }
 })

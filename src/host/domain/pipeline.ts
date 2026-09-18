@@ -54,6 +54,20 @@ export interface PipelineService {
      */
     guiConfirmed?: boolean
   }): Promise<ApplicationDto>
+  /**
+   * 投递**已成功发出之后**记一笔（守卫动作的回调，**不走闸门** —— 外层已在令牌上下文里）。
+   *
+   * 与 `recordApplication` 的分工：后者是"用户说我把简历投了，记一笔"（走闸门、要求有简历版本）；
+   * 这一条是"适配器真的把简历发出去了，落库"（不重复过闸门，平台简历可能没有本地对应版本）。
+   */
+  recordApplicationSent(input: {
+    jobId: number
+    resumeId?: number | null
+    resumeFileId?: number | null
+    channel?: ApplicationChannel
+    actor: string
+    note?: string | null
+  }): ApplicationDto
   advance(input: {
     applicationId: number
     to: ApplicationStage
@@ -164,6 +178,45 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
     return record
   }
 
+  /**
+   * 落一条投递 + 首条状态事件。
+   *
+   * `recordApplication`（用户手动记一笔）与 `recordApplicationSent`（guard 的投递动作**成功之后**
+   * 回调）共用 —— 两条路径各写一遍必然漂移，而"投递记录缺了状态事件"会让看板的历史说不出凭什么。
+   */
+  const insertApplication = (input: {
+    jobId: number
+    resumeId: number | null
+    resumeFileId: number | null
+    channel: ApplicationChannel
+    actor: string
+    note: string | null
+  }): ApplicationDto => {
+    const record = store.pipeline.createApplication(
+      {
+        jobId: input.jobId,
+        resumeId: input.resumeId,
+        resumeFileId: input.resumeFileId,
+        channel: input.channel,
+        actor: input.actor,
+        note: input.note,
+      },
+      clock(),
+    )
+    store.pipeline.appendStageEvent(
+      {
+        entity: 'application',
+        entityId: record.id,
+        fromStage: null,
+        toStage: 'sent',
+        source: input.actor === 'model' ? 'model' : 'manual',
+        note: input.note,
+      },
+      clock(),
+    )
+    return decorate(record)
+  }
+
   return {
     async recordApplication(input): Promise<ApplicationDto> {
       const job = store.job.detail(input.jobId)
@@ -185,31 +238,15 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
 
       // 投递是**高危**动作：走闸门（模型发起时必然要审批）。
       const run = deps.guardRun
-      const create = async (): Promise<ApplicationDto> => {
-        const record = store.pipeline.createApplication(
-          {
-            jobId: job.id,
-            resumeId,
-            resumeFileId: input.resumeFileId ?? null,
-            channel,
-            actor: input.actor,
-            note: input.note ?? null,
-          },
-          clock(),
-        )
-        store.pipeline.appendStageEvent(
-          {
-            entity: 'application',
-            entityId: record.id,
-            fromStage: null,
-            toStage: 'sent',
-            source: input.actor === 'model' ? 'model' : 'manual',
-            note: input.note ?? null,
-          },
-          clock(),
-        )
-        return decorate(record)
-      }
+      const create = async (): Promise<ApplicationDto> =>
+        insertApplication({
+          jobId: job.id,
+          resumeId,
+          resumeFileId: input.resumeFileId ?? null,
+          channel,
+          actor: input.actor,
+          note: input.note ?? null,
+        })
 
       const result =
         run === undefined
@@ -238,6 +275,32 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
             )
       deps.logger?.info(`[pipeline] 记录投递：岗位 #${String(job.id)}，渠道 ${channel}`)
       return result
+    },
+
+    /**
+     * 投递**已成功发出之后**记一笔（供 guard 的 `application.send` 动作回调）。
+     *
+     * 与 `recordApplication` 的关键差别：**不再走一次闸门** —— 调用方此刻已经在
+     * `guard.run` 的令牌上下文里了，再走一次会变成"确认两次"甚至拿不到令牌。
+     * 这条路径**不校验 resumeId**：走平台内简历投递时我们未必有对应的本地版本，
+     * 如实记 null 比编一个版本号好。
+     */
+    recordApplicationSent(input): ApplicationDto {
+      const job = store.job.detail(input.jobId)
+      if (job === undefined) {
+        throw new DomainError('NOT_FOUND', `岗位不存在：${String(input.jobId)}`, { detail: { jobId: input.jobId } })
+      }
+      const channel = input.channel ?? 'platform'
+      const record = insertApplication({
+        jobId: job.id,
+        resumeId: input.resumeId ?? store.resume.defaultResume()?.id ?? null,
+        resumeFileId: input.resumeFileId ?? null,
+        channel,
+        actor: input.actor,
+        note: input.note ?? null,
+      })
+      deps.logger?.info(`[pipeline] 记录投递（已发出）：岗位 #${String(job.id)}，渠道 ${channel}`)
+      return record
     },
 
     advance(input): ApplicationDto {

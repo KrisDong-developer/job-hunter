@@ -36,6 +36,20 @@ export interface PipelineService {
          */
         guiConfirmed?: boolean;
     }): Promise<ApplicationDto>;
+    /**
+     * 投递**已成功发出之后**记一笔（守卫动作的回调，**不走闸门** —— 外层已在令牌上下文里）。
+     *
+     * 与 `recordApplication` 的分工：后者是"用户说我把简历投了，记一笔"（走闸门、要求有简历版本）；
+     * 这一条是"适配器真的把简历发出去了，落库"（不重复过闸门，平台简历可能没有本地对应版本）。
+     */
+    recordApplicationSent(input: {
+        jobId: number;
+        resumeId?: number | null;
+        resumeFileId?: number | null;
+        channel?: ApplicationChannel;
+        actor: string;
+        note?: string | null;
+    }): ApplicationDto;
     advance(input: {
         applicationId: number;
         to: ApplicationStage;

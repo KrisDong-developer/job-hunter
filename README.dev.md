@@ -254,7 +254,10 @@ locks（按平台互斥：同平台忙就立刻失败、不排队；不同平台
   → adapter.crawl.gotoSearch → guard.detectBlock（命中即停、不硬重试）
   → adapter.crawl.readListPage
   → 【闸门 1】逐条字段断言：缺任一必需字段 → 不写主表，进 pending_repair
-  → 薪资归一化 → 公司实体 ensure → 岗位幂等 upsert → 公司画像重算
+  → 薪资归一化 → 公司实体 ensure → 岗位幂等 upsert
+  → 【闸门 1 之后 · 仅本轮新增】详情补抓（列表不含 JD 的平台，如猎聘：逐条进详情页取 JD；
+      上限 `DETAIL_FETCH_MAX_PER_ROUND=20`／与列表同一个单轮预算（到点即停）／判墙即停手）
+  → 公司画像重算（**必须在补抓之后**：打分与标注读的就是 `jd_text`）
   → 【闸门 2】逐轮字段命中统计：某字段整轮 0 命中 → 连续缺失 +1，达阈值 → 降级 + 主动告警
   → crawl_run 汇总
 ```

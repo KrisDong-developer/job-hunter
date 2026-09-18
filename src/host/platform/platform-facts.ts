@@ -84,7 +84,12 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
     maturity: {
       level: 'calibrated',
       verifiedAt: '2026-09-18',
-      notes: '只有**未登录**夹具：单页 15 条、无分页区、薪资元素在但为空。详情页要带完整 securityId（登录后才有），登录夹具补齐后再升档。',
+      notes:
+        '只有**未登录**夹具：单页 15 条、无分页区、薪资元素在但为空。详情页要带完整 securityId（登录后才有），登录夹具补齐后再升档。' +
+        '打招呼/收件箱/附件选择器取自求职者端生产实现 BossHunter（`executor/sender.py`、`executor/monitor.py`）：' +
+        '沟通入口 `.btn-startchat`/`.op-btn-chat`、首次沟通弹窗 `.dialog-wrap.startchat-dialog`、会话输入框 `#chat-input`、' +
+        '会话行 `li[role=listitem]`、平台简历弹窗 `.choose-resume-dialog`。' +
+        '已知缺口：BOSS 求职者网页端**没有会话内上传本地文件的入口**（BossHunter 实证），故 sendResume 的本地 PDF 只能 fail-closed、走平台简历。',
     },
     // 平台侧硬事实：打招呼日上限约 150（ADAPTERS §7.2 实测）
     dailyCaps: { greeting: 150 },

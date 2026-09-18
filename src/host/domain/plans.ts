@@ -102,6 +102,7 @@ export function createPlanService(
   const toUpsert = (validated: ValidatedPlanConfig): PlanUpsertInput => ({
     name: validated.name,
     platforms: validated.platforms,
+    keywords: validated.keywords,
     platformOverrides: validated.platformOverrides,
     criteria: validated.criteria,
     schedule: validated.schedule,
@@ -146,6 +147,9 @@ export function createPlanService(
       const merged: PlanConfigInput = {
         name: patch.name ?? current.name,
         platforms,
+        // 注意：GUI 全量表单会显式传空数组（清空关键词）；模型工具的**部分补丁**
+        // 不带这个键 → 沿用现值。`??` 恰好表达这个语义（[] 不是 nullish）。
+        keywords: patch.keywords ?? current.keywords,
         platformOverrides: normalizePlatformOverrides(
           patch.platformOverrides ?? current.platformOverrides,
           platforms,

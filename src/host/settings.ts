@@ -16,12 +16,15 @@ import { writeGuardSettings } from './guard/actions/settings.js'
 import type { GuardToken } from './guard/token.js'
 import { DEFAULT_GUARD_CONFIG, readGuardConfig, type GuardConfig } from './guard/rules.js'
 import type { Store } from './store/store.js'
+import type { CrawlConfig } from './crawl-config.js'
 
 export interface SettingsSnapshot {
   ai: AiConfig
   guard: GuardConfig
   /** 浏览器运行期设置（目前只有空闲自关）。**不是**闸门配置。 */
   browser: BrowserConfig
+  /** 采集运行期设置（单轮预算）。资源/节奏设置，**不是**闸门配置。 */
+  crawl: CrawlConfig
   /** 供界面展示"这些开关现在是什么状态"的派生信息。 */
   derived: {
     /** 每个用途是否真的可用（总开关 + 用途开关）。 */
@@ -55,6 +58,7 @@ export interface SettingsPatch {
   ai?: AiConfigPatch
   guard?: Partial<GuardConfig>
   browser?: Partial<BrowserConfig>
+  crawl?: Partial<CrawlConfig>
 }
 
 export interface SettingsService {
@@ -77,6 +81,11 @@ export interface SettingsDeps extends SettingsWriteDeps {
   browser: {
     read(): BrowserConfig
     write(patch: Partial<BrowserConfig>): BrowserConfig
+  }
+  /** 采集运行期设置（单轮预算）。调度器每次开轮都读一次，改完即刻生效。 */
+  crawl: {
+    read(): CrawlConfig
+    write(patch: Partial<CrawlConfig>): CrawlConfig
   }
   clock?: () => string
 }
@@ -103,6 +112,7 @@ export function createSettingsService(deps: SettingsDeps): SettingsService {
       ai,
       guard,
       browser: deps.browser.read(),
+      crawl: deps.crawl.read(),
       derived: {
         purposes: (Object.keys(AI_PURPOSE_LABEL) as AiPurpose[]).map((purpose) => ({
           purpose,
@@ -140,6 +150,10 @@ export function createSettingsService(deps: SettingsDeps): SettingsService {
       if (patch.browser !== undefined && Object.keys(patch.browser).length > 0) {
         deps.browser.write(patch.browser)
       }
+      // 采集预算同理（资源/节奏设置）；且模型不可改 —— 见 crawl-config.ts 的说明。
+      if (patch.crawl !== undefined && Object.keys(patch.crawl).length > 0) {
+        deps.crawl.write(patch.crawl)
+      }
       return snapshot()
     },
   }
@@ -176,6 +190,9 @@ export function describeSettingsPatch(patch: SettingsPatch): string {
         ? '每轮采集结束后关闭采集浏览器'
         : '每轮采集结束后不关闭采集浏览器（改由空闲时长决定）',
     )
+  }
+  if (patch.crawl?.roundBudgetMinutes !== undefined) {
+    parts.push(`单轮采集预算 → ${String(patch.crawl.roundBudgetMinutes)} 分钟`)
   }
   return parts.length === 0 ? '（没有实际改动）' : parts.join('；')
 }

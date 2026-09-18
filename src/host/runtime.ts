@@ -66,6 +66,12 @@ import { buildToday, buildTodayUnavailable } from './domain/today.js'
 import type { ApprovalAnswer, ApprovalPort } from './guard/approval.js'
 import { createApprovalPort, renderApproval } from './guard/approval.js'
 import { sendGreeting, GREETING_SEND_ACTION, type GreetingSendResult } from './guard/actions/greeting.js'
+import {
+  sendApplication,
+  APPLICATION_SEND_ACTION,
+  type ApplicationSendResult,
+} from './guard/actions/application.js'
+import { syncInbox, INBOX_SYNC_ACTION, type InboxSyncResult } from './guard/actions/inbox.js'
 import { SETTINGS_WRITE_ACTION } from './guard/actions/settings.js'
 import type { Guard } from './guard/index.js'
 import { createGuard } from './guard/index.js'
@@ -84,6 +90,7 @@ import { createSinoJobsAdapter, mergeSinoJobsConfig } from './platform/adapters/
 import type { BrowserManager } from './platform/browser.js'
 import { browserPageSource, createBrowserManager } from './platform/browser.js'
 import { idleCloseMsOf, readBrowserConfig, writeBrowserConfig } from './browser-config.js'
+import { readCrawlConfig, writeCrawlConfig } from './crawl-config.js'
 import { citySupportOf } from './platform/cities.js'
 import { readAdapterHealth } from './platform/health.js'
 import { readPlatformRiskPause } from './platform/risk-pause.js'
@@ -221,6 +228,25 @@ export interface HostRuntime {
     actor: Actor
     guiConfirmed?: boolean
   }): Promise<GreetingSendResult>
+  /**
+   * 同步收件箱 —— 把平台会话列表读进本地消息表（§13 U6）。
+   *
+   * **低危**（不对外发任何东西），但仍经闸门：它会开一个真实浏览器页面访问平台。
+   * `actor === 'model'` 也不会被要求审批（低危不打扰用户）。
+   */
+  syncInbox(input: { platformId: string; actor: Actor }): Promise<InboxSyncResult>
+  /**
+   * 投递简历 —— **高危**（§22.4），走 `application.send` 闸门。
+   *
+   * 与 `pipeline.recordApplication` 的区别：那是"记一笔我投了"，这是**真的投出去**。
+   * `filePath` 省略/null = 用平台内简历（BOSS 求职者网页端只支持这种）。
+   */
+  sendApplication(input: {
+    jobId: number
+    filePath?: string | null
+    actor: Actor
+    guiConfirmed?: boolean
+  }): Promise<ApplicationSendResult>
   /** 写插件配置。走 `settings.write` 闸门。 */
   updateSettings(patch: SettingsPatch, actor: Actor, guiConfirmed?: boolean): Promise<SettingsSnapshot>
 
@@ -877,6 +903,11 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           return next
         },
       },
+      crawl: {
+        // 单轮预算落库即可 —— 调度器每次开轮都通过 roundBudgetMs 读一次，天然即时生效
+        read: () => readCrawlConfig(opened),
+        write: (patch) => writeCrawlConfig(opened, patch, clock()),
+      },
     })
 
     // ── P7：跟进与看板 ──────────────────────────────────────────────
@@ -1018,6 +1049,8 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       readOnlyReason,
       leaseStatus: () => lease.status(),
       platformGate,
+      // 单轮预算从设置读（每次开轮读一次 → 改完立刻生效，不必重启）
+      roundBudgetMs: () => readCrawlConfig(opened).roundBudgetMinutes * 60_000,
       clock,
       ...(logger === undefined ? {} : { logger }),
     })
@@ -1380,6 +1413,128 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         platformId: result.platformId,
         company: result.company,
         actor: input.actor,
+      })
+      return result
+    },
+
+    async syncInbox(input): Promise<InboxSyncResult> {
+      const opened = store
+      const gate = guard
+      const sessionService = session
+      const messageService = messages
+      if (opened === undefined || gate === undefined || sessionService === undefined || messageService === undefined) {
+        throw dataNotReady(runtime)
+      }
+
+      const result = await gate.run(
+        {
+          action: INBOX_SYNC_ACTION,
+          actor: input.actor,
+          // 低危：只读平台会话列表 + 写本地库，不对外发任何东西
+          danger: 'low',
+          target: { platformId: input.platformId },
+        },
+        async (token) =>
+          await syncInbox(
+            {
+              registry,
+              session: sessionService,
+              pageSource: browserPageSource(browser),
+              ...(logger === undefined ? {} : { logger }),
+              // 去重口径留在消息中心（同「平台+会话+方向+正文」算同一条）
+              record: (recorded) =>
+                messageService.recordOnce({
+                  platformId: recorded.platformId,
+                  direction: recorded.direction,
+                  content: recorded.content,
+                  conversationId: recorded.conversationId,
+                  ...(recorded.at === null ? {} : { at: recorded.at }),
+                }),
+            },
+            token,
+            { platformId: input.platformId },
+          ),
+      )
+
+      if (result.recorded > 0) {
+        bus.publish('inbox.synced', {
+          platformId: result.platformId,
+          recorded: result.recorded,
+          unread: result.unread,
+        })
+      }
+      return result
+    },
+
+    async sendApplication(input): Promise<ApplicationSendResult> {
+      const opened = store
+      const gate = guard
+      const sessionService = session
+      const pipelineService = pipeline
+      if (opened === undefined || gate === undefined || sessionService === undefined) {
+        throw dataNotReady(runtime)
+      }
+
+      const job = opened.job.detail(input.jobId)
+      if (job === undefined) {
+        throw new DomainError('NOT_FOUND', `岗位不存在：${String(input.jobId)}`, {
+          hint: '它可能已被删除；先用 job_list 看当前有哪些岗位。',
+        })
+      }
+
+      const filePath = input.filePath ?? null
+      const result = await gate.run(
+        {
+          action: APPLICATION_SEND_ACTION,
+          actor: input.actor,
+          danger: 'high',
+          target: {
+            jobId: job.id,
+            platformId: job.platformId,
+            ...(job.companyId === null ? {} : { companyId: job.companyId }),
+          },
+          payload: {
+            jobTitle: job.title,
+            company: job.companyName ?? '',
+            // §4.4.2 要求审批文案写清"用了哪版简历"
+            resumeVersion:
+              filePath === null ? '平台内简历（未指定本地版本）' : `本地文件：${filePath}`,
+            resumeFileId: filePath === null ? null : filePath,
+          },
+          ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
+        },
+        async (token) =>
+          await sendApplication(
+            {
+              store: opened,
+              registry,
+              session: sessionService,
+              pageSource: browserPageSource(browser),
+              clock,
+              ...(logger === undefined ? {} : { logger }),
+              // 投递**成功之后**记一笔（接触态/看板的载体，§12.1）
+              record: (recorded) => {
+                pipelineService?.recordApplicationSent({
+                  jobId: recorded.jobId,
+                  actor: recorded.actor,
+                  note:
+                    recorded.filePath === null
+                      ? '平台内简历投递（适配器执行）'
+                      : `本地简历投递（适配器执行）：${recorded.filePath}`,
+                })
+              },
+            },
+            token,
+            { jobId: job.id, filePath },
+          ),
+      )
+
+      bus.publish('application.sent', {
+        jobId: result.jobId,
+        platformId: result.platformId,
+        company: result.company,
+        actor: input.actor,
+        delivery: result.delivery,
       })
       return result
     },

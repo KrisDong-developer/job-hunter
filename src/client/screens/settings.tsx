@@ -22,6 +22,9 @@ import {
   BROWSER_IDLE_DEFAULT_MIN,
   BROWSER_IDLE_MAX_MIN,
   BROWSER_IDLE_MIN_MIN,
+  CRAWL_ROUND_BUDGET_DEFAULT_MIN,
+  CRAWL_ROUND_BUDGET_MAX_MIN,
+  CRAWL_ROUND_BUDGET_MIN_MIN,
 } from '../../shared/constants.js'
 
 /**
@@ -362,6 +365,7 @@ function ConfigPanel(props: {
 
   const idleMinutes = current.browser.idleCloseMinutes
   const closeAfterRun = current.browser.closeAfterRun
+  const roundBudgetMinutes = current.crawl.roundBudgetMinutes
 
   /**
    * 发送时段。`''` 在配置里的含义是"不限时段"，此时两个 time 输入显示**出厂默认**
@@ -763,6 +767,36 @@ function ConfigPanel(props: {
                 ? '当前：不自动关闭 —— 浏览器会一直开着，直到你关掉它或卸载插件。'
                 : `当前：空闲 ${String(idleMinutes)} 分钟后关闭。`}{' '}
             正在登录或正在采集时不会被关掉。
+          </p>
+
+          <h3 className="jh-section-title">采集节奏</h3>
+          {/* 单轮预算：一轮 = 一个方案的一次运行（含多关键词逐个 + 新岗位详情补抓）。
+              到点后**不再开始新的平台/关键词**，正在跑的那一页跑完就停 —— 如实记
+              aborted，已解析到的照常入库。 */}
+          <div className="jh-ctl">
+            <span className="jh-field-label">
+              单轮采集最多跑多久
+              <FieldHint
+                text={`一轮 = 一个方案的一次运行；多关键词方案会逐个关键词跑，新岗位还会逐条点进详情页，所以耗时随配置放大。到点后**不再开始**新的平台或关键词（正在跑的那一页跑完就停），已抓到的照常入库，剩下的留到下一轮并按「本轮已到时限」如实显示。默认 ${String(CRAWL_ROUND_BUDGET_DEFAULT_MIN)} 分钟。这不是节流阀，是保险丝 —— 对应用户能接受的"点一下最多等多久"。`}
+              />
+            </span>
+            <NumberField
+              value={roundBudgetMinutes}
+              min={CRAWL_ROUND_BUDGET_MIN_MIN}
+              max={CRAWL_ROUND_BUDGET_MAX_MIN}
+              unit="分钟"
+              label="单轮采集最多跑多少分钟"
+              disabled={busy}
+              onCommit={(next) =>
+                write(
+                  { crawl: { roundBudgetMinutes: next } },
+                  `已把单轮采集预算改为 ${String(next)} 分钟（下一轮开始生效）。`,
+                )
+              }
+            />
+          </div>
+          <p className="jh-note">
+            当前：一轮最多 {String(roundBudgetMinutes)} 分钟。改完不用重启，下一轮就地生效。
           </p>
 
           <p className="jh-note">

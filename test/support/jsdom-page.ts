@@ -49,6 +49,15 @@ export interface JsdomPageOptions {
    * "开新页之前时间到了没有"，用真实时间或按调用次数计数的时钟都做不到可重复。
    */
   onGoto?: (url: string) => void
+  /**
+   * 可选：给元素一个**固定的非零矩形**（jsdom 没有布局引擎，`getBoundingClientRect`
+   * 恒为 0，于是任何"按可见性/坐标筛选元素"的代码在离线夹具里都找不到东西）。
+   *
+   * 需要它的场景：适配器的高危动作（打招呼/投递）先读元素中心坐标、再走 CDP Input
+   * 点击。没有布局就没有坐标，这类逻辑在离线测试里根本走不动。
+   * 打开后每个元素都是同一个矩形 —— 测试关心的是"点到了哪个选择器"，不是真实布局。
+   */
+  layout?: boolean
 }
 
 /**
@@ -68,6 +77,8 @@ export class JsdomPage implements PageLike {
   private readonly loader: ((url: string) => string | undefined) | undefined
   private readonly fetchStub: PageFetchStub | undefined
   private readonly onGoto: ((url: string) => void) | undefined
+  /** 是否给元素一个固定的非零矩形（见 `JsdomPageOptions.layout`）。 */
+  private readonly layout: boolean
   /** 页面上下文里发出去的所有请求（断言"到底带了什么参数"用）。 */
   readonly requests: CapturedRequest[] = []
 
@@ -75,6 +86,7 @@ export class JsdomPage implements PageLike {
     this.loader = options.loader
     this.fetchStub = options.fetchStub
     this.onGoto = options.onGoto
+    this.layout = options.layout ?? false
     this.currentUrl = options.url
     this.dom = this.createDom(options.html, options.url)
   }
@@ -86,12 +98,36 @@ export class JsdomPage implements PageLike {
    * 发一条 "Not implemented"，在测试输出里留下一串与被测用例无关的栈（BOSS 的
    * 滚动加载适配器会调它）。离线夹具本来就没有"滚动加载出新一屏"这回事 ——
    * 明确给一个 no-op，比让它每次喊一句更诚实。
+   *
+   * `layout: true` 时再补 `getBoundingClientRect` / `scrollIntoView` —— 坐标级
+   * 交互（打招呼/投递）在无布局的 jsdom 里完全走不动，见 `JsdomPageOptions.layout`。
    */
   private createDom(html: string, url: string): JSDOM {
     const dom = new JSDOM(html, { url })
     const noopScroll = (): void => undefined
     dom.window.scrollTo = noopScroll as unknown as typeof dom.window.scrollTo
     dom.window.scrollBy = noopScroll as unknown as typeof dom.window.scrollBy
+    if (this.layout) {
+      const rect = {
+        x: 12,
+        y: 24,
+        width: 120,
+        height: 36,
+        top: 24,
+        left: 12,
+        right: 132,
+        bottom: 60,
+        toJSON(): Record<string, number> {
+          return { x: 12, y: 24, width: 120, height: 36, top: 24, left: 12, right: 132, bottom: 60 }
+        },
+      }
+      const proto = dom.window.Element.prototype as unknown as {
+        getBoundingClientRect?: () => unknown
+        scrollIntoView?: () => void
+      }
+      proto.getBoundingClientRect = () => rect
+      proto.scrollIntoView = noopScroll
+    }
     return dom
   }
 

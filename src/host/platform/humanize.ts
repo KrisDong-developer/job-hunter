@@ -33,6 +33,16 @@ export interface HumanKeyboard {
   press(key: string): Promise<void>
   /** 以输入法提交的方式插入文本（一次一个字符）。 */
   insertText(text: string): Promise<void>
+  /**
+   * 可选：按住修饰键（Playwright `keyboard.down`）。
+   *
+   * 只为一件事存在：清空一个可能已有内容的输入框（`Ctrl/Cmd+A` → `Backspace`）。
+   * 缺省时调用方**跳过清空**而不是改用 DOM 改写 —— 直接改 `innerHTML`
+   * 绕过 Input 域，正是本模块要避免的那类痕迹。
+   */
+  down?(key: string): Promise<void>
+  /** 可选：松开修饰键（与 `down` 成对）。 */
+  up?(key: string): Promise<void>
 }
 
 export interface HumanizeOptions {

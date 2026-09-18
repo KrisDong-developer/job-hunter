@@ -13,6 +13,7 @@
  *
  * 还有一件**不报错但要说出来**的事：重复方案（SR-43）只提示、不合并。
  */
+import { PLAN_KEYWORDS_MAX } from '../../shared/constants.js'
 import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js'
 import { MATURITY_LEVEL_LABEL, maturityNeedsWarning } from '../../shared/enums.js'
 import { canonicalCityOf, citySupportOf, orderCities, type CitySupport } from '../platform/cities.js'
@@ -20,6 +21,8 @@ import type { AdapterRegistry } from '../platform/registry.js'
 import type { SearchCriteria } from '../platform/types.js'
 import { DomainError } from '../util/errors.js'
 import {
+  keywordsOfPlan,
+  normalizeKeywords,
   normalizePlatformOverrides,
   normalizePostProcess,
   normalizeSchedule,
@@ -62,6 +65,11 @@ const PLATFORM_KEYS = new Set([
 export interface PlanConfigInput {
   name?: string
   platforms?: string[]
+  /**
+   * 多关键词（逐个采集，方案级）。非空时 `criteria.keyword` 被忽略并从结果里剔除 ——
+   * **单一事实源**：两处都写只会让"到底按哪个跑"变成悬案。
+   */
+  keywords?: string[]
   /** 每平台的覆盖项（稀疏）。 */
   platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>
   criteria?: Record<string, string>
@@ -81,6 +89,8 @@ export interface PlanValidationContext {
 export interface ValidatedPlanConfig {
   name: string
   platforms: string[]
+  /** 收敛后的多关键词（trim/去重；空 = 老形态，按 criteria.keyword 跑一趟）。 */
+  keywords: string[]
   /** 收敛后的每平台覆盖项（稀疏：等于默认的条目不在里面）。 */
   platformOverrides: Record<string, PlanPlatformOverrideDto>
   criteria: Record<string, string>
@@ -183,6 +193,24 @@ export function validatePlanConfig(
     }
   }
 
+  // ── 多关键词（逐个采集）：收敛 + 上限 + 单一事实源 ──────────────────
+  const keywords = normalizeKeywords(input.keywords)
+  if (keywords.length > PLAN_KEYWORDS_MAX) {
+    throw new DomainError(
+      'INVALID_INPUT',
+      `关键词最多 ${String(PLAN_KEYWORDS_MAX)} 个，收到 ${String(keywords.length)} 个`,
+      {
+        hint:
+          `每个关键词一轮里各抓一次，N 个关键词 = N 次站点访问（计入每日额度）。` +
+          '需要更多就拆成两个方案 —— 各自的额度与时段独立。',
+      },
+    )
+  }
+  // 非空时剔除 criteria.keyword：keyword 的唯一事实源是这里。
+  // "两处都写"不报错而以 keywords 为准 —— 剔除动作本身会体现在保存结果里。
+  const criteriaInput: Record<string, string> = { ...(input.criteria ?? {}) }
+  if (keywords.length > 0) delete criteriaInput['keyword']
+
   // ── 每平台覆盖项（批次 3）────────────────────────────────────────────
   const overrides = normalizePlatformOverrides(input.platformOverrides, platforms)
   for (const id of Object.keys(input.platformOverrides ?? {})) {
@@ -260,7 +288,7 @@ export function validatePlanConfig(
   const unknown: string[] = []
   /** 被目录归一过的取值（`深圳市` → `深圳`）—— 要如实告诉用户，不能悄悄改写。 */
   const normalized: string[] = []
-  for (const [key, raw] of Object.entries(input.criteria ?? {})) {
+  for (const [key, raw] of Object.entries(criteriaInput)) {
     if (PAGINATION_KEYS.has(key)) continue
     const inputValue = cleanValue(String(raw))
     if (inputValue === '') continue
@@ -338,6 +366,16 @@ export function validatePlanConfig(
   }
 
   // ── SR-43：重复方案只**提示**，不合并 ───────────────────────────────
+  //
+  // 比较口径是**生效关键词**（`keywordsOfPlan` 把两种老形态 —— criteria.keyword
+  // 与 keywords —— 都翻成等价列表），条件比较则两侧都剥掉 keyword ——
+  // 否则"老方案 keyword=Java"与"新方案 keywords=[Java]"在字典层面永不相等，
+  // 而它们执行起来一模一样，不提示才是漏报。
+  const stripKeyword = (source: Record<string, string>): Record<string, string> => {
+    const { keyword: _dropped, ...rest } = source
+    return rest
+  }
+  const effectiveKeywords = [...keywordsOfPlan({ keywords, criteria: criteriaInput })].sort().join('\u0000')
   const duplicates: Array<{ planId: number; name: string; reason: string }> = []
   for (const other of context.existing ?? []) {
     if (context.selfId !== undefined && other.id === context.selfId) continue
@@ -345,7 +383,9 @@ export function validatePlanConfig(
       other.platforms.length === platforms.length &&
       [...other.platforms].sort().join(',') === [...platforms].sort().join(',')
     if (!samePlatforms) continue
-    if (sameCriteria(other.criteria, criteria)) {
+    const sameKeywords =
+      [...keywordsOfPlan(other)].sort().join('\u0000') === effectiveKeywords
+    if (sameCriteria(stripKeyword(other.criteria), stripKeyword(criteria)) && sameKeywords) {
       duplicates.push({
         planId: other.id,
         name: other.name,
@@ -444,6 +484,7 @@ export function validatePlanConfig(
   return {
     name,
     platforms,
+    keywords,
     platformOverrides: overrides,
     criteria,
     schedule: normalizeSchedule(input.schedule),

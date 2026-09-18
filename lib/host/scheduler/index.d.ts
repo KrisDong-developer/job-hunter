@@ -60,6 +60,12 @@ export interface SchedulerDeps {
     leaseStatus: () => SchedulerStatusDto['lease'];
     /** 每平台前置条件（登录态 / 健康 / 风控 / 离线闸门 / 配额）。缺省表示没有额外条件。 */
     platformGate?: PlatformGate;
+    /**
+     * 单轮预算（毫秒）。缺省用 `ROUND_BUDGET_MS`（20 分钟）。
+     * 注入的是**读取函数**而不是数值：设置在 store 里、随时可改，
+     * 每次开轮读一次 → 改完立刻生效，不用重启插件（与浏览器空闲设置同一模式）。
+     */
+    roundBudgetMs?: () => number;
     clock?: Clock;
     logger?: SchedulerLogger;
 }

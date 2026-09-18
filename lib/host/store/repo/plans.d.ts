@@ -61,6 +61,20 @@ export declare function platformOverrideOf(plan: Pick<PlanDto, 'platformOverride
  */
 export declare function activePlatformsOf(plan: Pick<PlanDto, 'platforms' | 'platformOverrides'>): string[];
 /**
+ * 关键词列表的读取侧收敛（静默卫生，不报错）：trim、丢空、去重（保首个出现序）。
+ * 条数上限在**校验层**显式报错（`PLAN_KEYWORDS_MAX`）—— 读取侧不截断，
+ * 否则手工改过库的行会被悄悄砍掉而无人知晓。
+ */
+export declare function normalizeKeywords(raw: unknown): string[];
+/**
+ * 这个方案**实际要跑**的关键词序列（调度展开的唯一入口）。
+ *
+ * 恒返回**至少一个**元素：多关键词方案 → 逐个；老方案（只有 criteria.keyword）
+ * → 单元素；什么都没有 → `['']`（一趟"不带关键词"的抓取，按平台默认列表）。
+ * 保证非空让调度侧可以无条件 `for…of` —— "方案至少跑一趟"的语义在这里成立。
+ */
+export declare function keywordsOfPlan(plan: Pick<PlanDto, 'keywords' | 'criteria'>): string[];
+/**
  * 某个平台在该方案里**实际使用的条件**（方案级 + 该平台覆盖的页数）。
  *
  * 目前只有 `maxPages` 会被覆盖 —— 条件本身（关键词/城市/…）仍是全方案共享，
@@ -70,6 +84,8 @@ export declare function criteriaForPlatform(plan: Pick<PlanDto, 'criteria' | 'pl
 export interface PlanUpsertInput {
     name: string;
     platforms: string[];
+    /** 多关键词（逐个采集）。缺省/空 = 用 criteria.keyword（老形态）。 */
+    keywords?: string[];
     /** 每平台的覆盖项（稀疏：等于默认的条目不落库）。 */
     platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>;
     criteria?: Record<string, string>;

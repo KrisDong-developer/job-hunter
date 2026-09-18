@@ -67,8 +67,14 @@
     "probe:lagou-login": "node scripts/run-ts.mjs test/tools/probe-lagou-login.ts",
     "probe:zhipin": "node scripts/run-ts.mjs test/tools/probe-zhipin.ts",
     "probe:zhipin-login": "node scripts/run-ts.mjs test/tools/probe-zhipin-login.ts",
+    "probe:zhipin-chat": "node scripts/run-ts.mjs test/tools/probe-zhipin-chat.ts",
     "probe:guopin": "node scripts/run-ts.mjs test/tools/probe-guopin.ts",
-    "probe:waiqi": "node scripts/run-ts.mjs test/tools/probe-waiqi.ts"
+    "probe:waiqi": "node scripts/run-ts.mjs test/tools/probe-waiqi.ts",
+    "probe:zhaopin-login": "node scripts/run-ts.mjs test/tools/probe-zhaopin-login.ts",
+    "probe:51job": "node scripts/run-ts.mjs test/tools/probe-51job.ts",
+    "probe:sinojobs": "node scripts/run-ts.mjs test/tools/probe-sinojobs.ts",
+    "probe:hiredchina": "node scripts/run-ts.mjs test/tools/probe-hiredchina.ts",
+    "probe:indeed": "node scripts/run-ts.mjs test/tools/probe-indeed.ts"
   },
   "peerDependencies": {
     "react": "^18.2.0"

@@ -94,6 +94,13 @@ export interface JobRepo {
   mark(id: number, state: JobState): boolean
   /** 读 JD 正文（列表页拿不到，P2+ 的详情页才有）。 */
   jdText(id: number): string | null
+  /**
+   * 写 JD 正文（P2 详情补抓）。
+   *
+   * **只在非空时覆盖**：详情页锚点腐烂时解析结果为空，那次不该把已有的 JD 抹掉。
+   * 空串/纯空白一律忽略并返回 false（调用方据此统计"这一轮真的补到了几条"）。
+   */
+  setJdText(id: number, text: string): boolean
   /** 写匹配分与**逐条理由**（§4.5.1：分数必须可解释）。 */
   setMatch(id: number, score: number, reasons: unknown, stamp?: MatchStamp | undefined): void
   /** 读回匹配理由。 */
@@ -204,6 +211,7 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
   const selectById = db.prepare(`${SELECT_BASE} WHERE j.id = ?`)
   const markStmt = db.prepare('UPDATE job SET state = ? WHERE id = ?')
   const jdTextStmt = db.prepare('SELECT jd_text FROM job WHERE id = ?')
+  const setJdTextStmt = db.prepare('UPDATE job SET jd_text = ? WHERE id = ?')
   const setMatchStmt = db.prepare(
     'UPDATE job SET match_score = ?, match_reasons_json = ?, score_rev = ?, score_resume_id = ? WHERE id = ?',
   )
@@ -376,6 +384,13 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
     jdText(id): string | null {
       const row = jdTextStmt.get(id) as Row | undefined
       return row === undefined ? null : asTextOrNull(row['jd_text'])
+    },
+
+    setJdText(id, text): boolean {
+      const trimmed = text.trim()
+      if (trimmed === '') return false
+      const result = setJdTextStmt.run(trimmed, id)
+      return asInt(result.changes) > 0
     },
 
     setMatch(id, score, reasons, stamp): void {

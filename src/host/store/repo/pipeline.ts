@@ -175,6 +175,18 @@ export interface PipelineRepo {
     now: string,
   ): MessageRecord
   listMessages(filter?: { jobId?: number; unreadOnly?: boolean; limit?: number }): MessageRecord[]
+  /**
+   * 按「平台 + 会话 + 方向 + 正文」找最近一条。
+   *
+   * 存在的唯一理由是**收件箱同步的去重**：平台会话列表只给"每个会话的最后一条消息"，
+   * 反复同步会把同一条消息反复写进库（`message` 表没有唯一索引，靠 SQL 去重是唯一防线）。
+   */
+  findMessage(input: {
+    platformId: string
+    conversationId: string
+    direction: MessageDirection
+    content: string
+  }): MessageRecord | undefined
   markMessageRead(id: number, now: string): boolean
   countUnread(): number
 
@@ -387,6 +399,11 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
   const selectMessagesAll = db.prepare('SELECT * FROM message ORDER BY at DESC LIMIT ?')
   const selectMessagesByJob = db.prepare('SELECT * FROM message WHERE job_id = ? ORDER BY at DESC LIMIT ?')
   const selectMessagesUnread = db.prepare('SELECT * FROM message WHERE read_at IS NULL ORDER BY at DESC LIMIT ?')
+  const selectMessageByKey = db.prepare(
+    `SELECT * FROM message
+     WHERE platform_id = ? AND conversation_id = ? AND direction = ? AND content = ?
+     ORDER BY id DESC LIMIT 1`,
+  )
   const markRead = db.prepare('UPDATE message SET read_at = ? WHERE id = ? AND read_at IS NULL')
   const countUnreadStmt = db.prepare('SELECT count(*) AS n FROM message WHERE read_at IS NULL')
 
@@ -557,6 +574,16 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
 
     markMessageRead(id, now): boolean {
       return Number(markRead.run(now, id).changes) > 0
+    },
+
+    findMessage(input): MessageRecord | undefined {
+      const row = selectMessageByKey.get(
+        input.platformId,
+        input.conversationId,
+        input.direction,
+        input.content,
+      ) as Row | undefined
+      return row === undefined ? undefined : toMessage(row)
     },
 
     countUnread(): number {

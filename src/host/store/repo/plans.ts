@@ -184,6 +184,38 @@ export function activePlatformsOf(plan: Pick<PlanDto, 'platforms' | 'platformOve
 }
 
 /**
+ * 关键词列表的读取侧收敛（静默卫生，不报错）：trim、丢空、去重（保首个出现序）。
+ * 条数上限在**校验层**显式报错（`PLAN_KEYWORDS_MAX`）—— 读取侧不截断，
+ * 否则手工改过库的行会被悄悄砍掉而无人知晓。
+ */
+export function normalizeKeywords(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const keyword = item.trim()
+    if (keyword === '' || seen.has(keyword)) continue
+    seen.add(keyword)
+    out.push(keyword)
+  }
+  return out
+}
+
+/**
+ * 这个方案**实际要跑**的关键词序列（调度展开的唯一入口）。
+ *
+ * 恒返回**至少一个**元素：多关键词方案 → 逐个；老方案（只有 criteria.keyword）
+ * → 单元素；什么都没有 → `['']`（一趟"不带关键词"的抓取，按平台默认列表）。
+ * 保证非空让调度侧可以无条件 `for…of` —— "方案至少跑一趟"的语义在这里成立。
+ */
+export function keywordsOfPlan(plan: Pick<PlanDto, 'keywords' | 'criteria'>): string[] {
+  if (plan.keywords.length > 0) return plan.keywords
+  const single = plan.criteria['keyword']
+  return [single !== undefined && single !== '' ? single : '']
+}
+
+/**
  * 某个平台在该方案里**实际使用的条件**（方案级 + 该平台覆盖的页数）。
  *
  * 目前只有 `maxPages` 会被覆盖 —— 条件本身（关键词/城市/…）仍是全方案共享，
@@ -201,6 +233,8 @@ export function criteriaForPlatform(
 export interface PlanUpsertInput {
   name: string
   platforms: string[]
+  /** 多关键词（逐个采集）。缺省/空 = 用 criteria.keyword（老形态）。 */
+  keywords?: string[]
   /** 每平台的覆盖项（稀疏：等于默认的条目不落库）。 */
   platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>
   criteria?: Record<string, string>
@@ -254,6 +288,8 @@ function toDto(row: Row): PlanDto {
     id: asInt(row['id']),
     name: asText(row['name']),
     platforms,
+    // 多关键词：列从 v1 起就存在（此前一直写死 '[]'），读取时收敛一次。
+    keywords: normalizeKeywords(asJson<string[]>(row['keywords_json'], [])),
     // 读的时候**再收敛一次**：手工改过库、或平台集合变过之后，
     // 库里仍可能残留"不在 platforms 里的覆盖项"。读取侧兜住比事后修数据可靠。
     platformOverrides: normalizePlatformOverrides(
@@ -280,13 +316,13 @@ export function createPlanRepo(db: DatabaseSync): PlanRepo {
     `INSERT INTO plan (
        name, platforms_json, platform_overrides_json, criteria_json, keywords_json, exclude_json,
        schedule_json, enabled, timezone, post_process_json, created_at
-     ) VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?)`,
   )
   const selectById = db.prepare('SELECT * FROM plan WHERE id = ?')
   const selectAll = db.prepare('SELECT * FROM plan ORDER BY id')
   const updateStmt = db.prepare(
     `UPDATE plan SET name = ?, platforms_json = ?, platform_overrides_json = ?, criteria_json = ?,
-       schedule_json = ?, enabled = ?, timezone = ?, post_process_json = ? WHERE id = ?`,
+       keywords_json = ?, schedule_json = ?, enabled = ?, timezone = ?, post_process_json = ? WHERE id = ?`,
   )
   const deleteStmt = db.prepare('DELETE FROM plan WHERE id = ?')
   // last_run_at 与 last_success_at **一起**推进：last_run_at 只是兼容字段，
@@ -330,6 +366,7 @@ export function createPlanRepo(db: DatabaseSync): PlanRepo {
         JSON.stringify(input.platforms),
         JSON.stringify(normalizePlatformOverrides(input.platformOverrides, input.platforms)),
         JSON.stringify(input.criteria ?? {}),
+        JSON.stringify(normalizeKeywords(input.keywords)),
         JSON.stringify(schedule),
         input.enabled === false ? 0 : 1,
         detectTimezone(),
@@ -355,6 +392,7 @@ export function createPlanRepo(db: DatabaseSync): PlanRepo {
         JSON.stringify(platforms),
         JSON.stringify(overrides),
         JSON.stringify(patch.criteria ?? current.criteria),
+        JSON.stringify(normalizeKeywords(patch.keywords ?? current.keywords)),
         JSON.stringify(schedule),
         (patch.enabled ?? current.enabled) ? 1 : 0,
         current.timezone,

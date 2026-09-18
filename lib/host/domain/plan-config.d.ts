@@ -1,24 +1,14 @@
-/**
- * 采集方案的**唯一校验实现**（SR-45）。
- *
- * 三条入口 —— GUI（HTTP `/plans`）、模型工具（`job_plan_manage`）、HTTP —— 必须共用这一份，
- * 否则"工具与界面各塞非法条件，报错不一致"是必然的：
- * 界面拦住了、模型绕过去了，用户看到的两套规则，然后**只相信严的那一套**。
- *
- * 校验做的三件事：
- *   1. **平台必须在注册表里**（SR-39：选到不存在的平台要报可读错，不能空跑）；
- *   2. **筛选键必须被某个平台的适配器声明过**（SR-41/42）——
- *      未声明的键**显式报错**，不静默丢弃；
- *   3. **取值域受声明约束**（SR-41）：声明了 `values` 的维度只接受域内的值。
- *
- * 还有一件**不报错但要说出来**的事：重复方案（SR-43）只提示、不合并。
- */
 import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js';
 import type { AdapterRegistry } from '../platform/registry.js';
 import type { SearchCriteria } from '../platform/types.js';
 export interface PlanConfigInput {
     name?: string;
     platforms?: string[];
+    /**
+     * 多关键词（逐个采集，方案级）。非空时 `criteria.keyword` 被忽略并从结果里剔除 ——
+     * **单一事实源**：两处都写只会让"到底按哪个跑"变成悬案。
+     */
+    keywords?: string[];
     /** 每平台的覆盖项（稀疏）。 */
     platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>;
     criteria?: Record<string, string>;
@@ -36,6 +26,8 @@ export interface PlanValidationContext {
 export interface ValidatedPlanConfig {
     name: string;
     platforms: string[];
+    /** 收敛后的多关键词（trim/去重；空 = 老形态，按 criteria.keyword 跑一趟）。 */
+    keywords: string[];
     /** 收敛后的每平台覆盖项（稀疏：等于默认的条目不在里面）。 */
     platformOverrides: Record<string, PlanPlatformOverrideDto>;
     criteria: Record<string, string>;

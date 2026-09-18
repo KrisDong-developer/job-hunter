@@ -7,6 +7,13 @@ import {
   formatWindow,
   parseClockValue,
 } from '../../src/shared/time-format.js'
+import {
+  emptyForm,
+  formOf,
+  parseKeywordsText,
+  writeOf,
+} from '../../src/client/screens/collect.js'
+import type { PlanDto } from '../../src/shared/dto.js'
 
 /**
  * 偏好时段的时间选择器（界面评审：四个数字框 → 两个原生 time 输入）。
@@ -97,4 +104,70 @@ test('时长：负数与非有限数返回 null（时钟回拨时宁可不显示
   assert.equal(formatDuration(-1), null)
   assert.equal(formatDuration(Number.NaN), null)
   assert.equal(formatDuration(Number.POSITIVE_INFINITY), null)
+})
+
+/* ── 多关键词的表单往返（方案级 keywords ↔ 每行一个的文本域）─────────── */
+
+/** 最小可用的 PlanDto（formOf 只读这些字段；缺一个就是它自己的接口在撒谎）。 */
+function planStub(patch: Partial<PlanDto>): PlanDto {
+  return {
+    id: 1,
+    name: '桩',
+    platforms: ['51job'],
+    keywords: [],
+    platformOverrides: {},
+    criteria: {},
+    schedule: {
+      enabled: true,
+      windowStartHour: 9,
+      windowStartMinute: 0,
+      windowEndHour: 11,
+      windowEndMinute: 0,
+      weekdays: [],
+      jitterMs: 0,
+      missedGraceMs: 0,
+    },
+    enabled: true,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    lastRunAt: null,
+    nextRunAt: null,
+    timezone: 'Asia/Shanghai',
+    postProcess: { score: true, flag: true, dedup: true },
+    createdAt: '2026-09-18T00:00:00.000Z',
+    ...patch,
+  }
+}
+
+test('关键词文本：trim / 丢空行 / 去重保序，清洗只在 parseKeywordsText 一处', () => {
+  assert.deepEqual(parseKeywordsText('  Java \n\nJava\nGo\r\n'), ['Java', 'Go'])
+  assert.deepEqual(parseKeywordsText(''), [])
+})
+
+test('表单 → 写入体：keywords 非空时 criteria 里不再带 keyword（单一事实源）', () => {
+  const form = { ...emptyForm(), keywordsText: ' Java \nGo' }
+  const written = writeOf(form)
+  assert.deepEqual(written.keywords, ['Java', 'Go'])
+  assert.equal(written.criteria?.['keyword'], undefined)
+})
+
+test('表单 → 写入体：关键词留空 → keywords 为空数组、criteria 原样（老形态）', () => {
+  const form = { ...emptyForm(), criteria: { keyword: 'Java' } }
+  const written = writeOf(form)
+  assert.deepEqual(written.keywords, [])
+  assert.equal(written.criteria?.['keyword'], 'Java')
+})
+
+test('方案 → 表单：多关键词方案回填为每行一个；老方案把单关键词翻成一行', () => {
+  const multi = formOf(planStub({ keywords: ['Java', 'Go'] }))
+  assert.equal(multi.keywordsText, 'Java\nGo')
+
+  const legacy = formOf(planStub({ criteria: { keyword: 'Java' } }))
+  assert.equal(legacy.keywordsText, 'Java')
+})
+
+test('往返一致：writeOf(formOf(plan)) 的关键词不丢、不多', () => {
+  const roundtrip = writeOf(formOf(planStub({ keywords: ['Java', 'Go', '前端'] })))
+  assert.deepEqual(roundtrip.keywords, ['Java', 'Go', '前端'])
+  assert.equal(roundtrip.criteria?.['keyword'], undefined)
 })

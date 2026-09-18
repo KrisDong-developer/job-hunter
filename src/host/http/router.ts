@@ -140,6 +140,13 @@ function planPatchOf(body: Record<string, unknown>): PlanConfigInput {
       (value): value is string => typeof value === 'string' && value !== '',
     )
   }
+  // 多关键词：字符串数组白名单（trim/去重/上限在领域层校验）。
+  // 注意 `[]` 是合法值（清空关键词）—— 判 `Array.isArray` 而不是"非空才收"。
+  if (Array.isArray(body['keywords'])) {
+    patch.keywords = body['keywords'].filter(
+      (value): value is string => typeof value === 'string',
+    )
+  }
   if (typeof body['criteria'] === 'object' && body['criteria'] !== null && !Array.isArray(body['criteria'])) {
     const criteria: Record<string, string> = {}
     for (const [key, value] of Object.entries(body['criteria'] as Record<string, unknown>)) {
@@ -246,6 +253,7 @@ function planCreateOf(body: Record<string, unknown>): PlanConfigInput {
   return {
     name: patch.name ?? '未命名方案',
     ...(patch.platforms === undefined ? {} : { platforms: patch.platforms }),
+    ...(patch.keywords === undefined ? {} : { keywords: patch.keywords }),
     ...(patch.platformOverrides === undefined ? {} : { platformOverrides: patch.platformOverrides }),
     ...(patch.criteria === undefined ? {} : { criteria: patch.criteria }),
     ...(patch.schedule === undefined ? {} : { schedule: patch.schedule }),
@@ -307,6 +315,16 @@ function settingsPatchOf(body: Record<string, unknown>): SettingsPatch {
       // D-17a：引擎偏好与 stealth 注入开关（类型白名单；取值由 normalizeBrowserConfig 收敛）
       ...(typeof source['engine'] === 'string' ? { engine: source['engine'] as never } : {}),
       ...(typeof source['stealthInit'] === 'boolean' ? { stealthInit: source['stealthInit'] } : {}),
+    }
+  }
+  // 单轮预算（用户要求可调）：数字白名单，取值由 normalizeCrawlConfig 收敛到 5–240。
+  const crawl = body['crawl']
+  if (typeof crawl === 'object' && crawl !== null) {
+    const source = crawl as Record<string, unknown>
+    patch.crawl = {
+      ...(typeof source['roundBudgetMinutes'] === 'number'
+        ? { roundBudgetMinutes: source['roundBudgetMinutes'] }
+        : {}),
     }
   }
   return patch
@@ -1094,6 +1112,51 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     const result = await runtime.sendGreeting({
       jobId,
       ...(text === undefined ? {} : { text }),
+      actor: 'gui',
+      ...(body['confirm'] === true ? { guiConfirmed: true } : {}),
+    })
+    return json(200, { ok: true, result })
+  }
+
+  /**
+   * 同步收件箱（§13 U6）：把平台会话列表读进本地消息表。
+   *
+   * 低危，所以**没有两段式确认** —— 它不对外发任何东西。仍然经闸门（会开真实页面）。
+   */
+  if (segments.length === 2 && segments[0] === 'inbox' && segments[1] === 'sync') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '同步收件箱只支持 POST')
+    requireData(runtime)
+    const body = await readObject(req)
+    const platformId = typeof body['platformId'] === 'string' ? body['platformId'].trim() : ''
+    if (platformId === '') {
+      throw new DomainError('INVALID_INPUT', 'platformId 不能为空', {
+        hint: '例如 {"platformId":"zhipin"}。',
+      })
+    }
+    const result = await runtime.syncInbox({ platformId, actor: 'gui' })
+    return json(200, { ok: true, result })
+  }
+
+  /**
+   * 投递简历（高危，两段式确认）。
+   *
+   * ⚠️ 与 `POST /applications`（记一笔投递）**不是一回事**：这条会真的用适配器把简历发出去。
+   * ⚠️ 必须放在下面 `segments[0] === 'applications'` 那个大块**之前** ——
+   * 否则 `/applications/deliver` 会被它按 `/applications/:id` 解析，`deliver` 当成 id 报 400。
+   */
+  if (segments.length === 2 && segments[0] === 'applications' && segments[1] === 'deliver') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '投递简历只支持 POST')
+    requireData(runtime)
+    const body = await readObject(req)
+    const jobId = typeof body['jobId'] === 'number' ? body['jobId'] : Number.NaN
+    if (!Number.isFinite(jobId) || jobId <= 0) {
+      throw new DomainError('INVALID_INPUT', 'jobId 必须是正整数')
+    }
+    const filePath = typeof body['filePath'] === 'string' && body['filePath'].trim() !== '' ? body['filePath'] : null
+    // `confirm: true` 是**界面上的用户**这一次的确认（两段式 HTTP）；模型工具没有这条路径
+    const result = await runtime.sendApplication({
+      jobId,
+      filePath,
       actor: 'gui',
       ...(body['confirm'] === true ? { guiConfirmed: true } : {}),
     })

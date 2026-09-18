@@ -138,8 +138,12 @@ const ALL_TOOL_NAMES = [
   'resume_export',
   // P7：跟进与看板七个。投递/回复**高危**；状态流转与面试管理中危；其余只读。
   'application_send',
+  // 2026-09-18 补：真的把简历投出去（走适配器）；与 application_send（记一笔）语义不同。
+  'application_deliver',
   'application_update',
   'inbox_list',
+  // 2026-09-18 补：把平台会话列表读进本地消息表（走适配器；低危、无需审批）。
+  'inbox_sync',
   'message_reply',
   'interview_manage',
   'interview_prep',
@@ -459,6 +463,66 @@ test('toolExec 上下文只在工具执行期间存在（不在工具里就没�
     assert.equal(toolExec.active(), false)
     await h.run('crawl_status', {})
     assert.equal(toolExec.active(), false, '执行结束上下文必须清掉，否则会串到下一次调用')
+  } finally {
+    close(h)
+  }
+})
+
+test('inbox_sync：低危 → 模型发起也**不问用户**，缺能力时如实失败', async () => {
+  let asked = 0
+  const h = await harness({
+    request: async () => {
+      asked += 1
+      return 'allowed-once'
+    },
+  })
+  try {
+    const store = h.runtime.store()
+    assert.ok(store !== undefined)
+    store.account.upsert(
+      { platformId: '51job', loggedIn: true, hiddenFromCurrentEmployer: true, hint: null },
+      T,
+    )
+    // 51job 没实现 readInbox → 如实 ADAPTER_BROKEN，而不是假装读到 0 条
+    await assert.rejects(
+      () => h.run('inbox_sync', { platformId: '51job' }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.ok(error.message.includes('收件箱'), error.message)
+        return true
+      },
+    )
+    assert.equal(asked, 0, '低危动作不该打扰用户审批')
+  } finally {
+    close(h)
+  }
+})
+
+test('application_deliver：高危 → 模型发起必须走审批；被拒后什么都不做', async () => {
+  const asked: Array<{ toolName: string; reason: string }> = []
+  const h = await harness({
+    request: async (req: { toolName: string; reason?: string }) => {
+      asked.push({ toolName: req.toolName, reason: req.reason ?? '' })
+      return 'rejected'
+    },
+  })
+  try {
+    const store = h.runtime.store()
+    assert.ok(store !== undefined)
+    // 投递分层默认关（l4Application=false）；这里显式打开，确保测到的是**审批**这一关
+    writeGuardConfig(store, { sendWindow: '', dayOffProbability: 0, levels: { l3Greeting: true, l4Application: true, l4Reply: true } }, T)
+    store.account.upsert(
+      { platformId: '51job', loggedIn: true, hiddenFromCurrentEmployer: true, hint: null },
+      T,
+    )
+    const id = store.job.upsert(jobInput(), T).id
+
+    await assert.rejects(() => h.run('application_deliver', { jobId: id }), /未获批准/)
+    assert.equal(asked.length, 1, '高危工具必须先问用户')
+    assert.equal(asked[0]?.toolName, 'application_deliver')
+    // §4.4.2：确认文案要写清用了哪版简历
+    assert.ok((asked[0]?.reason ?? '').includes('使用简历版本'))
+    assert.equal(store.pipeline.listApplications().length, 0, '没批准就不能留下投递记录')
   } finally {
     close(h)
   }

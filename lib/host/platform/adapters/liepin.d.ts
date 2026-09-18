@@ -1,4 +1,4 @@
-import type { RawJob, SearchCriteria, SiteAdapter } from '../types.js';
+import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** 结构锚点集（2026-09-18 由 v8 探针真实夹具校准）。每一项都可以在 DB 里覆盖着改（ADR-19）。 */
 export interface LiepinSelectors {
     /** 卡片容器（get_jobs 生产验证 + 夹具确认：`div._40108Nrnc3.job-card-pc-container`）。 */
@@ -18,6 +18,31 @@ export interface LiepinSelectors {
     nextPage: string;
     /** 「下一页」disabled 的类名标记。 */
     nextPageDisabledClass: string;
+    /**
+     * ── 详情页（2026-09-18 详情探针夹具 `liepin-detail.html` 校准）──────
+     * 详情页是 SSR 直出（真实文本就在 DOM 里），未登录也能读到 JD 正文。
+     */
+    /** 职位名（详情页）。 */
+    detailTitle: string;
+    /** 薪资。**必须限定在 `.name-box` 内** —— 裸 `.salary` 会命中侧栏推荐岗位。 */
+    detailSalary: string;
+    /** 关键信息行：「佛山-顺德区 5年以上 本科 招5人 9月17日更新」。 */
+    detailProperties: string;
+    /**
+     * 公司名（详情页）。取 `公司信息` 侧栏卡片里的名字节点。
+     *
+     * ⚠️ **不能复用列表页的 `job-detail-company-info`**：夹具里这个 `data-nick`
+     * 在详情页出现 20 次，**全部**落在 `section.love-job-container`（「猜你喜欢」
+     * 推荐位），第一个命中是别家公司的岗位卡 —— 会静默把公司名写错。
+     */
+    detailCompany: string;
+    /** JD 所在容器（语义类名，SSR 输出）。 */
+    detailIntroSection: string;
+    /**
+     * JD 所在块的 `dt` 文案。**用文案当锚点而不是类名**：同一容器里有多个 `dl`，
+     * 只有 `dt=职位介绍` 那块是正文，其余是「其他信息」（语言/行业/部门要求）。
+     */
+    detailIntroTitleText: string;
 }
 /** 字段 → URL 参数映射（get_jobs `getSearchUrl()` 同款：city 与 dq 双参数）。 */
 export interface LiepinUrlParams {
@@ -143,6 +168,24 @@ export declare function hasNextPageInPage(arg: {
     nextPage: string;
     disabledClass: string;
 }): boolean;
+/**
+ * **在页面上下文里**解析职位详情页（2026-09-18 探针真实夹具校准）。
+ *
+ * ⚠️ 必须完全自包含（会被序列化送进浏览器执行）。
+ *
+ * 与其它平台的关键差别：猎聘详情页是 **SSR 直出** —— JD 正文就在 DOM 里
+ * （`section.job-intro-container` 中 `dt=职位介绍` 那块 `dd`，实测 1074 字），
+ * **未登录也读得到**，不需要像智联那样从 `__INITIAL_STATE__` 挖载荷。
+ * 薪资也**不做正则匹配**：详情页有明确的 `.salary` 节点（列表页才需要文本模式）。
+ *
+ * 为什么用 `dt` 的**文案**当锚点：同一个容器里有多个 `dl`，只有「职位介绍」
+ * 那块是正文，其余是「其他信息」（语言/行业/部门要求）—— 按类名取会取错块。
+ */
+export declare function extractJobDetailInPage(arg: {
+    selectors: LiepinSelectors;
+    expPattern: string;
+    eduPattern: string;
+}): RawJobDetail;
 export interface LiepinAdapterOptions {
     config?: LiepinConfig;
     /** 抓取请求之间的随机延时区间（§P5 保守优先；高斯 + 犹豫见 pacing.ts）。 */

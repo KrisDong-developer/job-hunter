@@ -156,6 +156,18 @@ export interface PipelineRepo {
         unreadOnly?: boolean;
         limit?: number;
     }): MessageRecord[];
+    /**
+     * 按「平台 + 会话 + 方向 + 正文」找最近一条。
+     *
+     * 存在的唯一理由是**收件箱同步的去重**：平台会话列表只给"每个会话的最后一条消息"，
+     * 反复同步会把同一条消息反复写进库（`message` 表没有唯一索引，靠 SQL 去重是唯一防线）。
+     */
+    findMessage(input: {
+        platformId: string;
+        conversationId: string;
+        direction: MessageDirection;
+        content: string;
+    }): MessageRecord | undefined;
     markMessageRead(id: number, now: string): boolean;
     countUnread(): number;
     createApplication(input: {

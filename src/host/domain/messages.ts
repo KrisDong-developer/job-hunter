@@ -224,6 +224,21 @@ export interface MessageService {
     attachmentRef?: string | null
     at?: string
   }): MessageDto
+  /**
+   * **幂等**记录：同「平台 + 会话 + 方向 + 正文」已存在时返回既有那条（`created: false`）。
+   *
+   * 给收件箱同步用：平台会话列表只给"每个会话的最后一条消息"，反复同步必然重复 ——
+   * `message` 表没有唯一索引，去重只能在这一层做。
+   */
+  recordOnce(input: {
+    platformId: string
+    direction: MessageDirection
+    content: string
+    jobId?: number | null
+    conversationId?: string
+    attachmentRef?: string | null
+    at?: string
+  }): { message: MessageDto; created: boolean }
   inbox(filter?: { jobId?: number; unreadOnly?: boolean; limit?: number }): InboxDto
   /**
    * 回复一条消息。**高危**：这是真正对外发消息。
@@ -274,32 +289,59 @@ export function createMessageService(deps: MessageDeps): MessageService {
     }
   }
 
+  /** 真正落库的那一步（`record` 与 `recordOnce` 共用，避免两条路径漂移）。 */
+  const recordMessage = (input: {
+    platformId: string
+    direction: MessageDirection
+    content: string
+    jobId?: number | null
+    conversationId?: string
+    attachmentRef?: string | null
+    at?: string
+  }): MessageDto => {
+    if (input.content.trim() === '') {
+      throw new DomainError('INVALID_INPUT', '消息内容不能为空')
+    }
+    const record = store.pipeline.createMessage(
+      {
+        platformId: input.platformId,
+        direction: input.direction,
+        content: input.content,
+        ...(input.jobId === undefined ? {} : { jobId: input.jobId }),
+        ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+        ...(input.attachmentRef === undefined ? {} : { attachmentRef: input.attachmentRef }),
+        ...(input.at === undefined ? {} : { at: input.at }),
+      },
+      clock(),
+    )
+    const dto = decorate(record)
+    // 识别到邀约信号 → 只发事件给界面提示，**不动状态**
+    if (dto.inviteSignal?.hit === true) {
+      deps.logger?.info(
+        `[messages] 消息 #${String(dto.id)} 疑似面试邀约（命中：${dto.inviteSignal.keywords.join('、')}）—— ` +
+          '只作为建议，状态需要你确认后才改',
+      )
+    }
+    return dto
+  }
+
   return {
     record(input): MessageDto {
+      return recordMessage(input)
+    },
+
+    recordOnce(input): { message: MessageDto; created: boolean } {
       if (input.content.trim() === '') {
         throw new DomainError('INVALID_INPUT', '消息内容不能为空')
       }
-      const record = store.pipeline.createMessage(
-        {
-          platformId: input.platformId,
-          direction: input.direction,
-          content: input.content,
-          ...(input.jobId === undefined ? {} : { jobId: input.jobId }),
-          ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
-          ...(input.attachmentRef === undefined ? {} : { attachmentRef: input.attachmentRef }),
-          ...(input.at === undefined ? {} : { at: input.at }),
-        },
-        clock(),
-      )
-      const dto = decorate(record)
-      // 识别到邀约信号 → 只发事件给界面提示，**不动状态**
-      if (dto.inviteSignal?.hit === true) {
-        deps.logger?.info(
-          `[messages] 消息 #${String(dto.id)} 疑似面试邀约（命中：${dto.inviteSignal.keywords.join('、')}）—— ` +
-            '只作为建议，状态需要你确认后才改',
-        )
-      }
-      return dto
+      const existing = store.pipeline.findMessage({
+        platformId: input.platformId,
+        conversationId: input.conversationId ?? '',
+        direction: input.direction,
+        content: input.content,
+      })
+      if (existing !== undefined) return { message: decorate(existing), created: false }
+      return { message: recordMessage(input), created: true }
     },
 
     inbox(filter = {}): InboxDto {

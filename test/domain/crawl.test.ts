@@ -12,7 +12,7 @@ import {
 import { createPlatformLocks } from '../../src/host/platform/locks.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { readYieldSnapshot } from '../../src/host/platform/yield-baseline.js'
-import type { PageSource } from '../../src/host/platform/types.js'
+import type { PageSource, SiteAdapter } from '../../src/host/platform/types.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { CORE_FIELD_MISS_THRESHOLD } from '../../src/shared/constants.js'
 import { fixturePageSource, inlinePageSource, JsdomPage } from '../support/jsdom-page.js'
@@ -41,11 +41,27 @@ interface Harness {
 }
 
 function harness(
-  options: { config?: FiftyOneConfig; pageSource?: PageSource; clock?: () => string } = {},
+  options: {
+    config?: FiftyOneConfig
+    pageSource?: PageSource
+    clock?: () => string
+    /**
+     * 给假适配器挂上详情能力（P2 详情补抓的测试用）。
+     *
+     * 51job 是"列表里就带 JD"的平台，本身没有 `detail` —— 这里显式挂一个，
+     * 才能验证"补抓**由谁触发、触发几次、结果是否回写**"这条接线，
+     * 而不是去验证某个平台的解析（那是各平台自己的测试）。
+     */
+    detail?: SiteAdapter['detail']
+  } = {},
 ): Harness {
   const store = openTestStore()
   const registry = createAdapterRegistry()
-  let dispose = registry.register(createFiftyOneAdapter({ config: options.config ?? DEFAULT_FIFTYONE_CONFIG }))
+  const build = (config: FiftyOneConfig): SiteAdapter => {
+    const adapter = createFiftyOneAdapter({ config })
+    return options.detail === undefined ? adapter : { ...adapter, detail: options.detail }
+  }
+  let dispose = registry.register(build(options.config ?? DEFAULT_FIFTYONE_CONFIG))
 
   const deps: CrawlDeps = {
     store,
@@ -63,7 +79,7 @@ function harness(
     deps,
     useConfig(config): void {
       dispose()
-      dispose = registry.register(createFiftyOneAdapter({ config }))
+      dispose = registry.register(build(config))
     },
     close(): void {
       const dataDirPath = store.dataDir
@@ -464,5 +480,170 @@ test('SR-46：中止的那一轮不进量级基线、也不算"最近一轮"（�
     )
   } finally {
     h.close()
+  }
+})
+
+// ── P2：详情补抓（列表不含 JD 的平台，如猎聘）────────────────────────
+
+/** 详情页夹具：正文够长（51job 的 blank 阈值是 80 字），且不含任何风控标记。 */
+const DETAIL_OK_HTML = `<html><body><div class="job-detail">${'岗位职责与任职要求：负责后端服务的设计与开发。'.repeat(
+  10,
+)}</div></body></html>`
+const DETAIL_CAPTCHA_HTML =
+  '<html><body><div class="geetest_panel">请完成安全验证</div></body></html>'
+
+test('详情补抓：只补【本轮新增】的岗位并把 JD 回写到位；第二轮一条都不再点', async () => {
+  let calls = 0
+  const h = harness({
+    detail: {
+      async extract(page) {
+        calls += 1
+        const url = page.url()
+        return {
+          platformJobId: '',
+          title: '',
+          salaryRaw: '',
+          company: '',
+          sourceUrl: url,
+          jdText: `JD@${url}`,
+        }
+      },
+    },
+  })
+  try {
+    const first = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+    assert.equal(first.run.state, 'ok')
+    assert.equal(first.run.inserted, 20)
+    assert.equal(calls, 20, '每条新增岗位点进去一次')
+
+    // ★ 回写必须落到**这一条自己**身上（错位是最难发现的一种坏法）
+    const jobs = h.deps.store.job.query({}, 50)
+    assert.equal(jobs.length, 20)
+    for (const job of jobs) {
+      assert.equal(
+        h.deps.store.job.jdText(job.id),
+        `JD@${job.sourceUrl}`,
+        `JD 落错行了（${job.platformJobId}）`,
+      )
+    }
+
+    // 第二轮全是老岗位 → 详情一条都不点（否则每轮都重复点一遍，白烧配额）
+    const second = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+    assert.equal(second.run.inserted, 0)
+    assert.equal(calls, 20, '老岗位不再点进去 —— JD 已经取过了')
+  } finally {
+    h.close()
+  }
+})
+
+test('详情补抓撞上风控：整轮 failed 且说明已停手，但列表数据一条不丢', async () => {
+  const searchHtml = readFileSync(fixtureHtmlPath(), 'utf8')
+  let detailNavigations = 0
+  const page = new JsdomPage({
+    html: searchHtml,
+    url: SEARCH_URL,
+    // 列表页沿用真实夹具；详情页前两条正常，第 3 条开始被拦
+    loader: (url) => {
+      if (!url.includes('jobs.51job.com')) return undefined
+      detailNavigations += 1
+      return detailNavigations >= 3 ? DETAIL_CAPTCHA_HTML : DETAIL_OK_HTML
+    },
+  })
+  const h = harness({
+    pageSource: {
+      async acquire(): Promise<typeof page> {
+        return page
+      },
+      async release(): Promise<void> {
+        /* 单页夹具无需释放 */
+      },
+    },
+    detail: {
+      async extract(pageLike) {
+        const url = pageLike.url()
+        return {
+          platformJobId: '',
+          title: '',
+          salaryRaw: '',
+          company: '',
+          sourceUrl: url,
+          jdText: `JD@${url}`,
+        }
+      },
+    },
+  })
+  try {
+    const summary = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+
+    assert.equal(
+      summary.run.state,
+      'failed',
+      '详情阶段撞墙是平台级信号，不能悄悄算成"这一条解析失败"',
+    )
+    assert.equal(summary.run.errorCode, 'BLOCKED')
+    assert.ok(summary.run.errorMsg?.includes('已停手'), '要说清楚停手了，而不是含糊报错')
+
+    // ★ 列表数据已经入库了，不该因为详情阶段撞墙而回滚或丢弃
+    assert.equal(h.deps.store.job.count(), 20)
+    assert.equal(summary.run.inserted, 20)
+    assert.equal(detailNavigations, 3, '命中即停 —— 不该继续点第 4 条')
+
+    const withJd = h.deps.store.job
+      .query({}, 50)
+      .filter((job) => h.deps.store.job.jdText(job.id) !== null)
+    assert.equal(withJd.length, 2, '撞墙前已经取到的 JD 要留住')
+  } finally {
+    h.close()
+    page.close()
+  }
+})
+
+test('详情补抓到点即停：列表数据照常入库，本轮记 aborted 并给出原因', async () => {
+  const start = '2026-09-16T00:00:00.000Z'
+  const paging = pagingPageSource(start) // 每导航一次 +10 分钟
+  let calls = 0
+  const h = harness({
+    pageSource: paging.pageSource,
+    clock: () => paging.now().toISOString(),
+    detail: {
+      async extract(page) {
+        calls += 1
+        const url = page.url()
+        return {
+          platformJobId: '',
+          title: '',
+          salaryRaw: '',
+          company: '',
+          sourceUrl: url,
+          jdText: `JD@${url}`,
+        }
+      },
+    },
+  })
+  try {
+    const summary = await runCrawl(h.deps, {
+      platformId: '51job',
+      criteria: { ...CRITERIA, maxPages: 1 },
+      // 第 1 页跑完 +10；第 1 条详情跑完 +20 → 第 2 条之前正好越过 15 分钟
+      deadlineAt: new Date(new Date(start).getTime() + 15 * 60 * 1000).toISOString(),
+    })
+
+    assert.equal(summary.run.inserted, 20, '列表那一页照常入库')
+    assert.equal(calls, 1, '到点后不再点下一条详情')
+    assert.equal(summary.run.state, 'aborted')
+    assert.equal(
+      summary.run.errorCode,
+      'DEADLINE_REACHED',
+      'aborted 的轮次必须能说出为什么 —— 否则界面上只有一个莫名其妙的"已中止"',
+    )
+    assert.ok(summary.run.errorMsg?.includes('详情补抓'))
+
+    const withJd = h.deps.store.job
+      .query({}, 50)
+      .filter((job) => h.deps.store.job.jdText(job.id) !== null)
+    assert.equal(withJd.length, 1)
+  } finally {
+    h.close()
+    paging.close()
   }
 })

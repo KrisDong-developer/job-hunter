@@ -227,7 +227,77 @@ async function main(): Promise<void> {
     log('（没捕获到搜索接口 —— 可能页面是 SSR 直出，或命中了风控降级；不影响 HTML 夹具）')
   }
 
-  // ── 4. 结论 ─────────────────────────────────────────────────────────
+  // ── 4. 详情页探针（可选，`LIEPIN_DETAIL=1`）────────────────────────────
+  //
+  // 猎聘的列表接口**不含 JD**（采样逐键确认过），JD 必须逐条进详情页。
+  // 这一段就是为详情适配器校准选择器用的：拿列表里第一条真实职位链接导航过去，
+  // 打印**结构性证据**（data-nick 属性、大文本块的 tag+class），而不是猜类名。
+  if (process.env['LIEPIN_DETAIL'] === '1') {
+    const firstHref = (JSON.parse(snapshot)['jobLinkSamples'] as string[])[0]
+    if (firstHref === undefined || firstHref === '') {
+      log('⚠️ 列表里没拿到职位链接，跳过详情探针')
+    } else {
+      log(`详情探针：导航到第一条职位 → ${firstHref.slice(0, 120)}…`)
+      try {
+        await page.goto(firstHref, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      } catch (error) {
+        log(`详情 goto 失败：${error instanceof Error ? error.message : String(error)}`)
+      }
+      await page.waitForTimeout(6_000)
+
+      const detailUrl = page.url()
+      log(`详情 final URL：${detailUrl}`)
+      if (detailUrl.startsWith('about:')) {
+        log('✘ 详情页被销毁成 about:blank —— 详情抓取在猎聘上撞墙，这条路先别做。')
+      } else {
+        // 结构性证据：data-nick 属性清单 + 最大的几个文本块（不猜类名）
+        const shape = await page.evaluate(() => {
+          const textOf = (el: Element): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+          const nicks: Array<{ nick: string; tag: string; len: number }> = []
+          for (const el of Array.from(document.querySelectorAll('[data-nick]')).slice(0, 40)) {
+            nicks.push({
+              nick: el.getAttribute('data-nick') ?? '',
+              tag: el.tagName.toLowerCase(),
+              len: textOf(el).length,
+            })
+          }
+          const blocks: Array<{ tag: string; cls: string; len: number; head: string }> = []
+          for (const el of Array.from(document.querySelectorAll('div,section,article,dd,ul'))) {
+            // 只看"自己的直接文本"够长、且子元素不多的块 —— 那才是 JD 正文的形态
+            const own = Array.from(el.childNodes)
+              .filter((node) => node.nodeType === 3)
+              .map((node) => node.textContent ?? '')
+              .join('')
+              .replace(/\s+/g, ' ')
+              .trim()
+            if (own.length < 60) continue
+            blocks.push({
+              tag: el.tagName.toLowerCase(),
+              cls: (el.getAttribute('class') ?? '').slice(0, 70),
+              len: own.length,
+              head: own.slice(0, 60),
+            })
+          }
+          blocks.sort((a, b) => b.len - a.len)
+          return JSON.stringify({
+            title: document.title,
+            bodyLength: textOf(document.body ?? document.documentElement).length,
+            nicks,
+            blocks: blocks.slice(0, 12),
+          })
+        })
+        log(`详情结构：${shape}`)
+
+        mkdirSync(FIXTURE_DIR, { recursive: true })
+        const detailHtml = await page.content()
+        const detailPath = join(FIXTURE_DIR, 'liepin-detail.html')
+        writeFileSync(detailPath, detailHtml, 'utf8')
+        log(`详情夹具已保存：${detailPath}（${String(detailHtml.length)} 字符）`)
+      }
+    }
+  }
+
+  // ── 5. 结论 ─────────────────────────────────────────────────────────
   const cardCount = Number(JSON.parse(snapshot)['bodyLength'] ?? 0) > 0 ? 1 : 0
   log(cardCount > 0 ? '✔ 页面存活：环境一致性验证通过（D-17a 路线成立）' : '⚠️ 页面存活但正文为空，人工确认是否被降级')
   log('下一步：跑 npm test —— liepin 的离线解析用例会自动用上刚保存的夹具。')
