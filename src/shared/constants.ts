@@ -78,9 +78,6 @@ export const REQUEST_DELAY_MAX_MS = 3200
  */
 export const DAILY_CRAWL_LIMIT = 8
 
-/** 连续失败达到这个次数 → 风控暂停（SR-21），需人工确认才恢复。 */
-export const RISK_PAUSE_THRESHOLD = 3
-
 // ── 浏览器空闲自关（NFR-7 / C12）───────────────────────────────────────
 
 /**

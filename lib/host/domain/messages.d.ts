@@ -14,8 +14,8 @@
  * 而状态一旦被误改，用户就会漏掉一个真正在推进的岗位。
  * 所以这里只产出 `inviteSignal`，改状态是另一次显式动作（并且会写 `stage_event`）。
  */
-import type { MessageDirection } from '../../shared/enums.js';
-import type { InboxDto, InterviewSuggestionDto, MessageDto } from '../../shared/dto.js';
+import type { InterviewKind, MessageDirection, ReplyScenario } from '../../shared/enums.js';
+import type { InboxDto, InterviewSuggestionDto, MessageDto, ReplyDraftDto } from '../../shared/dto.js';
 import type { AiService } from '../ai/client.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';
@@ -31,6 +31,19 @@ export declare function detectInvite(content: string, direction: MessageDirectio
     hit: boolean;
     keywords: string[];
 };
+/** 抽出来的结构化结果。识别不到就给 null，绝不填假值。 */
+export interface NormalizedExtract {
+    at: string | null;
+    kind: InterviewKind | null;
+    place: string | null;
+    link: string | null;
+}
+/**
+ * 规则降级识别：**保守**，只为常见写法定中轴 ——
+ * 中文日期/时间/关键字 + URL + 地点关键词。宁可漏，不给假。
+ * 导出供测试直接断言（同 `detectInvite`）。
+ */
+export declare function ruleExtract(content: string): NormalizedExtract;
 export interface MessageService {
     record(input: {
         platformId: string;
@@ -64,6 +77,13 @@ export interface MessageService {
      * **只识别不写库**：模型可用走模型，否则规则降级；结果要用户确认后才创建面试。
      */
     extractInterview(id: number): Promise<InterviewSuggestionDto>;
+    /**
+     * 按情境拟一段回复草稿。**只生成、不发送**：发送走 `reply`（闸门 + 两段式确认）。
+     */
+    draftReply(input: {
+        messageId: number;
+        scenario: ReplyScenario;
+    }): Promise<ReplyDraftDto>;
 }
 export interface MessageDeps {
     store: Store;

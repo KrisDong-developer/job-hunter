@@ -502,6 +502,16 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
             {planList.map((plan) => {
               const planStatus = status?.planStatus.find((item) => item.planId === plan.id) ?? null
               const decision = planStatus?.lastDecision ?? null
+              // SR-18：逐平台的判定。多平台时"为什么没跑"不再是一个原因 ——
+              // 同一个方案里猎聘可能未登录、51job 在跑、智联在冷却。
+              const platformDecisions = new Map(
+                (planStatus?.platformDecisions ?? []).map((item) => [item.platformId, item.decision]),
+              )
+              const blockedPlatforms = plan.platforms.filter(
+                (id) => (platformDecisions.get(id)?.reason ?? null) !== null,
+              )
+              const platformName = (id: string): string =>
+                platformList.find((item) => item.id === id)?.displayName ?? id
               const runBlocked = feedback.running || (status?.readOnly ?? false)
               return (
                 <li key={plan.id} className="jh-plan-card">
@@ -612,6 +622,22 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                         : decision.decision === 'ran'
                           ? '上次到点跑了'
                           : '还在等下一个时段'}
+                    </div>
+                  )}
+
+                  {/* SR-18：把"哪个平台为什么没跑"如实摊开（有被挡住的平台时才显示）。
+                      只给一句方案级结论，用户就不会知道自己少抓了两个平台。 */}
+                  {blockedPlatforms.length > 0 && (
+                    <div className="jh-muted">
+                      各平台：
+                      {plan.platforms
+                        .map((id) => {
+                          const item = platformDecisions.get(id) ?? null
+                          return item?.reason == null
+                            ? `${platformName(id)} 正常`
+                            : `${platformName(id)}：${item.message ?? item.reason}`
+                        })
+                        .join(' · ')}
                     </div>
                   )}
                 </li>

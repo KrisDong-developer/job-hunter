@@ -763,13 +763,13 @@ arm() {
 | SR-13 租约核验 | ✅ | 心跳接管（原有实现） |
 | SR-14 可中止 | ✅ | 沿用原有中止语义 |
 | SR-15 崩溃安全 | ✅ | `crawlRun.reapStale()`：启动时把 > 2h 的 `running` 收敛为 `failed/ORPHANED` |
-| SR-16 每平台前置 | ✅ | `runtime.platformGate`：离线 → 健康 → 登录态 → 每平台冷却 → 配额 |
+| SR-16 每平台前置 | ✅ | `runtime.platformGate`：离线 → **平台级风控暂停** → 健康 → 登录态 → 每平台冷却 → 配额 |
 | SR-17 跳过原因枚举 | ✅ | `SKIP_REASONS` + `SKIP_REASON_LABEL`；`planStatus.lastDecision` 落到界面 |
-| SR-18 平台互不影响 | ✅ | 判定按平台；一个平台被跳过时如实说明是哪一个 |
+| SR-18 平台互不影响 | ✅ **（2026-09-18 修正）** | 判定按平台；**且不再连坐整条方案**。见下方修订注 ① |
 | SR-19 离线闸门 | ✅ | `offline_gate`（原有 `util/offline.ts`） |
-| SR-20 退避 15m→1h→4h | ✅ | `backoffMsFor()`；**计划级 + 平台级**双份（平台级存 `setting`） |
-| SR-21 连续失败暂停 | ✅ | `RISK_PAUSE_THRESHOLD=3` → `risk_paused` + urgent 待办；`resumeRisk` 只能人工触发 |
-| SR-22 风控信号单列 | ✅ | `BLOCKED`/`NOT_LOGGED_IN`/`RATE_LIMITED` **一次即暂停**，不计入普通失败 |
+| SR-20 退避 15m→1h→4h | ✅ | `backoffMsFor()`；**计划级 + 平台级**双份。⚠️ 两侧入参必须是**各自**的 `fail_streak`，见修订注 ② |
+| SR-21 连续失败暂停 | ✅ **（2026-09-18 改落点）** | 「连续失败达阈值」由**平台级** `health=broken` + `adapter_broken` 承担（`crawl.ts` 记账）；风控暂停不再重复叠一层，见修订注 ③ |
+| SR-22 风控信号单列 | ✅ **（2026-09-18 改落点）** | 风控暂停落在**平台**上（`platform/risk-pause.ts`），不是方案上，见修订注 ③ |
 | SR-23 失败推进冷却 | ✅ | 失败推进 attempt + backoff，不动 success |
 | SR-24/25 只在该打扰时打扰 | ✅ | 仅 cold 欠账 / 风控暂停 / 连续失败 / 登录失效产生待办，按 ref 去重 |
 | SR-26 如实报告没跑 | ✅ | 与 SR-17 同一份枚举 |
@@ -792,6 +792,52 @@ arm() {
 | SR-43 重复方案提示 | ✅ | `validate()` 返回 `duplicates`；保存仍成功（只提示不合并） |
 | SR-44 后处理可配 | ✅ | `plan.postProcess`；关掉打分即不写 `match_score`；去重走 `domain/dedupe.ts` |
 | SR-45 三条入口共用校验 | ✅ | 唯一实现 `domain/plan-config.ts`，GUI / 工具 / HTTP 都调它 |
+
+#### 治理粒度修订（2026-09-18，多平台）
+
+多平台把一个一直存在但看不见的问题暴露了出来：**判定、风控、退避、留痕四样东西挂错了层**。
+一个方案往往只有 1 个平台时，挂在方案上与挂在平台上没有区别；平台数上来之后两者会分叉。
+
+**修订注 ①：SR-18 之前并未真正达成（连坐）。**
+`scheduler.decide()` 原本是「循环里任一 `platformGate` 非空即 `return skip`」——
+于是猎聘未登录会让同方案里健康的 51job / 智联一起停摆。
+它之所以被标成 ✅，是因为 `test/scheduler/dispatch.test.ts` 里那条用例**标题写着
+「其它平台照常跑」、断言却写着 `h.runs.length === 0`（整条跳过）**——
+名字与断言相反，需求因此看起来已经验证过了。
+现在：判定按平台产出，**只要还有一个平台能跑就跑**，一个都跑不了才跳过；
+逐平台结论经 `PlanScheduleStatusDto.platformDecisions` 如实上报，界面逐平台展示。
+
+**修订注 ②：平台冷却的入参曾经是方案的失败次数。**
+`recordPlatformFailure(platformId, failStreak)` 的调用方传的是 `plan.failStreak + 1`，
+而 `backoffMsFor` 是按这个数定档（15m / 1h / 4h）的。后果：A 平台的失败会把
+B 平台的冷却直接推到 4 小时档，B 第一次失败就吃满惩罚。
+现在传**平台自己的** `platform.fail_streak`（`crawl.ts` 的 `recordRunFailure` 一直有在维护它）。
+
+**修订注 ③：风控暂停从方案级搬到平台级；「连续失败达阈值」不再单独暂停一次。**
+`risk_paused` 的真值移入 `platform/risk-pause.ts`（存 `setting(scope='platform')`，
+与 `cooldown-until` 同一套路数，不需要 schema 迁移），由 `runtime.platformGate` 读取。
+方案级 `riskPaused` 改为**派生值**（该方案下所有平台都被暂停）。
+
+顺带去掉一处冗余：`ADAPTER_FAIL_THRESHOLD` 与 `RISK_PAUSE_THRESHOLD` **都是 3**，
+所以「连续失败达阈值」时 `health` 本来就会变 `broken` 并产生 `adapter-broken` urgent 待办。
+再叠一层 `risk_paused` 会对同一个事件产生两条 urgent 待办、两个重叠的跳过状态，
+恢复时还要清两处。因此现在 **`risk_paused` 只表达「平台认出你了」**
+（`BLOCKED` / `NOT_LOGGED_IN` / `RATE_LIMITED` / `PLATFORM_QUOTA`）。
+`RISK_PAUSE_THRESHOLD` 常量随之删除（已被 `ADAPTER_FAIL_THRESHOLD` 覆盖）。
+
+配套的两条：
+* `resumeRisk(planId)` 现在**按平台**清暂停，并同时复位该平台的 `fail_streak` 与健康态 ——
+  否则残留的 `adapter_broken` / 冷却会立刻再把门关上，"确认恢复"看起来像没生效。
+* 升级时做一次**一次性搬运**：把旧库里方案级的 `risk_paused=1` 落到它各平台的暂停上，
+  再清掉方案级字段。不搬的话，旧库中"已被风控暂停"的方案会静默恢复自动抓取。
+
+**还有一个跨平台记账错误是一起修掉的**：`finishPlanRun` 原本接收
+「最后一个**成功的**平台的 summary + 第一个**失败的**平台的 error」，
+而 `code = summary?.run.errorCode` 因此很可能来自另一个平台 ——
+甲平台弹验证码（应立刻暂停）、乙平台随后成功，风控信号就被静默丢掉、只退避了事。
+现在它接收**逐平台的结果数组**，每个平台的错误码、失败计数、冷却、暂停都各归各的账。
+同时「任一平台失败即整轮失败」改为「**有平台成功即本轮成功**」——
+否则"51job 抓到 20 条、猎聘失败"的方案会被界面报成"数据陈旧"。
 
 #### 度量（怎么知道做对了）
 
@@ -1305,6 +1351,7 @@ type DomainError =
 | **P8 支线** | 校招（时间窗/笔试优先）、海外（英文简历/工签优先） | 按 §4.L / §4.M 验收<br>**✅ P0 需求全部达成（2026-09-17）**：迁移 v6 补六张表（`campus_application`/`assessment`/`talk_session`/`tripartite`/`visa_requirement`/`cover_letter`）+ job 上三个**可空**识别列；`domain/campus.ts` 把**两个不可逆节点**做成硬约束 —— 笔试必填截止时间、`missed` 是终态不可改回、已签三方只能转"违约"不能改回待签；`deadlines()` 把笔试/网申/三方截止单独挑出来（24 小时内标 urgent、**写进待办**），U0 与校招屏都盯着它；`domain/overseas.ts` 做工签/远程/批次的关键词识别（**识别不出来留 NULL/unknown 并说明"没写 ≠ 不提供"**）、**时区双重显示**（两边都给 + 大时差警告）、英文简历体检（**只检查，不翻译** —— 机翻是 §4.M 点名的致命错误）、Cover Letter（新用途 `cover_letter`，默认关）；四个模型工具（`campus_manage`/`campus_deadlines`/`overseas_check`/`cover_letter_draft`）；客户端「校招」标签 + 岗位详情里的海外面板。**真实 GUI 验收 28/28**；P0–P7 六套验收全部回归通过；单测 485/485（三轮共新增 77 条） |
 | **P8 明确未做** | 校招平台适配（牛客/实习僧，L9）与海外平台适配（Indeed/LinkedIn，M6） | 需求 §4.L/§4.M 自己把这两项标成"⚠️ 待预研"，§16 平台能力矩阵里它们的每一格都是"未知"。**没有预研就无法估工** —— 按文档结论不做，也不假装做了 |
 | **P9 上架** | README、topic、市场 PR | 通过策展审核 |
+| **P10 多平台治理粒度** | 判定/风控/退避/留痕从方案级下移到平台级：`decide` 逐平台判定不连坐、逐平台留痕（`platformDecisions`）、平台冷却用平台自己的 `fail_streak`、风控暂停落 `platform/risk-pause.ts`（方案级改派生）、`finishPlanRun` 逐平台记账、`resumeRisk` 按平台恢复 + 旧库一次性搬运 | 见 §4.6.1 的「治理粒度修订（2026-09-18）」<br>**✅ 达成**：单测 674（673 通过 / 1 跳过）；SR-18 那条"标题与断言相反"的用例已重写；typecheck / build / verify 19/19 / test 全绿 |
 
 > **P0 的价值**：C7/C8 是静态推断的，**未在浏览器实测过**。用一个空面板先验证这条链路，失败只损失几分钟。
 >
@@ -1349,6 +1396,7 @@ type DomainError =
 | R17 | **匹配分未随简历更新失效** | 展示旧分数，误导决策 | `score_rev` 对比 `resume_rev`，不一致即标记待重算（§4.1） |
 | R22 | **时钟跳变 / 休眠唤醒**导致定时器提前或滞后触发 | 要么连跑两次，要么整天不跑 | 存本地墙钟语义（D-19）；唤醒后**不补偿、只重算**下一次；专项测试用假时钟模拟时间跳跃（SR-5 / SR-6） |
 | R23 | **崩溃留下悬挂的 `crawl_run`（`running`）** | 面板"最近一轮"永远显示在跑，看板说谎 | 启动时把超过阈值的 `running` 收敛为 `failed/aborted`（SR-15）；**现状疑似缺失，已列为 P0** |
+| R24 | **用例标题与断言方向相反**，需求被误判为"已达成" | 例如 SR-18 那条：标题写"其它平台照常跑"，断言写"整条方案跳过"（`runs.length === 0`）。需求表上是 ✅，实际行为与需求相反，而且**没有任何机制会发现它** | 已在 2026-09-18 修正该用例并重写断言。纪律层面对策：**改需求状态（→ ✅）前，必须回读那条用例的断言本身，而不是只看用例名**；一条需求的验收标准与断言必须能逐字对上 |
 
 ---
 

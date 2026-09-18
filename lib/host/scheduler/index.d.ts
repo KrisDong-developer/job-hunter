@@ -41,7 +41,17 @@ export interface SchedulerLogger {
  * 刻意做成"注入一个判定函数"而不是在调度器里直接读 session/adapter：
  * 调度器不该知道"登录态"是怎么存的，它只该知道"现在能不能跑、不能的话为什么"。
  */
-export type PlatformGate = (platformId: string) => SkipReason | null;
+export type PlatformGate = (platformId: string, options?: PlatformGateOptions) => SkipReason | null;
+export interface PlatformGateOptions {
+    /**
+     * 越过「风控暂停」这一关（SR-21 的既有例外）。
+     *
+     * 只有**补跑**会置它：补跑是用户看到"错过了一轮"之后**显式点**的，
+     * 属于人工确认的一种形式；而手动「立即采集」不置 —— 否则用户点一下
+     * 就又去打风控了，"风控暂停"就成了一句空话。
+     */
+    ignoreRiskPause?: boolean;
+}
 export interface SchedulerDeps {
     store: Store;
     plans: PlanService;
@@ -71,10 +81,13 @@ export interface Scheduler {
     /** SR-21：人工确认恢复风控暂停。人工确认是唯一的恢复路径。 */
     resumeRisk(planId: number): void;
 }
-/** SR-20：退避曲线。15m → 1h → 4h，之后封顶 4h（同一天不再更密地试）。 */
+/**
+ * SR-20：退避曲线。15m → 1h → 4h，之后封顶 4h（同一天不再更密地试）。
+ *
+ * 输入必须是**某一层自己的**连续失败次数：平台冷却传 `platform.fail_streak`，
+ * 方案退避传 `plan.fail_streak`。两者是不同的账，混用会让一层的失败替另一层受罚。
+ */
 export declare function backoffMsFor(failStreak: number): number;
-/** SR-21：连续失败到这个次数就 `risk_paused` + urgent 待办（不再自动试）。 */
-export declare const RISK_PAUSE_THRESHOLD = 3;
 /** 跳过原因 → 人话（SR-17：界面显示人话，不显示枚举键）。 */
 export declare const SKIP_REASON_LABEL: Record<SkipReason, string>;
 /** SR-8：新鲜度阈值。随计划频率变：每天跑一次的计划 18 小时就算旧了。 */
@@ -84,6 +97,12 @@ export declare function freshThresholdsFor(plan: PlanDto): {
 };
 /** SR-8：算新鲜度。**从未成功过 = cold**（"没数据"绝不等于"是新鲜的"）。 */
 export declare function freshnessOf(plan: PlanDto, now: Date): FreshnessDto;
+/** 一个平台这一次的结论。`reason === null` 表示它可以跑（SR-18）。 */
+export interface PlatformDecision {
+    platformId: string;
+    reason: SkipReason | null;
+    message: string | null;
+}
 export declare function createScheduler(deps: SchedulerDeps): Scheduler;
 export { currentWindowStart, windowKeyOf, windowLengthMin };
 //# sourceMappingURL=index.d.ts.map

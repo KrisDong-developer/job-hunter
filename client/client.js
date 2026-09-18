@@ -340,6 +340,14 @@ window.__ModuleLoader__.load({
 		  remote: "\u8FDC\u7A0B",
 		  unknown: "\u672A\u8BC6\u522B"
 		};
+		var REPLY_SCENARIOS = [
+		  { key: "negotiate-time", label: "\u534F\u5546\u9762\u8BD5\u65F6\u95F4" },
+		  { key: "salary", label: "\u8BE2\u95EE\u85AA\u8D44\u7ED3\u6784" },
+		  { key: "decline", label: "\u5A49\u62D2\u9080\u7EA6" }
+		];
+		var REPLY_SCENARIO_LABEL = Object.fromEntries(
+		  REPLY_SCENARIOS.map((item) => [item.key, item.label])
+		);
 
 		// src/client/api.ts
 		var ApiError = class extends Error {
@@ -674,6 +682,13 @@ window.__ModuleLoader__.load({
 		  );
 		  return result.extraction;
 		}
+		async function draftReply(id, scenario) {
+		  const result = await request(
+		    `/messages/${String(id)}/draft-reply`,
+		    { method: "POST", body: JSON.stringify({ scenario }) }
+		  );
+		  return result.draft;
+		}
 		async function recordMessage(input) {
 		  const result = await request("/messages", {
 		    method: "POST",
@@ -736,6 +751,21 @@ window.__ModuleLoader__.load({
 		}
 		async function fetchSalaryBand(filter = {}, signal) {
 		  return await request(`/analytics/salary${analyticsQuery(filter)}`, signal === void 0 ? {} : { signal });
+		}
+		async function fetchDedupGroups(signal) {
+		  return await request(
+		    "/dedup/groups",
+		    signal === void 0 ? {} : { signal }
+		  );
+		}
+		async function splitDedupMember(groupId, jobId) {
+		  await request(`/dedup/groups/${String(groupId)}/split`, {
+		    method: "POST",
+		    body: JSON.stringify({ jobId })
+		  });
+		}
+		async function deleteDedupGroup(groupId) {
+		  await request(`/dedup/groups/${String(groupId)}`, { method: "DELETE" });
 		}
 		async function fetchSalaryBox(filter = {}, basis = "monthly_min", signal) {
 		  const query = analyticsQuery(filter);
@@ -2273,6 +2303,7 @@ window.__ModuleLoader__.load({
 		  const [encoding, setEncoding] = (0, import_react8.useState)(false);
 		  const [replyTo, setReplyTo] = (0, import_react8.useState)(null);
 		  const [replyText, setReplyText] = (0, import_react8.useState)("");
+		  const [draftingScenario, setDraftingScenario] = (0, import_react8.useState)(null);
 		  const [busy, setBusy] = (0, import_react8.useState)(false);
 		  const [error, setError] = (0, import_react8.useState)(null);
 		  const [notice, setNotice] = (0, import_react8.useState)(null);
@@ -2303,6 +2334,23 @@ window.__ModuleLoader__.load({
 		      );
 		    } finally {
 		      setExtracting(null);
+		    }
+		  };
+		  const handleDraftReply = async (id, scenario) => {
+		    setDraftingScenario(scenario);
+		    setError(null);
+		    try {
+		      const draft2 = await draftReply(id, scenario);
+		      setReplyText(draft2.text);
+		      setNotice(
+		        draft2.via === "llm" ? `\u5DF2\u6309\u300C${REPLY_SCENARIO_LABEL[scenario]}\u300D\u62DF\u7A3F\uFF08\u6A21\u578B\uFF09\u2014\u2014 \u53EF\u7F16\u8F91\u540E\u53D1\u9001\u3002` : `\u5DF2\u7528\u5185\u7F6E\u6A21\u677F\u62DF\u7A3F\uFF08\u672A\u914D\u7F6E\u6A21\u578B\uFF09\u2014\u2014 \u8BF7\u6539\u6210\u4F60\u7684\u771F\u5B9E\u8BED\u6C14\u3002`
+		      );
+		    } catch (caught) {
+		      setError(
+		        caught instanceof ApiError ? caught.display : caught instanceof Error ? caught.message : String(caught)
+		      );
+		    } finally {
+		      setDraftingScenario(null);
 		    }
 		  };
 		  const confirmInterview = async () => {
@@ -2523,6 +2571,20 @@ window.__ModuleLoader__.load({
 		        ] })
 		      ] }) : null,
 		      replyTo === message.id ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-message-reply", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "jh-chips", role: "group", "aria-label": "\u6309\u60C5\u5883\u62DF\u7A3F", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "jh-muted", children: "\u62DF\u7A3F\uFF1A" }),
+		          REPLY_SCENARIOS.map((scenario) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-tiny",
+		              disabled: draftingScenario !== null,
+		              onClick: () => void handleDraftReply(message.id, scenario.key),
+		              children: draftingScenario === scenario.key ? "\u62DF\u7A3F\u4E2D\u2026" : REPLY_SCENARIO_LABEL[scenario.key]
+		            },
+		            scenario.key
+		          ))
+		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
 		          "textarea",
 		          {
@@ -3920,6 +3982,13 @@ window.__ModuleLoader__.load({
 		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-plan-list", children: planList.map((plan) => {
 		        const planStatus = status?.planStatus.find((item) => item.planId === plan.id) ?? null;
 		        const decision = planStatus?.lastDecision ?? null;
+		        const platformDecisions = new Map(
+		          (planStatus?.platformDecisions ?? []).map((item) => [item.platformId, item.decision])
+		        );
+		        const blockedPlatforms = plan.platforms.filter(
+		          (id) => (platformDecisions.get(id)?.reason ?? null) !== null
+		        );
+		        const platformName = (id) => platformList.find((item) => item.id === id)?.displayName ?? id;
 		        const runBlocked = feedback.running || (status?.readOnly ?? false);
 		        return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { className: "jh-plan-card", children: [
 		          planStatus?.riskPaused === true && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-banner jh-banner-error", children: [
@@ -4022,10 +4091,18 @@ window.__ModuleLoader__.load({
 		              plan.postProcess.dedup ? "\u53BB\u91CD" : "\u4E0D\u53BB\u91CD"
 		            ] })
 		          ] }),
-		          decision === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: decision.decision === "skipped" ? "jh-warn" : "jh-muted", children: decision.decision === "skipped" ? `\u4E0A\u6B21\u5230\u70B9\u6CA1\u8DD1\uFF1A${decision.message ?? decision.reason ?? "\u539F\u56E0\u672A\u77E5"}` : decision.decision === "ran" ? "\u4E0A\u6B21\u5230\u70B9\u8DD1\u4E86" : "\u8FD8\u5728\u7B49\u4E0B\u4E00\u4E2A\u65F6\u6BB5" })
+		          decision === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: decision.decision === "skipped" ? "jh-warn" : "jh-muted", children: decision.decision === "skipped" ? `\u4E0A\u6B21\u5230\u70B9\u6CA1\u8DD1\uFF1A${decision.message ?? decision.reason ?? "\u539F\u56E0\u672A\u77E5"}` : decision.decision === "ran" ? "\u4E0A\u6B21\u5230\u70B9\u8DD1\u4E86" : "\u8FD8\u5728\u7B49\u4E0B\u4E00\u4E2A\u65F6\u6BB5" }),
+		          blockedPlatforms.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-muted", children: [
+		            "\u5404\u5E73\u53F0\uFF1A",
+		            plan.platforms.map((id) => {
+		              const item = platformDecisions.get(id) ?? null;
+		              return item?.reason == null ? `${platformName(id)} \u6B63\u5E38` : `${platformName(id)}\uFF1A${item.message ?? item.reason}`;
+		            }).join(" \xB7 ")
+		          ] })
 		        ] }, plan.id);
 		      }) })
 		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(DedupGroupsCard, { revision: props.revision }),
 		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u72B6\u6001" }),
 		      platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", children: platforms.state.message }),
@@ -4690,6 +4767,96 @@ window.__ModuleLoader__.load({
 		      ]
 		    }
 		  );
+		}
+		function DedupGroupsCard(props) {
+		  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision]);
+		  const [busyId, setBusyId] = (0, import_react11.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react11.useState)(null);
+		  const act = async (id, fn) => {
+		    setBusyId(id);
+		    try {
+		      await fn();
+		      groups.reload();
+		    } finally {
+		      setBusyId(null);
+		    }
+		  };
+		  const items = groups.state.status === "ok" ? groups.state.data.items : [];
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u8DE8\u5E73\u53F0\u53BB\u91CD" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u540C\u4E00\u5C97\u4F4D\u88AB\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761 \u2192 \u5408\u5E76\u5230\u540C\u4E00\u7EC4\uFF1B\u8FD9\u91CC\u662F**\u53EF\u9006**\u7684\uFF0C\u8BEF\u5408\u5E76\u968F\u65F6\u53EF\u62C6\u3002" })
+		    ] }),
+		    groups.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", children: "\u6B63\u5728\u8BFB\u53D6\u53BB\u91CD\u5206\u7EC4\u2026" }) : items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u76EE\u524D\u6CA1\u6709\u53BB\u91CD\u5206\u7EC4\u3002\u591A\u5E73\u53F0\u540C\u65F6\u5728\u6293\u540C\u4E00\u6279\u5C97\u4F4D\u65F6\uFF0C\u91CD\u590D\u7684\u90A3\u51E0\u6761\u624D\u4F1A\u88AB\u5408\u5E76\u5230\u8FD9\u91CC\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-tailor-notes", children: items.map((group) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
+		        "\u7EC4 #",
+		        group.id,
+		        "\uFF08",
+		        group.basis,
+		        "\uFF09"
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger-ghost",
+		          disabled: busyId !== null,
+		          onClick: () => setPendingDelete(group.id),
+		          children: "\u62C6\u7EC4"
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-tailor-notes", children: group.members.map((member) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+		        "\xB7 ",
+		        member.isPrimary ? "\u4E3B" : "\u4ECE",
+		        "\uFF5C",
+		        member.platformId,
+		        "\uFF5C",
+		        member.title,
+		        member.companyName === null ? "" : `\uFF5C${member.companyName}`,
+		        "\u3000",
+		        "(",
+		        member.city,
+		        ")",
+		        member.isPrimary ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: "jh-link",
+		            disabled: busyId !== null,
+		            onClick: () => void act(group.id, async () => splitDedupMember(group.id, member.id)),
+		            children: "\u62C6\u51FA"
+		          }
+		        )
+		      ] }, member.id)) })
+		    ] }, group.id)) }),
+		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      Modal,
+		      {
+		        title: "\u62C6\u6563\u8FD9\u4E2A\u53BB\u91CD\u7EC4",
+		        label: "\u62C6\u7EC4\u786E\u8BA4",
+		        onClose: () => setPendingDelete(null),
+		        footer: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: () => setPendingDelete(null), children: "\u53D6\u6D88" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-danger",
+		              disabled: busyId !== null,
+		              onClick: () => {
+		                const id = pendingDelete;
+		                setPendingDelete(null);
+		                void act(id, async () => deleteDedupGroup(id));
+		              },
+		              children: "\u786E\u8BA4\u62C6\u7EC4"
+		            }
+		          )
+		        ] }),
+		        children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-alert-body", children: "\u62C6\u7EC4\u540E\u8FD9\u7EC4\u91CC\u7684\u5C97\u4F4D\u5168\u90E8\u53D8\u56DE\u72EC\u7ACB\u5C97\u4F4D\u3002**\u5C97\u4F4D\u672C\u8EAB\u4E0D\u4F1A\u5220** \u2014\u2014 \u53EA\u662F\u60F3\u64A4\u9500\u4E00\u6B21\u5408\u5E76\u5224\u65AD\u3002" })
+		      }
+		    )
+		  ] });
 		}
 
 		// src/client/screens/resumes.tsx

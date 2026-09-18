@@ -38,7 +38,7 @@
 | 开发 profile | `p5test`（用 `link:` 指向包根，改完 `npm run build` + 重启即可） |
 | 测试 profile | `p5headless`（跑单轮对话，任务**必须写成一行**） |
 | 数据目录 | `$DSH_HOME\job-hunter\data.db`（**累积型**，断言要用 `>=`/增量，别用精确数） |
-| 单测基线 | **408 个**（`npm test`，离线，绝不访问真实招聘站） |
+| 单测基线 | **674 个（673 通过 / 1 跳过）**（`npm test`，离线，绝不访问真实招聘站）。P10 多平台治理粒度后 |
 
 ### 1.2 不可违反的约束（违反即返工）
 
@@ -197,7 +197,7 @@ cd D:\DSH-work\job-hunter
 npm run typecheck            # 必须干净
 npm run build                # 宿主半 → lib/，客户端半 → client/client.js
 npm run verify               # 19 项构建产物契约自检（含 patch 纯 insert、react external）
-npm test                     # 基线 408；新增测试后要更新文档里的计数
+npm test                     # 基线 674；新增测试后要更新文档里的计数
 ```
 
 浏览器验收（需要真 GUI 时才做）：
@@ -247,7 +247,8 @@ for ($i=1; $i -le 3; $i++) { git push 2>&1 | Select-Object -Last 1; if ($LASTEXI
 | **每批必须绿** | 不允许"先改五处再一起跑测试"。批与批之间仓库必须是可跑的 |
 | **新行为必须有断言** | 新增/修改的行为要落到 `test/**`。改期望值时**不许放松断言**（例如把 `equal` 改成 `ok`）——只能改期望的具体值，并在提交消息里说明为什么设计变了 |
 | **文档同步** | 实现级细节 → `README.dev.md`；需求/决策 → `REQUIREMENTS.md`（走 D-xx 显式修订）；设计 → `ARCHITECTURE.md`（§4.6.1 的 SR 表、§5.4 的屏清单、§11 的 P 行） |
-| **测试计数变了要改文档** | 408 这个数在 `README.md`、`README.dev.md`、`ARCHITECTURE.md` 里都出现过 |
+| **测试计数变了要改文档** | 当前是 **674**（P10 之后）。这个数在 `README.dev.md`、`docs/OPTIMIZATION-PLAN.md` 里出现过 —— 改完先 grep 一遍计数 |
+| **需求标 ✅ 前先回读断言本身** | 只看用例名会漏掉 R24 那类（用例标题与断言方向相反，需求因此看起来已达成）。**一条需求的验收标准必须能逐字对上断言** |
 | **停机/复现问题要留证据** | 时间/状态/数字尽量来自实测（接口返回、计算样式、DOM 测量），不要"应该没问题" |
 | **写不清楚就写进差异表** | 实现与文档不一致的地方，记进 `README.dev.md` 的「与 `ARCHITECTURE.md` 的实现差异」表，别让下一个人再困惑一次 |
 

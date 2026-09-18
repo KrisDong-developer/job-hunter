@@ -46,7 +46,7 @@
  * 任何中文城市名都能直接拼，UI 枚举用内置 20 城（identity 映射），别处城市自由文本也能收。
  */
 import type { BlockKind } from '../../../shared/enums.js';
-import type { RawJob, SearchCriteria, SiteAdapter } from '../types.js';
+import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** 列表页选择器（默认射到经典结构，**待 probe:lagou 夹具校准**，DB 可覆盖）。 */
 export interface LagouSelectors {
     /** 岗位卡片容器。 */
@@ -71,6 +71,17 @@ export interface LagouSelectors {
     pagination: string;
     /** 「下一页」链接。 */
     next: string;
+}
+/** 详情页选择器集（经典结构，**待含登录夹具校准**，DB 可覆盖）。 */
+export interface LagouDetailSelectors {
+    /** 标题（经典 `//div[@class='name']/h1`）。 */
+    title: string;
+    /** 「薪资 / 城市 / 经验 / 学历 / 性质」这一行（经典 `dd.job_request`）。 */
+    request: string;
+    /** JD 全文（经典 `dd.job_bt`）。 */
+    jdText: string;
+    /** 公司。 */
+    company: string;
 }
 /** 字段 → URL 参数映射。 */
 export interface LagouUrlParams {
@@ -97,6 +108,18 @@ export interface LagouConfig {
     infoSeparator: string;
     /** 发布时间的文本模式（`YYYY-MM-DD` 形态）。 */
     publishPattern: string;
+    /** 详情页选择器（**待含登录夹具校准**）。 */
+    detailSelectors: LagouDetailSelectors;
+    /**
+     * v2 接口化解析（对照猎聘/神仙外企双通道）：非空启用时 `readListPage` 先在页面上下文里
+     * POST `positionAjax.json`，拿到的字段比 DOM 富（createTime/companySize/financeStage/industryField），
+     * 失败或空结果自动回退 DOM —— 永不比 v1 差。接口需要页面会话的 anti-forge cookie/token，是否被
+     * 服务端接受**待真实抓取验证**；不接受也无妨，静默走 DOM 通道。
+     */
+    searchApiOrigin: string;
+    searchApiPath: string;
+    /** 接口是否启用（false = 强制 DOM 通道，校准/排障用）。 */
+    searchApiEnabled: boolean;
 }
 /** 城市名清单（identity 映射；全过 = 不带 city 参数）。 */
 export declare const LAGOU_CITY_NAMES: Record<string, string>;
@@ -107,6 +130,10 @@ export declare const LAGOU_JOB_ID_PATTERN = "/(?:wn/jobs|jobs)/(\\d+)\\.html";
 export declare const LAGOU_INFO_SEPARATOR = "/";
 /** 发布时间形态：`YYYY-MM-DD`。 */
 export declare const LAGOU_PUBLISH_PATTERN = "\\d{4}[-/]\\d{2}[-/]\\d{2}";
+/** 搜索接口（v2 双通道）：POST `/jobs/positionAjax.json?city=<中文名>&needAddtionalResult=false`。 */
+export declare const LAGOU_SEARCH_API_PATH = "/jobs/positionAjax.json";
+/** 详情页选择器默认值（经典结构，`//div[@class='name']/h1` 等；**待含登录夹具校准**）。 */
+export declare const DEFAULT_LAGOU_DETAIL_SELECTORS: LagouDetailSelectors;
 /** 排序取值域：只有「最新」（`px=new`）有线上证据（搜索页排序区回显 px=new）。 */
 export declare const LAGOU_SORT_OPTIONS: Array<{
     value: string;
@@ -132,6 +159,41 @@ export declare function mergeLagouConfig(override: unknown): LagouConfig;
  * （`/hangzhou-zhaopin/Python/2/`），由 `gotoSearch` 走 `readNextPageUrl`，**不自己拼**。
  */
 export declare function buildLagouSearchUrl(config: LagouConfig, criteria: SearchCriteria): string | null;
+/**
+ * 构造搜索接口地址（v2 双通道）：城市在 query（中文名），全国省参。
+ * `POST /jobs/positionAjax.json?city=<中文名>&needAddtionalResult=false`
+ */
+export declare function buildLagouSearchApiUrl(config: LagouConfig, cityName: string): string;
+/** 搜索接口请求体（`kd` 关键词、`pn` 页码 1 起、`first` 首翻页标记）。 */
+export declare function buildLagouRequestBody(criteria: SearchCriteria, page: number): Record<string, string>;
+/**
+ * **在页面上下文里**发搜索接口请求（自包含；用页面自己的 fetch 带完整 Cookie/指纹/TLS，
+ * 与猎聘/神仙外企同一铁律：绝不回退宿主 Node 的 fetch）。返回解析后的 JSON；
+ * 任何失败返回 null（调用方走 DOM 兜底）。
+ */
+export declare function fetchListInPage(arg: {
+    apiPath: string;
+    form: Record<string, string>;
+}): Promise<unknown>;
+/**
+ * 解析搜索接口响应（Node 侧纯函数；结构经典：`content.positionResult.result[]`）。
+ * 字段比 DOM 富：createTime（毫秒）/ companySize / financeStage / industryField / positionAdvantage。
+ */
+export declare function parseSearchApiResponse(payload: unknown): RawJob[];
+/**
+ * **在页面上下文里**解析详情页（选择器为经典结构，**待含登录夹具校准**）。
+ * ⚠️ 必须完全自包含。详情页选择器未校准且有些字段需登录；打不开时调用方判墙兜底。
+ */
+export declare function extractDetailInPage(arg: {
+    selectors: LagouDetailSelectors;
+}): RawJobDetail;
+/**
+ * 是否处于「已登录」态（用于 `auth.isLoggedIn`）。
+ *
+ * ⚠️ **待含登录夹具校准**。只认**结构性信号**（已登录时头部有用户头像/「我的」入口），
+ * 不认"页面上有没有『登录』两个字" —— 正常结果页右上角一直有登录入口。
+ */
+export declare function isLoggedInInPage(): boolean;
 /**
  * **在页面上下文里**解析列表页。
  *

@@ -203,4 +203,17 @@ export declare const REMOTE_KIND_LABEL: Record<RemoteKind, string>;
 /** Cover Letter 语言（M2：与简历语言独立，海外岗位通常要英文）。 */
 export declare const COVER_LETTER_LANGUAGES: readonly ["en", "zh"];
 export type CoverLetterLanguage = (typeof COVER_LETTER_LANGUAGES)[number];
+/** 消息中心的回复拟稿情境（卡片快捷键的同一份说法）。 */
+export declare const REPLY_SCENARIOS: readonly [{
+    readonly key: "negotiate-time";
+    readonly label: "协商面试时间";
+}, {
+    readonly key: "salary";
+    readonly label: "询问薪资结构";
+}, {
+    readonly key: "decline";
+    readonly label: "婉拒邀约";
+}];
+export type ReplyScenario = (typeof REPLY_SCENARIOS)[number]['key'];
+export declare const REPLY_SCENARIO_LABEL: Record<ReplyScenario, string>;
 //# sourceMappingURL=enums.d.ts.map

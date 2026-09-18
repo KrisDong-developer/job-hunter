@@ -389,10 +389,25 @@ export interface TriggerDecisionDto {
 }
 
 /**
+ * 一个平台某一次的判定结果（SR-18）。
+ *
+ * 为什么必须**按平台**回传：同一个方案里，猎聘可能未登录、51job 在冷却、
+ * 智联正常跑了 —— 只给一个方案级原因就是在丢信息，
+ * 而"哪个平台为什么没跑"恰恰是用户要看的。
+ */
+export interface PlatformTriggerDecisionDto {
+  platformId: string
+  /** null = 该平台还没被判定过（例如刚建好方案、还没到点）。 */
+  decision: TriggerDecisionDto | null
+}
+
+/**
  * 一个方案的调度状态（SR-26/28）。
  *
  * `lastDecision` 是"为什么没跑"的载体：只报 `armed: true` 等于什么都没说 ——
  * 未登录的平台也会 `armed`，然后每天安静地什么都不做。
+ *
+ * 多平台之后它只承担"一句话概览"；**逐平台**的结论在 `platformDecisions`。
  */
 export interface PlanScheduleStatusDto {
   planId: number
@@ -403,13 +418,20 @@ export interface PlanScheduleStatusDto {
   lastSuccessAt: string | null
   nextRunAt: string | null
   lastDecision: TriggerDecisionDto | null
+  /** SR-18：逐平台判定（顺序与 `plan.platforms` 一致）。 */
+  platformDecisions: PlatformTriggerDecisionDto[]
   /** SR-20：当前退避到什么时候（null = 没在退避）。 */
   backoffUntil: string | null
-  /** SR-21：连续失败次数（达阈值即 `risk_paused`）。 */
+  /** SR-7/23：方案级连续失败次数（推进方案退避）。 */
   failStreak: number
-  /** SR-21/22：是否处于风控暂停（需人工确认恢复）。 */
+  /**
+   * SR-21/22：**派生值** —— 该方案下所有平台都被风控暂停。
+   *
+   * 不再是独立存储的一份状态：风控暂停的真值在平台级
+   * （`platform/risk-pause.ts`），方案级存一份必然与它漂移。
+   */
   riskPaused: boolean
-  /** 风控暂停的可读原因。 */
+  /** 风控暂停的可读原因（含是哪几个平台）。 */
   riskReason: string | null
 }
 

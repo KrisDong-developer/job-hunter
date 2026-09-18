@@ -82,6 +82,42 @@ export const CORE_FIELDS = ['title', 'salary_raw', 'company', 'source_url'] as c
 export type CoreField = (typeof CORE_FIELDS)[number]
 
 /**
+ * 适配器成熟度（**事实**：这个平台适配到什么程度了）。
+ *
+ * 存在的理由：注册表里有平台 ≠ 这个平台能用。10 个适配器实际分三档
+ * （可用 / 探针校准过 / 还没验过），而 `capabilities` 只描述**平台有什么能力**、
+ * `implementation` 只描述**我们实现了哪些方法** —— 两者都回答不了
+ * 「选它进方案会不会白跑」。没有这一轴，用户勾了 4 个平台会得到
+ * 「1 个能跑 + 3 个静默返回 0 条」，而界面显示"采集完成"。
+ */
+export const MATURITY_LEVELS = ['stable', 'calibrated', 'experimental', 'disabled'] as const
+export type MaturityLevel = (typeof MATURITY_LEVELS)[number]
+
+export const MATURITY_LEVEL_LABEL: Record<MaturityLevel, string> = {
+  stable: '可用（真实夹具 + 冒烟验证）',
+  calibrated: '已校准（探针/夹具验证，缺口见备注）',
+  experimental: '实验（未验证或部分未实现，可能返回空）',
+  disabled: '停用（平台侧不可用，需改配置才启用）',
+}
+
+export const MATURITY_LEVEL_TONE: Record<MaturityLevel, 'ok' | 'warn' | 'error' | 'muted'> = {
+  stable: 'ok',
+  calibrated: 'warn',
+  experimental: 'error',
+  disabled: 'muted',
+}
+
+/** 某个环节要不要登录（**平台事实**，`unknown` = 没验证过，不假装知道）。 */
+export const AUTH_REQUIREMENTS = ['none', 'required', 'unknown'] as const
+export type AuthRequirementValue = (typeof AUTH_REQUIREMENTS)[number]
+
+export const AUTH_REQUIREMENT_LABEL: Record<AuthRequirementValue, string> = {
+  none: '不需要登录',
+  required: '需要登录',
+  unknown: '尚未验证',
+}
+
+/**
  * 风控命中类型（§4.2.2 `detectBlock`）。
  *
  * `quota-exhausted`（P1/D-17a 增强）：平台侧"今日额度用完"（如 51job「今日投递太多」、

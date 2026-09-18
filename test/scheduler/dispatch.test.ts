@@ -2,23 +2,25 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createPlanService } from '../../src/host/domain/plans.js'
 import { createEventBus } from '../../src/host/http/sse.js'
+import { recordRunFailure, recordRunSuccess } from '../../src/host/platform/health.js'
+import { readPlatformRiskPause } from '../../src/host/platform/risk-pause.js'
 import {
   backoffMsFor,
   createScheduler,
   freshnessOf,
   freshThresholdsFor,
-  RISK_PAUSE_THRESHOLD,
   type PlatformGate,
   type SchedulerRunInput,
 } from '../../src/host/scheduler/index.js'
 import { createManualTimer } from '../../src/host/scheduler/timer-port.js'
+import { ADAPTER_FAIL_THRESHOLD } from '../../src/shared/constants.js'
 import type { CrawlSummaryDto, PlanSchedule } from '../../src/shared/dto.js'
 import type { CrawlState } from '../../src/shared/enums.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
 /**
- * 调度语义的**行为测试**（SR-3/7/8/17/20/21/22/23/26/30）。
+ * 调度语义的**行为测试**（SR-3/7/8/17/18/20/21/22/23/26/30）。
  *
  * 与 `scheduler.test.ts` 的分工：那里测"定时器到点会跑"这条主链，
  * 这里测"没跑的时候到底为什么"——D-19 之后新增的那一半语义。
@@ -65,11 +67,28 @@ function summaryOf(state: CrawlState, errorCode: string | null = null): CrawlSum
 interface Options {
   planId?: number
   schedule?: Partial<PlanSchedule>
-  outcome?: () => Promise<CrawlSummaryDto>
+  outcome?: (platformId: string) => Promise<CrawlSummaryDto>
   gate?: PlatformGate
   lastAttemptAt?: string
   lastSuccessAt?: string
   platforms?: string[]
+}
+
+/**
+ * 测试用的**平台门**替身，镜像调度器对 `PlatformGate` 契约的实际依赖。
+ *
+ * 只做两件真实世界里最重要的事：平台被风控暂停就拦住、适配器坏了就拦住。
+ * 其余前置条件（登录态/配额/离线闸门）不在这个测试关心范围内 ——
+ * 需要时由用例自己传 `gate` 覆盖（如 SR-17/18 那样）。
+ */
+function defaultGate(store: ReturnType<typeof openTestStore>): PlatformGate {
+  return (platformId, options) => {
+    if (options?.ignoreRiskPause !== true && readPlatformRiskPause(store, platformId).paused) {
+      return 'risk_paused'
+    }
+    if ((store.platform.get(platformId)?.health ?? 'healthy') === 'broken') return 'adapter_broken'
+    return null
+  }
 }
 
 function harness(options: Options = {}) {
@@ -92,6 +111,13 @@ function harness(options: Options = {}) {
       ...options.schedule,
     },
   })
+  // 生产里 `runtime` 启动时会把注册表里的每个平台 `ensure` 进 platform 表；
+  // 测试里没有注册表，就按方案用到的平台补上 —— 否则平台级的账
+  // （`fail_streak` / `health`）无处可落，SR-20/21/22 的断言会变成空转。
+  for (const platformId of options.platforms ?? ['51job']) {
+    store.platform.ensure({ id: platformId, displayName: platformId }, time.clock())
+  }
+
   if (options.lastAttemptAt !== undefined || options.lastSuccessAt !== undefined) {
     store.db
       .prepare('UPDATE plan SET last_attempt_at = ?, last_success_at = ?, last_run_at = ? WHERE id = ?')
@@ -106,16 +132,32 @@ function harness(options: Options = {}) {
   const scheduler = createScheduler({
     store,
     plans,
+    /**
+     * 抓取替身。
+     *
+     * 它**同时承担记账职责** —— 与生产里 `crawl.ts` 的 `recordRunFailure` /
+     * `recordRunSuccess` 一致。不这么做的话，`platform.fail_streak` 永远是 0，
+     * 而调度器现在正是按"平台自己的账"来定冷却档次与风控的（SR-20/21/22）。
+     */
     run: async (input) => {
       runs.push(input)
-      return options.outcome === undefined ? summaryOf('ok') : await options.outcome()
+      const summary = options.outcome === undefined ? summaryOf('ok') : await options.outcome(input.platformId)
+      if (summary.run.state === 'failed') {
+        recordRunFailure(store, input.platformId, summary.run.errorCode ?? 'UNKNOWN', '测试构造的失败', {
+          threshold: ADAPTER_FAIL_THRESHOLD,
+          now: time.clock(),
+        })
+      } else {
+        recordRunSuccess(store, input.platformId, time.clock())
+      }
+      return summary
     },
     timer,
     events: createEventBus(),
     canSchedule: () => true,
     readOnlyReason: () => null,
     leaseStatus: () => ({ path: 'x', held: true, pid: 1, heartbeatAt: null, startedAt: null, stale: false }),
-    ...(options.gate === undefined ? {} : { platformGate: options.gate }),
+    platformGate: options.gate ?? defaultGate(store),
     clock: time.clock,
   })
 
@@ -251,7 +293,7 @@ test('SR-17/26：未登录时跳过并给出 not_logged_in + 人话，不是一�
   }
 })
 
-test('SR-18：一个平台被跳过时其它平台照常跑（判定是**每平台**的）', async () => {
+test('SR-18：一个平台被挡住时其它平台照常跑（判定是**每平台**的）', async () => {
   const h = harness({
     platforms: ['51job', 'other'],
     gate: (platformId) => (platformId === '51job' ? 'not_logged_in' : null),
@@ -259,8 +301,18 @@ test('SR-18：一个平台被跳过时其它平台照常跑（判定是**每平�
   try {
     h.scheduler.start()
     await fireDue(h)
-    assert.equal(h.runs.length, 0, '方案级的判定：只要有一个平台不能跑就整条跳过并说明')
-    assert.equal(h.scheduler.status().planStatus[0]?.lastDecision?.reason, 'not_logged_in')
+    assert.deepEqual(
+      h.runs.map((run) => run.platformId),
+      ['other'],
+      '被挡住的平台不跑，同一方案里的其它平台照常跑 —— 不再连坐整条方案',
+    )
+    const planStatus = h.scheduler.status().planStatus[0]
+    assert.equal(planStatus?.lastDecision?.decision, 'ran', '还有平台能跑，方案就不算被跳过')
+    const byPlatform = new Map(
+      (planStatus?.platformDecisions ?? []).map((item) => [item.platformId, item.decision]),
+    )
+    assert.equal(byPlatform.get('51job')?.reason, 'not_logged_in', '被挡住的平台要如实说明原因')
+    assert.equal(byPlatform.get('other')?.decision, 'ran')
   } finally {
     h.close()
   }
@@ -303,26 +355,50 @@ test('SR-7/23：失败的尝试推进 last_attempt_at 与退避，**不**推进 
   }
 })
 
-// ── SR-21/22：风控暂停与人工恢复 ──────────────────────────────────────
+// ── SR-21/22：风控暂停（平台级）与人工恢复 ────────────────────────────
 
-test('SR-21：连续失败到阈值 → risk_paused + urgent 待办，且**不再自动尝试**', async () => {
+test('SR-21：连续失败达阈值 → **平台**失效 + urgent 待办，且不再自动尝试', async () => {
   const h = harness({ outcome: async () => summaryOf('failed', 'NAVIGATION_FAILED') })
   try {
     h.scheduler.start()
 
-    // 手动跑三次（手动也计数），把 fail_streak 推过阈值
-    for (let attempt = 0; attempt < RISK_PAUSE_THRESHOLD; attempt += 1) {
+    // 手动跑三次（手动也计数），把**平台自己的** fail_streak 推过阈值
+    for (let attempt = 0; attempt < ADAPTER_FAIL_THRESHOLD; attempt += 1) {
       await h.scheduler.runPlan(h.planId, 'manual')
     }
 
-    const engine = h.store.plan.engineState(h.planId)
-    assert.equal(engine.riskPaused, true, `连续 ${String(RISK_PAUSE_THRESHOLD)} 次失败必须暂停`)
-    assert.ok((engine.riskReason ?? '').includes('连续失败'))
+    // 「连续失败」的落点是**平台级**的：`crawl.ts` 已经把它记成 health=broken。
+    // 调度器不再在方案级叠一份 `risk_paused` —— 那会对同一个事件产生两条 urgent
+    // 待办、两个重叠的跳过状态。风控暂停只留给风控信号（见下一条）。
+    const platform = h.store.platform.get('51job')
+    assert.equal(platform?.failStreak, ADAPTER_FAIL_THRESHOLD, '连续失败记在**平台**的账上')
+    assert.equal(platform?.health, 'broken', `连续 ${String(ADAPTER_FAIL_THRESHOLD)} 次失败 → 平台失效`)
 
-    const todos = h.store.todo.listOpen()
-    const blocked = todos.find((todo) => todo.kind === 'blocked')
-    assert.ok(blocked !== undefined, 'SR-21/24：风控暂停必须主动产生待办')
-    assert.equal(blocked.level, 'urgent')
+    const broken = h.store.todo.listOpen().find((todo) => todo.kind === 'adapter-broken')
+    assert.ok(broken !== undefined, 'SR-21/24：失效必须主动产生待办')
+    assert.equal(broken.level, 'urgent')
+
+    // 平台失效后定时不再尝试（门会以 adapter_broken 拦住）
+    const before = h.runs.length
+    await fireDue(h)
+    assert.equal(h.runs.length, before, '平台失效后定时不该再试')
+    assert.equal(h.scheduler.status().planStatus[0]?.lastDecision?.reason, 'adapter_broken')
+  } finally {
+    h.close()
+  }
+})
+
+test('SR-22：风控信号（验证码/限流）**一次就暂停**，且暂停落在**平台**上', async () => {
+  const h = harness({ outcome: async () => summaryOf('failed', 'BLOCKED') })
+  try {
+    h.scheduler.start()
+    await h.scheduler.runPlan(h.planId, 'manual')
+
+    const pause = readPlatformRiskPause(h.store, '51job')
+    assert.equal(pause.paused, true, '风控信号是"被认出来了"，不该再试两次去确认')
+    assert.ok((pause.reason ?? '').includes('风控'))
+    // 方案级是**派生**的：该方案下所有平台都被暂停才为真
+    assert.equal(h.scheduler.status().planStatus[0]?.riskPaused, true)
 
     // 暂停之后定时不再尝试
     const before = h.runs.length
@@ -334,15 +410,36 @@ test('SR-21：连续失败到阈值 → risk_paused + urgent 待办，且**不�
   }
 })
 
-test('SR-22：风控信号（验证码/限流）**一次就暂停**，不等凑够次数', async () => {
-  const h = harness({ outcome: async () => summaryOf('failed', 'BLOCKED') })
+test('SR-22：甲平台命中风控、乙平台成功时，风控信号不被"最后一个成功的平台"吞掉', async () => {
+  const h = harness({
+    platforms: ['risky', 'healthy'],
+    gate: () => null,
+    outcome: async (platformId) =>
+      platformId === 'risky' ? summaryOf('failed', 'BLOCKED') : summaryOf('ok'),
+  })
   try {
     h.scheduler.start()
-    await h.scheduler.runPlan(h.planId, 'manual')
+    await fireDue(h)
 
-    const engine = h.store.plan.engineState(h.planId)
-    assert.equal(engine.riskPaused, true, '风控信号是"被认出来了"，不该再试两次去确认')
-    assert.ok((engine.riskReason ?? '').includes('风控'))
+    assert.deepEqual(h.runs.map((run) => run.platformId), ['risky', 'healthy'])
+    // 旧实现取的是循环里"最后一个成功平台"的 errorCode，于是 BLOCKED 被丢掉、只退避了事
+    assert.equal(
+      readPlatformRiskPause(h.store, 'risky').paused,
+      true,
+      '风控信号必须落在**命中它的那个平台**上',
+    )
+    assert.equal(
+      readPlatformRiskPause(h.store, 'healthy').paused,
+      false,
+      '另一个平台不该跟着被暂停（SR-18）',
+    )
+    // 有平台成功 → 这一轮算成功；否则界面会把刚抓到数据的方案报成"数据陈旧"
+    assert.ok(h.plans.get(h.planId).lastSuccessAt !== null, '有平台成功就该推进 last_success_at')
+    assert.equal(
+      h.scheduler.status().planStatus[0]?.riskPaused,
+      false,
+      '只暂停了一个平台，方案级派生值不该为真',
+    )
   } finally {
     h.close()
   }
@@ -353,7 +450,7 @@ test('SR-21：恢复只能由人工确认，确认后立刻能再排程', async 
   try {
     h.scheduler.start()
     await h.scheduler.runPlan(h.planId, 'manual')
-    assert.equal(h.store.plan.engineState(h.planId).riskPaused, true)
+    assert.equal(readPlatformRiskPause(h.store, '51job').paused, true)
 
     // 暂停期间**手动也不许跑** —— 否则"暂停"就是空话，用户点一下就又去打风控
     await assert.rejects(
@@ -362,6 +459,12 @@ test('SR-21：恢复只能由人工确认，确认后立刻能再排程', async 
     )
 
     h.scheduler.resumeRisk(h.planId)
+    assert.equal(readPlatformRiskPause(h.store, '51job').paused, false, '恢复要**按平台**清')
+    assert.equal(
+      h.store.platform.get('51job')?.health,
+      'healthy',
+      '不清平台健康态的话，门会立刻再关上、恢复看起来像没生效',
+    )
     const engine = h.store.plan.engineState(h.planId)
     assert.equal(engine.riskPaused, false)
     assert.equal(engine.failStreak, 0, '人工确认恢复时连续失败要清零，否则下一次失败立刻又暂停')

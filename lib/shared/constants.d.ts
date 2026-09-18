@@ -54,8 +54,6 @@ export declare const REQUEST_DELAY_MAX_MS = 3200;
  * 默认给得很松（8 次）：这不是节流阀，是"防止失控"的保险丝。
  */
 export declare const DAILY_CRAWL_LIMIT = 8;
-/** 连续失败达到这个次数 → 风控暂停（SR-21），需人工确认才恢复。 */
-export declare const RISK_PAUSE_THRESHOLD = 3;
 /**
  * 设置表里"浏览器空闲多少分钟后关闭"的键（`scope='global'`、`scope_ref=''`）。
  * 放在 shared：界面要显示它、HTTP 路由要校验它、宿主半要读它。

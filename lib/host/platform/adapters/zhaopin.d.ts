@@ -47,7 +47,7 @@
  *   2. path 的 `/p<N>` 会**覆盖** query 的 `p`，两种形式不要混用。
  */
 import type { BlockKind } from '../../../shared/enums.js';
-import type { RawJob, SearchCriteria, SiteAdapter } from '../types.js';
+import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** `/sou/` 列表页的选择器集。**每一项都可以在 DB 里覆盖着改**（ADR-19）。 */
 export interface ZhaopinSelectors {
     /** 卡片容器。 */
@@ -62,7 +62,12 @@ export interface ZhaopinSelectors {
     /** 地点项里的 `<span>`（有它才说明这一项是地点）。 */
     locationSpan: string;
     company: string;
-    /** 公司下方的「性质 / 规模 / 行业」标签。 */
+    /**
+     * ⚠️ legacy：曾经用它在卡片里抓 `.joblist-box__item-tag`（会同时命中职位技能标签与
+     * 公司标签，混在一起）。2026-09-18 起技能/福利标签改从载荷 `showSkillTags` 读，公司
+     * 性质/规模/行业走 `propertyName/companySize/industryName` 字段，这个选择器**已不再被
+     * 读取**只有在既有 DB 覆盖里还引用它 —— 保留键位兼容，勿再依赖。
+     */
     companyTags: string;
     /** 分页容器。 */
     pagination: string;
@@ -72,6 +77,29 @@ export interface ZhaopinSelectors {
     loginPopup: string;
     /** "没有结果"图（被登录墙挡住时也会出现）。 */
     noJobTip: string;
+}
+/**
+ * 详情页（`/jobdetail/{id}.htm`）的选择器集。同样可 DB 覆盖（ADR-19）。
+ *
+ * 实测（2026-09-18）：
+ *   - JD 全文容器 `.describtion-card__detail-content` 的 `textContent` 即完整描述
+ *     （游客 clamp 只是视觉截断 6 行，**不删除 DOM 文本**）；
+ *   - 公司标签是 `.company-summary__list` 下的一组 `<li>`，顺序固定为
+ *     [融资状态, 规模, 行业]。
+ *
+ * ⚠️ 详情页未登录时 **DOM 层薪资/地址会掩码**（`**-**元` / `深圳**********`），但
+ * `__INITIAL_STATE__.jobDetail.detailedPosition` 里却是真实值 —— 所以薪资/JD 正文等
+ * 以载荷为准（见 `extractJobDetailInPage`）。
+ */
+export interface ZhaopinDetailSelectors {
+    /** 职位标题（`H1`）。 */
+    title: string;
+    /** JD 全文容器（`textContent` 即全文）。 */
+    jdText: string;
+    /** 公司名。 */
+    companyName: string;
+    /** 公司标签（`.company-summary__list` 下的 `<li>`，顺序 [融资, 规模, 行业]）。 */
+    companyTags: string;
 }
 /**
  * 字段 → URL 参数的映射。这一层**无法自动推导**，必须每平台人工建一次（§4.2.2）。
@@ -144,6 +172,8 @@ export interface ZhaopinConfig {
     urlParams: ZhaopinUrlParams;
     cityCodes: Record<string, string>;
     detailUrlTemplate: string;
+    /** 详情页选择器（`detail.extract` 用）。 */
+    detailSelectors: ZhaopinDetailSelectors;
 }
 export declare const DEFAULT_ZHAOPIN_CONFIG: ZhaopinConfig;
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
@@ -200,6 +230,21 @@ export declare function buildZhaopinSearchUrl(config: ZhaopinConfig, criteria: S
  * @param config 选择器与 URL 配置（由宿主序列化传入）
  */
 export declare function extractJobsInPage(config: ZhaopinConfig): RawJob[];
+/**
+ * **在页面上下文里**解析职位详情页，返回完整 `RawJobDetail`（列表扫码的字段 + `jdText`）。
+ *
+ * ⚠️ **必须完全自包含**：真路径上它会被序列化后送进浏览器执行，闭包不存在。只依赖
+ * `config`、`document`、`location` —— 任何模块级符号都会 `ReferenceError`。
+ *
+ * ⚠️ **关键掩码事实（2026-09-18 实测）**：详情页未登录时 **DOM 层薪资/地址被掩码**
+ * （`**-**元` / `深圳**********`），但 `__INITIAL_STATE__.jobDetail.detailedPosition` 里
+ * 是真实值（`salary: "1-1.1万"`）。所以薪资/JD 正文等**以载荷为准**，DOM 只兜底公司名
+ * 这类页面本体就暴露的东西。
+ *
+ * 载荷字段名（平台自己的，不是 `RawJob` 的）：`positionName`（标题）、`salary`、
+ * `positionWorkingExp`、`education`、`description`（JD 纯文本）、`welfareTags`。
+ */
+export declare function extractJobDetailInPage(config: ZhaopinConfig): RawJobDetail;
 /**
  * **在页面上下文里**判断是否撞上风控 / 登录墙 / 验证。
  *

@@ -104,4 +104,20 @@ export declare const SCHEMA_V6 = "\nCREATE TABLE campus_application (\n  id     
  * `normalizeSchedule` 翻译成窗口（`hour:9 → 09:00–10:00`），迁移里改 JSON 反而更难回滚。
  */
 export declare const SCHEMA_V7 = "\nALTER TABLE plan ADD COLUMN last_attempt_at TEXT;\nALTER TABLE plan ADD COLUMN last_success_at TEXT;\nALTER TABLE plan ADD COLUMN fail_streak INTEGER NOT NULL DEFAULT 0;\nALTER TABLE plan ADD COLUMN backoff_until TEXT;\nALTER TABLE plan ADD COLUMN risk_paused INTEGER NOT NULL DEFAULT 0;\nALTER TABLE plan ADD COLUMN risk_reason TEXT;\nALTER TABLE plan ADD COLUMN timezone TEXT;\nALTER TABLE plan ADD COLUMN post_process_json TEXT NOT NULL DEFAULT '{}';\n-- \u5386\u53F2\u56DE\u586B\uFF1A\u65E7\u5E93\u53EA\u6709 last_run_at\u3002\u628A\u5B83\u540C\u65F6\u5F53\u6210\"\u5C1D\u8BD5\u8FC7\"\u4E0E\"\u6210\u529F\u8FC7\" \u2014\u2014\n-- \u8FD9\u662F\u552F\u4E00\u4E0D\u6492\u8C0E\u7684\u9009\u62E9\uFF08\u6211\u4EEC**\u4E0D\u77E5\u9053**\u90A3\u4E00\u6B21\u5230\u5E95\u6210\u6CA1\u6210\uFF09\uFF0C\u5E76\u4E14\u4E0B\u4E00\u6B21\u8FD0\u884C\u5C31\u4F1A\u7EA0\u6B63\u5B83\u3002\nUPDATE plan SET last_attempt_at = last_run_at WHERE last_run_at IS NOT NULL;\nUPDATE plan SET last_success_at = last_run_at WHERE last_run_at IS NOT NULL;\n\nALTER TABLE crawl_run ADD COLUMN reason TEXT;\nALTER TABLE crawl_run ADD COLUMN skip_reason TEXT;\nCREATE INDEX idx_crawl_run_started ON crawl_run(started_at DESC);\n";
+/**
+ * v8 · 索引修正（纯索引增删，零表重建）。
+ *
+ * 三处改动都是**对着 repo 层真实 SQL 核对过**的，不是照搬通用模板：
+ *
+ * 1. 未读消息（`pipeline.ts` → `WHERE read_at IS NULL ORDER BY at DESC`）。
+ *    原 `(read_at, at DESC)` 会把**全部已读历史**一起索引，而业务只关心未读那几条。
+ *    改成部分索引后只索引未读行，体积与写入开销都随已读增长而保持恒定。
+ * 2. 词表（`dictionary.ts` → 两条读取路径都以 `enabled = 1` 为先导）。
+ *    部分索引只留启用词条，同时服务 `kind = ?` 过滤与 `ORDER BY term`。
+ * 3. 级联删除的外键索引：SQLite **不会**自动为外键建索引。父表行被删除时，
+ *    子表若没有对应索引只能全表扫描。这里只给**真会删父表且子表预期行多**的两个
+ *    级联点补索引；`ON DELETE SET NULL` 的那些（plan / resume / job）父表几乎不删，
+ *    暂不预加，免得白付写入开销。
+ */
+export declare const SCHEMA_V8 = "\n-- \u672A\u8BFB\u6D88\u606F\uFF1A\u53EA\u7D22\u5F15 read_at IS NULL \u7684\u884C\nDROP INDEX idx_message_unread;\nCREATE INDEX idx_message_unread ON message(at DESC) WHERE read_at IS NULL;\n\n-- \u8BCD\u8868\uFF1A\u53EA\u7D22\u5F15\u542F\u7528\u8BCD\u6761\nDROP INDEX idx_dictionary_kind;\nCREATE INDEX idx_dictionary_active ON dictionary(kind, term) WHERE enabled = 1;\n\n-- \u7EA7\u8054\u5220\u9664\u8DEF\u5F84\u4E0A\u7684\u5916\u952E\u7D22\u5F15\uFF08interview \u2192 application\u3001tripartite \u2192 campus_application \u5747\u4E3A CASCADE\uFF09\nCREATE INDEX idx_interview_application ON interview(application_id);\nCREATE INDEX idx_tripartite_campus ON tripartite(campus_application_id);\n";
 //# sourceMappingURL=schema.d.ts.map

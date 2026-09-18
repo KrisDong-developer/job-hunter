@@ -1116,6 +1116,57 @@ ai.call(purpose, payload, opts) → { value, via, notes, outboundFields, callId 
 
 ---
 
+## P10 多平台治理粒度（2026-09-18）
+
+多平台之后暴露出的第一类问题不是"平台不够多"，而是**判定、风控、退避、留痕四样东西
+挂错了层**：一个方案往往只有 1 个平台时，挂在方案上与挂在平台上没有区别；
+平台数上来之后两者会分叉。本批把这四样搬到平台级。
+
+### 改了什么
+
+| # | 改动 | 位置 |
+|---|---|---|
+| ① | **跳过判定不再连坐**：`decide()` 产出逐平台结论，只要还有一个平台能跑就跑；一个都跑不了才跳过 | [scheduler/index.ts](file:///d:/DSH-work/job-hunter/src/host/scheduler/index.ts) |
+| ② | **逐平台留痕**：新增 `PlanScheduleStatusDto.platformDecisions`；采集页逐平台展示"为什么没跑" | `shared/dto.ts`、`client/screens/collect.tsx` |
+| ③ | **平台冷却用自己的账**：`recordPlatformFailure` 改吃 `platform.fail_streak`，不再是 `plan.failStreak` | `scheduler/index.ts` |
+| ④ | **风控暂停下移到平台级**：新模块 `platform/risk-pause.ts`（存 `setting(scope='platform')`，无 schema 迁移）；方案级 `riskPaused` 改为派生值 | `platform/risk-pause.ts`、`runtime.platformGate` |
+| ⑤ | **逐平台记账**：`finishPlanRun` 改吃「逐平台结果数组」，修掉"风控信号被最后一个成功平台覆盖"；"任一失败即整轮失败"改为"**有平台成功即本轮成功**" | `scheduler/index.ts` |
+| ⑥ | **恢复按平台**：`resumeRisk` 按平台清暂停 + 复位 `fail_streak` 与健康态；另有一次性搬运把旧库的方案级 `risk_paused` 落到各平台 | `scheduler/index.ts` |
+
+### 三条不能忘的语义
+
+1. **`risk_paused` 只表达"平台认出你了"**（`BLOCKED` / `NOT_LOGGED_IN` / `RATE_LIMITED` /
+   `PLATFORM_QUOTA`）。「连续失败达阈值」由已有的平台 `health=broken` + `adapter_broken` 承担 ——
+   两者阈值都是 3，再叠一层会对同一个事件产生**两条 urgent 待办**和两个重叠的跳过状态。
+   `RISK_PAUSE_THRESHOLD` 常量已删除（被 `ADAPTER_FAIL_THRESHOLD` 覆盖）。
+2. **`backoffMsFor` 的入参必须是"该层自己的"失败次数**：平台冷却传 `platform.fail_streak`，
+   方案退避传 `plan.fail_streak`。混用会让一层的失败替另一层受罚。
+3. **`platformGate` 的顺序**：离线 → 平台级风控暂停 → 适配器健康 → 登录态 → 冷却 → 配额。
+   风控暂停排在最前，是为了保持迁移前的可见行为（旧实现里方案级 `riskPaused` 也先于平台 gate）。
+
+### 出口标准怎么验的
+
+- **单测 674 个（673 通过 / 1 跳过）**（P8 时 408）。本批新增 4 条：
+  `test/host/risk-pause.test.ts` 三条（平台级写读清且不牵连别的平台、方案级派生口径、裸 `true` 兼容）
+  + 一条端到端（经真实 `runtime`：置暂停 → `schedulerStatus().planStatus[].riskPaused === true`
+  → `runPlan` 抛 CONFLICT → `resumeRisk` 后归假）。
+- **重写的断言**（改需求落点，**未放松**）：
+  * SR-18 那条用例原来**标题写"其它平台照常跑"、断言写 `runs.length === 0`（整条跳过）**，
+    名字与断言方向相反 —— 需求因此被标成 ✅ 而实际行为相反（记进 §12 的 R24）。
+    现在断言 `runs` 恰好含 `['other']`，并逐平台核对 51job 是 `not_logged_in`。
+  * SR-21 从"方案级 `risk_paused`"改为断言**平台级** `failStreak=3` / `health=broken` /
+    `adapter-broken` urgent 待办 / 被 `adapter_broken` 拦住。
+  * SR-22 从方案级字段改为断言**平台级**暂停（`readPlatformRiskPause`）+ 方案级派生值，
+    并新增一条"甲平台命中风控、乙平台成功时风控信号不被吞掉"。
+- **`npm run typecheck` / `npm run build` / `npm run verify`（19/19）/ `npm test` 全绿。**
+
+> **测试替身也要跟着改**：`test/scheduler/dispatch.test.ts` 的抓取替身现在**承担记账职责**
+> （按返回的 summary 状态调 `recordRunFailure` / `recordRunSuccess`），并把方案用到的平台
+> `ensure` 进 `platform` 表 —— 否则 `platform.fail_streak` 永远是 0，
+> 而调度器现在正是按"平台自己的账"定档的，断言会变成空转。
+
+---
+
 ## 包契约（改代码前先读）
 
 | 契约 | 内容 | 依据 |

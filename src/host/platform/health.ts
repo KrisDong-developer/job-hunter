@@ -171,9 +171,14 @@ export function recordRunFailure(
 /**
  * 运行级成功：清零 fail_streak。
  *
- * 注意**不在这里改健康态** —— 把 degraded/broken 拉回 healthy 的唯一依据是
+ * 注意**不在这里改健康态** —— 把 degraded/broken 拉回 healthy 的自动依据是
  * `applyFieldPresence` 判定「解析真的恢复了」。否则「解析恢复」这件事会被
  * 一次普通 run 抢先抹掉，恢复路径与待办关闭就永远不会发生。
+ *
+ * **恢复有两条路径**，这里是第一条（自动）：解析恢复。
+ * 第二条是 `scheduler.resumeRisk()` —— 人工显式确认（"我把环境处理好了"），
+ * 它按平台复位 `fail_streak` 与健康态。两条都保留：前者是系统自证，
+ * 后者是人的断言，语义不同，不该互相冒充。
  */
 export function recordRunSuccess(store: Store, platformId: string, now: string): void {
   store.platform.recordSuccess(platformId, now)

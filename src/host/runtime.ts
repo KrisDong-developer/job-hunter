@@ -83,6 +83,7 @@ import type { BrowserManager } from './platform/browser.js'
 import { browserPageSource, createBrowserManager } from './platform/browser.js'
 import { readBrowserConfig, writeBrowserConfig } from './browser-config.js'
 import { readAdapterHealth } from './platform/health.js'
+import { readPlatformRiskPause } from './platform/risk-pause.js'
 import type { LeaseManager } from './platform/lease.js'
 import { createLease } from './platform/lease.js'
 import type { Mutex } from './platform/mutex.js'
@@ -422,15 +423,25 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
    * 这是一个**纯判定**函数（不发请求、不改状态）—— 它回答的正是用户最想知道的那个问题：
    * 「为什么今天没跑？」。所以它的返回值直接进界面文案（SR-17/26）。
    *
-   * 顺序：离线闸门 → 适配器健康 → 登录态 → 每日配额。
+   * 顺序：离线闸门 → **平台级风控暂停** → 适配器健康 → 登录态 → 每平台冷却 → 每日配额。
    * 顺序有讲究：越"根本、越不可能自愈"的原因越先报，
    * 否则"没到点/配额"这类会盖住"你的适配器已经坏了"。
+   *
+   * 风控暂停紧跟在离线闸门之后，是为了**保持迁移前的可见行为**：
+   * 旧实现里方案级 `riskPaused` 也先于平台 gate 判定，于是"连续失败达阈值时
+   * health 同时变 broken"的场合，用户看到的一直是 `risk_paused`。
    */
-  const platformGate: PlatformGate = (platformId) => {
+  const platformGate: PlatformGate = (platformId, options) => {
     const opened = store
     if (opened === undefined) return 'lease_lost'
     // 离线闸门（§14）：开了就**绝不**发起真实访问
     if (isOfflineMode()) return 'offline_gate'
+
+    // SR-21：**平台级**风控暂停（真值在 `platform/risk-pause.ts`）。
+    // 补跑（catch-up）是用户看到欠账后显式点的，按既有例外放行。
+    if (options?.ignoreRiskPause !== true && readPlatformRiskPause(opened, platformId).paused) {
+      return 'risk_paused'
+    }
 
     const adapter = registry.get(platformId)
     if (adapter === undefined) return 'adapter_broken'
