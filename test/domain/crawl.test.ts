@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { createCompanyService } from '../../src/host/domain/companies.js'
 import { runCrawl, type CrawlDeps } from '../../src/host/domain/crawl.js'
@@ -10,10 +11,11 @@ import {
 } from '../../src/host/platform/adapters/fiftyone-job.js'
 import { createMutex } from '../../src/host/platform/mutex.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
+import { readYieldSnapshot } from '../../src/host/platform/yield-baseline.js'
 import type { PageSource } from '../../src/host/platform/types.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { CORE_FIELD_MISS_THRESHOLD } from '../../src/shared/constants.js'
-import { fixturePageSource, inlinePageSource } from '../support/jsdom-page.js'
+import { fixturePageSource, inlinePageSource, JsdomPage } from '../support/jsdom-page.js'
 import { cleanup, fixedClock, fixtureHtmlPath, openTestStore } from '../support/store.js'
 
 const SEARCH_URL = 'https://we.51job.com/pc/search?keyword=Java&jobArea=040000'
@@ -38,7 +40,9 @@ interface Harness {
   close(): void
 }
 
-function harness(options: { config?: FiftyOneConfig; pageSource?: PageSource } = {}): Harness {
+function harness(
+  options: { config?: FiftyOneConfig; pageSource?: PageSource; clock?: () => string } = {},
+): Harness {
   const store = openTestStore()
   const registry = createAdapterRegistry()
   let dispose = registry.register(createFiftyOneAdapter({ config: options.config ?? DEFAULT_FIFTYONE_CONFIG }))
@@ -52,7 +56,7 @@ function harness(options: { config?: FiftyOneConfig; pageSource?: PageSource } =
       fixturePageSource({ htmlPath: fixtureHtmlPath(), url: SEARCH_URL }),
     jobs: createJobService(store),
     companies: createCompanyService(store),
-    clock: fixedClock(),
+    clock: options.clock ?? fixedClock(),
   }
 
   return {
@@ -327,6 +331,136 @@ test('批次 5：量级骤降 → yield-drop 待办；回到常态 → 自动关
       h.deps.store.todo.listOpen().some((item) => item.kind === 'yield-drop'),
       false,
       '恢复即关闭',
+    )
+  } finally {
+    h.close()
+  }
+})
+
+// ── SR-46：到点中止（单轮预算的平台内那一半）──────────────────────────
+
+/**
+ * 造一个"时间随翻页流逝"的页面源：每导航一次就过去 10 分钟。
+ *
+ * 为什么把时间挂在导航上：到点中止问的是"**开新页之前**到点了吗"，
+ * 用真实时间无法重复，用"按调用次数计数的时钟"又会随内部实现细节（多调一次就错位）。
+ */
+function pagingPageSource(startIso: string): {
+  pageSource: PageSource
+  navigations: () => number
+  now: () => Date
+  close: () => void
+} {
+  let nowMs = new Date(startIso).getTime()
+  let navigations = 0
+  const page = new JsdomPage({
+    html: readFileSync(fixtureHtmlPath(), 'utf8'),
+    url: SEARCH_URL,
+    onGoto: () => {
+      navigations += 1
+      nowMs += 10 * 60 * 1000
+    },
+  })
+  return {
+    pageSource: {
+      async acquire(): Promise<typeof page> {
+        return page
+      },
+      async release(): Promise<void> {
+        /* 单页夹具无需释放 */
+      },
+    },
+    navigations: () => navigations,
+    now: () => new Date(nowMs),
+    close: () => {
+      page.close()
+    },
+  }
+}
+
+test('SR-46：到点中止 —— 已抓到的照常入库，剩余页**连导航都不发**，且不算失败', async () => {
+  const start = '2026-09-16T00:00:00.000Z'
+  const paging = pagingPageSource(start)
+  const h = harness({ pageSource: paging.pageSource, clock: () => paging.now().toISOString() })
+  try {
+    const summary = await runCrawl(h.deps, {
+      platformId: '51job',
+      criteria: { ...CRITERIA, maxPages: 3 },
+      // 15 分钟到点：第 1 页跑完 +10，第 2 页跑完 +20 → 第 3 页之前正好越过
+      deadlineAt: new Date(new Date(start).getTime() + 15 * 60 * 1000).toISOString(),
+    })
+
+    assert.equal(
+      summary.run.state,
+      'aborted',
+      '到点中止是**第四种**结局：不是 partial（数据不全），也不是 failed（平台有问题）',
+    )
+    assert.equal(summary.run.errorCode, 'DEADLINE_REACHED')
+    assert.equal(summary.run.pages, 2, '完成了两页')
+    assert.equal(summary.run.found, 40, '已完成那两页的数据照常带走')
+    assert.equal(h.deps.store.job.count(), 20, '照常入库（第二页是幂等更新，不产生重复）')
+    assert.equal(paging.navigations(), 2, '第 3 页**根本没请求** —— 到点就不该再发一次导航')
+
+    // 中止**不是**失败：连续失败计数与健康态都不该动（否则健康的平台会被推去冷却）
+    assert.equal(h.deps.store.platform.get('51job')?.failStreak, 0)
+    assert.equal(h.deps.store.platform.get('51job')?.health, 'healthy')
+  } finally {
+    h.close()
+    paging.close()
+  }
+})
+
+test('SR-46：到点时刻早于第一页时一次导航都不发，且**不能**报成"选择器失效"', async () => {
+  const h = harness({ clock: () => '2026-09-16T01:00:00.000Z' })
+  try {
+    const summary = await runCrawl(h.deps, {
+      platformId: '51job',
+      criteria: { ...CRITERIA, maxPages: 2 },
+      deadlineAt: '2026-09-16T00:00:00.000Z', // 早就过去了
+    })
+
+    assert.equal(summary.run.pages, 0)
+    assert.equal(summary.run.state, 'aborted')
+    assert.equal(
+      summary.run.errorCode,
+      'DEADLINE_REACHED',
+      '报成 NO_RECORDS 会把用户引去查选择器 —— 一个根本不存在的问题',
+    )
+    assert.equal(h.deps.store.job.count(), 0)
+  } finally {
+    h.close()
+  }
+})
+
+test('SR-46：中止的那一轮不进量级基线、也不算"最近一轮"（半截的条数没有发言权）', async () => {
+  const h = harness()
+  try {
+    for (let round = 0; round < 5; round += 1) {
+      const summary = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+      assert.equal(summary.run.state, 'ok')
+    }
+
+    // 第 6 轮：还没抓到任何东西就到点了（pages=0、found=0）
+    const aborted = await runCrawl(h.deps, {
+      platformId: '51job',
+      criteria: CRITERIA,
+      deadlineAt: '2020-01-01T00:00:00.000Z',
+    })
+    assert.equal(aborted.run.state, 'aborted')
+    assert.equal(aborted.run.found, 0)
+
+    const snapshot = readYieldSnapshot(h.deps.store, '51job')
+    assert.equal(snapshot.baseline, 20, '基线只取 ok 的轮次（既有语义）')
+    assert.equal(
+      snapshot.lastFound,
+      20,
+      '"最近一轮"要跳过中止轮 —— 拿半截的 0 条去比，必然误报一次骤降',
+    )
+    assert.equal(snapshot.level, 'ok')
+    assert.equal(
+      h.deps.store.todo.listOpen().some((item) => item.kind === 'yield-drop'),
+      false,
+      '不能因为"我们自己到点了"就弹一条量级骤降告警',
     )
   } finally {
     h.close()

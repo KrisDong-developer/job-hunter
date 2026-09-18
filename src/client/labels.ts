@@ -38,6 +38,30 @@ export function salaryDetail(job: JobDto): string | null {
 }
 
 /**
+ * 把 ISO 时间转成"多久以前"。
+ *
+ * 为什么要它：`lastSeenAt` 这类字段存的是 ISO 串，直接印出来用户得自己做减法，
+ * 而 `2026-09-17T02:11:00.000Z` 这种串在回答"这岗还在招吗"时几乎没用。
+ *
+ * 超过 30 天就不再报相对时间：**"43 天前"不如"08-05"直观** ——
+ * 跨度大了以后，人脑要的是日期本身。
+ *
+ * 解析不出来返回 `null`（调用方据此退回不显示），而不是硬凑一个"未知时间"。
+ */
+export function relativeTime(iso: string, now: Date = new Date()): string | null {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  const minutes = Math.floor((now.getTime() - at.getTime()) / 60_000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${String(minutes)} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${String(hours)} 小时前`
+  const days = Math.floor(hours / 24)
+  if (days <= 30) return `${String(days)} 天前`
+  return iso.slice(0, 10)
+}
+
+/**
  * 福利 / 待遇类措辞 —— **只用于展示分组**，把平台给的平铺标签分成
  * 「技能要求」与「公司福利」两组。
  *

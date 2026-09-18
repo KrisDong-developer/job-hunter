@@ -40,6 +40,7 @@ import {
   fetchSkipReasons,
   recheckLease,
   resumePlanRisk,
+  runDedupSweep,
   runPlan,
   setSchedulePaused,
   splitDedupMember,
@@ -699,9 +700,35 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
       {/* 跨平台去重：多平台落地后，"合并/拆分"要可查可逆（§4.10.1） */}
       <DedupGroupsCard revision={props.revision} />
 
-      {/* ── 平台状态 ─────────────────────────────────────────────────── */}
+      {/* ── 平台总览矩阵（批次 5）────────────────────────────────────────
+          与下面的「平台明细」分工：这里只回答**横向**的问题 ——
+          "这几个平台今天哪一个能跑、为什么不能"。 */}
       <section className="jh-card">
-        <h2 className="jh-card-title">平台状态</h2>
+        <h2 className="jh-card-title">平台总览</h2>
+        {platforms.state.status === 'error' && <p className="jh-error">{platforms.state.message}</p>}
+        {platformsLoading ? (
+          <p className="jh-muted" aria-busy="true" aria-live="polite">
+            正在读取平台状态…
+          </p>
+        ) : platformList.length === 0 ? (
+          <div className="jh-empty">
+            <p className="jh-muted">还没有注册平台。</p>
+            <p className="jh-note">平台来自适配器注册表；当前没有任何适配器被注册，所以无法采集。</p>
+          </div>
+        ) : (
+          <>
+            <p className="jh-note">
+              「今天能跑」用的是与调度同一个前置条件判定 —— 这里写着「可以」的平台，到点真的会跑；
+              写着原因的，就是它现在被什么拦住了（鼠标悬停看完整说明）。
+            </p>
+            <PlatformMatrix items={platformList} reasonText={reasonText} />
+          </>
+        )}
+      </section>
+
+      {/* ── 平台明细 ─────────────────────────────────────────────────── */}
+      <section className="jh-card">
+        <h2 className="jh-card-title">平台明细</h2>
         {platforms.state.status === 'error' && <p className="jh-error">{platforms.state.message}</p>}
         {platformsLoading ? (
           <p className="jh-muted" aria-busy="true" aria-live="polite">
@@ -1129,6 +1156,136 @@ function LeasePanel(props: {
           <InlineMd text="怎么解决：① 到那个窗口里操作（最稳）；② 关掉那个窗口 —— 关掉之后这里会**自动**接管，不用重启，也可以点「重新检测」立刻试一次。" />
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * 冷却截止还在未来才算"在冷却"。
+ *
+ * 过期的时间戳留在库里只是历史，把它显示成"还在等"会让用户白等一场 ——
+ * 而 `platformGate` 早就放行了（它比的是 `now`）。
+ */
+function cooldownActive(until: string | null, now: Date): Date | null {
+  if (until === null) return null
+  const at = new Date(until)
+  return Number.isNaN(at.getTime()) || at.getTime() <= now.getTime() ? null : at
+}
+
+/**
+ * 平台总览**矩阵**（批次 5）。
+ *
+ * 为什么值得单独一张表：平台列表是**纵向**读的（一个平台一段，能写很多解释），
+ * 而多平台真正要回答的问题恰恰是**横向**的 —— "这些平台里今天哪几个真的能跑"。
+ * 纵向列表回答不了它：得逐段读完，还得自己记住上一段说了什么。
+ *
+ * 分工：矩阵只放**横向可比**的事实（每格的算法口径一致，且都来自 `/platforms`
+ * 或与调度判定共用的那一份），下面的「平台明细」继续放"为什么"与动作。
+ * 矩阵里刻意**没有按钮** —— 它是读数盘，不是操作台。
+ *
+ * 「今天能跑」这一列用点号表示长原因（全文进 title）：短标签是**第二份文案**，
+ * 迟早会和 `SKIP_REASON_LABEL` 漂移，用户就在两处读到两种说法。
+ */
+function PlatformMatrix(props: {
+  items: PlatformOverviewDto[]
+  reasonText: Record<string, string>
+}) {
+  const now = new Date()
+  return (
+    <div className="jh-table-scroll">
+      <table className="jh-table jh-table-matrix">
+        <thead>
+          <tr>
+            <th scope="col" className="jh-col-sticky">平台</th>
+            <th scope="col">今天能跑</th>
+            <th scope="col">登录</th>
+            <th scope="col">健康</th>
+            <th scope="col" className="jh-col-hide-sm">成熟度</th>
+            <th scope="col" className="jh-num">今日额度</th>
+            <th scope="col" className="jh-num jh-col-hide-sm">产量</th>
+            <th scope="col">最近一轮</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.items.map((item) => {
+            const blocked =
+              item.governance.blocked === null
+                ? null
+                : (props.reasonText[item.governance.blocked] ?? item.governance.blocked)
+            const cooldown = cooldownActive(item.governance.cooldownUntil, now)
+            const quotaFull = item.governance.todayRuns >= item.governance.dailyLimit
+            const lastRun = item.governance.lastRun
+            return (
+              <tr key={item.id}>
+                <td className="jh-col-sticky">
+                  <code>{item.id}</code>
+                  <div className="jh-muted">{item.displayName}</div>
+                </td>
+                <td className={blocked === null ? 'jh-ok' : 'jh-warn'}>
+                  <div>
+                    {blocked === null ? (
+                      '可以'
+                    ) : (
+                      <span className="jh-clip" title={blocked}>
+                        {blocked}
+                      </span>
+                    )}
+                  </div>
+                  {cooldown === null ? null : (
+                    <div className="jh-muted">冷却至 {formatClock(cooldown)}</div>
+                  )}
+                </td>
+                <td className={item.account.loggedIn ? 'jh-ok' : 'jh-warn'}>
+                  {/* 「没检测过」与「确定未登录」是两件事：前者不该被念成后者 */}
+                  {item.account.loggedIn
+                    ? '已登录'
+                    : item.account.lastCheckAt === null
+                      ? '未检测'
+                      : '未登录'}
+                </td>
+                <td>
+                  <StateTag state={item.health} kind="health" />
+                  {item.failStreak > 0 ? (
+                    <span className="jh-muted"> ×{item.failStreak}</span>
+                  ) : null}
+                </td>
+                <td
+                  className={`jh-col-hide-sm${
+                    maturityNeedsWarning(item.maturity.level) ? ' jh-warn' : ''
+                  }`}
+                >
+                  {MATURITY_LEVEL_LABEL[item.maturity.level]}
+                </td>
+                <td className={`jh-num${quotaFull ? ' jh-warn' : ''}`}>
+                  {item.governance.todayRuns}/{item.governance.dailyLimit}
+                </td>
+                <td className="jh-num jh-col-hide-sm">
+                  {/* 产量写成"最近/常态"：单看一个数字看不出它是多是少 */}
+                  {item.yield.baseline === null ? (
+                    <span className="jh-muted">—</span>
+                  ) : (
+                    <span className={item.yield.level === 'dropped' ? 'jh-warn' : undefined}>
+                      {item.yield.lastFound ?? '—'}/{item.yield.baseline}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  {lastRun === null ? (
+                    <span className="jh-muted">没跑过</span>
+                  ) : (
+                    <>
+                      <span className="jh-muted">
+                        {formatClock(new Date(lastRun.startedAt))}
+                      </span>{' '}
+                      <StateTag state={lastRun.state} kind="run" />
+                    </>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -1670,6 +1827,12 @@ function DedupGroupsCard(props: { revision: number }) {
   const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision])
   const [busyId, setBusyId] = useState<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)
+  /** 全库复核的进行状态与结果（它会改分组，所以结果必须如实说出来）。 */
+  const [sweep, setSweep] = useState<{ running: boolean; message: string | null; error: boolean }>({
+    running: false,
+    message: null,
+    error: false,
+  })
 
   const act = async (id: number, fn: () => Promise<void>): Promise<void> => {
     setBusyId(id)
@@ -1681,6 +1844,37 @@ function DedupGroupsCard(props: { revision: number }) {
     }
   }
 
+  /**
+   * 触发一次**全库**复核（批次 4）。
+   *
+   * 为什么需要这个按钮：去重以前只在抓取的后处理里发生，于是"刚打开去重开关"
+   * 与"去重规则改过之后"这两个场合都没有入口 —— 只能干等下一轮抓取。
+   */
+  const runSweep = async (): Promise<void> => {
+    setSweep({ running: true, message: '正在按同一套门槛复核全库…', error: false })
+    try {
+      const result = await runDedupSweep()
+      setSweep({
+        running: false,
+        error: false,
+        message:
+          `看过 ${String(result.scanned)} 条` +
+          (result.skippedGrouped > 0 ? `（跳过已在分组里的 ${String(result.skippedGrouped)} 条）` : '') +
+          `：合并 ${String(result.merged)} 条、新建 ${String(result.newGroups)} 组，现在共 ${String(result.groups)} 组。` +
+          (result.candidates > 0
+            ? `另有 ${String(result.candidates)} 条疑似重复没自动合并（标题相似度不够）—— 需要人工看一眼。`
+            : ''),
+      })
+      groups.reload()
+    } catch (error) {
+      setSweep({
+        running: false,
+        error: true,
+        message: error instanceof ApiError ? error.display : String(error),
+      })
+    }
+  }
+
   const items = groups.state.status === 'ok' ? groups.state.data.items : []
 
   return (
@@ -1688,10 +1882,25 @@ function DedupGroupsCard(props: { revision: number }) {
       <div className="jh-form-head">
         <h2 className="jh-card-title">跨平台去重</h2>
         <span className="jh-spacer" />
-        <span className="jh-muted">
-          同一岗位被多个平台各抓一条 → 合并到同一组；这里是**可逆**的，误合并随时可拆。
-        </span>
+        <button
+          type="button"
+          className="jh-btn jh-btn-inline jh-btn-tiny"
+          disabled={sweep.running}
+          title="把全库岗位按同一套门槛复核一遍（跨平台 + 同公司同城 + 薪资不冲突 + 标题相似）。用在「刚打开去重开关」或「刚改过抓取范围」之后补做一次 —— 否则要干等下一轮抓取，而那一轮可能一条新岗位都没有。合并是可逆的。"
+          onClick={() => void runSweep()}
+        >
+          全库复核一遍
+        </button>
       </div>
+      <p className="jh-note">
+        同一岗位被多个平台各抓一条 → 合并到同一组；这里是可逆的，误合并随时可拆。
+      </p>
+
+      {sweep.message === null ? null : (
+        <p className={sweep.error ? 'jh-error' : 'jh-muted'} aria-live="polite">
+          {sweep.message}
+        </p>
+      )}
 
       {groups.state.status === 'loading' ? (
         <p className="jh-muted" aria-busy="true">正在读取去重分组…</p>

@@ -4,8 +4,11 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { routeRequest, type RouteRequest, type RouteResult } from '../../src/host/http/router.js'
+import { setPlatformRiskPause } from '../../src/host/platform/risk-pause.js'
 import { createHostRuntime } from '../../src/host/runtime.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
+import { DAILY_CRAWL_LIMIT } from '../../src/shared/constants.js'
+import type { PlatformOverviewDto } from '../../src/shared/dto.js'
 import { cleanup, tempDataDir } from '../support/store.js'
 
 const T1 = '2026-09-16T01:00:00.000Z'
@@ -115,6 +118,16 @@ test('GET /jobs 分页与筛选', async () => {
     const sorted = await call(runtime, 'GET', '/jobs', { query: 'orderBy=salary_min&desc=1' })
     const items = (sorted.body as { items: Array<{ salaryMin: number }> }).items
     assert.equal(items[0]?.salaryMin, 14000)
+
+    // 「只看新增」：窗口起点早于入库时刻 → 全部 5 条；晚于 → 0 条
+    const allNew = await call(runtime, 'GET', '/jobs', {
+      query: 'firstSeenSince=2000-01-01T00:00:00.000Z',
+    })
+    assert.equal((allNew.body as { total: number }).total, 5)
+    const noneNew = await call(runtime, 'GET', '/jobs', {
+      query: 'firstSeenSince=2999-01-01T00:00:00.000Z',
+    })
+    assert.equal((noneNew.body as { total: number }).total, 0)
   } finally {
     runtime.close()
     cleanup(dir)
@@ -130,6 +143,11 @@ test('GET /jobs 参数非法要报错而不是静默忽略', async () => {
 
     const badOrder = await call(runtime, 'GET', '/jobs', { query: 'orderBy=; DROP TABLE job' })
     assert.equal(badOrder.status, 400, '排序字段必须走白名单')
+
+    // 「只看新增」的时刻：非法值必须显式报错，**不能**当没传（那等于静默不筛）
+    const badSince = await call(runtime, 'GET', '/jobs', { query: 'firstSeenSince=昨天' })
+    assert.equal(badSince.status, 400)
+    assert.equal((badSince.body as { code: string }).code, 'INVALID_INPUT')
   } finally {
     runtime.close()
     cleanup(dir)
@@ -488,6 +506,111 @@ test('P4：词表可读可写，重算能刷新标注', async () => {
     const detail = await call(runtime, 'GET', '/jobs/' + String(store.job.query({}, 1)[0]?.id ?? 0))
     assert.equal(detail.status, 200)
     assert.ok((detail.body as { matchReasons: unknown[] }).matchReasons.length > 0)
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('批次 5：/platforms 带回治理事实，且「今天能跑」与调度判定**同源**', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    const listed = await call(runtime, 'GET', '/platforms')
+    assert.equal(listed.status, 200)
+    const items = (listed.body as { items: PlatformOverviewDto[] }).items
+    assert.ok(items.length >= 10, `注册表里的 10 个平台都要在，实际 ${String(items.length)}`)
+
+    const idle = items.find((item) => item.id === '51job')
+    assert.ok(idle !== undefined)
+    assert.equal(idle.governance.blocked, null, '没有任何前置条件时，矩阵必须说「可以」')
+    assert.equal(idle.governance.dailyLimit, DAILY_CRAWL_LIMIT)
+    assert.equal(idle.governance.todayRuns, 0)
+    assert.equal(idle.governance.lastRun, null, '没跑过就是没跑过')
+    assert.equal(idle.governance.riskPaused, false)
+    assert.equal(idle.governance.cooldownUntil, null)
+
+    // 打开风控暂停：矩阵必须跟着变 —— 否则它只是一张好看的谎话
+    const store = runtime.store()
+    assert.ok(store)
+    setPlatformRiskPause(store, '51job', '测试：命中验证码', T1)
+
+    const paused = (await call(runtime, 'GET', '/platforms')).body as { items: PlatformOverviewDto[] }
+    const after = paused.items.find((item) => item.id === '51job')
+    assert.equal(after?.governance.blocked, 'risk_paused', '那一格用的就是平台门的判定，不是另写一套')
+    assert.equal(after?.governance.riskPaused, true)
+    assert.ok((after?.governance.riskReason ?? '').includes('测试'), '原因要原样带出来')
+
+    const other = paused.items.find((item) => item.id === 'zhaopin')
+    assert.equal(other?.governance.blocked, null, '只暂停了一个平台，别的不该跟着变')
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('批次 4：POST /dedup/run 复核全库；GET /dedup/groups/:id 给跨平台对照；/jobs 能折叠', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    const store = runtime.store()
+    assert.ok(store)
+    const companyId = store.company.ensure({ name: '字节跳动', nameNorm: '字节跳动' }, T1).id
+    store.job.upsert(
+      jobInput({ platformId: '51job', platformJobId: 'g1', title: 'Java 开发工程师', companyId }),
+      T1,
+    )
+    store.job.upsert(
+      jobInput({ platformId: 'zhipin', platformJobId: 'g2', title: 'Java开发工程师', companyId }),
+      T1,
+    )
+
+    // ① 全库复核：库里早就存在的重复被合并（不是等下一轮抓取）
+    const swept = await call(runtime, 'POST', '/dedup/run', { body: {} })
+    assert.equal(swept.status, 200)
+    const result = swept.body as {
+      newGroups: number
+      merged: number
+      groups: number
+      items: Array<{ id: number }>
+    }
+    assert.equal(result.newGroups, 1)
+    assert.equal(result.merged, 2)
+    assert.equal(
+      result.items.length,
+      1,
+      '复核结果里直接带分组列表 —— 界面不用再请求一次（否则两个请求之间还会闪一下旧状态）',
+    )
+
+    // ② 单个分组：跨平台对照要的三个字段（来源 / 薪资 / 原页面）
+    const groupId = result.items[0]?.id ?? 0
+    const one = await call(runtime, 'GET', `/dedup/groups/${String(groupId)}`)
+    assert.equal(one.status, 200)
+    const group = (
+      one.body as {
+        group: {
+          basis: string
+          members: Array<{ platformId: string; salaryRaw: string; sourceUrl: string }>
+        }
+      }
+    ).group
+    assert.deepEqual(group.members.map((member) => member.platformId).sort(), ['51job', 'zhipin'])
+    assert.ok(group.basis.includes('同公司'), '依据要能拿出来给人看')
+    for (const member of group.members) {
+      assert.notEqual(member.salaryRaw, '', '对照表要比薪资，不能只有标题')
+      assert.ok(member.sourceUrl.startsWith('https://'), '对照表要能跳去原页面')
+    }
+    assert.equal((await call(runtime, 'GET', '/dedup/groups/99999')).status, 404, '不存在就是 404')
+
+    // ③ 列表折叠：`groupDuplicates=1` 之后 total 也按行算
+    const all = await call(runtime, 'GET', '/jobs')
+    assert.equal((all.body as { total: number }).total, 2)
+    const folded = await call(runtime, 'GET', '/jobs', { query: 'groupDuplicates=1' })
+    assert.equal(
+      (folded.body as { total: number }).total,
+      1,
+      '折叠必须走查询层：先查 20 条再在前端折叠会让 total 与行数对不上',
+    )
+    const rows = (folded.body as { items: Array<{ dedupGroupId: number | null }> }).items
+    assert.equal(rows[0]?.dedupGroupId, groupId, '行上带组 id —— 界面靠它显示徽章与展开对照')
   } finally {
     runtime.close()
     cleanup(dir)

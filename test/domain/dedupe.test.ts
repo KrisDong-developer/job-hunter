@@ -21,6 +21,9 @@ function candidate(over: Partial<DedupCandidate> = {}): DedupCandidate {
   return {
     id: 1,
     platformId: '51job',
+    // 候选是按公司取的，所以候选里带着 companyId；单测里只关心"有没有公司名"，
+    // 公司实体 id 用 null（它只在**取候选**时用到，判断本身不看它）
+    companyId: null,
     companyName: '字节跳动',
     title: 'Java 开发工程师',
     salaryMin: 20000,

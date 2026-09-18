@@ -1,0 +1,927 @@
+{
+  "capturedAt": "2026-09-18T12:05:59.745Z",
+  "keyword": "Java",
+  "cityCode": "101280600",
+  "searchUrl": "https://www.zhipin.com/web/geek/job?query=Java&city=101280600",
+  "page1Url": "https://www.zhipin.com/web/geek/jobs?query=Java&city=101280600",
+  "page1": {
+    "url": "https://www.zhipin.com/web/geek/jobs?query=Java&city=101280600",
+    "title": "「深圳招聘」-2026年深圳人才招聘信息 - BOSS直聘",
+    "cards": 15,
+    "salaryFilled": 16,
+    "companyFilled": 15,
+    "tagsFilled": 33,
+    "securityIdLinks": 1,
+    "loginMarkers": {
+      ".user-nav": 1,
+      ".nav-figure": 1
+    },
+    "bodyHead": "var staticPath = 'https://static.zhipin.com/v2'; _PAGE = { checkMobileUrl: \"/registe/sendSms.json\", regMobileUrl: \"/registe/save.json\", loginMobileUrl: \"/login/"
+  },
+  "pagination1": {
+    "containers": [
+      {
+        "selector": "[class*=\"page-\"]",
+        "count": 2,
+        "className": "page-jobs has-header page-header-v2",
+        "text": "var staticPath = 'https://static.zhipin.com/v2'; _PAGE = { checkMobileUrl: \"/registe/sendSms.json\", "
+      }
+    ],
+    "nextCandidates": [],
+    "pageNumberTexts": [],
+    "totalHints": []
+  },
+  "firstJobIds": [
+    "c4047f701024cc1803R73Ni4F1VX",
+    "5a760b8de81b546c0nN-39u0GFdY",
+    "f0acf633988889db0nJ529S7FlRV"
+  ],
+  "urlPaging": {
+    "testedUrl": "https://www.zhipin.com/web/geek/job?query=Java&city=101280600&page=2",
+    "ids": [
+      "c4047f701024cc1803R73Ni4F1VX",
+      "5a760b8de81b546c0nN-39u0GFdY",
+      "f0acf633988889db0nJ529S7FlRV"
+    ],
+    "changed": false
+  },
+  "scrollLoading": {
+    "before": 15,
+    "rounds": [
+      {
+        "round": 1,
+        "cards": 30,
+        "apiUrls": [
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733138784",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733138934",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733138933"
+        ]
+      },
+      {
+        "round": 2,
+        "cards": 45,
+        "apiUrls": [
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733142305",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733142478",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733142477"
+        ]
+      },
+      {
+        "round": 3,
+        "cards": 60,
+        "apiUrls": [
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733145821",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733145983",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733145983"
+        ]
+      },
+      {
+        "round": 4,
+        "cards": 75,
+        "apiUrls": [
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733149335",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733149482",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733149482"
+        ]
+      },
+      {
+        "round": 5,
+        "cards": 90,
+        "apiUrls": [
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733152842",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733152981",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733152981"
+        ]
+      },
+      {
+        "round": 6,
+        "cards": 105,
+        "apiUrls": [
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://shink.zhipin.com/wapi/dapCommon/json",
+          "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733156358",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733156498",
+          "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733156498"
+        ]
+      }
+    ],
+    "after": 105
+  },
+  "apiUrls": [
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1789733112728",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1789733112728",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1789733112795",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/expect/list.json?_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/certification/edu/card/getEduWarnCard?_=1789733112910",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1789733112910",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/businessDistrict.json?cityCode=101280600&_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/getSubwayByCity?cityCode=101280600&_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1789733112936",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/getCityShowPosition?_=1789733112909",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zppassport/get/wt",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1789733113016",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/h5/account/getStatus?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpwukong/web/employer/task/showGeekEntry?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpitem/geek/vip/info?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733113226",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733113515",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733113515",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/sidebar.json?_=1789733113516",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpitem/geek/vip/info?_=1789733113516",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=OcsbAtuFK0fPE-D1WQL6HJNLcV-o_V9zJmSYWmCibDfrWXxs7nuAcvurLF0Ix8td2_reU10wyid7lfMBLNrjaXSBRsreRTwLJKlXVvDYCcS2us0of_IypMvcCA5_igffWEI5kbcnXJPIqhmG56_97Zf3hveL6RTcGJpHxVmjHWmqNpkJZ53C23DSxgidTyVEdlS5d2366vbeLB8SnsBNiz3oWT_y3V8v591CSf6CKCqc0AErSJrTVux1no8sWDYbrL5MI7mlbJ0JVSI60uGecn6J3rvvzoW26ZpX8bXlxSk~&lid=65wgyoMDDvu.search.1&_=1789733113515",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/actionLog/common.json?_=1789733113603",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1789733122654",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1789733122654",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1789733122763",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/certification/edu/card/getEduWarnCard?_=1789733122972",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1789733122972",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1789733122898",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/expect/list.json?_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/businessDistrict.json?cityCode=101280600&_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/getSubwayByCity?cityCode=101280600&_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/getCityShowPosition?_=1789733122971",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/h5/account/getStatus?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpwukong/web/employer/task/showGeekEntry?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpitem/geek/vip/info?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1789733123229",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zppassport/get/wt",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733123464",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733123815",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733123815",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpitem/geek/vip/info?_=1789733123815",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/sidebar.json?_=1789733123815",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=Zm6hF2VIuhZ6T-S1CCrctAWrsgr4kV7v8SgSk0GfN9ga86i74ljlQZbHruw2LgXF2egANokMJX14gDQzJhKa-ftPqYvWSeOcJtF1HCoruiiZFbzmB0lzIrZEAy54_v6K3nld8s_tqY0OT3Cs2FYvx3Ll4W4cVbztcuN5o_miD-5YaxUNqWv3jKSQJuz2QMeuJIFJ5xFj9HHbwZioSL5dCA9a1E5P-nif4qgebfgu7I7G-YXkRTLbbj5_i9l06CWY3BXkQv3mh2TeKzmfq6RaXQ6GvaqMmj8vQXtJNLPxB60~&lid=65wt2KuIFDm.search.1&_=1789733123815",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/actionLog/common.json?_=1789733123917",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/actionLog/fe/ie/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/httpMetrics/getConfig?appKey=ObsSRskiryhn60pf",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zppassport/set/zpToken",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json?_=1789733130856",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpchat/notify/setting/get?_=1789733130857",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/header.json?_=1789733131262",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/defaultcity.json?_=1789733131737",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/pc/all/filter/conditions.json?_=1789733131737",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/pc/recommend/expect/list.json?_=1789733131737",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/businessDistrict.json?cityCode=101280600&_=1789733131738",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/complete/step.json?version=2&_=1789733131737",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/getSubwayByCity?cityCode=101280600&_=1789733131738",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/restrict/list.json?_=1789733131764",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/certification/edu/card/getEduWarnCard?_=1789733131738",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/getCityShowPosition?_=1789733131738",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zppassport/get/wt",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/footer.json?_=1789733131738",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/industryFilterExemption?_=1789733131738",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/data/cityGroup.json?_=1789733132006",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733132267",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/agreement/update/tip.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/wap/getSecurityGuideV1",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/resume/parser/querybar.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/webtopbanner/query.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/common/data/city/site.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/toggle/all",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/job/detail.json?securityId=v1MYkquR660lf-919jkzc4sKYFRYU5AIbsPr5a3HgkF-2qOgCItbu4yhZhHdPwycuAuadlIJI3An_5WvcYbwD3uTvq64-QMpNx2ZQMZz8j-gS2B4BQqP-t23DpzT30Iq9jPRSz0ALeaojssB51W0aJbYNb9fHzh_udLxkNcsTRAUQBz02G_1lIk7mAULM_KachJ9JfN08U2YoSogOquAxji327iJ3QzFHJ5U2laEiY11kyizSnhCO7PwFKOMWSJi9Oe-H3IHVDkTd4hk7PWfBuKyNliCB3k8mE6jFk5Dumc~&lid=65wE7SCvOXF.search.1&_=1789733133448",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/sidebar.json?_=1789733133448",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733133448",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpitem/geek/vip/info?_=1789733133448",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733133448",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpitem/geek/vip/info?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpwukong/web/employer/task/showGeekEntry?",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpuser/h5/account/getStatus?",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpCommon/actionLog/common.json?_=1789733134432",
+      "status": 200
+    },
+    {
+      "url": "https://apm-fe.zhipin.com/wapi/zpApm/actionLog/fe/common.json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733138784",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733138934",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733138933",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733142305",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733142478",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733142477",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733145821",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733145983",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733145983",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733149335",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733149482",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733149482",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733152842",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733152981",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733152981",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://shink.zhipin.com/wapi/dapCommon/json",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1789733156358",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/tdk.json?city=101280600&encryptExpectId=&mixExpectType=&expectInfo=&multiSubway=&multiBusinessDistrict=&jobType=&salary=&_=1789733156498",
+      "status": 200
+    },
+    {
+      "url": "https://www.zhipin.com/wapi/zpgeek/search/job/seo/data.json?city=101280600&multiBusinessDistrict=&jobCity=101280600&_=1789733156498",
+      "status": 200
+    }
+  ]
+}

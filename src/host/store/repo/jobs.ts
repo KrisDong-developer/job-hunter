@@ -44,15 +44,46 @@ export interface JobQuery {  state?: JobState
   companyId?: number
   /** 标题模糊匹配（走 LIKE，仅作粗筛）。 */
   keyword?: string
+  /**
+   * 经验 / 学历要求：命中任意一个即可（`IN`）。
+   *
+   * 存的是**平台原始串**（"3-5年"、"本科"），不是枚举 —— 各平台写法不统一，
+   * 归一化到一套枚举会丢掉原文里的信息。所以筛选只能按"库里已有的取值"多选，
+   * 取值集由 `facets` 给出（界面上是 chips，不是输入框）。
+   */
+  expReqs?: string[]
+  eduReqs?: string[]
   /** 只要月薪下限 ≥ 该值的岗位。 */
   minSalaryAtLeast?: number
-  orderBy?: 'crawled_at' | 'salary_min' | 'title' | 'last_seen_at'
+  /**
+   * 只要**首次见到**时间 ≥ 该时刻（ISO）的岗位 —— 即「只看新增」。
+   *
+   * 口径刻意与 U0 的「今日新增」（`countSince`：`first_seen_at >= ?`）**完全一致**：
+   * 同一列、同一个比较符。两边若各写一套，首屏说"今日新增 12 条"而列表筛出 3 条，
+   * 用户只会认为其中一个坏了 —— 而它们看的是同一份数据。
+   *
+   * ⚠️ 比的是 `first_seen_at` 而不是 `crawled_at` / `last_seen_at`：
+   * 后两者每轮都刷新，用它筛出来的永远等于"本轮抓到的全部"，那叫"这次抓了多少"，
+   * 不叫"新出现了多少岗位"。
+   */
+  firstSeenSince?: string
+  orderBy?: 'crawled_at' | 'salary_min' | 'title' | 'last_seen_at' | 'first_seen_at'
   descending?: boolean
   /**
    * 屏蔽这些标注类型的岗位：命中任意一个标注的岗位一律不显示（`NOT EXISTS`）。
    * 「一键屏蔽疑似外包/高风险」落在这里 —— 风险标签是已算好的事实，屏蔽是查询层的事。
    */
   excludeFlagTypes?: JobFlagType[]
+  /**
+   * **按跨平台去重分组折叠**（批次 4）。
+   *
+   * 同一条岗位在 4 个平台各抓一条时，列表里只留一行（组内 id 最小的那个），
+   * 而不是让用户在一屏里看到四条几乎一样的卡片。
+   *
+   * `total` 与分页也按**折叠后**的数量算（`countMatching` 走同一段 WHERE）——
+   * 否则"共 40 条 / 只有 12 行"会变成一个新谜题。
+   */
+  groupDuplicates?: boolean
 }
 
 export interface JobRepo {
@@ -76,12 +107,21 @@ export interface JobRepo {
   latest(limit?: number): JobDto[]
   /** 出去重后的城市列表（界面多选城市用；空城市不返回）。 */
   listCities(): string[]
+  /** 去重后的经验要求取值（界面多选 chips 用；空值不返回）。 */
+  listExpReqs(): string[]
+  /** 去重后的学历要求取值（同上）。 */
+  listEduReqs(): string[]
 }
 
+/* 平台名在服务端 JOIN 出来，而不是让界面自己拿 platformId 去查一遍：
+   岗位详情的内嵌栏被岗位库 / 流水线 / 消息 / 面试四个屏共用，
+   放在客户端就意味着每个屏都要各自拉一次平台列表，还会各自漂。
+   这与 `company_name` 的做法保持一致。 */
 const SELECT_BASE = `
-SELECT j.*, c.name AS company_name
+SELECT j.*, c.name AS company_name, p.display_name AS platform_name
 FROM job j
-LEFT JOIN company c ON c.id = j.company_id`
+LEFT JOIN company c ON c.id = j.company_id
+LEFT JOIN platform p ON p.id = j.platform_id`
 
 /** 排序列白名单 —— 绝不把入参拼进 SQL。 */
 const ORDER_COLUMNS: Record<NonNullable<JobQuery['orderBy']>, string> = {
@@ -89,12 +129,15 @@ const ORDER_COLUMNS: Record<NonNullable<JobQuery['orderBy']>, string> = {
   salary_min: 'j.salary_min',
   title: 'j.title',
   last_seen_at: 'j.last_seen_at',
+  first_seen_at: 'j.first_seen_at',
 }
 
 function toDto(row: Row): JobDto {
   return {
     id: asInt(row['id']),
     platformId: asText(row['platform_id']),
+    // 平台表里可能还没登记这一行（历史数据 / 平台被卸载）→ 留 null，界面退回显示 id
+    platformName: asTextOrNull(row['platform_name']),
     platformJobId: asText(row['platform_job_id']),
     title: asText(row['title']),
     companyId: asIntOrNull(row['company_id']),
@@ -122,6 +165,8 @@ function toDto(row: Row): JobDto {
     scoreStale: false,
     // 标注类型由领域层批量补齐（一次 IN 查询，避免列表页 N+1）
     flagTypes: [],
+    // 跨平台去重分组（批次 4）：列表据此**按组折叠**，同一条岗位在多个平台各抓一条时只占一行
+    dedupGroupId: asIntOrNull(row['dedup_group_id']),
   }
 }
 
@@ -197,6 +242,14 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
       where.push('j.company_id = ?')
       params.push(filters.companyId)
     }
+    if (filters.expReqs !== undefined && filters.expReqs.length > 0) {
+      where.push(`j.exp_req IN (${filters.expReqs.map(() => '?').join(',')})`)
+      params.push(...filters.expReqs)
+    }
+    if (filters.eduReqs !== undefined && filters.eduReqs.length > 0) {
+      where.push(`j.edu_req IN (${filters.eduReqs.map(() => '?').join(',')})`)
+      params.push(...filters.eduReqs)
+    }
     if (filters.keyword !== undefined && filters.keyword !== '') {
       where.push('j.title LIKE ?')
       params.push(`%${filters.keyword}%`)
@@ -204,6 +257,23 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
     if (filters.minSalaryAtLeast !== undefined) {
       where.push('j.salary_min >= ?')
       params.push(filters.minSalaryAtLeast)
+    }
+    if (filters.firstSeenSince !== undefined && filters.firstSeenSince !== '') {
+      where.push('j.first_seen_at >= ?')
+      params.push(filters.firstSeenSince)
+    }
+    if (filters.groupDuplicates === true) {
+      // 每组只留**最小 id**（`primary_job_id` 未必是最小的，而"最小的那个"是稳定且
+      // 与插入顺序一致的；用 primary 会让同一组在不同查询里换代表）。
+      // 没有分组的岗位（`dedup_group_id IS NULL`）各自独立，直接放行。
+      //
+      // 用相关子查询而不是 `GROUP BY`：`GROUP BY` 之后 `SELECT j.*` 拿到的行是
+      // SQLite 的"组内任一行"，非确定 —— 折叠出来的代表会随索引变化而变。
+      where.push(
+        `(j.dedup_group_id IS NULL OR j.id = (
+           SELECT MIN(g.id) FROM job g WHERE g.dedup_group_id = j.dedup_group_id
+         ))`,
+      )
     }
 
     return { clause: where.length > 0 ? `WHERE ${where.join(' AND ')}` : '', params }
@@ -365,6 +435,23 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
         .prepare(`SELECT DISTINCT city FROM job WHERE city <> '' ORDER BY city COLLATE NOCASE`)
         .all() as Row[]
       return rows.map((row) => asText(row['city']))
+    },
+
+    /* 经验/学历与城市同一套做法：取值来自库里的真实数据，不预置一套平台无关的枚举。
+       预置枚举会在筛选器里列出**库里根本没有的选项**（点了得到 0 条），
+       而各平台的原始写法（"3-5年" / "经验不限"）本来就不统一。 */
+    listExpReqs(): string[] {
+      const rows = db
+        .prepare(`SELECT DISTINCT exp_req FROM job WHERE exp_req <> '' ORDER BY exp_req COLLATE NOCASE`)
+        .all() as Row[]
+      return rows.map((row) => asText(row['exp_req']))
+    },
+
+    listEduReqs(): string[] {
+      const rows = db
+        .prepare(`SELECT DISTINCT edu_req FROM job WHERE edu_req <> '' ORDER BY edu_req COLLATE NOCASE`)
+        .all() as Row[]
+      return rows.map((row) => asText(row['edu_req']))
     },
   }
 }

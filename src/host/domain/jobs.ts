@@ -7,7 +7,7 @@
  * P4 起 `query` / `detail` 会带上**标注类型**与**匹配分**，
  * `detailFull` 还会带出完整依据 —— 界面上任何一个分数与徽章都要能回答「凭什么」。
  */
-import type { CompanyProfileDto, JobDetailDto, JobDto, JobFlagDto } from '../../shared/dto.js'
+import type { CompanyProfileDto, JobDetailDto, JobDto, JobFacetsDto, JobFlagDto } from '../../shared/dto.js'
 import { JOB_STATES, type JobFlagType, type JobState } from '../../shared/enums.js'
 import type { JobQuery, JobUpsertInput, MatchStamp } from '../store/repo/jobs.js'
 import type { Store } from '../store/store.js'
@@ -35,8 +35,8 @@ export interface JobService {
   /** 与 `query` 同一套筛选条件的计数（分页 total）。 */
   countMatching(filters?: JobQuery): number
   countByState(): Record<string, number>
-  /** 出去重后的城市列表（界面多选城市用）。 */
-  listCities(): string[]
+  /** 筛选器的取值集：城市 / 经验 / 学历（界面渲染多选 chips 用）。 */
+  facets(): JobFacetsDto
   /** 供采集层写入；重复跑按 `(platform, platformJobId)` 幂等。 */
   upsert(input: JobUpsertInput, now: string): { id: number; outcome: 'inserted' | 'updated' }
 }
@@ -91,6 +91,7 @@ export function createJobService(store: Store, options: JobServiceOptions = {}):
       outsourcingScore: profile?.outsourcingScore ?? null,
       fraudScore: profile?.fraudScore ?? null,
       manualLabel: profile?.manualLabel ?? null,
+      blacklisted: company.blacklisted,
     }
   }
 
@@ -110,7 +111,11 @@ export function createJobService(store: Store, options: JobServiceOptions = {}):
         computedAt: record.computedAt,
       }))
       const reasons = store.job.matchReasons(id)
-      return { job, flags, matchReasons: reasons, company: companyProfileOf(job.companyId) }
+      // 存的是 `string | null`，但空串与"没抓到"在界面上是同一件事 —— 统一收敛成 null，
+      // 免得界面要同时判 `null` 与 `''` 两种空。
+      const rawJd = store.job.jdText(id)
+      const jdText = rawJd === null || rawJd.trim() === '' ? null : rawJd
+      return { job, jdText, flags, matchReasons: reasons, company: companyProfileOf(job.companyId) }
     },
 
     mark(id, state): JobDto {
@@ -142,8 +147,12 @@ export function createJobService(store: Store, options: JobServiceOptions = {}):
       return store.job.countByState()
     },
 
-    listCities(): string[] {
-      return store.job.listCities()
+    facets(): JobFacetsDto {
+      return {
+        cities: store.job.listCities(),
+        expReqs: store.job.listExpReqs(),
+        eduReqs: store.job.listEduReqs(),
+      }
     },
 
     upsert(input, now): { id: number; outcome: 'inserted' | 'updated' } {

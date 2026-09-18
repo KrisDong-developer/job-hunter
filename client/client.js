@@ -40,6 +40,7 @@ window.__ModuleLoader__.load({
 		var NOTICE_TTL_MS = 6e3;
 		var PHASE = "P8";
 		var MAX_BODY_BYTES = 64 * 1024;
+		var ROUND_BUDGET_MS = 20 * 60 * 1e3;
 		var BROWSER_IDLE_DEFAULT_MIN = 10;
 		var BROWSER_IDLE_MIN_MIN = 0;
 		var BROWSER_IDLE_MAX_MIN = 240;
@@ -424,8 +425,18 @@ window.__ModuleLoader__.load({
 		  if (params.minSalary !== void 0 && params.minSalary !== null) {
 		    query.set("minSalary", String(params.minSalary));
 		  }
+		  if (params.expReqs !== void 0 && params.expReqs.length > 0) {
+		    query.set("expReqs", params.expReqs.join(","));
+		  }
+		  if (params.eduReqs !== void 0 && params.eduReqs.length > 0) {
+		    query.set("eduReqs", params.eduReqs.join(","));
+		  }
 		  if (params.excludeFlags !== void 0 && params.excludeFlags.length > 0) {
 		    query.set("excludeFlags", params.excludeFlags.join(","));
+		  }
+		  if (params.groupDuplicates === true) query.set("groupDuplicates", "1");
+		  if (params.firstSeenSince !== void 0 && params.firstSeenSince !== "") {
+		    query.set("firstSeenSince", params.firstSeenSince);
 		  }
 		  if (params.orderBy !== void 0 && params.orderBy !== "") query.set("orderBy", params.orderBy);
 		  query.set("desc", params.descending === false ? "0" : "1");
@@ -433,12 +444,8 @@ window.__ModuleLoader__.load({
 		  query.set("pageSize", String(params.pageSize ?? 20));
 		  return await request(`/jobs?${query.toString()}`, signal === void 0 ? {} : { signal });
 		}
-		async function fetchJobCities(signal) {
-		  const result = await request(
-		    "/jobs/cities",
-		    signal === void 0 ? {} : { signal }
-		  );
-		  return result.items;
+		async function fetchJobFacets(signal) {
+		  return await request("/jobs/facets", signal === void 0 ? {} : { signal });
 		}
 		async function fetchJobDetail(id, signal) {
 		  return await request(`/jobs/${String(id)}`, signal === void 0 ? {} : { signal });
@@ -449,6 +456,18 @@ window.__ModuleLoader__.load({
 		    body: JSON.stringify({ state })
 		  });
 		  return result.job;
+		}
+		async function fetchCompanyDetail(companyId, signal) {
+		  return await request(
+		    `/companies/${String(companyId)}`,
+		    signal === void 0 ? {} : { signal }
+		  );
+		}
+		async function updateCompanyReview(companyId, patch) {
+		  await request(`/companies/${String(companyId)}`, {
+		    method: "PATCH",
+		    body: JSON.stringify(patch)
+		  });
 		}
 		async function fetchPlans(signal) {
 		  return await request("/plans", signal === void 0 ? {} : { signal });
@@ -777,6 +796,16 @@ window.__ModuleLoader__.load({
 		    signal === void 0 ? {} : { signal }
 		  );
 		}
+		async function fetchDedupGroup(groupId, signal) {
+		  const result = await request(
+		    `/dedup/groups/${String(groupId)}`,
+		    signal === void 0 ? {} : { signal }
+		  );
+		  return result.group;
+		}
+		async function runDedupSweep() {
+		  return await request("/dedup/run", { method: "POST", body: JSON.stringify({}) });
+		}
 		async function splitDedupMember(groupId, jobId) {
 		  await request(`/dedup/groups/${String(groupId)}/split`, {
 		    method: "POST",
@@ -896,6 +925,18 @@ window.__ModuleLoader__.load({
 		  if (job.salaryMin === null) return null;
 		  const range = job.salaryMax === null || job.salaryMax === job.salaryMin ? String(job.salaryMin) : `${String(job.salaryMin)}-${String(job.salaryMax)}`;
 		  return `${range} \u5143/\u6708${job.salaryMonths === null ? "" : ` \xB7 ${String(job.salaryMonths)} \u85AA`}`;
+		}
+		function relativeTime(iso, now = /* @__PURE__ */ new Date()) {
+		  const at = new Date(iso);
+		  if (Number.isNaN(at.getTime())) return null;
+		  const minutes = Math.floor((now.getTime() - at.getTime()) / 6e4);
+		  if (minutes < 1) return "\u521A\u521A";
+		  if (minutes < 60) return `${String(minutes)} \u5206\u949F\u524D`;
+		  const hours = Math.floor(minutes / 60);
+		  if (hours < 24) return `${String(hours)} \u5C0F\u65F6\u524D`;
+		  const days = Math.floor(hours / 24);
+		  if (days <= 30) return `${String(days)} \u5929\u524D`;
+		  return iso.slice(0, 10);
 		}
 		var BENEFIT_KEYWORDS = [
 		  "\u4E94\u9669",
@@ -1699,6 +1740,7 @@ window.__ModuleLoader__.load({
 		// src/client/screens/job-detail.tsx
 		var import_jsx_runtime6 = require("react/jsx-runtime");
 		var ACTION_STATES = ["saved", "ignored", "seen", "archived"];
+		var JD_PREVIEW_CHARS = 320;
 		var FLAG_TONE = {
 		  fraud: "error",
 		  outsourcing: "warn",
@@ -1738,6 +1780,121 @@ window.__ModuleLoader__.load({
 		    ] })
 		  ] });
 		}
+		function JdText(props) {
+		  const [expanded, setExpanded] = (0, import_react6.useState)(false);
+		  const long = props.text.length > JD_PREVIEW_CHARS;
+		  const shown = long && !expanded ? `${props.text.slice(0, JD_PREVIEW_CHARS)}\u2026` : props.text;
+		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-jd", children: shown }),
+		    long ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-btn jh-btn-inline",
+		        "aria-expanded": expanded,
+		        onClick: () => {
+		          setExpanded(!expanded);
+		        },
+		        children: expanded ? "\u6536\u8D77\u539F\u6587" : `\u5C55\u5F00\u5168\u6587\uFF08\u5171 ${String(props.text.length)} \u5B57\uFF09`
+		      }
+		    ) : null
+		  ] });
+		}
+		function CompanyJobs(props) {
+		  const { state } = useAsync(
+		    (signal) => fetchCompanyDetail(props.companyId, signal),
+		    [props.companyId]
+		  );
+		  if (state.status === "loading") return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-note", children: "\u6B63\u5728\u8BFB\u53D6\u8BE5\u516C\u53F8\u7684\u5176\u5B83\u5C97\u4F4D\u2026" });
+		  if (state.status === "error") return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: "jh-note", children: [
+		    "\u8BFB\u53D6\u8BE5\u516C\u53F8\u5C97\u4F4D\u5931\u8D25\uFF1A",
+		    state.message
+		  ] });
+		  const others = state.data.jobs.filter((job) => job.id !== props.currentJobId);
+		  if (others.length === 0) {
+		    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-note", children: "\u9664\u5F53\u524D\u8FD9\u4E2A\u5C97\u4F4D\u5916\uFF0C\u8FD9\u5BB6\u516C\u53F8\u5728\u4F60\u5E93\u91CC\u6CA1\u6709\u5176\u5B83\u5728\u62DB\u5C97\u4F4D\u3002" });
+		  }
+		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "jh-siblings", children: others.map((job) => {
+		      const requirements = [job.expReq, job.eduReq].filter((item) => item !== "").join("\xB7");
+		      const meta = [job.city, requirements, job.salaryRaw].filter((item) => item !== "").join("\uFF5C");
+		      return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("li", { children: props.onSelect === void 0 ? (
+		        // 抽屉场景（流水线/消息/面试）没有"切换岗位"的上下文 ——
+		        // 那时渲染成纯文本，而不是一个点了没反应的按钮。
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "jh-sibling jh-sibling-static", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: job.title }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-sibling-meta", children: meta })
+		        ] })
+		      ) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("button", { type: "button", className: "jh-sibling", onClick: () => props.onSelect?.(job.id), children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: job.title }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-sibling-meta", children: meta })
+		      ] }) }, job.id);
+		    }) }),
+		    props.jobCount > state.data.jobs.length ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: "jh-note", children: [
+		      "\u8BE5\u516C\u53F8\u5171 ",
+		      props.jobCount,
+		      " \u4E2A\u5C97\u4F4D\uFF0C\u8FD9\u91CC\u53EA\u5217\u51FA\u6700\u8FD1\u66F4\u65B0\u7684 ",
+		      state.data.jobs.length,
+		      " \u6761\u3002"
+		    ] }) : null
+		  ] });
+		}
+		function CompanyReview(props) {
+		  const [label, setLabel] = (0, import_react6.useState)(props.company.manualLabel ?? "");
+		  const [blacklisted, setBlacklisted] = (0, import_react6.useState)(props.company.blacklisted);
+		  const [busy, setBusy] = (0, import_react6.useState)(false);
+		  const [failure, setFailure] = (0, import_react6.useState)(null);
+		  const save = async (event) => {
+		    event.preventDefault();
+		    setBusy(true);
+		    setFailure(null);
+		    try {
+		      const trimmed = label.trim();
+		      await updateCompanyReview(props.company.id, {
+		        blacklisted,
+		        // 空串 = 清除标签（后端把空串收敛成 null，不会存一个空标签）
+		        manualLabel: trimmed === "" ? null : trimmed
+		      });
+		      props.onSaved();
+		    } catch (error) {
+		      setFailure(error instanceof ApiError ? error.display : String(error));
+		    } finally {
+		      setBusy(false);
+		    }
+		  };
+		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("form", { className: "jh-review", onSubmit: (event) => void save(event), children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "jh-review-field", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u4EBA\u5DE5\u6807\u7B7E" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		        "input",
+		        {
+		          className: "jh-input jh-input-sm",
+		          value: label,
+		          maxLength: 40,
+		          placeholder: "\u5982\uFF1A\u5916\u5305 / \u5DF2\u6295\u8FC7",
+		          onChange: (event) => {
+		            setLabel(event.target.value);
+		          }
+		        }
+		      )
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "jh-check", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		        "input",
+		        {
+		          type: "checkbox",
+		          checked: blacklisted,
+		          onChange: (event) => {
+		            setBlacklisted(event.target.checked);
+		          }
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u62C9\u9ED1\u8BE5\u516C\u53F8" })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline", disabled: busy, children: busy ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u590D\u6838" }),
+		    failure === null ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-error", children: failure })
+		  ] });
+		}
 		function JobDetailBody(props) {
 		  const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision]);
 		  const [busy, setBusy] = (0, import_react6.useState)(null);
@@ -1765,8 +1922,9 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "jh-btn", onClick: reload, children: "\u91CD\u8BD5" })
 		    ] });
 		  }
-		  const { job, company, flags, matchReasons } = state.data;
+		  const { job, jdText, company, flags, matchReasons } = state.data;
 		  const grouped = splitJobTags(job.tags);
+		  const lastSeen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt;
 		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("header", { className: "jh-detail-head", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-detail-headline", children: [
@@ -1814,12 +1972,20 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: job.eduReq === "" ? "\u2014" : job.eduReq })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6765\u6E90\u5E73\u53F0" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: job.platformName ?? job.platformId })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u53D1\u5E03" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: job.publishedAt ?? "\u2014" })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u9996\u6B21\u89C1\u5230" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: job.firstSeenAt })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6700\u8FD1\u89C1\u5230" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: lastSeen })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F53\u524D\u72B6\u6001" }),
@@ -1835,6 +2001,10 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-tag-group-name", children: "\u516C\u53F8\u798F\u5229" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "jh-tags", children: grouped.benefits.map((tag) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-tag", children: tag }, tag)) })
 		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { className: "jh-card-title", children: "\u5C97\u4F4D\u63CF\u8FF0" }),
+		      jdText === null ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(InlineMd, { text: "**\u6CA1\u6709\u6293\u5230 JD \u539F\u6587** \u2014\u2014 \u8BE5\u5E73\u53F0\u672A\u63D0\u4F9B\u8BE6\u60C5\u9875\u89E3\u6790\uFF0C\u6216\u6293\u53D6\u65F6\u8BE6\u60C5\u9875\u6CA1\u6253\u5F00\u3002\u53EF\u4EE5\u70B9\u6700\u4E0B\u9762\u7684\u539F\u7AD9\u94FE\u63A5\u81EA\u5DF1\u770B\u3002" }) }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(JdText, { text: jdText })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { className: "jh-card-title", children: "L1 \u7C97\u7B5B\u5206" }),
@@ -1899,55 +2069,78 @@ window.__ModuleLoader__.load({
 		        ] })
 		      ] })
 		    ] }),
-		    company === null ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { className: "jh-card-title", children: "\u516C\u53F8\u753B\u50CF" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("ul", { className: "jh-kv", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F52\u4E00\u5316\u540D" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("code", { children: company.nameNorm })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u884C\u4E1A" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.industry ?? "\u2014" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6027\u8D28" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.nature ?? "\u2014" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u89C4\u6A21" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.size ?? "\u2014" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5728\u624B\u5C97\u4F4D" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.jobCount })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6280\u672F\u6808\u5E7F\u5EA6" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.stackDiversity })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5730\u57DF\u8DE8\u5EA6" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.geoSpread })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u9A7B\u573A\u6BD4\u4F8B" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.onsiteRatio === null ? "\u2014" : `${String(Math.round(company.onsiteRatio * 100))}%` })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u540D\u79F0\u5173\u952E\u8BCD" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.nameKeywordHits })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5916\u5305\u5206 / \u8BC8\u9A97\u5206" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
-		            String(company.outsourcingScore ?? 0),
-		            " / ",
-		            String(company.fraudScore ?? 0)
+		    company === null ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { className: "jh-card-title", children: "\u516C\u53F8\u753B\u50CF" }),
+		        company.blacklisted ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-alert jh-alert-warn", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-alert-title", children: "\u8FD9\u5BB6\u516C\u53F8\u88AB\u4F60\u6807\u8BB0\u4E3A\u300C\u62C9\u9ED1\u300D" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-alert-body", children: "\u8FD9\u662F\u4F60\u7684\u4EBA\u5DE5\u6807\u8BB0\u3002\u5B83\u4E0D\u4F1A\u81EA\u52A8\u9690\u85CF\u8BE5\u516C\u53F8\u7684\u5C97\u4F4D\uFF0C\u53EA\u662F\u5728\u8FD9\u91CC\u63D0\u793A\u4F60\u3002" })
+		        ] }) : null,
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("ul", { className: "jh-kv", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F52\u4E00\u5316\u540D" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("code", { children: company.nameNorm })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u884C\u4E1A" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.industry ?? "\u2014" })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6027\u8D28" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.nature ?? "\u2014" })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u89C4\u6A21" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.size ?? "\u2014" })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5728\u624B\u5C97\u4F4D" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.jobCount })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6280\u672F\u6808\u5E7F\u5EA6" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.stackDiversity })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5730\u57DF\u8DE8\u5EA6" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.geoSpread })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u9A7B\u573A\u6BD4\u4F8B" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.onsiteRatio === null ? "\u2014" : `${String(Math.round(company.onsiteRatio * 100))}%` })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u540D\u79F0\u5173\u952E\u8BCD" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.nameKeywordHits })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5916\u5305\u5206 / \u8BC8\u9A97\u5206" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+		              String(company.outsourcingScore ?? 0),
+		              " / ",
+		              String(company.fraudScore ?? 0)
+		            ] })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u62C9\u9ED1" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: company.blacklisted ? "\u5DF2\u62C9\u9ED1" : "\u5426" })
 		          ] })
-		        ] })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-note", children: "\u51B7\u542F\u52A8\u65F6\u7EDF\u8BA1\u4FE1\u53F7\u5F31\uFF08D-16\uFF09\uFF1A\u5C97\u4F4D\u8D8A\u591A\u5224\u65AD\u8D8A\u51C6\uFF0C\u4F9D\u636E\u4E0D\u8DB3\u65F6\u8FD9\u4E9B\u6570\u5B57\u4F1A\u504F\u4F4E\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(CompanyReview, { company, onSaved: reload }, company.id)
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-note", children: "\u51B7\u542F\u52A8\u65F6\u7EDF\u8BA1\u4FE1\u53F7\u5F31\uFF08D-16\uFF09\uFF1A\u5C97\u4F4D\u8D8A\u591A\u5224\u65AD\u8D8A\u51C6\uFF0C\u4F9D\u636E\u4E0D\u8DB3\u65F6\u8FD9\u4E9B\u6570\u5B57\u4F1A\u504F\u4F4E\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "jh-card jh-card-tight", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { className: "jh-card-title", children: "\u8FD9\u5BB6\u516C\u53F8\u7684\u5176\u5B83\u5C97\u4F4D" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		          CompanyJobs,
+		          {
+		            companyId: company.id,
+		            jobCount: company.jobCount,
+		            currentJobId: job.id,
+		            onSelect: props.onSelect
+		          }
+		        )
+		      ] })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(TailorPanel, { jobId: props.id, revision: props.revision, onChanged: props.onChanged }),
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(OverseasPanel, { jobId: props.id, onChanged: props.onChanged }),
@@ -1966,7 +2159,15 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(InlineMd, { text: "\u5217\u8868\u4E0A\u7684\u300C\u7C97\u7B5B\u5206\u300D\u4E0E\u98CE\u9669\u6807\u6CE8\u53EA\u662F\u521D\u7B5B\uFF1B\u70B9\u8FDB\u6765\u80FD\u770B\u5230\u6BCF\u4E00\u6761\u7ED3\u8BBA\u7684**\u539F\u6587\u4F9D\u636E**\u3002" }) })
 		    ] });
 		  }
-		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("section", { className: "jh-detail-pane", "data-job-hunter": "job-detail", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(JobDetailBody, { id: props.id, revision: props.revision, onChanged: props.onChanged }) });
+		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("section", { className: "jh-detail-pane", "data-job-hunter": "job-detail", "aria-label": "\u5C97\u4F4D\u8BE6\u60C5", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		    JobDetailBody,
+		    {
+		      id: props.id,
+		      revision: props.revision,
+		      onChanged: props.onChanged,
+		      onSelect: props.onSelect
+		    }
+		  ) });
 		}
 		function JobDetailDrawer(props) {
 		  const dialogRef = (0, import_react6.useRef)(null);
@@ -2001,18 +2202,36 @@ window.__ModuleLoader__.load({
 		var EMPTY_FILTERS = {
 		  q: "",
 		  cities: [],
+		  expReqs: [],
+		  eduReqs: [],
 		  state: "",
 		  minSalary: "",
 		  excludeFlags: [],
+		  groupDuplicates: false,
+		  newWindow: "",
 		  orderBy: "crawled_at",
 		  descending: true
 		};
+		function toggleValue(list, value) {
+		  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+		}
 		var ORDER_OPTIONS = [
 		  { value: "crawled_at", label: "\u6309\u6293\u53D6\u65F6\u95F4" },
 		  { value: "salary_min", label: "\u6309\u6708\u85AA" },
 		  { value: "last_seen_at", label: "\u6309\u6700\u8FD1\u51FA\u73B0" },
+		  { value: "first_seen_at", label: "\u6309\u9996\u6B21\u51FA\u73B0" },
 		  { value: "title", label: "\u6309\u6807\u9898" }
 		];
+		var NEW_JOB_WINDOWS = [
+		  { value: "1d", label: "\u8FD1 24 \u5C0F\u65F6", hours: 24 },
+		  { value: "3d", label: "\u8FD1 3 \u5929", hours: 72 },
+		  { value: "7d", label: "\u8FD1 7 \u5929", hours: 168 }
+		];
+		function firstSeenSinceOf(window2, now = Date.now()) {
+		  const found = NEW_JOB_WINDOWS.find((item) => item.value === window2);
+		  if (found === void 0) return void 0;
+		  return new Date(now - found.hours * 60 * 60 * 1e3).toISOString();
+		}
 		var PAGE_SIZE = 20;
 		function pageNumbers(page, pages) {
 		  if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
@@ -2065,18 +2284,57 @@ window.__ModuleLoader__.load({
 		    )
 		  ] });
 		}
+		function DedupComparePane(props) {
+		  const { state } = useAsync((signal) => fetchDedupGroup(props.groupId, signal), [props.groupId]);
+		  if (state.status === "loading") {
+		    return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u540C\u5C97\u4F4D\u7684\u5176\u5B83\u6765\u6E90\u2026" });
+		  }
+		  if (state.status === "error") return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "jh-error", children: state.message });
+		  const group = state.data;
+		  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "jh-dedup-pane", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "jh-muted", children: [
+		      "\u5224\u5B9A\u4F9D\u636E\uFF1A",
+		      group.basis
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { scope: "col", children: "\u6765\u6E90" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { scope: "col", children: "\u6807\u9898" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { scope: "col", children: "\u85AA\u8D44" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u57CE\u5E02" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { scope: "col", children: "\u539F\u9875\u9762" })
+		      ] }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("tbody", { children: group.members.map((member) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("td", { children: [
+		          member.platformName ?? member.platformId,
+		          member.isPrimary ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-muted", children: "\uFF08\u4E3B\uFF09" }) : null
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "button", className: "jh-link", onClick: () => props.onSelect(member.id), children: member.title }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { className: "jh-num", children: member.salaryRaw }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { className: "jh-col-hide-sm", children: member.city }),
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("a", { className: "jh-link", href: member.sourceUrl, target: "_blank", rel: "noreferrer", children: "\u6253\u5F00" }) })
+		      ] }, member.id)) })
+		    ] }) })
+		  ] });
+		}
 		function JobsScreen(props) {
 		  const [draft, setDraft] = (0, import_react7.useState)(EMPTY_FILTERS);
 		  const [applied, setApplied] = (0, import_react7.useState)(EMPTY_FILTERS);
 		  const [page, setPage] = (0, import_react7.useState)(1);
+		  const [openGroup, setOpenGroup] = (0, import_react7.useState)(null);
 		  const { state, reload } = useAsync(
 		    (signal) => fetchJobs(
 		      {
 		        q: applied.q,
 		        cities: applied.cities,
+		        expReqs: applied.expReqs,
+		        eduReqs: applied.eduReqs,
 		        state: applied.state,
 		        minSalary: applied.minSalary === "" ? null : Number(applied.minSalary),
 		        excludeFlags: applied.excludeFlags,
+		        groupDuplicates: applied.groupDuplicates,
+		        // 「只看新增」：把时间窗算成 ISO 再传（宿主只做比较，不猜"今天"从哪算起）
+		        firstSeenSince: firstSeenSinceOf(applied.newWindow),
 		        orderBy: applied.orderBy,
 		        descending: applied.descending,
 		        page,
@@ -2086,13 +2344,19 @@ window.__ModuleLoader__.load({
 		    ),
 		    [props.revision, applied, page]
 		  );
-		  const knownCities = useAsync((signal) => fetchJobCities(signal), []);
-		  const citiesAll = knownCities.state.status === "ok" ? knownCities.state.data : [];
+		  const facets = useAsync((signal) => fetchJobFacets(signal), []);
+		  const facetData = facets.state.status === "ok" ? facets.state.data : null;
+		  const citiesAll = facetData?.cities ?? [];
+		  const expAll = facetData?.expReqs ?? [];
+		  const eduAll = facetData?.eduReqs ?? [];
 		  const toggleCity = (city) => {
-		    setDraft((current) => ({
-		      ...current,
-		      cities: current.cities.includes(city) ? current.cities.filter((item) => item !== city) : [...current.cities, city]
-		    }));
+		    setDraft((current) => ({ ...current, cities: toggleValue(current.cities, city) }));
+		  };
+		  const toggleExp = (value) => {
+		    setDraft((current) => ({ ...current, expReqs: toggleValue(current.expReqs, value) }));
+		  };
+		  const toggleEdu = (value) => {
+		    setDraft((current) => ({ ...current, eduReqs: toggleValue(current.eduReqs, value) }));
 		  };
 		  const toggleExclude = (type) => {
 		    setDraft((current) => ({
@@ -2124,6 +2388,7 @@ window.__ModuleLoader__.load({
 		  };
 		  const total = state.status === "ok" ? state.data.total : 0;
 		  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+		  const appliedWindowLabel = NEW_JOB_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null;
 		  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "jh-jobs-split", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("form", { className: "jh-filters", onSubmit: submit, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
@@ -2186,6 +2451,34 @@ window.__ModuleLoader__.load({
 		          city
 		        ))
 		      ] }),
+		      expAll.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-filter-row", role: "group", "aria-label": "\u7ECF\u9A8C\u8981\u6C42\uFF08\u53EF\u591A\u9009\uFF09", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-filter-label", children: "\u7ECF\u9A8C" }),
+		        expAll.map((value) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-chip${draft.expReqs.includes(value) ? " jh-chip-on" : ""}`,
+		            "aria-pressed": draft.expReqs.includes(value),
+		            onClick: () => toggleExp(value),
+		            children: value
+		          },
+		          value
+		        ))
+		      ] }),
+		      eduAll.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-filter-row", role: "group", "aria-label": "\u5B66\u5386\u8981\u6C42\uFF08\u53EF\u591A\u9009\uFF09", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-filter-label", children: "\u5B66\u5386" }),
+		        eduAll.map((value) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-chip${draft.eduReqs.includes(value) ? " jh-chip-on" : ""}`,
+		            "aria-pressed": draft.eduReqs.includes(value),
+		            onClick: () => toggleEdu(value),
+		            children: value
+		          },
+		          value
+		        ))
+		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-filter-row", role: "group", "aria-label": "\u5C4F\u853D\u6807\u6CE8", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-filter-label", children: "\u5C4F\u853D" }),
 		        JOB_FLAG_TYPES.map((type) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
@@ -2200,7 +2493,36 @@ window.__ModuleLoader__.load({
 		          },
 		          type
 		        ))
-		      ] })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-filter-row", role: "group", "aria-label": "\u53EA\u770B\u65B0\u589E", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-filter-label", children: "\u65B0\u589E" }),
+		        NEW_JOB_WINDOWS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-chip${draft.newWindow === option.value ? " jh-chip-on" : ""}`,
+		            "aria-pressed": draft.newWindow === option.value,
+		            title: `\u53EA\u770B${option.label}\u7B2C\u4E00\u6B21\u51FA\u73B0\u7684\u5C97\u4F4D\uFF08\u6309\u9996\u6B21\u89C1\u5230\u65F6\u95F4\u7B97\uFF0C\u4E0E\u9996\u5C4F\u300C\u4ECA\u65E5\u65B0\u589E\u300D\u540C\u53E3\u5F84\uFF09`,
+		            onClick: () => setDraft((current) => ({
+		              ...current,
+		              newWindow: current.newWindow === option.value ? "" : option.value
+		            })),
+		            children: option.label
+		          },
+		          option.value
+		        ))
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-filter-row", role: "group", "aria-label": "\u8DE8\u5E73\u53F0\u6298\u53E0", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: `jh-chip${draft.groupDuplicates ? " jh-chip-on" : ""}`,
+		          "aria-pressed": draft.groupDuplicates,
+		          title: "\u540C\u4E00\u6761\u5C97\u4F4D\u5728\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u53EA\u663E\u793A\u4E00\u884C\uFF08\u5C55\u5F00\u53EF\u770B\u5404\u5E73\u53F0\u5BF9\u7167\uFF09\u3002\u6761\u6570\u4E0E\u5206\u9875\u4E5F\u8DDF\u7740\u6309\u6298\u53E0\u540E\u7B97\u3002",
+		          onClick: () => setDraft((current) => ({ ...current, groupDuplicates: !current.groupDuplicates })),
+		          children: "\u8DE8\u5E73\u53F0\u6298\u53E0"
+		        }
+		      ) })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "jh-jobs-cols", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "jh-jobs-pane", "data-job-hunter": "job-list", children: [
@@ -2224,7 +2546,11 @@ window.__ModuleLoader__.load({
 		            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-muted", children: [
 		              "\u5171 ",
 		              state.data.total,
-		              " \u6761 \xB7 \u7B2C ",
+		              " \u6761",
+		              applied.groupDuplicates ? "\uFF08\u5DF2\u6309\u8DE8\u5E73\u53F0\u6298\u53E0\uFF0C\u540C\u4E00\u6761\u5C97\u4F4D\u53EA\u7B97\u4E00\u884C\uFF09" : "",
+		              appliedWindowLabel === null ? "" : `\uFF08\u53EA\u770B${appliedWindowLabel}\u7684\u65B0\u589E\uFF09`,
+		              " \xB7 \u7B2C",
+		              " ",
 		              state.data.page,
 		              " / ",
 		              pages,
@@ -2234,76 +2560,109 @@ window.__ModuleLoader__.load({
 		          ] }),
 		          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("ul", { className: "jh-jobs", children: state.data.items.map((job) => {
 		            const active = job.id === props.selected;
-		            return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "jh-job-row", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: `jh-job${active ? " jh-job-active" : ""}`,
-		                  "data-job-id": job.id,
-		                  "aria-current": active ? "true" : void 0,
-		                  "aria-label": `\u5C97\u4F4D\uFF1A${job.title}\uFF0C${job.salaryRaw}\uFF0C${job.city}${job.district === "" ? "" : `\xB7${job.district}`}\uFF0C${JOB_STATE_LABEL[job.state]}`,
-		                  onClick: () => props.onSelect(job.id),
-		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-main", "aria-hidden": "true", children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-job-title", children: job.title }),
-		                      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-meta", children: [
-		                        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("b", { className: "jh-salary", children: job.salaryRaw }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
-		                          job.city,
-		                          job.district === "" ? "" : `\xB7${job.district}`
-		                        ] }),
-		                        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-job-company", children: job.companyName ?? "\u2014" })
-		                      ] }),
-		                      job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-tags", children: job.tags.slice(0, 8).map((tag) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
-		                      (job.flagTypes.length > 0 || job.matchScore !== null) && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-signals", children: [
-		                        job.matchScore === null ? null : (
-		                          // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
-		                          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-score", children: [
-		                            "\u7C97\u7B5B ",
-		                            job.matchScore
-		                          ] })
-		                        ),
-		                        job.flagTypes.map((type) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: `jh-flag jh-flag-${type}`, children: JOB_FLAG_LABEL[type] }, type))
-		                      ] })
-		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: `jh-state jh-state-${job.state}`, "aria-hidden": "true", children: JOB_STATE_LABEL[job.state] })
-		                  ]
-		                }
-		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-quick", role: "group", "aria-label": "\u5FEB\u6377\u6807\u8BB0", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		            const requirements = [job.expReq, job.eduReq].filter((item) => item !== "").join("\xB7");
+		            const seen = relativeTime(job.lastSeenAt);
+		            return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("li", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "jh-job-row", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
 		                  "button",
 		                  {
 		                    type: "button",
-		                    className: `jh-job-qk${job.state === "saved" ? " jh-job-qk-on" : ""}`,
-		                    "aria-label": job.state === "saved" ? "\u53D6\u6D88\u6536\u85CF" : "\u6536\u85CF",
-		                    "aria-pressed": job.state === "saved",
-		                    title: job.state === "saved" ? "\u53D6\u6D88\u6536\u85CF\uFF08\u56DE\u5230\u5DF2\u8BFB\uFF09" : "\u6536\u85CF",
-		                    disabled: marking === job.id,
-		                    onClick: () => void quickMark(job.id, job.state === "saved" ? "seen" : "saved"),
-		                    children: "\u2605"
+		                    className: `jh-job${active ? " jh-job-active" : ""}`,
+		                    "data-job-id": job.id,
+		                    "aria-current": active ? "true" : void 0,
+		                    "aria-label": `\u5C97\u4F4D\uFF1A${job.title}\uFF0C${job.salaryRaw}\uFF0C${job.city}${job.district === "" ? "" : `\xB7${job.district}`}\uFF0C${JOB_STATE_LABEL[job.state]}`,
+		                    onClick: () => props.onSelect(job.id),
+		                    children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-main", "aria-hidden": "true", children: [
+		                        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-job-title", children: job.title }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-meta", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("b", { className: "jh-salary", children: job.salaryRaw }),
+		                          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
+		                            job.city,
+		                            job.district === "" ? "" : `\xB7${job.district}`
+		                          ] }),
+		                          requirements === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: requirements }),
+		                          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-job-company", children: job.companyName ?? "\u2014" })
+		                        ] }),
+		                        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-origin", children: [
+		                          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: job.platformName ?? job.platformId }),
+		                          seen === null ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
+		                            "\u6700\u8FD1\u89C1\u5230 ",
+		                            seen
+		                          ] }),
+		                          job.dedupGroupId === null ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-dedup-badge", title: "\u4E0E\u5176\u5B83\u5E73\u53F0\u7684\u540C\u4E00\u5C97\u4F4D\u5408\u5E76\u6210\u4E86\u4E00\u7EC4", children: "\u8DE8\u5E73\u53F0" })
+		                        ] }),
+		                        job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-tags", children: job.tags.slice(0, 8).map((tag) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
+		                        (job.flagTypes.length > 0 || job.matchScore !== null) && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-signals", children: [
+		                          job.matchScore === null ? null : (
+		                            // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
+		                            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-score", children: [
+		                              "\u7C97\u7B5B ",
+		                              job.matchScore
+		                            ] })
+		                          ),
+		                          job.flagTypes.map((type) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: `jh-flag jh-flag-${type}`, children: JOB_FLAG_LABEL[type] }, type))
+		                        ] })
+		                      ] }),
+		                      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: `jh-state jh-state-${job.state}`, "aria-hidden": "true", children: JOB_STATE_LABEL[job.state] })
+		                    ]
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
-		                  "button",
-		                  {
-		                    type: "button",
-		                    className: `jh-job-qk${job.state === "ignored" ? " jh-job-qk-ign" : ""}`,
-		                    "aria-label": job.state === "ignored" ? "\u6062\u590D" : "\u5212\u6389",
-		                    "aria-pressed": job.state === "ignored",
-		                    title: job.state === "ignored" ? "\u53D6\u6D88\u5212\u6389\uFF08\u56DE\u5230\u5DF2\u8BFB\uFF09" : "\u5212\u6389\uFF08\u5FFD\u7565\uFF09",
-		                    disabled: marking === job.id,
-		                    onClick: () => void quickMark(job.id, job.state === "ignored" ? "seen" : "ignored"),
-		                    children: "\u2715"
-		                  }
-		                )
-		              ] })
-		            ] }) }, job.id);
+		                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "jh-job-quick", role: "group", "aria-label": "\u5FEB\u6377\u6807\u8BB0", children: [
+		                  job.dedupGroupId === null ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		                    "button",
+		                    {
+		                      type: "button",
+		                      className: `jh-job-qk jh-job-qk-wide${openGroup === job.dedupGroupId ? " jh-job-qk-on" : ""}`,
+		                      "aria-expanded": openGroup === job.dedupGroupId,
+		                      title: "\u8FD9\u6761\u5C97\u4F4D\u5728\u522B\u7684\u5E73\u53F0\u4E5F\u5728\u62DB \u2014\u2014 \u70B9\u5F00\u770B\u5404\u5E73\u53F0\u7684\u5BF9\u7167",
+		                      onClick: () => setOpenGroup(openGroup === job.dedupGroupId ? null : job.dedupGroupId),
+		                      children: "\u5BF9\u7167"
+		                    }
+		                  ),
+		                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		                    "button",
+		                    {
+		                      type: "button",
+		                      className: `jh-job-qk${job.state === "saved" ? " jh-job-qk-on" : ""}`,
+		                      "aria-label": job.state === "saved" ? "\u53D6\u6D88\u6536\u85CF" : "\u6536\u85CF",
+		                      "aria-pressed": job.state === "saved",
+		                      title: job.state === "saved" ? "\u53D6\u6D88\u6536\u85CF\uFF08\u56DE\u5230\u5DF2\u8BFB\uFF09" : "\u6536\u85CF",
+		                      disabled: marking === job.id,
+		                      onClick: () => void quickMark(job.id, job.state === "saved" ? "seen" : "saved"),
+		                      children: "\u2605"
+		                    }
+		                  ),
+		                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		                    "button",
+		                    {
+		                      type: "button",
+		                      className: `jh-job-qk${job.state === "ignored" ? " jh-job-qk-ign" : ""}`,
+		                      "aria-label": job.state === "ignored" ? "\u6062\u590D" : "\u5212\u6389",
+		                      "aria-pressed": job.state === "ignored",
+		                      title: job.state === "ignored" ? "\u53D6\u6D88\u5212\u6389\uFF08\u56DE\u5230\u5DF2\u8BFB\uFF09" : "\u5212\u6389\uFF08\u5FFD\u7565\uFF09",
+		                      disabled: marking === job.id,
+		                      onClick: () => void quickMark(job.id, job.state === "ignored" ? "seen" : "ignored"),
+		                      children: "\u2715"
+		                    }
+		                  )
+		                ] })
+		              ] }),
+		              job.dedupGroupId === null || openGroup !== job.dedupGroupId ? null : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(DedupComparePane, { groupId: job.dedupGroupId, onSelect: props.onSelect })
+		            ] }, job.id);
 		          }) })
 		        ] })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(JobDetailPane, { id: props.selected, revision: props.revision, onChanged: props.onChanged })
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+		        JobDetailPane,
+		        {
+		          id: props.selected,
+		          revision: props.revision,
+		          onChanged: props.onChanged,
+		          onSelect: props.onSelect
+		        }
+		      )
 		    ] })
 		  ] });
 		}
@@ -3539,6 +3898,7 @@ window.__ModuleLoader__.load({
 		  sort: "\u6392\u5E8F\u65B9\u5F0F",
 		  postedWithinDays: "\u53D1\u5E03\u65F6\u95F4",
 		  maxPages: "\u6293\u53D6\u9875\u6570\u4E0A\u9650",
+		  scrollRounds: "\u52A0\u8F7D\u8F6E\u6570",
 		  // 平台特有维度：只有部分平台声明（如神仙外企），但方案可能引用了它们，
 		  // 而平台刚被取消勾选 —— 那时候界面不该退回去印 `workExp`。
 		  workExp: "\u5DE5\u4F5C\u7ECF\u9A8C",
@@ -3547,7 +3907,8 @@ window.__ModuleLoader__.load({
 		};
 		var NUMERIC_SUFFIX = {
 		  postedWithinDays: " \u5929\u5185",
-		  maxPages: " \u9875"
+		  maxPages: " \u9875",
+		  scrollRounds: " \u8F6E"
 		};
 		function describeCriteria(criteria, dimensions = []) {
 		  const declared = new Map(dimensions.map((dimension) => [dimension.key, dimension]));
@@ -4149,7 +4510,18 @@ window.__ModuleLoader__.load({
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(DedupGroupsCard, { revision: props.revision }),
 		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u72B6\u6001" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u603B\u89C8" }),
+		      platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", children: platforms.state.message }),
+		      platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u72B6\u6001\u2026" }) : platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-empty", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u5E73\u53F0\u6765\u81EA\u9002\u914D\u5668\u6CE8\u518C\u8868\uFF1B\u5F53\u524D\u6CA1\u6709\u4EFB\u4F55\u9002\u914D\u5668\u88AB\u6CE8\u518C\uFF0C\u6240\u4EE5\u65E0\u6CD5\u91C7\u96C6\u3002" })
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u300C\u4ECA\u5929\u80FD\u8DD1\u300D\u7528\u7684\u662F\u4E0E\u8C03\u5EA6\u540C\u4E00\u4E2A\u524D\u7F6E\u6761\u4EF6\u5224\u5B9A \u2014\u2014 \u8FD9\u91CC\u5199\u7740\u300C\u53EF\u4EE5\u300D\u7684\u5E73\u53F0\uFF0C\u5230\u70B9\u771F\u7684\u4F1A\u8DD1\uFF1B \u5199\u7740\u539F\u56E0\u7684\uFF0C\u5C31\u662F\u5B83\u73B0\u5728\u88AB\u4EC0\u4E48\u62E6\u4F4F\u4E86\uFF08\u9F20\u6807\u60AC\u505C\u770B\u5B8C\u6574\u8BF4\u660E\uFF09\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PlatformMatrix, { items: platformList, reasonText })
+		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u660E\u7EC6" }),
 		      platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", children: platforms.state.message }),
 		      platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u72B6\u6001\u2026" }) : platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-empty", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }),
@@ -4474,6 +4846,75 @@ window.__ModuleLoader__.load({
 		    ] }),
 		    lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(InlineMd, { text: "\u600E\u4E48\u89E3\u51B3\uFF1A\u2460 \u5230\u90A3\u4E2A\u7A97\u53E3\u91CC\u64CD\u4F5C\uFF08\u6700\u7A33\uFF09\uFF1B\u2461 \u5173\u6389\u90A3\u4E2A\u7A97\u53E3 \u2014\u2014 \u5173\u6389\u4E4B\u540E\u8FD9\u91CC\u4F1A**\u81EA\u52A8**\u63A5\u7BA1\uFF0C\u4E0D\u7528\u91CD\u542F\uFF0C\u4E5F\u53EF\u4EE5\u70B9\u300C\u91CD\u65B0\u68C0\u6D4B\u300D\u7ACB\u523B\u8BD5\u4E00\u6B21\u3002" }) })
 		  ] });
+		}
+		function cooldownActive(until, now) {
+		  if (until === null) return null;
+		  const at = new Date(until);
+		  return Number.isNaN(at.getTime()) || at.getTime() <= now.getTime() ? null : at;
+		}
+		function PlatformMatrix(props) {
+		  const now = /* @__PURE__ */ new Date();
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5E73\u53F0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u4ECA\u5929\u80FD\u8DD1" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u767B\u5F55" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u5065\u5EB7" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u6210\u719F\u5EA6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num", children: "\u4ECA\u65E5\u989D\u5EA6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u4EA7\u91CF" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u6700\u8FD1\u4E00\u8F6E" })
+		    ] }) }),
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("tbody", { children: props.items.map((item) => {
+		      const blocked = item.governance.blocked === null ? null : props.reasonText[item.governance.blocked] ?? item.governance.blocked;
+		      const cooldown = cooldownActive(item.governance.cooldownUntil, now);
+		      const quotaFull = item.governance.todayRuns >= item.governance.dailyLimit;
+		      const lastRun = item.governance.lastRun;
+		      return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: "jh-col-sticky", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: item.id }),
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.displayName })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: blocked === null ? "jh-ok" : "jh-warn", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { children: blocked === null ? "\u53EF\u4EE5" : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-clip", title: blocked, children: blocked }) }),
+		          cooldown === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-muted", children: [
+		            "\u51B7\u5374\u81F3 ",
+		            formatClock(cooldown)
+		          ] })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: item.account.loggedIn ? "jh-ok" : "jh-warn", children: item.account.loggedIn ? "\u5DF2\u767B\u5F55" : item.account.lastCheckAt === null ? "\u672A\u68C0\u6D4B" : "\u672A\u767B\u5F55" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(StateTag, { state: item.health, kind: "health" }),
+		          item.failStreak > 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
+		            " \xD7",
+		            item.failStreak
+		          ] }) : null
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		          "td",
+		          {
+		            className: `jh-col-hide-sm${maturityNeedsWarning(item.maturity.level) ? " jh-warn" : ""}`,
+		            children: MATURITY_LEVEL_LABEL[item.maturity.level]
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: `jh-num${quotaFull ? " jh-warn" : ""}`, children: [
+		          item.governance.todayRuns,
+		          "/",
+		          item.governance.dailyLimit
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-num jh-col-hide-sm", children: item.yield.baseline === null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: item.yield.level === "dropped" ? "jh-warn" : void 0, children: [
+		          item.yield.lastFound ?? "\u2014",
+		          "/",
+		          item.yield.baseline
+		        ] }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: lastRun === null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u6CA1\u8DD1\u8FC7" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: formatClock(new Date(lastRun.startedAt)) }),
+		          " ",
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(StateTag, { state: lastRun.state, kind: "run" })
+		        ] }) })
+		      ] }, item.id);
+		    }) })
+		  ] }) });
 		}
 		function RunHistoryTable(props) {
 		  if (props.loading) {
@@ -4927,6 +5368,11 @@ window.__ModuleLoader__.load({
 		  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision]);
 		  const [busyId, setBusyId] = (0, import_react11.useState)(null);
 		  const [pendingDelete, setPendingDelete] = (0, import_react11.useState)(null);
+		  const [sweep, setSweep] = (0, import_react11.useState)({
+		    running: false,
+		    message: null,
+		    error: false
+		  });
 		  const act = async (id, fn) => {
 		    setBusyId(id);
 		    try {
@@ -4936,13 +5382,43 @@ window.__ModuleLoader__.load({
 		      setBusyId(null);
 		    }
 		  };
+		  const runSweep = async () => {
+		    setSweep({ running: true, message: "\u6B63\u5728\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u5168\u5E93\u2026", error: false });
+		    try {
+		      const result = await runDedupSweep();
+		      setSweep({
+		        running: false,
+		        error: false,
+		        message: `\u770B\u8FC7 ${String(result.scanned)} \u6761` + (result.skippedGrouped > 0 ? `\uFF08\u8DF3\u8FC7\u5DF2\u5728\u5206\u7EC4\u91CC\u7684 ${String(result.skippedGrouped)} \u6761\uFF09` : "") + `\uFF1A\u5408\u5E76 ${String(result.merged)} \u6761\u3001\u65B0\u5EFA ${String(result.newGroups)} \u7EC4\uFF0C\u73B0\u5728\u5171 ${String(result.groups)} \u7EC4\u3002` + (result.candidates > 0 ? `\u53E6\u6709 ${String(result.candidates)} \u6761\u7591\u4F3C\u91CD\u590D\u6CA1\u81EA\u52A8\u5408\u5E76\uFF08\u6807\u9898\u76F8\u4F3C\u5EA6\u4E0D\u591F\uFF09\u2014\u2014 \u9700\u8981\u4EBA\u5DE5\u770B\u4E00\u773C\u3002` : "")
+		      });
+		      groups.reload();
+		    } catch (error) {
+		      setSweep({
+		        running: false,
+		        error: true,
+		        message: error instanceof ApiError ? error.display : String(error)
+		      });
+		    }
+		  };
 		  const items = groups.state.status === "ok" ? groups.state.data.items : [];
 		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u8DE8\u5E73\u53F0\u53BB\u91CD" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u540C\u4E00\u5C97\u4F4D\u88AB\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761 \u2192 \u5408\u5E76\u5230\u540C\u4E00\u7EC4\uFF1B\u8FD9\u91CC\u662F**\u53EF\u9006**\u7684\uFF0C\u8BEF\u5408\u5E76\u968F\u65F6\u53EF\u62C6\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "jh-btn jh-btn-inline jh-btn-tiny",
+		          disabled: sweep.running,
+		          title: "\u628A\u5168\u5E93\u5C97\u4F4D\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u4E00\u904D\uFF08\u8DE8\u5E73\u53F0 + \u540C\u516C\u53F8\u540C\u57CE + \u85AA\u8D44\u4E0D\u51B2\u7A81 + \u6807\u9898\u76F8\u4F3C\uFF09\u3002\u7528\u5728\u300C\u521A\u6253\u5F00\u53BB\u91CD\u5F00\u5173\u300D\u6216\u300C\u521A\u6539\u8FC7\u6293\u53D6\u8303\u56F4\u300D\u4E4B\u540E\u8865\u505A\u4E00\u6B21 \u2014\u2014 \u5426\u5219\u8981\u5E72\u7B49\u4E0B\u4E00\u8F6E\u6293\u53D6\uFF0C\u800C\u90A3\u4E00\u8F6E\u53EF\u80FD\u4E00\u6761\u65B0\u5C97\u4F4D\u90FD\u6CA1\u6709\u3002\u5408\u5E76\u662F\u53EF\u9006\u7684\u3002",
+		          onClick: () => void runSweep(),
+		          children: "\u5168\u5E93\u590D\u6838\u4E00\u904D"
+		        }
+		      )
 		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u540C\u4E00\u5C97\u4F4D\u88AB\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761 \u2192 \u5408\u5E76\u5230\u540C\u4E00\u7EC4\uFF1B\u8FD9\u91CC\u662F\u53EF\u9006\u7684\uFF0C\u8BEF\u5408\u5E76\u968F\u65F6\u53EF\u62C6\u3002" }),
+		    sweep.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: sweep.error ? "jh-error" : "jh-muted", "aria-live": "polite", children: sweep.message }),
 		    groups.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", children: "\u6B63\u5728\u8BFB\u53D6\u53BB\u91CD\u5206\u7EC4\u2026" }) : items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u76EE\u524D\u6CA1\u6709\u53BB\u91CD\u5206\u7EC4\u3002\u591A\u5E73\u53F0\u540C\u65F6\u5728\u6293\u540C\u4E00\u6279\u5C97\u4F4D\u65F6\uFF0C\u91CD\u590D\u7684\u90A3\u51E0\u6761\u624D\u4F1A\u88AB\u5408\u5E76\u5230\u8FD9\u91CC\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-tailor-notes", children: items.map((group) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
 		        "\u7EC4 #",
@@ -7109,6 +7585,25 @@ window.__ModuleLoader__.load({
 		/* \u516C\u53F8\u540D\u662F\u6B21\u8981\u4FE1\u606F\uFF0C\u4F46\u4E5F\u4E0D\u80FD\u6DE1\u5230\u8BFB\u4E0D\u51FA\uFF1A\u7528\u6B63\u6587\u8272 */
 		.jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;
 		  color:var(--dsw-alias-label-primary)}
+		/* \u6765\u6E90\uFF08\u5E73\u53F0\uFF09\u4E0E\u65B0\u9C9C\u5EA6\uFF1A\u5361\u7247\u4E0A\u7684\u7B2C\u4E09\u6863\u4FE1\u606F\uFF0C\u6392\u5728\u6807\u7B7E\u4E4B\u524D\u3001\u6BD4 meta \u66F4\u6DE1\u3002
+		   \u7528 tertiary \u800C\u4E0D\u662F caption \u2014\u2014 caption(#adb2b8) \u5728\u767D\u8272\u5361\u7247\u4E0A\u53EA\u6709 2.6:1\uFF0C
+		   \u90A3\u662F"\u88C5\u9970\u6027\u6587\u5B57"\u7684\u5BF9\u6BD4\u5EA6\uFF0C\u800C\u8FD9\u91CC\u5199\u7684\u662F\u7528\u6237\u8981\u8BFB\u7684"\u8FD9\u5C97\u591A\u4E45\u6CA1\u51FA\u73B0\u4E86"\u3002 */
+		.jh-job-origin{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 0;
+		  font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
+
+		/* \u2500\u2500 \u8DE8\u5E73\u53F0\u53BB\u91CD\uFF08\u6279\u6B21 4\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u5FBD\u7AE0\u662F**\u8BFB\u6570**\u4E0D\u662F\u64CD\u4F5C\uFF08\u64CD\u4F5C\u662F\u53F3\u4FA7\u90A3\u4E2A\u300C\u5BF9\u7167\u300D\u6309\u94AE\uFF09\uFF0C\u6240\u4EE5\u5B83\u505A\u6210\u4E00\u679A
+		   \u4F4E\u8C03\u7684\u63CF\u8FB9\u80F6\u56CA\uFF1A\u989C\u8272\u7528 label-secondary \u800C\u4E0D\u662F\u54C1\u724C\u8272 \u2014\u2014 \u5B83\u8868\u8FBE\u7684\u662F
+		   "\u8FD9\u6761\u5C97\u4F4D\u5728\u522B\u5904\u4E5F\u6709\u4E00\u4EFD"\uFF0C\u4E0D\u662F"\u8FD9\u662F\u91CD\u70B9"\u3002 */
+		.jh-dedup-badge{display:inline-block;padding:0 6px;border-radius:999px;
+		  border:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-secondary);
+		  font-size:10.5px;line-height:16px}
+		/* \u300C\u5BF9\u7167\u300D\u6BD4 \u2605/\u2715 \u5BBD\uFF1A\u4E24\u4E2A\u5B57\u653E\u4E0D\u8FDB 34px \u7684\u65B9\u5757 */
+		.jh-job-qk-wide{width:auto;min-width:34px;padding:0 8px;font-size:11.5px}
+		/* \u5C55\u5F00\u7684\u5BF9\u7167\u9762\u677F\uFF1A\u8D34\u5728\u90A3\u4E00\u884C\u4E0B\u9762\uFF0C\u5DE6\u8FB9\u7EBF\u4E0E\u5361\u7247\u5BF9\u9F50\uFF0C\u8BA9\u4EBA\u770B\u51FA\u5B83\u5C5E\u4E8E\u54EA\u4E00\u884C */
+		.jh-dedup-pane{margin:6px 0 2px 10px;padding:8px 10px;border-left:2px solid var(--dsw-alias-border-l3);
+		  display:flex;flex-direction:column;gap:6px}
+		.jh-dedup-pane .jh-table-matrix{min-width:0}
 		/* \u2500\u2500 .jh-tag\uFF1A\u552F\u4E00\u7684\u6807\u7B7E\u5B9A\u4E49 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 		   \u2500\u2500 \u7B2C\u4E09\u8F6E\u4FEE\u590D\uFF082026-09-18\uFF09\uFF1A\u8FD9\u91CC\u672C\u6765\u6709**\u4E24\u6761** .jh-tag \u89C4\u5219 \u2014\u2014
 		   \u4E0A\u9762\u8FD9\u6761\uFF0812px / 5px \u5706\u89D2 /18px \u884C\u9AD8\uFF09\u4E0E\u4E0B\u9762\u90A3\u6761\uFF0811.5px / 999px \u80F6\u56CA /19px \u884C\u9AD8\uFF09\u3002
@@ -7275,6 +7770,12 @@ window.__ModuleLoader__.load({
 		.jh-tag-group{margin:0 0 10px}
 		.jh-tag-group-name{display:block;font-size:11.5px;font-weight:600;margin:0 0 5px;
 		  color:var(--dsw-alias-label-secondary)}
+
+		/* JD \u539F\u6587\u3002\u6293\u4E0B\u6765\u7684\u6587\u672C\u81EA\u5E26\u6362\u884C\u4E0E\u7F29\u8FDB\uFF08\u5217\u8868\u9879\u3001\u7A7A\u884C\uFF09\uFF0Cpre-wrap \u539F\u6837\u4FDD\u7559\uFF1B
+		   anywhere \u9632\u6B62\u957F\u4E32\uFF08URL\u3001\u65E0\u7A7A\u683C\u82F1\u6587\uFF09\u628A\u5361\u7247\u6491\u5BBD\u3002
+		   \u989C\u8272\u523B\u610F\u7528 primary \u800C\u4E0D\u662F secondary \u2014\u2014 \u8FD9\u662F\u8981\u8BFB\u7684\u6B63\u6587\uFF0C\u4E0D\u662F\u8BF4\u660E\u6587\u5B57\u3002 */
+		.jh-jd{margin:0 0 8px;font-size:13px;line-height:1.75;white-space:pre-wrap;
+		  overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
 
 		/* \u2500\u2500 shell.overlay \u6D6E\u5C42\uFF08P0-VERIFICATION F1\uFF1A\u5FC5\u987B\u81EA\u6D88\u5931\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		.jh-notice{position:fixed;right:18px;bottom:18px;pointer-events:auto;z-index:40;
@@ -7701,6 +8202,26 @@ window.__ModuleLoader__.load({
 		.jh-check{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer}
 		.jh-check input{cursor:pointer}
 
+		/* \u4EBA\u5DE5\u590D\u6838\u6761\uFF1A\u4E0E\u4E0A\u9762\u7684\u753B\u50CF\u7EDF\u8BA1\u7528\u4E00\u6761\u5206\u9694\u7EBF\u9694\u5F00 \u2014\u2014 \u4E0A\u9762\u662F**\u89C4\u5219\u7B97\u7684**\uFF0C
+		   \u4E0B\u9762\u662F**\u4F60\u5199\u7684**\uFF0C\u4E24\u8005\u6027\u8D28\u4E0D\u540C\uFF0C\u4E0D\u8BE5\u6DF7\u6210\u4E00\u7247\u3002 */
+		.jh-review{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0 0;
+		  padding:10px 0 0;border-top:1px solid var(--dsw-alias-border-l1)}
+		.jh-review-field{display:inline-flex;align-items:center;gap:6px;font-size:12px;
+		  color:var(--dsw-alias-label-secondary)}
+
+		/* \u300C\u8FD9\u5BB6\u516C\u53F8\u7684\u5176\u5B83\u5C97\u4F4D\u300D\uFF1A\u6574\u884C\u53EF\u70B9\uFF08\u5207\u5230\u90A3\u4E2A\u5C97\u4F4D\u7684\u8BE6\u60C5\uFF09\u3002
+		   \u7528\u5757\u7EA7\u6587\u672C\u6309\u94AE\u800C\u4E0D\u662F\u4E0B\u5212\u7EBF\u94FE\u63A5 \u2014\u2014 \u4E00\u6392\u5341\u51E0\u6761\u4E0B\u5212\u7EBF\u5728\u8BE6\u60C5\u680F\u91CC\u592A\u5435\u3002 */
+		.jh-siblings{list-style:none;margin:0;padding:0}
+		.jh-siblings li{margin:0}
+		.jh-sibling{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;width:100%;
+		  text-align:left;border:0;background:transparent;font:inherit;font-size:12.5px;
+		  padding:5px 6px;border-radius:6px;color:var(--dsw-alias-label-primary)}
+		.jh-sibling:hover{background:var(--dsw-alias-interactive-bg-hover)}
+		/* \u62BD\u5C49\u91CC\u6CA1\u6709"\u5207\u6362\u5C97\u4F4D"\u7684\u4E0A\u4E0B\u6587\uFF0C\u6E32\u67D3\u6210\u7EAF\u6587\u672C \u2014\u2014 \u5220\u6389 hover \u53CD\u9988\u514D\u5F97\u770B\u7740\u50CF\u80FD\u70B9 */
+		.jh-sibling-static{cursor:default}
+		.jh-sibling-static:hover{background:transparent}
+		.jh-sibling-meta{color:var(--dsw-alias-label-secondary);font-size:11.5px}
+
 		/* \u2500\u2500 \u6279\u6B21 F\uFF1A\u85AA\u8D44\u7BB1\u7EBF\u56FE\uFF08\u6A2A\u5411\uFF0CP25\u2013P75 \u9AD8\u4EAE\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 		/* \u7528**\u6A2A\u5411**\u753B\uFF1A\u85AA\u8D44\u56DE\u7B54"\u591A\u5C11"\u800C\u4E0D\u662F"\u4EC0\u4E48\u65F6\u5019"\uFF0C\u6A2A\u7740\u6BD4\u7AD6\u7740\u597D\u8BFB\uFF0C
 		   \u4E5F\u548C\u4E0A\u9762\u7684\u6F0F\u6597\u6761\u5F62\u540C\u4E00\u5957\u89C6\u89C9\u8BED\u8A00\u3002\u9AD8\u4EAE\u7684\u662F\u7BB1\u4F53\uFF08P25\u2013P75\uFF09\uFF0C
@@ -7934,6 +8455,19 @@ window.__ModuleLoader__.load({
 		.jh-table-runs th.jh-col-sticky,.jh-table-runs td.jh-col-sticky{
 		  position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
 
+		/* \u2500\u2500 \u5E73\u53F0\u603B\u89C8\u77E9\u9635\uFF08\u6279\u6B21 5\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u4E0E\u300C\u6700\u8FD1\u8FD0\u884C\u300D\u540C\u4E00\u5957\u5217\u5BBD\u7B56\u7565\uFF1A\u975E\u6700\u540E\u4E00\u5217\u6536\u7F29\u5230\u5185\u5BB9\u5BBD\uFF0C\u6700\u540E\u4E00\u5217\u5403\u6389\u5269\u4F59\uFF1B
+		   \u7B2C\u4E00\u5217\u7C98\u4F4F\uFF0C"\u6A2A\u5411\u6EDA\u52A8\u65F6\u4ECD\u8BA4\u5F97\u51FA\u8FD9\u662F\u54EA\u4E00\u884C"\u3002 */
+		.jh-table-matrix{min-width:640px}
+		.jh-table-matrix th:not(:last-child),.jh-table-matrix td:not(:last-child){width:1%;white-space:nowrap}
+		.jh-table-matrix th.jh-col-sticky,.jh-table-matrix td.jh-col-sticky{
+		  position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
+		/* "\u4ECA\u5929\u80FD\u8DD1"\u90A3\u4E00\u683C\uFF1A\u957F\u539F\u56E0\u622A\u65AD\u663E\u793A\uFF0C\u5168\u6587\u8FDB title\u3002
+		   \u4E3A\u4EC0\u4E48\u4E0D\u505A\u4E00\u5957\u77ED\u6807\u7B7E \u2014\u2014 \u90A3\u4F1A\u662F**\u7B2C\u4E8C\u4EFD\u6587\u6848**\uFF0C\u8FDF\u65E9\u4E0E SKIP_REASON_LABEL \u6F02\u79FB\uFF0C
+		   \u7528\u6237\u5C31\u5728\u77E9\u9635\u4E0E\u522B\u5904\u8BFB\u5230\u4E24\u79CD\u8BF4\u6CD5\u3002\u622A\u65AD + \u60AC\u505C\u662F\u540C\u4E00\u4EFD\u6587\u6848\u7684\u4E24\u79CD\u5448\u73B0\u3002 */
+		.jh-clip{display:inline-block;max-width:18em;overflow:hidden;text-overflow:ellipsis;
+		  white-space:nowrap;vertical-align:bottom}
+
 		/* \u7A7A\u6001\uFF1A\u539F\u56E0 + \u4E0B\u4E00\u6B65\uFF08rules \xA74.3 / quality-gates \xA72 "\u7A7A\u6570\u636E\u65F6\u7ED9\u51FA\u539F\u56E0\u548C\u4E0B\u4E00\u6B65"\uFF09*/
 		.jh-empty{display:flex;flex-direction:column;gap:4px;padding:12px 0}
 
@@ -7975,6 +8509,9 @@ window.__ModuleLoader__.load({
 		  .jh-modal-md,.jh-modal-lg{max-width:none}
 		  /* \u4F4E\u5BC6\u5EA6\uFF1A\u5C0F\u5C4F\u9690\u85CF\u300C\u66F4\u65B0\u300D\u5217\uFF0C\u4FDD\u7559 \u65F6\u95F4/\u72B6\u6001/\u65B0\u589E/\u7ED3\u679C\u8BF4\u660E \u8FD9\u56DB\u5217\u5173\u952E\u4FE1\u606F */
 		  .jh-table-runs .jh-col-hide-sm{display:none}
+		  /* \u77E9\u9635\u540C\u7406\uFF1A\u5C0F\u5C4F\u5148\u8BA9\u300C\u6210\u719F\u5EA6\u300D\u300C\u4EA7\u91CF\u300D\u8BA9\u4F4D\uFF0C\u7559\u4E0B \u5E73\u53F0/\u4ECA\u5929\u80FD\u8DD1/\u767B\u5F55/\u5065\u5EB7/\u989D\u5EA6/\u6700\u8FD1\u4E00\u8F6E */
+		  .jh-table-matrix .jh-col-hide-sm{display:none}
+		  .jh-clip{max-width:11em}
 		  /* \u4E3B\u8981\u64CD\u4F5C\u5728\u5C0F\u5C4F\u4ECD\u7136\u627E\u5F97\u5230\uFF1A\u65B9\u6848\u5361\u7684\u52A8\u4F5C\u6362\u884C\u4E14\u5DE6\u5BF9\u9F50\uFF0C\u4E0D\u6324\u6210\u4E00\u6761 */
 		  .jh-plan-head{gap:4px}
 		  .jh-plan-head .jh-btn{flex:0 0 auto}

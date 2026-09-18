@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
+import type { CompanyProfileDto } from '../../shared/dto.js'
 import { JOB_FLAG_LABEL, type JobState } from '../../shared/enums.js'
-import { ApiError, fetchJobDetail, markJob } from '../api.js'
-import { JOB_ACTION_LABEL, JOB_STATE_LABEL, salaryDetail, splitJobTags } from '../labels.js'
+import { ApiError, fetchCompanyDetail, fetchJobDetail, markJob, updateCompanyReview } from '../api.js'
+import { JOB_ACTION_LABEL, JOB_STATE_LABEL, relativeTime, salaryDetail, splitJobTags } from '../labels.js'
 import { TailorPanel } from './tailor-panel.js'
 import { OverseasPanel } from './campus.js'
 import { InlineMd } from '../inline-md.js'
@@ -10,6 +11,9 @@ import { useAsync } from '../use-async.js'
 
 /** 详情里给得出的动作（不提供"标为新"——回退到未读没有意义）。 */
 const ACTION_STATES: JobState[] = ['saved', 'ignored', 'seen', 'archived']
+
+/** JD 收起时露出的字数。约五六行，够看清"这活到底干什么"。 */
+const JD_PREVIEW_CHARS = 320
 
 /** 风险标注的语气：真风险给红/黄，弱信号只给中性框 —— 全部刷成一片黄反而看不出轻重。 */
 const FLAG_TONE: Record<string, 'error' | 'warn' | 'quiet'> = {
@@ -58,6 +62,152 @@ function Gauge(props: { score: number }) {
 }
 
 /**
+ * JD 原文。默认只露开头一段 —— 详情栏是"一个一个往下比"的地方，
+ * 一份三千字的 JD 会把评分、风险、公司画像全挤到屏幕外。
+ */
+function JdText(props: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const long = props.text.length > JD_PREVIEW_CHARS
+  const shown = long && !expanded ? `${props.text.slice(0, JD_PREVIEW_CHARS)}…` : props.text
+  return (
+    <>
+      <p className="jh-jd">{shown}</p>
+      {long ? (
+        <button
+          type="button"
+          className="jh-btn jh-btn-inline"
+          aria-expanded={expanded}
+          onClick={() => { setExpanded(!expanded) }}
+        >
+          {expanded ? '收起原文' : `展开全文（共 ${String(props.text.length)} 字）`}
+        </button>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * 「这家公司的其它在招岗位」。
+ *
+ * 公司画像里原本只给一个数字（"在手岗位 37"），而那 37 条**是什么**才是判断依据 ——
+ * 外包/广撒网的识别本来就建立在"岗位数 × 地域跨度 × 驻场比例"上，
+ * 光看汇总数字没法验证这个结论。
+ *
+ * 数据一直在 `GET /companies/:id` 里（含该公司岗位列表），只是客户端从来没调过。
+ */
+function CompanyJobs(props: {
+  companyId: number
+  jobCount: number
+  currentJobId: number
+  onSelect: ((id: number) => void) | undefined
+}) {
+  const { state } = useAsync(
+    (signal) => fetchCompanyDetail(props.companyId, signal),
+    [props.companyId],
+  )
+
+  if (state.status === 'loading') return <p className="jh-note">正在读取该公司的其它岗位…</p>
+  if (state.status === 'error') return <p className="jh-note">读取该公司岗位失败：{state.message}</p>
+
+  const others = state.data.jobs.filter((job) => job.id !== props.currentJobId)
+  if (others.length === 0) {
+    return <p className="jh-note">除当前这个岗位外，这家公司在你库里没有其它在招岗位。</p>
+  }
+
+  return (
+    <>
+      <ul className="jh-siblings">
+        {others.map((job) => {
+          const requirements = [job.expReq, job.eduReq].filter((item) => item !== '').join('·')
+          const meta = [job.city, requirements, job.salaryRaw].filter((item) => item !== '').join('｜')
+          return (
+            <li key={job.id}>
+              {props.onSelect === undefined ? (
+                // 抽屉场景（流水线/消息/面试）没有"切换岗位"的上下文 ——
+                // 那时渲染成纯文本，而不是一个点了没反应的按钮。
+                <span className="jh-sibling jh-sibling-static">
+                  <span>{job.title}</span>
+                  <span className="jh-sibling-meta">{meta}</span>
+                </span>
+              ) : (
+                <button type="button" className="jh-sibling" onClick={() => props.onSelect?.(job.id)}>
+                  <span>{job.title}</span>
+                  <span className="jh-sibling-meta">{meta}</span>
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {props.jobCount > state.data.jobs.length ? (
+        <p className="jh-note">
+          该公司共 {props.jobCount} 个岗位，这里只列出最近更新的 {state.data.jobs.length} 条。
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * 人工复核（§4.3 / D-16）：规则会认错，用户必须能纠正。
+ *
+ * 这套能力此前是**后端完整、界面为零** —— `PATCH /companies/:id` 支持拉黑与打标签，
+ * 而界面上连已经打过的标签都看不到。这里补最小的一份：标签 + 拉黑 + 保存。
+ */
+function CompanyReview(props: { company: CompanyProfileDto; onSaved: () => void }) {
+  const [label, setLabel] = useState(props.company.manualLabel ?? '')
+  const [blacklisted, setBlacklisted] = useState(props.company.blacklisted)
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  const save = async (event: FormEvent): Promise<void> => {
+    event.preventDefault()
+    setBusy(true)
+    setFailure(null)
+    try {
+      const trimmed = label.trim()
+      await updateCompanyReview(props.company.id, {
+        blacklisted,
+        // 空串 = 清除标签（后端把空串收敛成 null，不会存一个空标签）
+        manualLabel: trimmed === '' ? null : trimmed,
+      })
+      props.onSaved()
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.display : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="jh-review" onSubmit={(event) => void save(event)}>
+      <label className="jh-review-field">
+        <span>人工标签</span>
+        <input
+          className="jh-input jh-input-sm"
+          value={label}
+          maxLength={40}
+          placeholder="如：外包 / 已投过"
+          onChange={(event) => { setLabel(event.target.value) }}
+        />
+      </label>
+      <label className="jh-check">
+        <input
+          type="checkbox"
+          checked={blacklisted}
+          onChange={(event) => { setBlacklisted(event.target.checked) }}
+        />
+        <span>拉黑该公司</span>
+      </label>
+      <button type="submit" className="jh-btn jh-btn-inline" disabled={busy}>
+        {busy ? '保存中…' : '保存复核'}
+      </button>
+      {failure === null ? null : <span className="jh-error">{failure}</span>}
+    </form>
+  )
+}
+
+/**
  * U2 岗位详情的**正文**。
  *
  * 抽屉（流水线 / 消息 / 面试里临时看一眼）与岗位库的右侧内嵌栏共用这一份 ——
@@ -66,7 +216,13 @@ function Gauge(props: { score: number }) {
  * 顶部是**吸顶操作条**（标题 + 薪资 + 动作）：早先动作按钮在正文最底部，
  * 右侧一屏那么长，用户根本滚不到，反馈就是"详情里没有任何操作按钮"。
  */
-export function JobDetailBody(props: { id: number; revision: number; onChanged: () => void }) {
+export function JobDetailBody(props: {
+  id: number
+  revision: number
+  onChanged: () => void
+  /** 有它时，"这家公司的其它岗位"可点击切换；抽屉场景没有这个上下文。 */
+  onSelect?: ((id: number) => void) | undefined
+}) {
   const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision])
   const [busy, setBusy] = useState<JobState | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
@@ -99,8 +255,10 @@ export function JobDetailBody(props: { id: number; revision: number; onChanged: 
     )
   }
 
-  const { job, company, flags, matchReasons } = state.data
+  const { job, jdText, company, flags, matchReasons } = state.data
   const grouped = splitJobTags(job.tags)
+  // 解析不出来就退回原始串：宁可显示 ISO，也不要留一格空白
+  const lastSeen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt
 
   return (
     <>
@@ -135,8 +293,12 @@ export function JobDetailBody(props: { id: number; revision: number; onChanged: 
         <li><span>地点</span><span>{job.city}{job.district === '' ? '' : `·${job.district}`}</span></li>
         <li><span>经验</span><span>{job.expReq === '' ? '—' : job.expReq}</span></li>
         <li><span>学历</span><span>{job.eduReq === '' ? '—' : job.eduReq}</span></li>
+        <li><span>来源平台</span><span>{job.platformName ?? job.platformId}</span></li>
         <li><span>发布</span><span>{job.publishedAt ?? '—'}</span></li>
         <li><span>首次见到</span><span>{job.firstSeenAt}</span></li>
+        {/* 「最近见到」是判断"这岗还在招吗"的依据：它一直只是排序字段，
+            界面上从来没显示过。相对时间比 ISO 串更能直接读出结论。 */}
+        <li><span>最近见到</span><span>{lastSeen}</span></li>
         <li><span>当前状态</span><span>{JOB_STATE_LABEL[job.state]}</span></li>
       </ul>
 
@@ -161,6 +323,19 @@ export function JobDetailBody(props: { id: number; revision: number; onChanged: 
           )}
         </div>
       )}
+
+      {/* JD 原文。此前详情只有标题 / 薪资 / 标签 / 经验学历 —— 想知道"这活到底干什么"
+          只能点去原站；而原文其实早就抓下来存在库里，只是从来没送到界面上。 */}
+      <section className="jh-card jh-card-tight">
+        <h3 className="jh-card-title">岗位描述</h3>
+        {jdText === null ? (
+          <p className="jh-note">
+            <InlineMd text="**没有抓到 JD 原文** —— 该平台未提供详情页解析，或抓取时详情页没打开。可以点最下面的原站链接自己看。" />
+          </p>
+        ) : (
+          <JdText text={jdText} />
+        )}
+      </section>
 
       {/* ── P4：匹配分与逐条理由 ─────────────────────────────── */}
       <section className="jh-card jh-card-tight">
@@ -253,34 +428,64 @@ export function JobDetailBody(props: { id: number; revision: number; onChanged: 
       </section>
 
       {company === null ? null : (
-        <section className="jh-card jh-card-tight">
-          <h3 className="jh-card-title">公司画像</h3>
-          <ul className="jh-kv">
-            <li><span>归一化名</span><code>{company.nameNorm}</code></li>
-            <li><span>行业</span><span>{company.industry ?? '—'}</span></li>
-            <li><span>性质</span><span>{company.nature ?? '—'}</span></li>
-            <li><span>规模</span><span>{company.size ?? '—'}</span></li>
-            <li><span>在手岗位</span><span>{company.jobCount}</span></li>
-            <li><span>技术栈广度</span><span>{company.stackDiversity}</span></li>
-            <li><span>地域跨度</span><span>{company.geoSpread}</span></li>
-            <li>
-              <span>驻场比例</span>
-              <span>
-                {company.onsiteRatio === null
-                  ? '—'
-                  : `${String(Math.round(company.onsiteRatio * 100))}%`}
-              </span>
-            </li>
-            <li><span>名称关键词</span><span>{company.nameKeywordHits}</span></li>
-            <li>
-              <span>外包分 / 诈骗分</span>
-              <span>{String(company.outsourcingScore ?? 0)} / {String(company.fraudScore ?? 0)}</span>
-            </li>
-          </ul>
-          <p className="jh-note">
-            冷启动时统计信号弱（D-16）：岗位越多判断越准，依据不足时这些数字会偏低。
-          </p>
-        </section>
+        <>
+          <section className="jh-card jh-card-tight">
+            <h3 className="jh-card-title">公司画像</h3>
+            {/* 拉黑状态必须显眼地说出来，并且**说清它不做什么** ——
+                否则用户会以为拉黑之后岗位就不再出现了。 */}
+            {company.blacklisted ? (
+              <div className="jh-alert jh-alert-warn">
+                <div className="jh-alert-head">
+                  <span className="jh-alert-title">这家公司被你标记为「拉黑」</span>
+                </div>
+                <p className="jh-alert-body">
+                  这是你的人工标记。它不会自动隐藏该公司的岗位，只是在这里提示你。
+                </p>
+              </div>
+            ) : null}
+            <ul className="jh-kv">
+              <li><span>归一化名</span><code>{company.nameNorm}</code></li>
+              <li><span>行业</span><span>{company.industry ?? '—'}</span></li>
+              <li><span>性质</span><span>{company.nature ?? '—'}</span></li>
+              <li><span>规模</span><span>{company.size ?? '—'}</span></li>
+              <li><span>在手岗位</span><span>{company.jobCount}</span></li>
+              <li><span>技术栈广度</span><span>{company.stackDiversity}</span></li>
+              <li><span>地域跨度</span><span>{company.geoSpread}</span></li>
+              <li>
+                <span>驻场比例</span>
+                <span>
+                  {company.onsiteRatio === null
+                    ? '—'
+                    : `${String(Math.round(company.onsiteRatio * 100))}%`}
+                </span>
+              </li>
+              <li><span>名称关键词</span><span>{company.nameKeywordHits}</span></li>
+              <li>
+                <span>外包分 / 诈骗分</span>
+                <span>{String(company.outsourcingScore ?? 0)} / {String(company.fraudScore ?? 0)}</span>
+              </li>
+              <li>
+                <span>拉黑</span>
+                <span>{company.blacklisted ? '已拉黑' : '否'}</span>
+              </li>
+            </ul>
+            <p className="jh-note">
+              冷启动时统计信号弱（D-16）：岗位越多判断越准，依据不足时这些数字会偏低。
+            </p>
+            {/* key 绑公司：切到另一家时必须重挂，否则输入框里会留着上一家的标签 */}
+            <CompanyReview key={company.id} company={company} onSaved={reload} />
+          </section>
+
+          <section className="jh-card jh-card-tight">
+            <h3 className="jh-card-title">这家公司的其它岗位</h3>
+            <CompanyJobs
+              companyId={company.id}
+              jobCount={company.jobCount}
+              currentJobId={job.id}
+              onSelect={props.onSelect}
+            />
+          </section>
+        </>
       )}
 
       {/* U4：针对这个岗位的简历定制（§13）。产出的是**建议**，采用与否在你。 */}
@@ -317,6 +522,8 @@ export function JobDetailPane(props: {
   id: number | null
   revision: number
   onChanged: () => void
+  /** 列表就在左边，所以"这家公司的其它岗位"可以直接点着切过去。 */
+  onSelect?: ((id: number) => void) | undefined
 }) {
   if (props.id === null) {
     return (
@@ -331,7 +538,12 @@ export function JobDetailPane(props: {
   }
   return (
     <section className="jh-detail-pane" data-job-hunter="job-detail" aria-label="岗位详情">
-      <JobDetailBody id={props.id} revision={props.revision} onChanged={props.onChanged} />
+      <JobDetailBody
+        id={props.id}
+        revision={props.revision}
+        onChanged={props.onChanged}
+        onSelect={props.onSelect}
+      />
     </section>
   )
 }

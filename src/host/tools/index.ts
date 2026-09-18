@@ -90,6 +90,7 @@ import type {
 import { serviceOf } from '../../shared/dsh.js'
 import type { JobDto } from '../../shared/dto.js'
 import type { JobQuery } from '../store/repo/jobs.js'
+import type { DedupSweepResult } from '../domain/dedupe-sweep.js'
 import type { HostRuntime } from '../runtime.js'
 import type { SettingsSnapshot } from '../settings.js'
 import { DomainError, messageOf } from '../util/errors.js'
@@ -205,11 +206,20 @@ function queryOf(args: Record<string, unknown>): JobQuery {
   const city = asString(args['city'])
   const keyword = asString(args['keyword'])
   const minSalary = typeof args['minSalary'] === 'number' ? args['minSalary'] : undefined
+  // 「只看新增」：与 HTTP 层同一条规则 —— 非法时刻**显式报错**，不当没传
+  // （否则模型会拿到一份"以为筛了、其实没筛"的列表去做判断）。
+  const firstSeenSince = asString(args['firstSeenSince'])
+  if (firstSeenSince !== undefined && Number.isNaN(new Date(firstSeenSince).getTime())) {
+    throw new DomainError('INVALID_INPUT', `firstSeenSince 不是合法时刻：${firstSeenSince}`, {
+      hint: '传 ISO 时刻，如 2026-09-17T00:00:00.000Z。',
+    })
+  }
   return {
     ...(state === undefined ? {} : { state: state as JobState }),
     ...(city === undefined ? {} : { city }),
     ...(keyword === undefined ? {} : { keyword }),
     ...(minSalary === undefined ? {} : { minSalaryAtLeast: minSalary }),
+    ...(firstSeenSince === undefined ? {} : { firstSeenSince }),
     orderBy: 'last_seen_at',
     descending: true,
   }
@@ -301,6 +311,10 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
         city: str('按城市筛选'),
         keyword: str('标题关键词（模糊匹配，只作粗筛）'),
         minSalary: num('月薪下限（K）不低于该值'),
+        firstSeenSince: str(
+          '只看新增：只返回首次见到时间 ≥ 该 ISO 时刻的岗位（如 2026-09-17T00:00:00.000Z）。' +
+            '「存量/增量」的分界就是它 —— 再抓一轮不会让老岗位变成新增。',
+        ),
         page: int('页码，从 1 开始'),
         pageSize: int(`每页条数（默认 10，最多 ${String(TOOL_LIST_MAX)}）`),
       }),
@@ -404,6 +418,33 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
         const job = jobs.mark(id, state)
         runtime.events().publish('job.updated', { id: job.id, state: job.state })
         return { job }
+      },
+    }),
+
+    tool<Record<string, never>, DedupSweepResult & { text: string }>({
+      name: 'job_dedup',
+      description:
+        '把全库跨平台重复的岗位**复核一遍**：同一个岗位在多个平台各抓一条时，合并成一组。' +
+        '低危、可逆（分组随时可拆），不需要审批。' +
+        '用在"刚打开去重开关"或"刚改过抓取范围"之后补做一次 —— 否则要干等下一轮抓取，' +
+        '而那一轮可能一条新岗位都没有。',
+      parameters: schema({}),
+      outputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+      render: (_args, value) => value.text,
+      async run() {
+        requireData(runtime)
+        const result = runtime.sweepDedup()
+        const text = [
+          `全库复核完成：看过 ${String(result.scanned)} 条` +
+            (result.skippedGrouped > 0 ? `（跳过已在分组里的 ${String(result.skippedGrouped)} 条）` : '') +
+            '。',
+          `合并 ${String(result.merged)} 条，新建 ${String(result.newGroups)} 组，现在共 ${String(result.groups)} 组。`,
+          result.candidates > 0
+            ? `另有 ${String(result.candidates)} 条**疑似**跨平台重复（标题相似度不够，没自动合并）—— 需要人看一眼。`
+            : '没有疑似待确认的。',
+          '合并是可逆的：在「采集」页的跨平台去重卡片里可以随时拆开。',
+        ].join('\n')
+        return { ...result, text }
       },
     }),
 

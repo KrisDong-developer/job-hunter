@@ -42,6 +42,13 @@ export interface JsdomPageOptions {
    * 所以两条路径逐字一致。
    */
   fetchStub?: PageFetchStub
+  /**
+   * 可选：每次 `goto` 时回调（测试用）。
+   *
+   * 用途（SR-46）：把"时间在翻页之间流逝"这件事**挂到导航上** —— 到点中止看的就是
+   * "开新页之前时间到了没有"，用真实时间或按调用次数计数的时钟都做不到可重复。
+   */
+  onGoto?: (url: string) => void
 }
 
 /**
@@ -60,21 +67,40 @@ export class JsdomPage implements PageLike {
   private currentUrl: string
   private readonly loader: ((url: string) => string | undefined) | undefined
   private readonly fetchStub: PageFetchStub | undefined
+  private readonly onGoto: ((url: string) => void) | undefined
   /** 页面上下文里发出去的所有请求（断言"到底带了什么参数"用）。 */
   readonly requests: CapturedRequest[] = []
 
   constructor(options: JsdomPageOptions) {
     this.loader = options.loader
     this.fetchStub = options.fetchStub
+    this.onGoto = options.onGoto
     this.currentUrl = options.url
-    this.dom = new JSDOM(options.html, { url: options.url })
+    this.dom = this.createDom(options.html, options.url)
+  }
+
+  /**
+   * 建 jsdom 并**补齐它在夹具里缺的那部分浏览器行为**。
+   *
+   * `window.scrollTo` 是最新的一处：jsdom 没有视口，原生的实现会往 virtualConsole
+   * 发一条 "Not implemented"，在测试输出里留下一串与被测用例无关的栈（BOSS 的
+   * 滚动加载适配器会调它）。离线夹具本来就没有"滚动加载出新一屏"这回事 ——
+   * 明确给一个 no-op，比让它每次喊一句更诚实。
+   */
+  private createDom(html: string, url: string): JSDOM {
+    const dom = new JSDOM(html, { url })
+    const noopScroll = (): void => undefined
+    dom.window.scrollTo = noopScroll as unknown as typeof dom.window.scrollTo
+    dom.window.scrollBy = noopScroll as unknown as typeof dom.window.scrollBy
+    return dom
   }
 
   /** 夹具里没有网络：只记录地址，必要时换一份内容。 */
   async goto(url: string): Promise<void> {
+    this.onGoto?.(url)
     this.currentUrl = url
     const next = this.loader?.(url)
-    if (next !== undefined) this.dom = new JSDOM(next, { url })
+    if (next !== undefined) this.dom = this.createDom(next, url)
   }
 
   url(): string {

@@ -1,6 +1,7 @@
 import type { CrawlStatusDto, CrawlSummaryDto, DeadlineDto, GreetingDraftDto, HealthDto, LoginStatusDto, PlanDto, PlatformOverviewDto, SchedulerStatusDto, TodayDto } from '../shared/dto.js';
 import type { AiService } from './ai/client.js';
 import type { CompanyService } from './domain/companies.js';
+import type { DedupSweepResult } from './domain/dedupe-sweep.js';
 import type { JobService } from './domain/jobs.js';
 import type { PipelineService, FollowUpSuggestion } from './domain/pipeline.js';
 import type { MessageService } from './domain/messages.js';
@@ -70,6 +71,8 @@ export interface HostRuntime {
         planId?: number | null;
         /** SR-28：触发原因，落进 `crawl_run.reason`（定时/人工/补跑）。 */
         reason?: RunReason;
+        /** SR-46：本轮的到点时刻（ISO）。调度器给；直接调（界面/工具）不传 = 无预算。 */
+        deadlineAt?: string;
     }): Promise<CrawlSummaryDto>;
     /** B3/SR-30：全局一键暂停（**只停定时**，手动永远可用）。 */
     setSchedulePaused(paused: boolean, reason?: string): void;
@@ -173,6 +176,13 @@ export interface HostRuntime {
     store(): Store | undefined;
     jobs(): JobService | undefined;
     companies(): CompanyService | undefined;
+    /**
+     * 全库去重复核（批次 4）。
+     *
+     * 放在 runtime 上而不是让每个入口各自调 `sweepDedup`：三条入口（GUI / 模型工具 / HTTP）
+     * 必须走**同一份实现**，否则"界面复核了、工具复核的是另一套"——正是 SR-45 那条纪律。
+     */
+    sweepDedup(): DedupSweepResult;
     registry(): AdapterRegistry;
     mutex(): Mutex;
     browser(): BrowserManager;

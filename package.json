@@ -66,6 +66,7 @@
     "probe:lagou": "node scripts/run-ts.mjs test/tools/probe-lagou.ts",
     "probe:lagou-login": "node scripts/run-ts.mjs test/tools/probe-lagou-login.ts",
     "probe:zhipin": "node scripts/run-ts.mjs test/tools/probe-zhipin.ts",
+    "probe:zhipin-login": "node scripts/run-ts.mjs test/tools/probe-zhipin-login.ts",
     "probe:guopin": "node scripts/run-ts.mjs test/tools/probe-guopin.ts",
     "probe:waiqi": "node scripts/run-ts.mjs test/tools/probe-waiqi.ts"
   },

@@ -179,6 +179,12 @@ npm test
    （在 `domain/plan-config.ts` 的 `PLATFORM_KEYS` 里登记键名）。
    摊平会让"某平台才认识的键"被另一个平台的适配器当成自由参数拼进 URL —— 静默的语义污染。
    适配器读取用 `platformCriterion(criteria, 'workExp')`（它同时兼容直接构造的 `SearchCriteria`）；
+   ⚠️ **声明 `city` 维度时，`closed` 要按真实行为给**（`platform/cities.ts` 的 `citySupportOf` 读它）：
+   表里的值就是全部取值域 → 省略或 `true`；**表是空的但你会拒绝**（`guopin` / `hiredchina`
+   带城市一律返回 `null`）→ **必须显式 `closed: true`**；表里只是**建议**、原样收自由文本
+   （`lagou` / `indeed`）→ `closed: false`。
+   缺了它用户收到的不是"少一条提示"就是"一条假警告" —— 而这个 flag **推不出来**，
+   因为空表在这两种平台上的含义刚好相反；
 7. 若该平台有「打招呼 / 投递 / 收件箱 / 阶段探测」动作，必须在 `guard/actions/` 里实现并配测试。
    返回类型是 `ActionResult`（**必须**给 `delivery`：`ok` 只说明"动作没抛错"，
    而"消息是否真的进了对方会话"是另一件事，也是本系统最不能猜的问题）。
@@ -220,6 +226,14 @@ npm test
 - **BOSS 直聘**：
   - 岗位 URL **必须携带完整 `securityId` 参数**，缺失即被拦截/加载失败 —— 永远用搜索页
     返回的原始 href 拼 `https://www.zhipin.com{job_url}`，**绝不重构 URL**（BossHunter site-patterns 实测）；
+  - **没有页码分页，只能滚动加载**（2026-09-18 登录态实测，`npm run probe:zhipin-login`）：
+    搜索页无分页区，URL 带 `&page=2` 返回的岗位 id 与第 1 页**完全相同**（SPA 忽略该参数）；
+    滚到底部自动追加，每滚一次 +15 条。列表接口 `wapi/zpgeek/search/joblist.json` 自报
+    `totalCount = 300` → 平台对一个搜索条件封顶 300 条（= 20 轮），适配器 `scrollRounds`
+    维度的上限即由此而来。证据：`test/fixtures/zhipin-pagination-report.json`；
+  - 登录后**薪资可见**（`.job-salary` 有文本；未登录时元素在、文本空）。适配器**不**把
+    `salary_raw` 列进必需字段：登录态会静默过期，列进去会让一次会话失效把整页记录
+    打成 `pending_repair`（宁可让逐字段健康计数去报警）；
   - **批量打开 >6 个 tab 要错开 1–2 秒**，同时开一批会触发风控；
   - 打招呼平台侧日上限约 150（get_jobs README 经验值）。
 - **猎聘**（2026-09-18 深度调研，夹具 + 接口采样交叉验证）：

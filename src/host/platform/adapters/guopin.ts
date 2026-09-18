@@ -498,6 +498,8 @@ export function createGuopinAdapter(options: GuopinAdapterOptions = {}): SiteAda
       key: 'city',
       label: '城市',
       values: Object.keys(config.cityCodes).map((city) => ({ value: city, label: city })),
+      // 空表 ≠ 自由文本：`buildGuopinSearchUrl` 带城市但表里没有就返回 null（**不猜**）。
+      closed: true,
       hint: '城市码未实测（调研期 URL 城市参数未实证），v1 置空 —— 待逐城实测后写 DB 覆盖；未列城市一律拒绝',
     },
     {

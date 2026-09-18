@@ -25,6 +25,7 @@ import { partitionByRequiredFields, type FieldPresence } from '../platform/valid
 import type { Store } from '../store/store.js'
 import type { CompanyService } from './companies.js'
 import { applyDedup, dedupCandidateOf } from './dedupe.js'
+import { dedupDepsOf } from './dedupe-sweep.js'
 import type { JobService } from './jobs.js'
 
 export interface CrawlDeps {
@@ -73,6 +74,17 @@ export interface RunCrawlOptions {
    * 它只认识"这次抓取"。让 domain 层去查方案会把两层的依赖搅在一起。
    */
   postProcess?: { score: boolean; flag: boolean; dedup: boolean }
+  /**
+   * SR-46：本轮的**绝对**到点时刻（ISO）。到期后在**页与页之间**停手。
+   *
+   * 为什么是绝对时刻而不是"还剩多少毫秒"：这一轮里每个平台看到的必须是**同一个终点**
+   * （调度器按本轮开始时刻算）。传剩余量的话，第二个平台会重新获得一份预算，
+   * 多平台下就等于没有预算。
+   *
+   * 为什么只在页与页之间停：请求中途打断会留下一个状态未知的页面，同一浏览器上下文的
+   * 下一次使用行为不可预期。宁可跑完当前这一页 —— 它最多就是一页的代价。
+   */
+  deadlineAt?: string | null
 }
 
 /** 风控类型 → 领域错误码。 */
@@ -95,6 +107,18 @@ function requireRun(run: CrawlRunDto | undefined, runId: number): CrawlRunDto {
     throw new DomainError('INTERNAL', `crawl_run ${String(runId)} 写入后读不回`)
   }
   return run
+}
+
+/**
+ * SR-46：把 `deadlineAt` 解析成 ms。**读不出合法时刻就当"没有预算"**（`null`）。
+ *
+ * 不猜一个 0：把垃圾值当成"1970 年就到期了"会让每一轮都在第一页之前中止，
+ * 那比不做预算糟得多。宁可退回旧行为（跑满 `maxPages`）。
+ */
+function toDeadlineMs(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const at = new Date(value).getTime()
+  return Number.isNaN(at) ? null : at
 }
 
 /**
@@ -143,6 +167,16 @@ async function executeCrawl(
   const collected: RawJob[] = []
   let pages = 0
   let failure: { code: string; message: string } | null = null
+  /** SR-46：本轮的到点时刻（ms）。`null` = 没预算，跑满 `maxPages` 为止。 */
+  const deadlineMs = toDeadlineMs(options.deadlineAt)
+  /**
+   * 到点中止过吗。
+   *
+   * 它**不是**失败：平台正常响应了、字段都解析出来了，只是我们把剩下的页留到下一轮。
+   * 所以它既不进 `failed`（那会让连续失败计数 +1、把健康的平台推去冷却），
+   * 也不进量级基线（半截的条数不代表这个平台给多少）。
+   */
+  let stoppedAtDeadline = false
   const burst: BurstGuardLike = deps.createBurstGuard?.() ?? new BurstGuard()
 
   const page = await deps.pageSource.acquire()
@@ -153,6 +187,13 @@ async function executeCrawl(
     const requested = options.criteria.maxPages ?? options.maxPages ?? 1
     const maxPages = Math.max(1, Math.min(Math.trunc(requested), adapter.maxPages))
     for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
+      // SR-46：到点就在**开新页之前**停手。放在最前面（连第一页也拦）是有意的：
+      // 本轮预算早已用完时，连一次导航都不该再发出去。
+      if (deadlineMs !== null && new Date(clock()).getTime() >= deadlineMs) {
+        stoppedAtDeadline = true
+        break
+      }
+
       // 突发惩罚（P5/D-17a）：最近翻页太密就先罚一会儿再动。
       // 第一页没有任何 mark，天然罚 0；离线夹具的 waitForTimeout 不真等。
       const penaltyMs = burst.penaltyMs()
@@ -347,27 +388,16 @@ async function executeCrawl(
    */
   let dedupCandidates = 0
   if (postProcess.dedup) {
+    // 候选构造器与全库复核**共用一份**（`dedupDepsOf`）：这里只看这一轮写进去的岗位，
+    // 复核看全库 —— 差别只在输入集合，判断规则一条都不能有第二份实现。
+    const dedupDeps = dedupDepsOf(store)
     for (const jobId of writtenJobIds) {
       try {
         const job = store.job.detail(jobId)
         if (job === undefined) continue
         const candidate = dedupCandidateOf(job)
         if (candidate === undefined) continue
-        const outcome = applyDedup(
-          {
-            dedupGroup: store.dedupGroup,
-            candidatesFor: (self) =>
-              (job.companyId === null
-                ? []
-                : store.job
-                    .query({ companyId: job.companyId })
-                    .map(dedupCandidateOf)
-                    .filter((item): item is NonNullable<typeof item> => item !== undefined)
-              ).filter((item) => item.id !== self.id && item.platformId !== self.platformId),
-          },
-          candidate,
-          now(),
-        )
+        const outcome = applyDedup(dedupDeps, candidate, now())
         if (outcome.groupId !== null) {
           dedupGroups += 1
         } else if (outcome.candidate) {
@@ -383,7 +413,14 @@ async function executeCrawl(
 
   const quarantined = partition.rejected.length
   const suspicious = collected.length === 0 && pages > 0
-  const state: CrawlState = suspicious || quarantined > 0 || paused ? 'partial' : 'ok'
+  // SR-46：到点中止是**第四种**结局，不是 `partial`。
+  // `partial` 说的是"抓了但数据不全（隔离/暂停）"，而这里数据是完好的，
+  // 只是我们自己收手了 —— 合并会让运行历史分不清"平台有问题"与"我们到点了"。
+  const state: CrawlState = stoppedAtDeadline
+    ? 'aborted'
+    : suspicious || quarantined > 0 || paused
+      ? 'partial'
+      : 'ok'
 
   // SR-37：跑完之后若启用简历的 rev 变了，旧分数必须被标过期（`scoreStale`）。
   // 这件事由 `jobs` 服务在读取时按 stamp 判定，这里不需要额外动作 ——
@@ -401,12 +438,20 @@ async function executeCrawl(
       skipped: paused ? partition.accepted.length : 0,
       quarantined,
       reason: options.reason ?? 'manual',
-      errorCode: suspicious ? 'NO_RECORDS' : paused ? 'PLATFORM_PAUSED' : null,
-      errorMsg: suspicious
-        ? '页面打开正常但一条记录都没解析出来 —— 很可能是选择器失效'
-        : paused
-          ? `平台处于 ${healthState}，本轮只解析未写库`
-          : null,
+      errorCode: stoppedAtDeadline
+        ? 'DEADLINE_REACHED'
+        : suspicious
+          ? 'NO_RECORDS'
+          : paused
+            ? 'PLATFORM_PAUSED'
+            : null,
+      errorMsg: stoppedAtDeadline
+        ? `本轮到点中止（单轮预算用完）—— 前面 ${String(pages)} 页抓到的 ${String(collected.length)} 条已照常入库，剩余页留到下一轮`
+        : suspicious
+          ? '页面打开正常但一条记录都没解析出来 —— 很可能是选择器失效'
+          : paused
+            ? `平台处于 ${healthState}，本轮只解析未写库`
+            : null,
     },
     now(),
   )
@@ -419,8 +464,13 @@ async function executeCrawl(
   // 那种轮次在数据里**和正常轮次长得一模一样**，只是 found 从 20 变成 2。
   // 必须跟这个平台自己的历史比才有意义，所以要放在 `finish()` 之后（本轮已落库，
   // 而 `applyYieldBaseline` 会把它从基线里排除掉）。
-  const yieldSnapshot = applyYieldBaseline(store, adapter.id, collected.length, now(), runId)
-  if (yieldSnapshot.level === 'dropped') {
+  // SR-46 × 批次 5：到点中止的条数是**半截**的 —— 是我们自己停早了，不是平台给少了。
+  // 拿它去比基线必然误报（"只抓到 3 条"），于是这一轮既不进基线、也不触发/关闭告警：
+  // 它对"这个平台通常给多少"这个问题**没有发言权**。
+  const yieldSnapshot = stoppedAtDeadline
+    ? null
+    : applyYieldBaseline(store, adapter.id, collected.length, now(), runId)
+  if (yieldSnapshot !== null && yieldSnapshot.level === 'dropped') {
     deps.logger?.warn(
       `[crawl] ${adapter.id} 量级骤降：本轮 ${String(collected.length)} 条，` +
         `常态约 ${String(yieldSnapshot.baseline)} 条（${String(yieldSnapshot.samples)} 轮样本）`,
@@ -432,6 +482,7 @@ async function executeCrawl(
     `[crawl] ${adapter.id} 第 ${String(runId)} 轮：${state} · 页面 ${String(pages)} · ` +
       `命中 ${String(collected.length)} · 新增 ${String(inserted)} · 更新 ${String(updated)} · ` +
       `隔离 ${String(quarantined)}` +
+      (stoppedAtDeadline ? ' · **到点中止**（剩余页留到下一轮）' : '') +
       (dedupGroups > 0 ? ` · 跨平台合并 ${String(dedupGroups)} 组` : '') +
       (dedupCandidates > 0 ? ` · 疑似重复待确认 ${String(dedupCandidates)} 条` : ''),
   )

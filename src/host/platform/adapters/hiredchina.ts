@@ -567,6 +567,8 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
       key: 'city',
       label: '城市',
       values: Object.keys(config.cityCodes).map((city) => ({ value: city, label: city })),
+      // 同上：本平台**没有**城市筛选，带城市一律拒绝 —— 空表在这里是"别给"，不是"随便给"
+      closed: true,
       hint: '⚠️ 本平台**没有城市 URL 筛选**（地点 quick 按钮纯客户端，More 下拉是国籍过滤）→ 不筛选；带城市一律拒绝，不猜',
     },
     {

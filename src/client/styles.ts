@@ -256,6 +256,25 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 /* 公司名是次要信息，但也不能淡到读不出：用正文色 */
 .jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;
   color:var(--dsw-alias-label-primary)}
+/* 来源（平台）与新鲜度：卡片上的第三档信息，排在标签之前、比 meta 更淡。
+   用 tertiary 而不是 caption —— caption(#adb2b8) 在白色卡片上只有 2.6:1，
+   那是"装饰性文字"的对比度，而这里写的是用户要读的"这岗多久没出现了"。 */
+.jh-job-origin{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 0;
+  font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
+
+/* ── 跨平台去重（批次 4）──────────────────────────────────────────────
+   徽章是**读数**不是操作（操作是右侧那个「对照」按钮），所以它做成一枚
+   低调的描边胶囊：颜色用 label-secondary 而不是品牌色 —— 它表达的是
+   "这条岗位在别处也有一份"，不是"这是重点"。 */
+.jh-dedup-badge{display:inline-block;padding:0 6px;border-radius:999px;
+  border:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-secondary);
+  font-size:10.5px;line-height:16px}
+/* 「对照」比 ★/✕ 宽：两个字放不进 34px 的方块 */
+.jh-job-qk-wide{width:auto;min-width:34px;padding:0 8px;font-size:11.5px}
+/* 展开的对照面板：贴在那一行下面，左边线与卡片对齐，让人看出它属于哪一行 */
+.jh-dedup-pane{margin:6px 0 2px 10px;padding:8px 10px;border-left:2px solid var(--dsw-alias-border-l3);
+  display:flex;flex-direction:column;gap:6px}
+.jh-dedup-pane .jh-table-matrix{min-width:0}
 /* ── .jh-tag：唯一的标签定义 ────────────────────────────────────────
    ── 第三轮修复（2026-09-18）：这里本来有**两条** .jh-tag 规则 ——
    上面这条（12px / 5px 圆角 /18px 行高）与下面那条（11.5px / 999px 胶囊 /19px 行高）。
@@ -422,6 +441,12 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-tag-group{margin:0 0 10px}
 .jh-tag-group-name{display:block;font-size:11.5px;font-weight:600;margin:0 0 5px;
   color:var(--dsw-alias-label-secondary)}
+
+/* JD 原文。抓下来的文本自带换行与缩进（列表项、空行），pre-wrap 原样保留；
+   anywhere 防止长串（URL、无空格英文）把卡片撑宽。
+   颜色刻意用 primary 而不是 secondary —— 这是要读的正文，不是说明文字。 */
+.jh-jd{margin:0 0 8px;font-size:13px;line-height:1.75;white-space:pre-wrap;
+  overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
 
 /* ── shell.overlay 浮层（P0-VERIFICATION F1：必须自消失）───────────── */
 .jh-notice{position:fixed;right:18px;bottom:18px;pointer-events:auto;z-index:40;
@@ -848,6 +873,26 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-check{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer}
 .jh-check input{cursor:pointer}
 
+/* 人工复核条：与上面的画像统计用一条分隔线隔开 —— 上面是**规则算的**，
+   下面是**你写的**，两者性质不同，不该混成一片。 */
+.jh-review{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0 0;
+  padding:10px 0 0;border-top:1px solid var(--dsw-alias-border-l1)}
+.jh-review-field{display:inline-flex;align-items:center;gap:6px;font-size:12px;
+  color:var(--dsw-alias-label-secondary)}
+
+/* 「这家公司的其它岗位」：整行可点（切到那个岗位的详情）。
+   用块级文本按钮而不是下划线链接 —— 一排十几条下划线在详情栏里太吵。 */
+.jh-siblings{list-style:none;margin:0;padding:0}
+.jh-siblings li{margin:0}
+.jh-sibling{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;width:100%;
+  text-align:left;border:0;background:transparent;font:inherit;font-size:12.5px;
+  padding:5px 6px;border-radius:6px;color:var(--dsw-alias-label-primary)}
+.jh-sibling:hover{background:var(--dsw-alias-interactive-bg-hover)}
+/* 抽屉里没有"切换岗位"的上下文，渲染成纯文本 —— 删掉 hover 反馈免得看着像能点 */
+.jh-sibling-static{cursor:default}
+.jh-sibling-static:hover{background:transparent}
+.jh-sibling-meta{color:var(--dsw-alias-label-secondary);font-size:11.5px}
+
 /* ── 批次 F：薪资箱线图（横向，P25–P75 高亮）──────────────────────── */
 /* 用**横向**画：薪资回答"多少"而不是"什么时候"，横着比竖着好读，
    也和上面的漏斗条形同一套视觉语言。高亮的是箱体（P25–P75），
@@ -1081,6 +1126,19 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-table-runs th.jh-col-sticky,.jh-table-runs td.jh-col-sticky{
   position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
 
+/* ── 平台总览矩阵（批次 5）────────────────────────────────────────────
+   与「最近运行」同一套列宽策略：非最后一列收缩到内容宽，最后一列吃掉剩余；
+   第一列粘住，"横向滚动时仍认得出这是哪一行"。 */
+.jh-table-matrix{min-width:640px}
+.jh-table-matrix th:not(:last-child),.jh-table-matrix td:not(:last-child){width:1%;white-space:nowrap}
+.jh-table-matrix th.jh-col-sticky,.jh-table-matrix td.jh-col-sticky{
+  position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
+/* "今天能跑"那一格：长原因截断显示，全文进 title。
+   为什么不做一套短标签 —— 那会是**第二份文案**，迟早与 SKIP_REASON_LABEL 漂移，
+   用户就在矩阵与别处读到两种说法。截断 + 悬停是同一份文案的两种呈现。 */
+.jh-clip{display:inline-block;max-width:18em;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:bottom}
+
 /* 空态：原因 + 下一步（rules §4.3 / quality-gates §2 "空数据时给出原因和下一步"）*/
 .jh-empty{display:flex;flex-direction:column;gap:4px;padding:12px 0}
 
@@ -1118,6 +1176,9 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   .jh-modal-md,.jh-modal-lg{max-width:none}
   /* 低密度：小屏隐藏「更新」列，保留 时间/状态/新增/结果说明 这四列关键信息 */
   .jh-table-runs .jh-col-hide-sm{display:none}
+  /* 矩阵同理：小屏先让「成熟度」「产量」让位，留下 平台/今天能跑/登录/健康/额度/最近一轮 */
+  .jh-table-matrix .jh-col-hide-sm{display:none}
+  .jh-clip{max-width:11em}
   /* 主要操作在小屏仍然找得到：方案卡的动作换行且左对齐，不挤成一条 */
   .jh-plan-head{gap:4px}
   .jh-plan-head .jh-btn{flex:0 0 auto}

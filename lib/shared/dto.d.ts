@@ -8,6 +8,14 @@ import type { ApplicationChannel, ApplicationStage, AssessmentKind, AssessmentSt
 export interface JobDto {
     id: number;
     platformId: string;
+    /**
+     * 平台显示名（服务端 JOIN 出来的）。
+     *
+     * 界面必须能回答"这条是从哪个平台来的"：同一个岗位横跨多个平台本身就是判断依据
+     * （谁在批量转载、哪家平台信息更准）。`null` = 平台表里没有这一行（历史数据或平台已卸载），
+     * 那时退回显示 `platformId`。
+     */
+    platformName: string | null;
     platformJobId: string;
     title: string;
     companyId: number | null;
@@ -40,6 +48,13 @@ export interface JobDto {
     scoreStale: boolean;
     /** 命中的标注类型；完整依据在详情里。 */
     flagTypes: JobFlagType[];
+    /**
+     * 跨平台去重分组 id（§4.10.1）。`null` = 它没有被判定为"另一个平台的同一个岗位"。
+     *
+     * 有了它，列表才能**按组折叠**（同一条岗位在 4 个平台各抓一条时只占一行），
+     * 而不是让用户在一屏里看到四条几乎一样的卡片。
+     */
+    dedupGroupId: number | null;
 }
 /** `/health` 的响应体（客户端与诊断共用）。 */
 export interface HealthDto {
@@ -148,6 +163,15 @@ export interface JobPageDto {
     total: number;
     hasMore: boolean;
 }
+/** 岗位库筛选器的**取值集**（`GET /jobs/facets`）。 */
+export interface JobFacetsDto {
+    /** 出去重后的城市列表（界面多选城市用）。 */
+    cities: string[];
+    /** 去重后的经验要求取值 —— 平台原始串，不是枚举。 */
+    expReqs: string[];
+    /** 去重后的学历要求取值 —— 同上。 */
+    eduReqs: string[];
+}
 /** 一条待办。 */
 export interface TodoDto {
     id: number;
@@ -191,9 +215,19 @@ export interface CrawlStatusDto {
     adapters: AdapterHealthDto[];
     recentRuns: CrawlRunDto[];
 }
-/** `GET /jobs/:id` 的响应：岗位 + 标注依据 + 匹配理由 + 所属公司画像。 */
+/** `GET /jobs/:id` 的响应：岗位 + JD 原文 + 标注依据 + 匹配理由 + 所属公司画像。 */
 export interface JobDetailDto {
     job: JobDto;
+    /**
+     * JD 原文（岗位职责 / 任职要求）。
+     *
+     * 只在**详情**里给，不进 `JobDto` 与列表页：原文动辄几千字，列表一次几十条，
+     * 塞进去等于把整页响应撑成几兆。
+     *
+     * `null` 表示**没抓到**（该平台没实现 `detail.extract`，或详情页没命中选择器）——
+     * 界面必须如实说"没抓到"，不能拿标签拼一份看起来像 JD 的东西出来。
+     */
+    jdText: string | null;
     /** 标注的完整记录（含依据）。**没有依据的结论不会出现在这里。** */
     flags: JobFlagDto[];
     /** 匹配分的逐条理由（§4.5.1：分数必须可解释）。 */
@@ -226,7 +260,16 @@ export interface CompanyProfileDto {
     nameKeywordHits: number;
     outsourcingScore: number | null;
     fraudScore: number | null;
+    /** 人工标签（复核时打的，不是规则算的）。 */
     manualLabel: string | null;
+    /**
+     * 是否被用户人工拉黑。
+     *
+     * 注意它现在的**作用范围**：这是一个人工标记，会出现在岗位详情与公司列表里，
+     * 但**不会**自动把该公司的岗位从岗位库查询结果里剔除 ——
+     * 静默隐藏数据比不隐藏更危险（用户会以为"这条岗位不存在"）。
+     */
+    blacklisted: boolean;
 }
 /** `GET /companies/:id`。 */
 export interface CompanyDetailDto {
@@ -361,7 +404,7 @@ export interface FreshnessDto {
  * 枚举而不是自由文本：自由文本最后一定会退化成"已武装"这种什么都没说的话，
  * 而"为什么没跑"恰恰是用户最需要知道的。
  */
-export declare const SKIP_REASONS: readonly ["not_logged_in", "adapter_broken", "risk_paused", "lease_lost", "offline_gate", "outside_window", "quota_reached", "another_run_active", "backoff", "global_pause", "plan_disabled"];
+export declare const SKIP_REASONS: readonly ["not_logged_in", "adapter_broken", "risk_paused", "lease_lost", "offline_gate", "outside_window", "quota_reached", "another_run_active", "backoff", "global_pause", "plan_disabled", "round_budget"];
 export type SkipReason = (typeof SKIP_REASONS)[number];
 /**
  * 一次触发尝试的结论（SR-16/17/18/26）。
@@ -1114,5 +1157,36 @@ export interface PlatformOverviewDto {
         state: LoginStatusDto['state'];
         message: string | null;
     };
+    /** 治理事实（批次 5）：跨平台**横向可比**的那几列。 */
+    governance: PlatformGovernanceDto;
+}
+/**
+ * 一个平台的治理事实（批次 5 的平台总览矩阵屏）。
+ *
+ * 为什么单独一组而不是继续往 `PlatformOverviewDto` 上摊平：
+ * 上面那些字段回答的是"这个平台**是什么**"（能力/成熟度/登录/健康），
+ * 这一组回答的是"它**现在能不能跑、为什么不能**" —— 后者是**时刻**相关的，
+ * 会随着冷却、额度、暂停而变。两类东西混在一起，界面上就分不清
+ * "这个平台一直需要登录"与"它现在正好在冷却"。
+ */
+export interface PlatformGovernanceDto {
+    /**
+     * 现在能不能跑。`null` = 能跑。
+     *
+     * **复用 `platformGate` 算出来的**，不是另写一套判断 ——
+     * 矩阵上写着"可以"，到了点却被门挡住，是比不做矩阵更糟的事。
+     */
+    blocked: SkipReason | null;
+    /** 今天已经自动跑了几轮。 */
+    todayRuns: number;
+    /** 今天还能自动跑几轮的上限（`DAILY_CRAWL_LIMIT`）。 */
+    dailyLimit: number;
+    /** 平台级风控暂停（SR-21）。 */
+    riskPaused: boolean;
+    riskReason: string | null;
+    /** 该平台自己的冷却截止（SR-20）。`null` = 没在冷却。 */
+    cooldownUntil: string | null;
+    /** 最近一轮（含 `aborted` / 失败原因）。`null` = 从没跑过。 */
+    lastRun: CrawlRunDto | null;
 }
 //# sourceMappingURL=dto.d.ts.map

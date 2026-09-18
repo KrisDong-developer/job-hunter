@@ -6,14 +6,16 @@ import { recordRunFailure, recordRunSuccess } from '../../src/host/platform/heal
 import { readPlatformRiskPause } from '../../src/host/platform/risk-pause.js'
 import {
   backoffMsFor,
+  budgetExhausted,
   createScheduler,
   freshnessOf,
   freshThresholdsFor,
+  startRoundBudget,
   type PlatformGate,
   type SchedulerRunInput,
 } from '../../src/host/scheduler/index.js'
 import { createManualTimer } from '../../src/host/scheduler/timer-port.js'
-import { ADAPTER_FAIL_THRESHOLD } from '../../src/shared/constants.js'
+import { ADAPTER_FAIL_THRESHOLD, ROUND_BUDGET_MS } from '../../src/shared/constants.js'
 import type { CrawlSummaryDto, PlanSchedule } from '../../src/shared/dto.js'
 import type { CrawlState } from '../../src/shared/enums.js'
 import { DomainError } from '../../src/host/util/errors.js'
@@ -74,6 +76,13 @@ interface Options {
   platforms?: string[]
   /** 每平台覆盖项（批次 3）：用来验证"停用的平台真的不跑"。 */
   platformOverrides?: Record<string, { enabled?: boolean; maxPages?: number | null }>
+  /**
+   * 自定义时钟（SR-46）：默认从固定的 00:30 起。
+   *
+   * 需要它是因为"单轮预算"是一段**真实流逝的时间** —— 用固定时钟无法制造
+   * "第一个平台跑完之后预算用尽"这个时刻，而那正是要被钉住的行为。
+   */
+  time?: ReturnType<typeof makeClock>
 }
 
 /**
@@ -95,7 +104,7 @@ function defaultGate(store: ReturnType<typeof openTestStore>): PlatformGate {
 
 function harness(options: Options = {}) {
   const store = openTestStore()
-  const time = makeClock(new Date(2026, 8, 16, 0, 30)) // 周三 00:30，窗口之外
+  const time = options.time ?? makeClock(new Date(2026, 8, 16, 0, 30)) // 周三 00:30，窗口之外
   const plans = createPlanService(store, time.clock)
   const timer = createManualTimer()
   const runs: SchedulerRunInput[] = []
@@ -409,6 +418,96 @@ test('SR-3：窗口外不跑，原因是 outside_window', async () => {
     await h.scheduler.tick()
     assert.equal(h.runs.length, 0)
     assert.equal(h.scheduler.status().planStatus[0]?.lastDecision?.reason, 'outside_window')
+  } finally {
+    h.close()
+  }
+})
+
+// ── SR-46：单轮预算与到点中止 ─────────────────────────────────────────
+
+test('SR-46：预算边界 —— 到点那一刻算用尽（不差一个毫秒）', () => {
+  const budget = startRoundBudget(1000, 60_000)
+  assert.equal(budget.deadlineAtMs, 61_000)
+  assert.equal(budgetExhausted(budget, 60_999), false)
+  assert.equal(budgetExhausted(budget, 61_000), true, '到点即用尽 —— 不能"再挤一个平台"')
+  assert.equal(budgetExhausted(budget, 61_001), true)
+  // 0 预算 = 立刻到点
+  assert.equal(budgetExhausted(startRoundBudget(1000, 0), 1000), true)
+})
+
+test('SR-46：预算用尽后剩下的平台**不跑**，且如实报 round_budget（不是"跑过了"）', async () => {
+  const time = makeClock(new Date(2026, 8, 16, 0, 30))
+  const h = harness({
+    platforms: ['51job', 'other', 'third'],
+    time,
+    outcome: async (platformId) => {
+      // 第一个平台跑完之后，时间直接跨过本轮预算 —— 这正是"跑着跑着到点了"
+      if (platformId === '51job') time.set(new Date(time.get().getTime() + ROUND_BUDGET_MS + 60_000))
+      return summaryOf('ok')
+    },
+  })
+  try {
+    h.scheduler.start()
+    await fireDue(h)
+
+    assert.deepEqual(
+      h.runs.map((run) => run.platformId),
+      ['51job'],
+      '到点之后一个平台都不该再开始 —— 预算的意义就在这里',
+    )
+
+    const planStatus = h.scheduler.status().planStatus[0]
+    assert.equal(planStatus?.lastDecision?.decision, 'ran', '方案整体跑过了，不是"被跳过"')
+    const byPlatform = new Map(
+      (planStatus?.platformDecisions ?? []).map((item) => [item.platformId, item.decision]),
+    )
+    assert.equal(byPlatform.get('51job')?.decision, 'ran')
+    for (const id of ['other', 'third']) {
+      const decision = byPlatform.get(id)
+      assert.equal(decision?.decision, 'skipped', `${id} 没跑，就必须显示成 skipped`)
+      assert.equal(decision?.reason, 'round_budget', `${id} 的原因是**本轮**预算，不是它自己有问题`)
+      assert.ok((decision?.message ?? '').includes('时限'), '界面要给人话，不是枚举键')
+    }
+  } finally {
+    h.close()
+  }
+})
+
+test('SR-46：没到点时所有平台照常跑（预算不能剪掉正常的一轮）', async () => {
+  const h = harness({ platforms: ['51job', 'other', 'third'] })
+  try {
+    h.scheduler.start()
+    await fireDue(h)
+    assert.deepEqual(
+      h.runs.map((run) => run.platformId),
+      ['51job', 'other', 'third'],
+      '预算是保险丝，不是节流阀 —— 正常一轮必须跑完',
+    )
+    const decisions = h.scheduler.status().planStatus[0]?.platformDecisions ?? []
+    assert.equal(
+      decisions.some((item) => item.decision?.reason === 'round_budget'),
+      false,
+      '没有任何平台该被误伤',
+    )
+  } finally {
+    h.close()
+  }
+})
+
+test('SR-46：每个平台拿到的是**同一个**绝对到点时刻', async () => {
+  const h = harness({ platforms: ['51job', 'other'] })
+  try {
+    h.scheduler.start()
+    const nextRunAt = h.plans.get(h.planId).nextRunAt
+    assert.ok(nextRunAt !== null)
+    await fireDue(h)
+
+    const expected = new Date(new Date(nextRunAt).getTime() + ROUND_BUDGET_MS).toISOString()
+    assert.deepEqual(
+      h.runs.map((run) => run.deadlineAt),
+      [expected, expected],
+      '传的是绝对时刻且全轮一致 —— 传"剩余量"的话第二个平台会重新拿到一份预算，等于没有预算',
+    )
   } finally {
     h.close()
   }

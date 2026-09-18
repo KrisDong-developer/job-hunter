@@ -121,6 +121,8 @@ const ALL_TOOL_NAMES = [
   'job_query',
   'job_detail',
   'job_mark',
+  // 批次 4：全库去重复核（低危、可逆）。与抓取后处理共用同一份判断。
+  'job_dedup',
   'job_plan_manage',
   'crawl_run',
   'crawl_status',

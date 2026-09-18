@@ -7,7 +7,7 @@
  * P4 起 `query` / `detail` 会带上**标注类型**与**匹配分**，
  * `detailFull` 还会带出完整依据 —— 界面上任何一个分数与徽章都要能回答「凭什么」。
  */
-import type { JobDetailDto, JobDto } from '../../shared/dto.js';
+import type { JobDetailDto, JobDto, JobFacetsDto } from '../../shared/dto.js';
 import { type JobFlagType, type JobState } from '../../shared/enums.js';
 import type { JobQuery, JobUpsertInput } from '../store/repo/jobs.js';
 import type { Store } from '../store/store.js';
@@ -35,8 +35,8 @@ export interface JobService {
     /** 与 `query` 同一套筛选条件的计数（分页 total）。 */
     countMatching(filters?: JobQuery): number;
     countByState(): Record<string, number>;
-    /** 出去重后的城市列表（界面多选城市用）。 */
-    listCities(): string[];
+    /** 筛选器的取值集：城市 / 经验 / 学历（界面渲染多选 chips 用）。 */
+    facets(): JobFacetsDto;
     /** 供采集层写入；重复跑按 `(platform, platformJobId)` 幂等。 */
     upsert(input: JobUpsertInput, now: string): {
         id: number;

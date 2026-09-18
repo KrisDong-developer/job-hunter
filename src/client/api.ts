@@ -68,6 +68,7 @@ import type {
   TailoringDto,
 } from '../shared/resume.js'
 import type {
+  CompanyDetailDto,
   CrawlStatusDto,
   CrawlSummaryDto,
   GreetingDraftDto,
@@ -75,6 +76,7 @@ import type {
   JobDetailDto,
   JobPageDto,
   JobDto,
+  JobFacetsDto,
   LoginStatusDto,
   PlanDto,
   PlanPostProcess,
@@ -99,6 +101,7 @@ export type {
   JobDetailDto,
   JobPageDto,
   JobDto,
+  JobFacetsDto,
   LoginStatusDto,
   PlanDto,
   PlanPostProcess,
@@ -203,8 +206,19 @@ export interface JobListParams {
   city?: string
   state?: string
   minSalary?: number | null
+  /** 经验要求多选：命中任意一个即可（取值来自 `fetchJobFacets`）。 */
+  expReqs?: string[]
+  /** 学历要求多选：同上。 */
+  eduReqs?: string[]
   /** 屏蔽这些标注类型的岗位（传出 `excludeFlags`，黑白名单只有这里的类型）。 */
   excludeFlags?: JobFlagType[]
+  /** 批次 4：按跨平台去重分组折叠（同一条岗位在多个平台各抓一条时只占一行）。 */
+  groupDuplicates?: boolean
+  /**
+   * 「只看新增」：只返回**首次见到**时间 ≥ 该 ISO 时刻的岗位。
+   * 界面按时间窗（近 24 小时 / 3 天 / 7 天）算好再传，口径与首屏「今日新增」一致。
+   */
+  firstSeenSince?: string
   orderBy?: string
   descending?: boolean
   page?: number
@@ -220,8 +234,18 @@ export async function fetchJobs(params: JobListParams, signal?: AbortSignal): Pr
   if (params.minSalary !== undefined && params.minSalary !== null) {
     query.set('minSalary', String(params.minSalary))
   }
+  if (params.expReqs !== undefined && params.expReqs.length > 0) {
+    query.set('expReqs', params.expReqs.join(','))
+  }
+  if (params.eduReqs !== undefined && params.eduReqs.length > 0) {
+    query.set('eduReqs', params.eduReqs.join(','))
+  }
   if (params.excludeFlags !== undefined && params.excludeFlags.length > 0) {
     query.set('excludeFlags', params.excludeFlags.join(','))
+  }
+  if (params.groupDuplicates === true) query.set('groupDuplicates', '1')
+  if (params.firstSeenSince !== undefined && params.firstSeenSince !== '') {
+    query.set('firstSeenSince', params.firstSeenSince)
   }
   if (params.orderBy !== undefined && params.orderBy !== '') query.set('orderBy', params.orderBy)
   query.set('desc', params.descending === false ? '0' : '1')
@@ -230,13 +254,9 @@ export async function fetchJobs(params: JobListParams, signal?: AbortSignal): Pr
   return await request<JobPageDto>(`/jobs?${query.toString()}`, signal === undefined ? {} : { signal })
 }
 
-/** 出去重后的城市列表（界面多选城市用）。 */
-export async function fetchJobCities(signal?: AbortSignal): Promise<string[]> {
-  const result = await request<{ ok?: boolean; items: string[] }>(
-    '/jobs/cities',
-    signal === undefined ? {} : { signal },
-  )
-  return result.items
+/** 筛选器的取值集：城市 / 经验 / 学历（界面多选 chips 用）。 */
+export async function fetchJobFacets(signal?: AbortSignal): Promise<JobFacetsDto> {
+  return await request<JobFacetsDto>('/jobs/facets', signal === undefined ? {} : { signal })
 }
 
 export async function fetchJobDetail(id: number, signal?: AbortSignal): Promise<JobDetailDto> {
@@ -249,6 +269,35 @@ export async function markJob(id: number, state: JobState): Promise<JobDto> {
     body: JSON.stringify({ state }),
   })
   return result.job
+}
+
+// ── 公司维度（P4）：详情 + 人工复核 ──────────────────────────────────
+
+/**
+ * 公司详情：画像 + 识别信号留痕 + 该公司的在手岗位（≤50）+ 标注汇总。
+ *
+ * 这份接口一直都在，只是客户端从来没调过 —— 于是岗位详情里只能显示
+ * "在手岗位 37"这个数字，看不到那 37 条是什么。
+ */
+export async function fetchCompanyDetail(
+  companyId: number,
+  signal?: AbortSignal,
+): Promise<CompanyDetailDto> {
+  return await request<CompanyDetailDto>(
+    `/companies/${String(companyId)}`,
+    signal === undefined ? {} : { signal },
+  )
+}
+
+/** 人工复核：打标签 / 拉黑。**只发生命中的键**，缺的键沿用现值（不会清空备注）。 */
+export async function updateCompanyReview(
+  companyId: number,
+  patch: { blacklisted?: boolean; manualLabel?: string | null },
+): Promise<void> {
+  await request<{ ok: boolean }>(`/companies/${String(companyId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
 }
 
 export async function fetchCrawlStatus(signal?: AbortSignal): Promise<CrawlStatusDto> {
@@ -964,16 +1013,21 @@ export async function fetchSalaryBand(
 
 export interface DedupGroupDto {
   id: number
-  primaryJobId: number
+  primaryJobId: number | null
   basis: string
   score: number
   createdAt: string
   members: Array<{
     id: number
     platformId: string
+    /** 平台显示名（服务端 JOIN 出来的；平台被卸载时为 null，界面退回显示 id）。 */
+    platformName: string | null
     title: string
     companyName: string | null
     city: string
+    salaryRaw: string
+    sourceUrl: string
+    state: JobState
     isPrimary: boolean
   }>
 }
@@ -985,6 +1039,42 @@ export async function fetchDedupGroups(
     '/dedup/groups',
     signal === undefined ? {} : { signal },
   )
+}
+
+/**
+ * 单个去重分组（批次 4）。
+ *
+ * 岗位库按组折叠时，展开那一行才拉这一条 —— 而不是预取全部 200 个分组
+ * （大多数行用户根本不会展开，预取等于每次翻页都传一遍全库的分组）。
+ */
+export async function fetchDedupGroup(
+  groupId: number,
+  signal?: AbortSignal,
+): Promise<DedupGroupDto> {
+  const result = await request<{ group: DedupGroupDto }>(
+    `/dedup/groups/${String(groupId)}`,
+    signal === undefined ? {} : { signal },
+  )
+  return result.group
+}
+
+/** 全库去重复核的结果（批次 4）。 */
+export interface DedupSweepResultDto {
+  /** 真的送去判定的岗位数（跳过已分组、没公司名的）。 */
+  scanned: number
+  /** 已经在某个分组里、这一轮没再判的岗位数。 */
+  skippedGrouped: number
+  merged: number
+  newGroups: number
+  candidates: number
+  groups: number
+  /** 复核之后的分组列表（界面直接重渲染，不用再请求一次）。 */
+  items: DedupGroupDto[]
+}
+
+/** 触发一次**全库**去重复核。 */
+export async function runDedupSweep(): Promise<DedupSweepResultDto> {
+  return await request<DedupSweepResultDto>('/dedup/run', { method: 'POST', body: JSON.stringify({}) })
 }
 
 /** 把一个岗位从去重组里拆出（可逆：拆出后它独立成普通岗位）。 */

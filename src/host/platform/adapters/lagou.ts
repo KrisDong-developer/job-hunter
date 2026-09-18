@@ -737,6 +737,8 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
       key: 'city',
       label: '城市',
       values: Object.keys(config.cityNames).map((city) => ({ value: city, label: city })),
+      // 表里的 20 个是**建议**不是取值域：`buildLagouSearchUrl` 把中文名原样拼进 URL
+      closed: false,
       hint: '拉勾的 city 参数就是中文城市名，无需码表 —— 列表里没有的城市也能以自由文本直接收；「全国」不带 city 参数',
     },
     {

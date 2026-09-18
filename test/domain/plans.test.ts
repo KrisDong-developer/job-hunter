@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createPlanService } from '../../src/host/domain/plans.js'
+import { criteriaDimensionsFor } from '../../src/host/domain/plan-config.js'
 import { DEFAULT_SCHEDULE, normalizeSchedule } from '../../src/host/store/repo/plans.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job.js'
+import { createGuopinAdapter } from '../../src/host/platform/adapters/guopin.js'
+import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina.js'
 import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed.js'
 import { createLagouAdapter } from '../../src/host/platform/adapters/lagou.js'
 import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job.js'
+import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin.js'
 import type { SiteAdapter } from '../../src/host/platform/types.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { cleanup, openTestStore } from '../support/store.js'
@@ -358,6 +362,152 @@ test('提示：抓取页数被平台上限截断时要说清楚（不能让你�
       checked.notices.some((note) => note.includes('waiqi') && note.includes('页')),
       `应当提示 waiqi 的深度被截断：${checked.notices.join(' | ')}`,
     )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('批次 3：取值域按**已选平台的并集**判 —— 只要有平台接受就放行，一个都不接受才拦', () => {
+  // 这条修的是两个真实缺陷（同一个成因：取值域只看了**第一个**平台，且把"空表"
+  // 一律当成自由文本）：
+  //   1. guopin / hiredchina 的城市表是空的，而空表的含义是"带城市一律拒绝"。
+  //      旧行为下它们**不报错也不提示** —— 用户存得下，然后每次抓取那个平台整轮失败；
+  //   2. 51job + zhipin 时，zhipin 支持的「东莞」既选不到也**存不进**（被 51job 的表拦下）。
+  const { store, plans } = withPlatforms(createFiftyOneAdapter, createZhipinAdapter, createGuopinAdapter)
+  try {
+    // ① 并集里的取值：zhipin 有、51job 没有 —— 必须放行
+    const merged = plans.validate({
+      name: '并集取值',
+      platforms: ['51job', 'zhipin'],
+      criteria: { keyword: 'Java', city: '东莞' },
+    })
+    assert.equal(merged.criteria['city'], '东莞', 'zhipin 支持的取值不该被 51job 的表拦下')
+
+    // ② 有平台接受、另一个不接受 → **放行 + 提示**（提示要说清是谁不接受）
+    const partial = plans.validate({
+      name: '部分平台不支持',
+      platforms: ['51job', 'zhipin'],
+      criteria: { keyword: 'Java', city: '厦门' }, // 厦门：zhipin 有、51job 没有
+    })
+    assert.equal(partial.criteria['city'], '厦门')
+    assert.ok(
+      partial.notices.some((note) => note.includes('51job') && note.includes('厦门') && note.includes('zhipin')),
+      `应当提示 51job 不接受厦门、并指出 zhipin 支持它：${partial.notices.join(' | ')}`,
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('批次 3：城市表为空的平台带城市 → 硬拒（空表 ≠ 自由文本，是"一个都别给"）', () => {
+  // guopin / hiredchina 的城市表是**空**的，而空表的含义是"带城市一律拒绝"。
+  // 旧行为下它们既不报错也不提示 —— 用户存得下，然后每次抓取那个平台整轮失败
+  // （而用户会以为"国聘今天没有岗位"）。这种"一定跑不出结果"的配置必须当场拦住。
+  const { store, plans } = withPlatforms(createGuopinAdapter, createHiredChinaAdapter)
+  try {
+    for (const platformId of ['guopin', 'hiredchina']) {
+      assert.throws(
+        () =>
+          plans.validate({
+            name: `空城市码-${platformId}`,
+            platforms: [platformId],
+            criteria: { keyword: 'Java', city: '深圳' },
+          }),
+        (error: unknown) => {
+          assert.ok(error instanceof DomainError && error.code === 'INVALID_INPUT')
+          assert.ok(
+            (error.hint ?? '').includes('取值表'),
+            `空表要给出"它没有城市码"这个真正的原因：${error.hint ?? ''}`,
+          )
+          return true
+        },
+        `${platformId} 带城市必须被拦下`,
+      )
+      // 不带城市照样能存 —— 拦的是"一定跑不出结果"，不是这个平台本身
+      assert.ok(
+        plans.create({
+          name: `无城市-${platformId}`,
+          platforms: [platformId],
+          criteria: { keyword: 'Java' },
+        }).id > 0,
+      )
+    }
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('批次 3：自由文本城市（拉勾原样收中文名）**不该**被拦也不该被提示', () => {
+  // 反向的坑：lagou 的 city 是自由文本，表里的 20 个只是建议。
+  // 旧行为会为「珠海」报一条**假的**警告（甚至硬拒）—— 误报比不报更伤。
+  const { store, plans } = withPlatforms(createLagouAdapter, createIndeedAdapter)
+  try {
+    const checked = plans.validate({
+      name: '自由文本城市',
+      platforms: ['lagou', 'indeed'],
+      criteria: { keyword: 'Java', city: '珠海' },
+    })
+    assert.equal(checked.criteria['city'], '珠海', '自由文本平台应当原样接受')
+    assert.equal(
+      checked.notices.some((note) => note.includes('城市')),
+      false,
+      `自由文本城市不该产生任何城市提示：${checked.notices.join(' | ')}`,
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('批次 3：「深圳市」按目录归一成「深圳」，并且**说出来**（不能悄悄改写）', () => {
+  const { store, plans } = withPlatforms(createFiftyOneAdapter, createWaiqiAdapter)
+  try {
+    const checked = plans.validate({
+      name: '写法不一致',
+      platforms: ['51job', 'waiqi'],
+      criteria: { keyword: 'Java', city: '深圳市' },
+    })
+    assert.equal(checked.criteria['city'], '深圳', '各平台码表的键都不带「市」')
+    assert.ok(
+      checked.notices.some((note) => note.includes('「深圳市」') && note.includes('「深圳」')),
+      `改写必须告诉用户：${checked.notices.join(' | ')}`,
+    )
+
+    // 原样就能用的写法**绝不**改写（把用户写对的东西改掉是另一种意外）
+    const untouched = plans.validate({
+      name: '原样可用',
+      platforms: ['51job', 'waiqi'],
+      criteria: { keyword: 'Java', city: '深圳' },
+    })
+    assert.equal(untouched.criteria['city'], '深圳')
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('批次 3：城市取值域取**并集**（多平台时选得到只有某个平台支持的城市）', () => {
+  const { store, registry } = withPlatforms(createFiftyOneAdapter, createZhipinAdapter)
+  try {
+    const items = criteriaDimensionsFor(registry, ['51job', 'zhipin'])
+    const city = items.find((item) => item.key === 'city')
+    assert.ok(city !== undefined)
+    const values = city.values.map((item) => item.value)
+    // 「东莞」在 zhipin 表里、不在 51job 表里 —— 旧实现只给**第一个**声明 city 的平台那张表，
+    // 于是用户根本选不到它。
+    assert.ok(values.includes('东莞'), `并集里应当有 zhipin 的东莞：${values.join('、')}`)
+    assert.ok(values.length >= citiesOf(createZhipinAdapter()).length, '至少不小于单个平台的表')
+    // 顺序按城市目录（不是平台顺序）：北京在最前，且与另一个平台无关
+    assert.equal(values[0], '北京')
+    assert.ok(city.hint.includes('并集'), `提示要说清这是并集：${city.hint}`)
   } finally {
     const dir = store.dataDir
     store.close()

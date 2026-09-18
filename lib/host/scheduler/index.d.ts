@@ -1,21 +1,3 @@
-/**
- * 自排程器（§4.6 / C3：宿主没有 schedule 服务，全部自实现）。
- *
- * 五条不可让步的语义：
- *   1. **错过不猛跑** —— 启动时发现错过一轮，只生成一条「是否补跑」待办，
- *      等用户点。开机瞬间轰一遍积压是最容易被风控盯上的行为（C9）。
- *   2. **定时器必须可取消** —— 卸载/热重载不能留下幽灵定时器（C15）。
- *   3. **与手动触发共用同一把锁** —— 抓取本身走 `mutex`，「到点了」和「点一下」不会并行。
- *   4. **"没跑"必须带原因**（SR-17/26）—— 只报 `armed: true` 等于什么都没说：
- *      未登录的平台也会 `armed`，然后每天安静地什么都不做。
- *   5. **定时任务不发送任何东西**（D-5）—— 这里只做采集的准备与执行，不碰 guard 的高危动作。
- *
- * ## 触发器（D-19）
- *
- *   * **T1 窗口触发**（首选）：偏好时段内随机选点，窗口内最多一次（SR-1）；
- *   * **T2 在场触发**：打开面板时若 stale/cold 只**提示**，不自动跑（SR-2）；
- *   * **T3 人工触发**：立即运行 / 补跑，永远保留（SR-30 的例外）。
- */
 import type { CrawlSummaryDto, FreshnessDto, PlanDto, SchedulerStatusDto, SkipReason } from '../../shared/dto.js';
 import type { PlanService } from '../domain/plans.js';
 import type { EventBus } from '../http/sse.js';
@@ -29,6 +11,14 @@ export interface SchedulerRunInput {
     platformId: string;
     criteria: Record<string, string>;
     reason: RunReason;
+    /**
+     * SR-46：这一轮的**绝对**到点时刻（ISO）。
+     *
+     * 由调度器给（本轮开始时刻 + `ROUND_BUDGET_MS`），抓取侧据此在页与页之间收手。
+     * 传**绝对时刻**而不是"还剩几分钟"：抓取中途可能耗掉任意长的时间，
+     * 只有绝对时刻才保证"同一轮里每个平台看到的是同一个终点"。
+     */
+    deadlineAt?: string;
 }
 export interface SchedulerLogger {
     info(message: string): void;
@@ -88,6 +78,26 @@ export interface Scheduler {
  * 方案退避传 `plan.fail_streak`。两者是不同的账，混用会让一层的失败替另一层受罚。
  */
 export declare function backoffMsFor(failStreak: number): number;
+/**
+ * 单轮预算（SR-46）：一个方案的一次运行最多占用多久。
+ *
+ * 为什么需要它：多平台之后"一轮"会依次跑 N 个平台，而**平台总数是用户配的**。
+ * 没有预算时，一轮的时长无上界 —— 一个卡住的页面就能把整轮（以及紧随其后的
+ * 其它方案）拖住，`running` 一直为真，界面上永远显示"正在采集"。
+ *
+ * 两处收手（**不是同一件事，别合并**）：
+ *   * 平台之间（下层机制）→ 还没开始的平台直接不开始，如实报 `round_budget`；
+ *   * 平台之内（本模块只管把 `deadlineAt` 传下去）→ 抓取侧在页与页之间停，
+ *     已解析到的记录照常入库。
+ */
+export interface RoundBudget {
+    startedAtMs: number;
+    deadlineAtMs: number;
+}
+/** 开一轮预算。`budgetMs` 只给测试与将来做可配时用 —— 缺省就是那个常量。 */
+export declare function startRoundBudget(startedAtMs: number, budgetMs?: number): RoundBudget;
+/** 到点了吗。**只在平台之间问** —— 平台内部由抓取侧自己问同一个终点。 */
+export declare function budgetExhausted(budget: RoundBudget, nowMs: number): boolean;
 /** 跳过原因 → 人话（SR-17：界面显示人话，不显示枚举键）。 */
 export declare const SKIP_REASON_LABEL: Record<SkipReason, string>;
 /** SR-8：新鲜度阈值。随计划频率变：每天跑一次的计划 18 小时就算旧了。 */

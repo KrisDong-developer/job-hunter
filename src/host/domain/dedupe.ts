@@ -22,6 +22,13 @@ import { compareJobs, jobDedupeKey, type JobDedupeVerdict } from '../util/dedupe
 export interface DedupCandidate {
   id: number
   platformId: string
+  /**
+   * 公司 id（`null` = 还没归到公司实体上）。
+   *
+   * 候选是按公司取的（同一家公司的岗位才比），所以它必须在这里 ——
+   * 少了它，候选构造器只能回头去查一次库，而那正是"两个调用方各写一份"的开始。
+   */
+  companyId: number | null
   companyName: string
   title: string
   salaryMin: number | null
@@ -52,6 +59,7 @@ export function dedupCandidateOf(job: JobDto): DedupCandidate | undefined {
   return {
     id: job.id,
     platformId: job.platformId,
+    companyId: job.companyId,
     companyName: job.companyName,
     title: job.title,
     salaryMin: job.salaryMin,

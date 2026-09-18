@@ -16,6 +16,7 @@
  *   * **T2 在场触发**：打开面板时若 stale/cold 只**提示**，不自动跑（SR-2）；
  *   * **T3 人工触发**：立即运行 / 补跑，永远保留（SR-30 的例外）。
  */
+import { ROUND_BUDGET_MS } from '../../shared/constants.js'
 import type {
   CrawlSummaryDto,
   FreshnessDto,
@@ -55,6 +56,14 @@ export interface SchedulerRunInput {
   platformId: string
   criteria: Record<string, string>
   reason: RunReason
+  /**
+   * SR-46：这一轮的**绝对**到点时刻（ISO）。
+   *
+   * 由调度器给（本轮开始时刻 + `ROUND_BUDGET_MS`），抓取侧据此在页与页之间收手。
+   * 传**绝对时刻**而不是"还剩几分钟"：抓取中途可能耗掉任意长的时间，
+   * 只有绝对时刻才保证"同一轮里每个平台看到的是同一个终点"。
+   */
+  deadlineAt?: string
 }
 
 export interface SchedulerLogger {
@@ -126,6 +135,36 @@ export function backoffMsFor(failStreak: number): number {
   return 4 * 60 * 60 * 1000
 }
 
+/**
+ * 单轮预算（SR-46）：一个方案的一次运行最多占用多久。
+ *
+ * 为什么需要它：多平台之后"一轮"会依次跑 N 个平台，而**平台总数是用户配的**。
+ * 没有预算时，一轮的时长无上界 —— 一个卡住的页面就能把整轮（以及紧随其后的
+ * 其它方案）拖住，`running` 一直为真，界面上永远显示"正在采集"。
+ *
+ * 两处收手（**不是同一件事，别合并**）：
+ *   * 平台之间（下层机制）→ 还没开始的平台直接不开始，如实报 `round_budget`；
+ *   * 平台之内（本模块只管把 `deadlineAt` 传下去）→ 抓取侧在页与页之间停，
+ *     已解析到的记录照常入库。
+ */
+export interface RoundBudget {
+  startedAtMs: number
+  deadlineAtMs: number
+}
+
+/** 开一轮预算。`budgetMs` 只给测试与将来做可配时用 —— 缺省就是那个常量。 */
+export function startRoundBudget(
+  startedAtMs: number,
+  budgetMs: number = ROUND_BUDGET_MS,
+): RoundBudget {
+  return { startedAtMs, deadlineAtMs: startedAtMs + Math.max(0, budgetMs) }
+}
+
+/** 到点了吗。**只在平台之间问** —— 平台内部由抓取侧自己问同一个终点。 */
+export function budgetExhausted(budget: RoundBudget, nowMs: number): boolean {
+  return nowMs >= budget.deadlineAtMs
+}
+
 /** 全局暂停存在 `setting` 表里（NFR-4：状态全部落 sqlite，重启后不变）。 */
 const PAUSE_KEY = 'schedule-paused'
 const PAUSE_SCOPE = 'global' as const
@@ -143,6 +182,7 @@ export const SKIP_REASON_LABEL: Record<SkipReason, string> = {
   backoff: '上一轮失败了，正在退避等待',
   global_pause: '定时已被一键暂停 —— 手动「立即采集」仍然可用',
   plan_disabled: '方案已停用，或它的定时开关是关的',
+  round_budget: '本轮已到时限（单轮预算用完）—— 剩下的平台留到下一轮',
 }
 
 /** SR-8：新鲜度阈值。随计划频率变：每天跑一次的计划 18 小时就算旧了。 */
@@ -699,6 +739,23 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     )
   }
 
+  /**
+   * 把"被预算剪掉"的平台并回判定结果里（SR-46）。
+   *
+   * 为什么跑完要**再记一次**：`record` 在开跑之前就调用了（SR-26 要求"到点就有结论"），
+   * 而预算是在**跑的过程中**才用尽的。不重记的话，`platformDecisions` 里那几个平台
+   * 会停在 `reason=null`（= 跑过了），而它们其实一条都没抓 —— 又一处"静默少一个结果"，
+   * 正是这张表要消灭的那类问题。
+   */
+  const withCut = (
+    platforms: readonly PlatformDecision[],
+    cut: readonly PlatformDecision[],
+  ): PlatformDecision[] => {
+    if (cut.length === 0) return [...platforms]
+    const byId = new Map(cut.map((item) => [item.platformId, item]))
+    return platforms.map((item) => byId.get(item.platformId) ?? item)
+  }
+
   const tick = async (): Promise<void> => {
     if (running) return
     if (!deps.canSchedule()) return
@@ -739,11 +796,22 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
 
         record(plan.id, decision, null)
         deps.events.publish('plan.started', { planId: plan.id, name: plan.name })
+        // SR-46：本轮预算**每个方案一份**。同一个 tick 里两个方案同时到期时，
+        // 它们各自是一轮 —— 共用一份预算会让先跑的那个把另一个也剪掉，那是另一类串扰。
+        const budget = startRoundBudget(current.getTime())
+        const deadlineAt = new Date(budget.deadlineAtMs).toISOString()
         const outcomes: PlatformOutcome[] = []
+        const cut: PlatformDecision[] = []
         // SR-18：只跑**过了门**的平台；被挡住的那些各自留了原因，不连坐。
         for (const platform of decision.platforms) {
           if (platform.reason !== null) continue
           const platformId = platform.platformId
+          // SR-46：到点了就不再开始新平台。**顺序已按新鲜度排过**（executionOrderOf），
+          // 所以被剪掉的是"最不需要现在跑"的那几个，而不是数组尾部的那几个。
+          if (budgetExhausted(budget, new Date(clock()).getTime())) {
+            cut.push({ platformId, reason: 'round_budget', message: SKIP_REASON_LABEL.round_budget })
+            continue
+          }
           try {
             const summary = await deps.run({
               planId: plan.id,
@@ -751,6 +819,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
               // 批次 3：这个平台**实际使用的**条件（方案级 + 该平台的页数覆盖）
               criteria: criteriaForPlatform(plan, platformId),
               reason: 'schedule',
+              // SR-46：同一个终点交给每个平台 —— 平台内部据此在页与页之间收手
+              deadlineAt,
             })
             outcomes.push({ platformId, summary, error: null })
             deps.events.publish('plan.finished', {
@@ -765,6 +835,13 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
             deps.logger?.warn(`[scheduler] ${plan.name} / ${platformId} 抓取失败：${messageOf(error)}`)
             deps.events.publish('plan.failed', { planId: plan.id, platformId, message: messageOf(error) })
           }
+        }
+        if (cut.length > 0) {
+          record(plan.id, { kind: 'run', reason: null, platforms: withCut(decision.platforms, cut) }, null)
+          deps.logger?.info(
+            `[scheduler] ${plan.name} 单轮预算用尽（${String(Math.round(ROUND_BUDGET_MS / 60_000))} 分钟）` +
+              ` → ${cut.map((item) => item.platformId).join('、')} 留到下一轮`,
+          )
         }
         finishPlanRun(plan, outcomes)
       }
@@ -1016,13 +1093,24 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       const outcomes: PlatformOutcome[] = []
       let last: CrawlSummaryDto | null = null
       let firstFailure: unknown = null
+      // SR-46：手动同样有预算。**不给手动开后门**的理由：手动触发恰恰是最容易
+      // 一次点满 8 个平台 × 5 页的场景，也就是最需要保险丝的场景；
+      // 用户看到"剩下 3 个平台留到下一轮"是诚实的，看到进程卡住不是。
+      const budget = startRoundBudget(new Date(clock()).getTime())
+      const deadlineAt = new Date(budget.deadlineAtMs).toISOString()
+      const cut: PlatformDecision[] = []
       for (const platformId of targets) {
+        if (budgetExhausted(budget, new Date(clock()).getTime())) {
+          cut.push({ platformId, reason: 'round_budget', message: SKIP_REASON_LABEL.round_budget })
+          continue
+        }
         try {
           const summary = await deps.run({
             planId,
             platformId,
             criteria: criteriaForPlatform(plan, platformId),
             reason,
+            deadlineAt,
           })
           last = summary
           outcomes.push({ platformId, summary, error: null })
@@ -1033,6 +1121,34 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
             `[scheduler] 手动跑 ${plan.name} / ${platformId} 失败：${messageOf(error)}`,
           )
         }
+      }
+
+      if (cut.length > 0) {
+        // 与 `tick` 同理：跑之前记的那份里它们还是"能跑"，必须按实际结论重记一次
+        record(
+          planId,
+          {
+            kind: 'run',
+            reason: null,
+            platforms: withCut(
+              active.map((platformId) => ({
+                platformId,
+                reason:
+                  pausedIds.includes(platformId) && !ignoreRiskPause ? 'risk_paused' : null,
+                message:
+                  pausedIds.includes(platformId) && !ignoreRiskPause
+                    ? SKIP_REASON_LABEL.risk_paused
+                    : null,
+              })),
+              cut,
+            ),
+          },
+          null,
+        )
+        deps.logger?.info(
+          `[scheduler] 手动跑 ${plan.name}：单轮预算用尽` +
+            ` → ${cut.map((item) => item.platformId).join('、')} 留到下一轮`,
+        )
       }
 
       finishPlanRun(plan, outcomes)

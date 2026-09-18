@@ -37,6 +37,8 @@ import { createLlmPort } from './ai/llm-port.js'
 import type { CompanyService } from './domain/companies.js'
 import { createCompanyService } from './domain/companies.js'
 import { runCrawl } from './domain/crawl.js'
+import type { DedupSweepResult } from './domain/dedupe-sweep.js'
+import { sweepDedup } from './domain/dedupe-sweep.js'
 import type { JobService } from './domain/jobs.js'
 import { createJobService } from './domain/jobs.js'
 import type { PipelineService, FollowUpSuggestion } from './domain/pipeline.js'
@@ -156,6 +158,8 @@ export interface HostRuntime {
     planId?: number | null
     /** SR-28：触发原因，落进 `crawl_run.reason`（定时/人工/补跑）。 */
     reason?: RunReason
+    /** SR-46：本轮的到点时刻（ISO）。调度器给；直接调（界面/工具）不传 = 无预算。 */
+    deadlineAt?: string
   }): Promise<CrawlSummaryDto>
   /** B3/SR-30：全局一键暂停（**只停定时**，手动永远可用）。 */
   setSchedulePaused(paused: boolean, reason?: string): void
@@ -271,6 +275,13 @@ export interface HostRuntime {
   store(): Store | undefined
   jobs(): JobService | undefined
   companies(): CompanyService | undefined
+  /**
+   * 全库去重复核（批次 4）。
+   *
+   * 放在 runtime 上而不是让每个入口各自调 `sweepDedup`：三条入口（GUI / 模型工具 / HTTP）
+   * 必须走**同一份实现**，否则"界面复核了、工具复核的是另一套"——正是 SR-45 那条纪律。
+   */
+  sweepDedup(): DedupSweepResult
   registry(): AdapterRegistry
   mutex(): Mutex
   browser(): BrowserManager
@@ -420,6 +431,38 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
   }
 
   /**
+   * SR-20：这个平台自己的冷却截止（ISO）。`null` = 没在冷却。
+   *
+   * 抽出来是因为**它有两个读者**：`platformGate`（据此拦）与平台总览矩阵（据此显示）。
+   * 两处各写一遍必然漂移，而这类漂移最难发现：矩阵写着"可以"，到点却被挡住。
+   */
+  const cooldownUntilOf = (platformId: string): string | null => {
+    const opened = store
+    if (opened === undefined) return null
+    const cooldown = opened.setting.get<{ until?: string }>('cooldown-until', 'platform', platformId)
+    if (cooldown === null || typeof cooldown !== 'object') return null
+    const until = typeof cooldown.until === 'string' ? cooldown.until : null
+    if (until === null) return null
+    const at = new Date(until).getTime()
+    return Number.isNaN(at) ? null : new Date(at).toISOString()
+  }
+
+  /**
+   * SR-3：今天这个平台已经自动跑了几轮 / 上限。**同上：两个读者共用一份算法。**
+   *
+   * 只算**自动**触发的那些：手动是人在操作，不该被这条挡住（SR-3 的例外）。
+   */
+  const crawlQuotaOf = (platformId: string): { used: number; limit: number } => {
+    const opened = store
+    if (opened === undefined) return { used: 0, limit: DAILY_CRAWL_LIMIT }
+    const today = clock().slice(0, 10)
+    const used = opened.crawlRun
+      .list(200, platformId)
+      .filter((run) => run.startedAt.slice(0, 10) === today && run.reason !== 'manual').length
+    return { used, limit: DAILY_CRAWL_LIMIT }
+  }
+
+  /**
    * SR-16：**每平台独立**检查前置条件。
    *
    * 这是一个**纯判定**函数（不发请求、不改状态）—— 它回答的正是用户最想知道的那个问题：
@@ -460,18 +503,14 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     // SR-20/23：**每平台独立冷却** —— 这个平台刚失败过就先别去碰它。
     // 判定放在这里（而不是调度器里）是因为这里已经是"每平台前置条件"的唯一入口，
     // 写冷却在调度器（它才知道哪一轮失败了），读冷却在这里。
-    const cooldown = opened.setting.get<{ until?: string }>('cooldown-until', 'platform', platformId)
-    if (cooldown !== null && typeof cooldown === 'object' && typeof cooldown.until === 'string') {
-      const until = new Date(cooldown.until).getTime()
-      if (!Number.isNaN(until) && until > new Date(clock()).getTime()) return 'backoff'
+    const cooldownUntil = cooldownUntilOf(platformId)
+    if (cooldownUntil !== null && new Date(cooldownUntil).getTime() > new Date(clock()).getTime()) {
+      return 'backoff'
     }
 
     // SR-3：每日上限（只算自动触发的那些；手动是人在操作，不该被这条挡住）
-    const today = clock().slice(0, 10)
-    const autoToday = opened.crawlRun
-      .list(200, platformId)
-      .filter((run) => run.startedAt.slice(0, 10) === today && run.reason !== 'manual').length
-    if (autoToday >= DAILY_CRAWL_LIMIT) return 'quota_reached'
+    const quota = crawlQuotaOf(platformId)
+    if (quota.used >= quota.limit) return 'quota_reached'
 
     return null
   }
@@ -952,6 +991,8 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           criteria: input.criteria,
           planId: input.planId,
           reason: input.reason,
+          // SR-46：把本轮终点传给抓取侧 —— 平台内部据此在页与页之间收手
+          ...(input.deadlineAt === undefined ? {} : { deadlineAt: input.deadlineAt }),
         }),
       timer: timerPort,
       events: bus,
@@ -1110,6 +1151,10 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
             // SR-44：抓取后处理开关来自**方案**。方案服务不认识"抓取"，
             // 抓取不认识"方案" —— 所以由装配点在这里把它们接起来。
             postProcess: postProcessForPlan(options.planId ?? null),
+            // SR-46：到点时刻由调度器给（本轮开始 + `ROUND_BUDGET_MS`）。
+            // 界面/工具直接调 `crawl` 时不带它 —— 那种场合用户就在屏幕前，
+            // 一个 20 分钟的保险丝不该悄无声息地把他的抓取腰斩。
+            ...(options.deadlineAt === undefined ? {} : { deadlineAt: options.deadlineAt }),
           },
         )
         bus.publish('crawl.finished', {
@@ -1461,6 +1506,14 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           updatedAt: null,
         }
         const login = loginFlow?.status(adapter.id)
+        // 批次 5：平台总览矩阵要的"横向可比"事实。三处都与调度判定**共用同一份算法**
+        // （`platformGate` / `crawlQuotaOf` / `cooldownUntilOf`）——
+        // 矩阵写着"可以"、到点却被门挡住，是比不做矩阵更糟的一件事。
+        const pause =
+          opened === undefined
+            ? { paused: false, reason: null }
+            : readPlatformRiskPause(opened, adapter.id)
+        const quota = crawlQuotaOf(adapter.id)
         return {
           id: adapter.id,
           displayName: adapter.displayName,
@@ -1482,6 +1535,19 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           account: toAccountDto(account),
           fields: snapshot.fields,
           login: { state: login?.state ?? 'idle', message: login?.message ?? null },
+          // 批次 5 的平台总览矩阵（SR-46 的同批界面落点）：一屏看完每个平台
+          // "是什么"与"现在能不能跑、为什么不能"。
+          governance: {
+            // 没有数据层时门还没法判（`platformGate` 会回 lease_lost，那是误导）——
+            // 这时整页都处于"数据层未就绪"的状态，不假装有结论。
+            blocked: opened === undefined ? null : platformGate(adapter.id),
+            todayRuns: quota.used,
+            dailyLimit: quota.limit,
+            riskPaused: pause.paused,
+            riskReason: pause.reason,
+            cooldownUntil: cooldownUntilOf(adapter.id),
+            lastRun: opened?.crawlRun.latest(adapter.id) ?? null,
+          },
         }
       })
     },
@@ -1531,6 +1597,21 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     },
     companies(): CompanyService | undefined {
       return companies
+    },
+
+    sweepDedup(): DedupSweepResult {
+      const opened = store
+      if (opened === undefined) throw dataNotReady(runtime)
+      const result = sweepDedup(opened, clock())
+      // 复核会改分组：让界面（与其它窗口）知道该重拉，而不是等下次手动刷新
+      if (result.merged > 0 || result.newGroups > 0) {
+        bus.publish('dedup.swept', result)
+      }
+      logger?.info(
+        `[dedup] 全库复核：看过 ${String(result.scanned)} 条 · 合并 ${String(result.merged)} 条 · ` +
+          `新建 ${String(result.newGroups)} 组 · 疑似待确认 ${String(result.candidates)} 条`,
+      )
+      return result
     },
     registry(): AdapterRegistry {
       return registry

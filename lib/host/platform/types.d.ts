@@ -89,6 +89,20 @@ export interface CriteriaDimension {
         value: string;
         label: string;
     }>;
+    /**
+     * 取值域**封闭**：不在 `values` 里的取值会被这张表拒掉（构造不出搜索 URL）。
+     *
+     * 必须显式声明，因为**从 `values` 空不空推不出来**：
+     *   * `guopin` / `hiredchina` 的城市表是**空**的，但空表在这里的含义是
+     *     "一个城市都别给"（带城市一律拒绝）→ `closed: true`；
+     *   * `indeed` / `lagou` 是**自由文本**（地名原样进 URL，表里的值只是建议）
+     *     → `closed: false`，即使 `values` 非空。
+     *
+     * 缺省 = `values.length > 0`（历史行为）。判据与后果见 `platform/cities.ts`
+     * 的 `citySupportOf` —— 差一个 flag，用户收到的就是一条**假的**警告
+     * （或被漏掉的一次整轮失败）。
+     */
+    closed?: boolean;
     /** 该维度可以取到的最多结果数（分页上限）。 */
     max?: number;
     /** 不支持时的解释（用于"为什么这个筛选项是灰的"）。 */

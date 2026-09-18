@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { JOB_FLAG_LABEL, JOB_FLAG_TYPES, JOB_STATES, type JobFlagType, type JobState } from '../../shared/enums.js'
-import { fetchJobCities, fetchJobs, markJob } from '../api.js'
-import { JOB_STATE_LABEL } from '../labels.js'
+import { fetchDedupGroup, fetchJobFacets, fetchJobs, markJob } from '../api.js'
+import { JOB_STATE_LABEL, relativeTime } from '../labels.js'
 import { useAsync } from '../use-async.js'
 import { JobDetailPane } from './job-detail.js'
 
@@ -9,10 +9,17 @@ interface Filters {
   q: string
   /** 多城市：命中任意一个即可；空 = 不限。 */
   cities: string[]
+  /** 经验 / 学历要求多选：取值来自 facet（平台原始串）。 */
+  expReqs: string[]
+  eduReqs: string[]
   state: string
   minSalary: string
   /** 屏蔽这些标注类型的岗位（命中任意一个就不显示）。 */
   excludeFlags: JobFlagType[]
+  /** 批次 4：按跨平台去重分组折叠（同一条岗位在多个平台各抓一条时只占一行）。 */
+  groupDuplicates: boolean
+  /** 只看新增的时间窗（'' = 全部）。见 `NEW_JOB_WINDOWS`。 */
+  newWindow: string
   orderBy: string
   descending: boolean
 }
@@ -20,19 +27,49 @@ interface Filters {
 const EMPTY_FILTERS: Filters = {
   q: '',
   cities: [],
+  expReqs: [],
+  eduReqs: [],
   state: '',
   minSalary: '',
   excludeFlags: [],
+  groupDuplicates: false,
+  newWindow: '',
   orderBy: 'crawled_at',
   descending: true,
+}
+
+/** 多选 chips 的通用取反：选中就移除，未选中就追加。 */
+function toggleValue(list: string[], value: string): string[] {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
 }
 
 const ORDER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'crawled_at', label: '按抓取时间' },
   { value: 'salary_min', label: '按月薪' },
   { value: 'last_seen_at', label: '按最近出现' },
+  { value: 'first_seen_at', label: '按首次出现' },
   { value: 'title', label: '按标题' },
 ]
+
+/**
+ * 「只看新增」的时间窗。
+ *
+ * 24 小时这一档**必须与首屏「今日新增」同口径**（`domain/today.ts` 的
+ * `NEW_JOB_WINDOW_MS` 就是 24 小时）—— 写成"今天零点"会让首屏说 12 条、列表筛出 3 条，
+ * 而两者看的是同一列 `first_seen_at`，用户只会以为其中之一坏了。
+ */
+const NEW_JOB_WINDOWS: Array<{ value: string; label: string; hours: number }> = [
+  { value: '1d', label: '近 24 小时', hours: 24 },
+  { value: '3d', label: '近 3 天', hours: 72 },
+  { value: '7d', label: '近 7 天', hours: 168 },
+]
+
+/** 时间窗 → ISO 起始时刻。空窗（'' = 全部）返回 `undefined`。 */
+export function firstSeenSinceOf(window: string, now: number = Date.now()): string | undefined {
+  const found = NEW_JOB_WINDOWS.find((item) => item.value === window)
+  if (found === undefined) return undefined
+  return new Date(now - found.hours * 60 * 60 * 1000).toISOString()
+}
 
 const PAGE_SIZE = 20
 
@@ -101,6 +138,70 @@ function Pager(props: {
 }
 
 /**
+ * 跨平台对照（批次 4）。
+ *
+ * 展开那一行才拉这一条分组 —— **不预取**全部分组：大多数行用户根本不会展开，
+ * 预取等于每次翻页都多传一份全库的分组。
+ *
+ * 表里给的是**同一个岗位在不同平台的原始样子**（标题、薪资、城市都可能不一样）——
+ * 那正是用户要比的东西：A 平台写 20-30K、B 平台写"面议"，谁更靠谱一眼看得出。
+ */
+function DedupComparePane(props: { groupId: number; onSelect: (id: number) => void }) {
+  const { state } = useAsync((signal) => fetchDedupGroup(props.groupId, signal), [props.groupId])
+  if (state.status === 'loading') {
+    return (
+      <p className="jh-muted" aria-busy="true" aria-live="polite">
+        正在读取同岗位的其它来源…
+      </p>
+    )
+  }
+  if (state.status === 'error') return <p className="jh-error">{state.message}</p>
+
+  const group = state.data
+  return (
+    <div className="jh-dedup-pane">
+      <div className="jh-muted">判定依据：{group.basis}</div>
+      <div className="jh-table-scroll">
+        <table className="jh-table jh-table-matrix">
+          <thead>
+            <tr>
+              <th scope="col">来源</th>
+              <th scope="col">标题</th>
+              <th scope="col">薪资</th>
+              <th scope="col" className="jh-col-hide-sm">城市</th>
+              <th scope="col">原页面</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.members.map((member) => (
+              <tr key={member.id}>
+                <td>
+                  {member.platformName ?? member.platformId}
+                  {member.isPrimary ? <span className="jh-muted">（主）</span> : null}
+                </td>
+                <td>
+                  {/* 点标题 = 在右侧详情里看它（列表里那一行可能是同组的另一条） */}
+                  <button type="button" className="jh-link" onClick={() => props.onSelect(member.id)}>
+                    {member.title}
+                  </button>
+                </td>
+                <td className="jh-num">{member.salaryRaw}</td>
+                <td className="jh-col-hide-sm">{member.city}</td>
+                <td>
+                  <a className="jh-link" href={member.sourceUrl} target="_blank" rel="noreferrer">
+                    打开
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/**
  * U1 岗位库 —— 核心工作界面（§5.4）。
  *
  * **左边列表、右边详情，都在同一屏**：这个屏的主任务是"浏览 → 比较 → 决定"，
@@ -118,6 +219,8 @@ export function JobsScreen(props: {
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS)
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS)
   const [page, setPage] = useState(1)
+  /** 展开着的那一行的去重组 id（同时只开一个：列表本来就密，多开就没法比了）。 */
+  const [openGroup, setOpenGroup] = useState<number | null>(null)
 
   const { state, reload } = useAsync(
     (signal) =>
@@ -125,9 +228,14 @@ export function JobsScreen(props: {
         {
           q: applied.q,
           cities: applied.cities,
+          expReqs: applied.expReqs,
+          eduReqs: applied.eduReqs,
           state: applied.state,
           minSalary: applied.minSalary === '' ? null : Number(applied.minSalary),
           excludeFlags: applied.excludeFlags,
+          groupDuplicates: applied.groupDuplicates,
+          // 「只看新增」：把时间窗算成 ISO 再传（宿主只做比较，不猜"今天"从哪算起）
+          firstSeenSince: firstSeenSinceOf(applied.newWindow),
           orderBy: applied.orderBy,
           descending: applied.descending,
           page,
@@ -138,17 +246,23 @@ export function JobsScreen(props: {
     [props.revision, applied, page],
   )
 
-  // 多选城市需要"有哪些城市"这个选项集；一次性拉取，失败不阻塞筛选。
-  const knownCities = useAsync((signal) => fetchJobCities(signal), [])
-  const citiesAll: string[] = knownCities.state.status === 'ok' ? knownCities.state.data : []
+  // 多选 chips 需要"有哪些取值"这个选项集；一次性拉取，失败不阻塞筛选。
+  const facets = useAsync((signal) => fetchJobFacets(signal), [])
+  const facetData = facets.state.status === 'ok' ? facets.state.data : null
+  const citiesAll: string[] = facetData?.cities ?? []
+  const expAll: string[] = facetData?.expReqs ?? []
+  const eduAll: string[] = facetData?.eduReqs ?? []
 
   const toggleCity = (city: string): void => {
-    setDraft((current) => ({
-      ...current,
-      cities: current.cities.includes(city)
-        ? current.cities.filter((item) => item !== city)
-        : [...current.cities, city],
-    }))
+    setDraft((current) => ({ ...current, cities: toggleValue(current.cities, city) }))
+  }
+
+  const toggleExp = (value: string): void => {
+    setDraft((current) => ({ ...current, expReqs: toggleValue(current.expReqs, value) }))
+  }
+
+  const toggleEdu = (value: string): void => {
+    setDraft((current) => ({ ...current, eduReqs: toggleValue(current.eduReqs, value) }))
   }
 
   const toggleExclude = (type: JobFlagType): void => {
@@ -190,6 +304,9 @@ export function JobsScreen(props: {
 
   const total = state.status === 'ok' ? state.data.total : 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  /** 已生效的「只看新增」窗口名（用于列表头说明，避免用户困惑"怎么这么少"）。 */
+  const appliedWindowLabel =
+    NEW_JOB_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null
 
   return (
     <div className="jh-jobs-split">
@@ -255,6 +372,40 @@ export function JobsScreen(props: {
             ))}
           </span>
         )}
+        {/* 经验 / 学历：与城市同一套多选 chips。取值来自库里的真实数据，
+            所以不会出现"点了得到 0 条"的选项。 */}
+        {expAll.length === 0 ? null : (
+          <span className="jh-filter-row" role="group" aria-label="经验要求（可多选）">
+            <span className="jh-filter-label">经验</span>
+            {expAll.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`jh-chip${draft.expReqs.includes(value) ? ' jh-chip-on' : ''}`}
+                aria-pressed={draft.expReqs.includes(value)}
+                onClick={() => toggleExp(value)}
+              >
+                {value}
+              </button>
+            ))}
+          </span>
+        )}
+        {eduAll.length === 0 ? null : (
+          <span className="jh-filter-row" role="group" aria-label="学历要求（可多选）">
+            <span className="jh-filter-label">学历</span>
+            {eduAll.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`jh-chip${draft.eduReqs.includes(value) ? ' jh-chip-on' : ''}`}
+                aria-pressed={draft.eduReqs.includes(value)}
+                onClick={() => toggleEdu(value)}
+              >
+                {value}
+              </button>
+            ))}
+          </span>
+        )}
         <span className="jh-filter-row" role="group" aria-label="屏蔽标注">
           <span className="jh-filter-label">屏蔽</span>
           {JOB_FLAG_TYPES.map((type) => (
@@ -269,6 +420,45 @@ export function JobsScreen(props: {
               {JOB_FLAG_LABEL[type]}
             </button>
           ))}
+        </span>
+
+        {/* 「新增」时间窗：存量与增量的分界线。按**首次见到**时间（`first_seen_at`）算，
+            与首屏「今日新增」同口径；再抓一次不会让老岗位混进来（那是 `last_seen_at`）。
+            单选，点已选中的那个即回到「全部」。 */}
+        <span className="jh-filter-row" role="group" aria-label="只看新增">
+          <span className="jh-filter-label">新增</span>
+          {NEW_JOB_WINDOWS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`jh-chip${draft.newWindow === option.value ? ' jh-chip-on' : ''}`}
+              aria-pressed={draft.newWindow === option.value}
+              title={`只看${option.label}第一次出现的岗位（按首次见到时间算，与首屏「今日新增」同口径）`}
+              onClick={() =>
+                setDraft((current) => ({
+                  ...current,
+                  newWindow: current.newWindow === option.value ? '' : option.value,
+                }))
+              }
+            >
+              {option.label}
+            </button>
+          ))}
+        </span>
+
+        {/* 批次 4：跨平台折叠。同一条岗位在多个平台各抓一条时，列表里只留一行 ——
+            点开那一行的「跨平台对照」能看到它在别的平台都是什么样的。
+            默认关闭：折叠会少显示行，"默认少显示"是替用户做决定。 */}
+        <span className="jh-filter-row" role="group" aria-label="跨平台折叠">
+          <button
+            type="button"
+            className={`jh-chip${draft.groupDuplicates ? ' jh-chip-on' : ''}`}
+            aria-pressed={draft.groupDuplicates}
+            title="同一条岗位在多个平台各抓一条时只显示一行（展开可看各平台对照）。条数与分页也跟着按折叠后算。"
+            onClick={() => setDraft((current) => ({ ...current, groupDuplicates: !current.groupDuplicates }))}
+          >
+            跨平台折叠
+          </button>
         </span>
       </form>
 
@@ -298,7 +488,10 @@ export function JobsScreen(props: {
             <>
               <div className="jh-listbar">
                 <span className="jh-muted">
-                  共 {state.data.total} 条 · 第 {state.data.page} / {pages} 页
+                  共 {state.data.total} 条
+                  {applied.groupDuplicates ? '（已按跨平台折叠，同一条岗位只算一行）' : ''}
+                  {appliedWindowLabel === null ? '' : `（只看${appliedWindowLabel}的新增）`} · 第{' '}
+                  {state.data.page} / {pages} 页
                 </span>
                 <Pager page={state.data.page} pages={pages} hasMore={state.data.hasMore} onGo={setPage} />
               </div>
@@ -306,6 +499,8 @@ export function JobsScreen(props: {
               <ul className="jh-jobs">
                 {state.data.items.map((job) => {
                   const active = job.id === props.selected
+                  const requirements = [job.expReq, job.eduReq].filter((item) => item !== '').join('·')
+                  const seen = relativeTime(job.lastSeenAt)
                   return (
                     <li key={job.id}>
                       <div className="jh-job-row">
@@ -325,7 +520,24 @@ export function JobsScreen(props: {
                             <span className="jh-job-meta">
                               <b className="jh-salary">{job.salaryRaw}</b>
                               <span>{job.city}{job.district === '' ? '' : `·${job.district}`}</span>
+                              {/* 经验与学历合成一格："3-5年·本科"。两个都缺就整格不占位 ——
+                                  宁可少一格，也不要出现"—·—"这种占位垃圾。 */}
+                              {requirements === '' ? null : <span>{requirements}</span>}
                               <span className="jh-job-company">{job.companyName ?? '—'}</span>
+                            </span>
+                            {/* 来源与新鲜度：一条岗位从哪来、最近一次见到是什么时候。
+                                后者比「首次见到」更能回答"这岗还在招吗"——它一直用于排序，
+                                却从来没在界面上露过面。 */}
+                            <span className="jh-job-origin">
+                              <span>{job.platformName ?? job.platformId}</span>
+                              {seen === null ? null : <span>最近见到 {seen}</span>}
+                              {/* 批次 4：这条岗位在别的平台也在招（同一组）。
+                                  徽章只是**读数**，"展开对照"在右侧那个按钮上。 */}
+                              {job.dedupGroupId === null ? null : (
+                                <span className="jh-dedup-badge" title="与其它平台的同一岗位合并成了一组">
+                                  跨平台
+                                </span>
+                              )}
                             </span>
                             {job.tags.length === 0 ? null : (
                               <span className="jh-tags">
@@ -354,6 +566,21 @@ export function JobsScreen(props: {
                             划掉 = ignored，收藏 = saved；再点一次回到中性的 seen。
                             与详情里的动作条看同一份状态，改完整列重载。 */}
                         <span className="jh-job-quick" role="group" aria-label="快捷标记">
+                          {/* 批次 4：跨平台对照。放在主按钮**外面** ——
+                              按钮嵌按钮是无效 HTML，读屏与键盘都会乱。 */}
+                          {job.dedupGroupId === null ? null : (
+                            <button
+                              type="button"
+                              className={`jh-job-qk jh-job-qk-wide${openGroup === job.dedupGroupId ? ' jh-job-qk-on' : ''}`}
+                              aria-expanded={openGroup === job.dedupGroupId}
+                              title="这条岗位在别的平台也在招 —— 点开看各平台的对照"
+                              onClick={() =>
+                                setOpenGroup(openGroup === job.dedupGroupId ? null : job.dedupGroupId)
+                              }
+                            >
+                              对照
+                            </button>
+                          )}
                           <button
                             type="button"
                             className={`jh-job-qk${job.state === 'saved' ? ' jh-job-qk-on' : ''}`}
@@ -374,6 +601,10 @@ export function JobsScreen(props: {
                           >✕</button>
                         </span>
                       </div>
+                      {/* 跨平台对照：展开在那一行**下面**，不遮住列表其它行 */}
+                      {job.dedupGroupId === null || openGroup !== job.dedupGroupId ? null : (
+                        <DedupComparePane groupId={job.dedupGroupId} onSelect={props.onSelect} />
+                      )}
                     </li>
                   )
                 })}
@@ -382,7 +613,12 @@ export function JobsScreen(props: {
           )}
         </div>
 
-        <JobDetailPane id={props.selected} revision={props.revision} onChanged={props.onChanged} />
+        <JobDetailPane
+          id={props.selected}
+          revision={props.revision}
+          onChanged={props.onChanged}
+          onSelect={props.onSelect}
+        />
       </div>
     </div>
   )

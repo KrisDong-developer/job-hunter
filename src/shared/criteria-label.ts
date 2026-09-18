@@ -45,6 +45,7 @@ const FALLBACK_LABEL: Record<string, string> = {
   sort: '排序方式',
   postedWithinDays: '发布时间',
   maxPages: '抓取页数上限',
+  scrollRounds: '加载轮数',
   // 平台特有维度：只有部分平台声明（如神仙外企），但方案可能引用了它们，
   // 而平台刚被取消勾选 —— 那时候界面不该退回去印 `workExp`。
   workExp: '工作经验',
@@ -56,6 +57,7 @@ const FALLBACK_LABEL: Record<string, string> = {
 const NUMERIC_SUFFIX: Record<string, string> = {
   postedWithinDays: ' 天内',
   maxPages: ' 页',
+  scrollRounds: ' 轮',
 }
 
 /** 把一份条件摊成人话；键顺序按声明顺序，未声明的排在后面。 */

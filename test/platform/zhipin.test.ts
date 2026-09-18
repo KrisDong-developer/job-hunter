@@ -12,6 +12,19 @@ import { JsdomPage } from '../support/jsdom-page.js'
 
 const SEARCH_URL = 'https://www.zhipin.com/web/geek/job?query=Java&city=101280600'
 const FIXTURE_PATH = join(import.meta.dirname, '..', 'fixtures', 'zhipin-search.html')
+/** 登录态夹具（`npm run probe:zhipin-login` 采集）：薪资可见 + 滚动加载后的多屏列表。 */
+const LOGGED_FIXTURE_PATH = join(
+  import.meta.dirname,
+  '..',
+  'fixtures',
+  'zhipin-search-logged-in.html',
+)
+const SCROLL_FIXTURE_PATH = join(
+  import.meta.dirname,
+  '..',
+  'fixtures',
+  'zhipin-search-logged-in-scroll.html',
+)
 
 function asSerialized<F extends (...args: never[]) => unknown>(fn: F): F {
   return new Function(`return (${String(fn)})`)() as F
@@ -50,13 +63,44 @@ test('适配器声明符合平台事实：未登录可搜、薪资隐藏（mediu
   assert.equal(adapter.capabilities.searchWithoutLogin, true)
   assert.equal(adapter.capabilities.fieldCompleteness, 'medium')
   assert.equal(adapter.capabilities.antiBot, 'high')
-  assert.equal(adapter.maxPages, 1, '未登录无分页（平台事实）')
+  assert.equal(adapter.maxPages, 1, '无可寻址的第 N 页（&page=2 实测无效）—— 深度走 scrollRounds')
   assert.ok(
     !adapter.requiredFields.includes('salary_raw' as never),
     '未登录薪资隐藏，salary_raw 不得进必需字段（否则全部被隔离）',
   )
   assert.equal(adapter.actions, undefined)
   assert.ok(adapter.detail !== undefined, '详情选择器有 BossHunter 验证证据，应声明')
+})
+
+test('scrollRounds 维度：声明平台自报的 300 条上限（= 20 轮 × 15 条）', () => {
+  const adapter = createZhipinAdapter()
+  const dimension = adapter.criteriaDimensions.find((item) => item.key === 'scrollRounds')
+  assert.ok(dimension !== undefined, '滚动加载是 BOSS 唯一的翻页手段，必须声明为维度')
+  assert.equal(dimension.max, 20, '上限来自 joblist.json 的 totalCount=300 / 15')
+  assert.ok(dimension.values.length === 0, '自由数值输入，不是取值域')
+  assert.ok(dimension.hint.includes('滚动加载'), '提示要说清"只能滚动加载"这个平台事实')
+})
+
+test('滚动加载：静态夹具上不挂死，返回当前卡片数即收手', async (t) => {
+  if (!existsSync(SCROLL_FIXTURE_PATH)) {
+    t.skip(`夹具不存在（${SCROLL_FIXTURE_PATH}）—— 先跑一次 npm run probe:zhipin-login`)
+    return
+  }
+  const adapter = createZhipinAdapter({
+    // 离线夹具永远等不到"新卡片"，把超时压到几十毫秒，否则每个用例白等十几秒
+    config: { ...DEFAULT_ZHIPIN_CONFIG, scrollStepTimeoutMs: 50 },
+  })
+  const page = browserLikePage(readFileSync(SCROLL_FIXTURE_PATH, 'utf8'))
+  const before = await adapter.crawl.readListPage(page)
+  // rounds=3 → 内部滚动 2 次；夹具是静态 DOM，两次都超时收手
+  await adapter.crawl.gotoSearch(page, {
+    keyword: 'Java',
+    city: '深圳',
+    platform: { scrollRounds: '3' },
+  })
+  const after = await adapter.crawl.readListPage(page)
+  assert.equal(after.length, before.length, '静态夹具不会长出卡片，读到的条数必须不变')
+  assert.ok(after.length > 0, 'gotoSearch 不能把已有的列表弄没')
 })
 
 test('判墙：BOSS 滑块页 URL → captcha；频控/配额文案', async () => {
@@ -109,4 +153,46 @@ test('真实夹具解析（probe:zhipin 保存后启用）：未登录视图的�
 
   // 未登录无分页区 → hasNextPage 恒 false
   assert.equal(await adapter.crawl.hasNextPage(page), false)
+})
+
+test('登录态夹具：薪资可见、滚动加载后一页装 100+ 条', async (t) => {
+  if (!existsSync(LOGGED_FIXTURE_PATH)) {
+    t.skip(`夹具不存在（${LOGGED_FIXTURE_PATH}）—— 先跑一次 npm run probe:zhipin-login`)
+    return
+  }
+  const adapter = createZhipinAdapter()
+  const page = browserLikePage(readFileSync(LOGGED_FIXTURE_PATH, 'utf8'))
+
+  const block = await adapter.guard.detectBlock(page)
+  assert.equal(block, null, `夹具不该被判墙（实际：${String(block)}）`)
+
+  const jobs = await adapter.crawl.readListPage(page)
+  assert.ok(jobs.length >= 10, `第一屏应解析出 ≥10 条（实测 15），实际 ${String(jobs.length)}`)
+
+  // 登录态与未登录态的分界就在这里：薪资**有文本**（未登录时元素在、文本空）
+  const withSalary = jobs.filter((job) => job.salaryRaw !== '')
+  assert.ok(
+    withSalary.length >= Math.ceil(jobs.length * 0.9),
+    `登录后薪资应基本可见（实测 15/15），实际 ${String(withSalary.length)}/${String(jobs.length)}`,
+  )
+  assert.ok(
+    !(jobs[0]?.notes ?? []).some((note) => note.includes('薪资隐藏')),
+    '薪资拿得到时不该再记"薪资隐藏"这条说明',
+  )
+
+  // 滚动加载后的夹具：一页装下多屏（实测 105 条），且 id 不重复（幂等键的唯一性前提）
+  if (existsSync(SCROLL_FIXTURE_PATH)) {
+    const scrolled = browserLikePage(readFileSync(SCROLL_FIXTURE_PATH, 'utf8'))
+    const many = await adapter.crawl.readListPage(scrolled)
+    assert.ok(many.length >= 100, `滚动后应解析出 ≥100 条（实测 105），实际 ${String(many.length)}`)
+    const ids = new Set(many.map((job) => job.platformJobId))
+    assert.equal(ids.size, many.length, '同一页内岗位 id 不该重复')
+    const salaryRatio =
+      many.filter((job) => job.salaryRaw !== '').length / Math.max(1, many.length)
+    assert.ok(salaryRatio >= 0.95, `滚动加载的 100+ 条里薪资可见率应 ≥95%，实际 ${salaryRatio.toFixed(2)}`)
+    console.log(
+      `[zhipin-logged-fixture] 第一屏 ${String(jobs.length)} 条 · 滚动后 ${String(many.length)} 条 · ` +
+        `薪资可见率 ${(salaryRatio * 100).toFixed(0)}%`,
+    )
+  }
 })

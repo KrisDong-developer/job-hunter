@@ -53,6 +53,8 @@ import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '
 import { TONE_LABEL } from '../../shared/labels.js'
 import { normalizeResumeContent } from '../../shared/resume.js'
 import type { JobQuery } from '../store/repo/jobs.js'
+import type { DedupGroupRecord } from '../store/repo/dedup-groups.js'
+import type { Store } from '../store/store.js'
 import { DICTIONARY_KINDS } from '../store/repo/dictionary.js'
 import type { PlanConfigInput, PlanService } from '../domain/plans.js'
 import { criteriaDimensionsFor } from '../domain/plan-config.js'
@@ -90,7 +92,7 @@ export interface RouteRequest {
   readJson(): Promise<unknown>
 }
 
-const ORDER_BY_VALUES = ['crawled_at', 'salary_min', 'title', 'last_seen_at'] as const
+const ORDER_BY_VALUES = ['crawled_at', 'salary_min', 'title', 'last_seen_at', 'first_seen_at'] as const
 
 function json(status: number, body: unknown): RouteResult {
   return { kind: 'json', status, body }
@@ -387,8 +389,29 @@ function buildJobQuery(query: URLSearchParams): JobQuery {
   const minSalaryRaw = query.get('minSalary')
   const minSalary = minSalaryRaw === null || minSalaryRaw === '' ? undefined : Number.parseInt(minSalaryRaw, 10)
 
+  // 「只看新增」：`firstSeenSince` 是界面按时间窗算出来的 ISO 时刻。
+  // 非法值**显式报错**而不是当没传 —— 静默忽略会让用户对着"看起来筛了、其实没筛"的
+  // 列表做判断（和 SR-42 对筛选键的处理同一个理由）。
+  const firstSeenSinceRaw = query.get('firstSeenSince')
+  const firstSeenSince = firstSeenSinceRaw === null ? '' : firstSeenSinceRaw.trim()
+  if (firstSeenSince !== '' && Number.isNaN(new Date(firstSeenSince).getTime())) {
+    throw new DomainError('INVALID_INPUT', `首次见到时间不是合法时刻：${firstSeenSince}`, {
+      hint: '传 ISO 时刻（如 2026-09-17T09:00:00.000Z）—— 界面的「只看新增」会自己算好。',
+    })
+  }
+
   // 多城市：逗号分隔（如 `cities=深圳,北京`）；空则不带。
   const cities = (query.get('cities') ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  // 经验 / 学历：同样是逗号分隔多选，取值是平台原始串（不做枚举校验 —— 校验会
+  // 把"库里真实存在但我不认识"的写法筛掉，而那恰恰是用户想筛的那一类）。
+  const expReqs = (query.get('expReqs') ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  const eduReqs = (query.get('eduReqs') ?? '')
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item !== '')
@@ -407,12 +430,54 @@ function buildJobQuery(query: URLSearchParams): JobQuery {
       ? {}
       : { platformId: query.get('platformId') as string }),
     ...(minSalary === undefined || !Number.isFinite(minSalary) ? {} : { minSalaryAtLeast: minSalary }),
+    // 「只看新增」：只留首次见到时间 ≥ 该时刻的岗位（口径与首屏「今日新增」一致）
+    ...(firstSeenSince === '' ? {} : { firstSeenSince }),
+    ...(expReqs.length > 0 ? { expReqs } : {}),
+    ...(eduReqs.length > 0 ? { eduReqs } : {}),
     ...(orderByRaw === null || orderByRaw === ''
       ? {}
       : { orderBy: orderByRaw as (typeof ORDER_BY_VALUES)[number] }),
     ...(excludeFlags.length > 0 ? { excludeFlagTypes: excludeFlags } : {}),
+    // 批次 4：按跨平台去重分组折叠（界面上的「跨平台折叠」开关）
+    ...(query.get('groupDuplicates') === '1' ? { groupDuplicates: true } : {}),
     ...(query.get('desc') === null ? {} : { descending: query.get('desc') !== '0' && query.get('desc') !== 'false' }),
   }
+}
+
+/**
+ * 一个去重分组的对外形状。**列表与单个分组共用这一份**。
+ *
+ * 成员上带 `salaryRaw` / `sourceUrl` / `platformName`：岗位库的「跨平台对照」
+ * 要在一张表里比薪资、并让人跳去那个平台的原页面。少这几个字段，界面就得为
+ * 每个成员再拉一次详情（N+1 次往返，而它要的只是三个字段）。
+ */
+function dedupGroupItem(store: Store, group: DedupGroupRecord) {
+  return {
+    id: group.id,
+    primaryJobId: group.primaryJobId,
+    basis: group.basis,
+    score: group.score,
+    createdAt: group.createdAt,
+    members: group.memberIds
+      .map((jobId) => store.job.detail(jobId))
+      .filter((job): job is NonNullable<typeof job> => job !== undefined)
+      .map((job) => ({
+        id: job.id,
+        platformId: job.platformId,
+        platformName: job.platformName,
+        title: job.title,
+        companyName: job.companyName,
+        city: job.city,
+        salaryRaw: job.salaryRaw,
+        sourceUrl: job.sourceUrl,
+        state: job.state,
+        isPrimary: job.id === group.primaryJobId,
+      })),
+  }
+}
+
+function dedupGroupItems(store: Store, limit: number): ReturnType<typeof dedupGroupItem>[] {
+  return store.dedupGroup.list(limit).map((group) => dedupGroupItem(store, group))
 }
 
 async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteResult> {
@@ -463,13 +528,13 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     return json(200, body)
   }
 
-  // ── GET /jobs/cities：出去重后的城市列表（界面多选城市用）────────────
-  // 放在 `/jobs/:id` 之前：`cities` 是字面路径，不能让它被当成岗位 id 解析。
-  if (method === 'GET' && segments.length === 2 && segments[0] === 'jobs' && segments[1] === 'cities') {
+  // ── GET /jobs/facets：筛选器的取值集（城市 / 经验 / 学历）─────────────
+  // 放在 `/jobs/:id` 之前：`facets` 是字面路径，不能让它被当成岗位 id 解析。
+  if (method === 'GET' && segments.length === 2 && segments[0] === 'jobs' && segments[1] === 'facets') {
     requireData(runtime)
     const jobService = runtime.jobs()
     if (jobService === undefined) throw dataNotReady(runtime)
-    return json(200, { items: jobService.listCities() })
+    return json(200, jobService.facets())
   }
 
   // ── POST /jobs/batch/mark：批量标记（同一状态应用到多个岗位）─────────
@@ -651,6 +716,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
         outsourcingScore: profile?.outsourcingScore ?? null,
         fraudScore: profile?.fraudScore ?? null,
         manualLabel: profile?.manualLabel ?? null,
+        blacklisted: company.blacklisted,
       },
       signals: store.signal.listByCompany(companyId).map((signal) => ({
         type: signal.type,
@@ -673,28 +739,20 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
 
     // GET /dedup/groups —— 列出分组，附每个成员的岗位摘要（判断是否误判）
     if (method === 'GET' && segments.length === 2 && segments[1] === 'groups') {
-      const groups = store.dedupGroup.list(parsePositiveInt(req.query.get('limit'), 50, 1, 200))
       return json(200, {
-        items: groups.map((group) => ({
-          id: group.id,
-          primaryJobId: group.primaryJobId,
-          basis: group.basis,
-          score: group.score,
-          createdAt: group.createdAt,
-          members: group.memberIds
-            .map((jobId) => store.job.detail(jobId))
-            .filter((job): job is NonNullable<typeof job> => job !== undefined)
-            .map((job) => ({
-              id: job.id,
-              platformId: job.platformId,
-              title: job.title,
-              companyName: job.companyName,
-              city: job.city,
-              isPrimary: job.id === group.primaryJobId,
-            })),
-        })),
+        items: dedupGroupItems(store, parsePositiveInt(req.query.get('limit'), 50, 1, 200)),
         count: store.dedupGroup.count(),
       })
+    }
+
+    // POST /dedup/run —— **全库复核一遍**（批次 4：去重可独立触发）
+    //
+    // 为什么需要它：去重以前只在抓取的后处理里发生，于是"刚打开去重开关"或
+    // "去重规则改过之后"这两个场合都没有入口 —— 只能干等下一轮抓取，
+    // 而那一轮可能一条新岗位都没有。
+    if (method === 'POST' && segments.length === 2 && segments[1] === 'run') {
+      const result = runtime.sweepDedup()
+      return json(200, { ...result, items: dedupGroupItems(store, 50) })
     }
 
     // DELETE /dedup/groups/:id —— 拆分整组：所有成员独立，删除分组
@@ -706,6 +764,15 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       }
       store.dedupGroup.deleteGroup(groupId)
       return json(200, { ok: true })
+    }
+
+    // GET /dedup/groups/:id —— 单个分组（岗位库"按组折叠"展开时按需拉这一条）
+    if (method === 'GET' && segments.length === 3 && segments[1] === 'groups') {
+      const groupId = Number.parseInt(segments[2] ?? '', 10)
+      if (!Number.isFinite(groupId)) throw new DomainError('INVALID_INPUT', `非法分组 id：${segments[2] ?? ''}`)
+      const group = store.dedupGroup.get(groupId)
+      if (group === undefined) throw new DomainError('NOT_FOUND', `去重分组不存在：${String(groupId)}`)
+      return json(200, { group: dedupGroupItem(store, group) })
     }
 
     // POST /dedup/groups/:id/split —— 把一个岗位从组里拆出（不再是合并岗位）
@@ -724,7 +791,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       return json(200, { ok: true })
     }
 
-    throw new DomainError('INVALID_INPUT', '不认识的去重操作', { hint: '合法路径：GET /dedup/groups、DELETE /dedup/groups/:id、POST /dedup/groups/:id/split' })
+    throw new DomainError('INVALID_INPUT', '不认识的去重操作', { hint: '合法路径：GET /dedup/groups、GET /dedup/groups/:id、POST /dedup/run、DELETE /dedup/groups/:id、POST /dedup/groups/:id/split' })
   }
 
   // ── 情报引擎：词表与重算（P4）──────────────────────────────────────
