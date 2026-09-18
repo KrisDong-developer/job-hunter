@@ -1,18 +1,3 @@
-/**
- * 前程无忧（51job）适配器。
- *
- * 两条设计要点：
- *
- * 1. **选择器与字段→URL 映射是配置，不是硬编码**（ADR-19 / D-18）。
- *    代码里带一份默认值，DB 里的覆盖优先（`setting` 表：scope='platform'、scope_ref='51job'、
- *    key='adapter-config'）。选择器坏了自己在 UI 改，不用等发版（J2 / R5）。
- *
- * 2. **解析函数是自包含的**，因为它在真路径上会被序列化后送进浏览器执行
- *    （`page.evaluate`）。它只读全局 `document`、只依赖入参 `config`，
- *    绝不引用模块作用域的自由变量 —— 否则真路径会 ReferenceError。
- *    离线测试用 jsdom 提供同一个 `document`，于是**同一份代码**在两条路径上跑。
- */
-import type { BlockKind } from '../../../shared/enums.js';
 import type { RawJob, SiteAdapter } from '../types.js';
 /** 51job 列表页的选择器集。**每一项都可以在 UI 里改。** */
 export interface FiftyOneSelectors {
@@ -107,14 +92,6 @@ export declare function mergeFiftyOneConfig(override: unknown): FiftyOneConfig;
  * @param config 选择器与 URL 配置（由宿主序列化传入）
  */
 export declare function extractJobsInPage(config: FiftyOneConfig): RawJob[];
-/**
- * **在页面上下文里**判断是否撞上风控 / 登录墙。
- *
- * 命中即停、交还人工，**不硬重试**（C12 / P5）。宁可少抓，也不能把账号搞坏。
- */
-export declare function detectBlockInPage(arg: {
-    card: string;
-}): BlockKind | null;
 export interface FiftyOneAdapterOptions {
     config?: FiftyOneConfig;
     /** 抓取请求之间的随机延时区间（§P5 保守优先）。 */

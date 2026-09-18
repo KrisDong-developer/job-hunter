@@ -51,6 +51,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { signalsOf, type BlockSignalSet } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 import { platformCriterion } from '../types.js'
@@ -741,22 +742,39 @@ export async function fetchListInPage(arg: {
  *
  * 命中即停、交还人工，**不硬重试**（C12 / P5）。
  */
+const WAIQI_BLOCK_SIGNALS = {
+  captchaSelectors: ['.waf-nc-title', 'script[name^="aliyunwaf_"]'],
+  // 神仙外企的限流文案里有「系统繁忙」（通用词表里没有这一条）
+  rateText: ['系统繁忙'],
+  // 阈值 80 比通用的 120 更严：它的"搜到 0 条"结果页也有筛选器文案
+  blankTextLength: 80,
+} as const
+
 export function detectBlockInPage(arg: {
   cardCount: number
   /** 最近一次列表接口返回的 code；`null` = 还没发过请求。 */
   code: number | null
+  /** 通用词表（宿主侧用 `signalsOf(...)` 组装后传进来）。见 `block-signals.ts`。 */
+  signals: BlockSignalSet
 }): BlockKind | null {
   const body = document.body
   const text = body === null ? '' : String(body.textContent ?? '')
   const compact = text.replace(/\s+/g, '')
 
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, iframe[src*="captcha"], #captcha, [class*="verify-wrap"], .waf-nc-title, script[name^="aliyunwaf_"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|系统繁忙/.test(compact)) return 'rate-limited'
+  for (const selector of arg.signals.captchaSelectors) {
+    try {
+      if (document.querySelector(selector) !== null) return 'captcha'
+    } catch {
+      // 单个选择器非法不影响其它判据
+    }
+  }
+  for (const word of arg.signals.rateText) {
+    if (compact.includes(word)) return 'rate-limited'
+  }
   // 平台侧"额度用完"≠ 频控：退避重试没用，今天就此打住。
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
+  for (const word of arg.signals.quotaText) {
+    if (compact.includes(word)) return 'quota-exhausted'
+  }
 
   if (arg.code === 1022) return 'login-required'
 
@@ -764,9 +782,8 @@ export function detectBlockInPage(arg: {
   // 判成 rate-limited，主链据此**停手退避**，而不是按 PARSE_FAILED 继续撞卷这堵墙。
   if (arg.code === 429) return 'rate-limited'
 
-  // 阈值故意压得很低：真实的"页面没渲染出来"几乎是全空的，
-  // 而"搜到 0 条"的结果页本身也有筛选器文案，不该被误判成空白。
-  if (arg.cardCount === 0 && compact.length < 80) return 'blank'
+  // 阈值来自共享词表（80，比通用的 120 更严）
+  if (arg.cardCount === 0 && compact.length < arg.signals.blankTextLength) return 'blank'
   return null
 }
 
@@ -1000,6 +1017,7 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
         return await page.evaluate(detectBlockInPage, {
           cardCount,
           code: lastCode.get(page as object) ?? null,
+          signals: signalsOf(WAIQI_BLOCK_SIGNALS),
         })
       },
     },

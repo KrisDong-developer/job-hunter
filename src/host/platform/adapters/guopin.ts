@@ -54,6 +54,7 @@
  */
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
@@ -461,34 +462,22 @@ export function extractDetailInPage(arg: {
 }
 
 /**
- * **在页面上下文里**判断撞上风控 / 登录墙。
- * 国聘是政府平台：antiBot 低档，走通用文案判定，不编平台特有墙信号。
+ * 国聘特有的判墙信号（与 `block-signals.ts` 的通用词表**并集**）。
+ *
+ * 国聘是政府平台、antiBot 低档，原实现就写着"**走通用文案判定，不编平台特有墙信号**" ——
+ * 所以这里是最轻的一档：只多几条验证码选择器与文案。
+ *
+ * 两处必须显式带上（否则会悄悄改行为）：
+ *   * `人机验证` 留在 **`rateText`** 而不是搬去 `captchaText`：搬过去会把返回值从
+ *     `rate-limited` 变成 `captcha`，界面给的下一步动作就跟着变了；
+ *   * `loginTextLength` 放到极大 = **保留**它原本"登录墙不看页面长度"的语义。
  */
-export function detectBlockInPage(arg: { card: string }): BlockKind | null {
-  const body = document.body
-  const text = body === null ? '' : String(body.textContent ?? '')
-  const compact = text.replace(/\s+/g, '')
-  let cards = 0
-  try {
-    cards = document.querySelectorAll(arg.card).length
-  } catch {
-    cards = 0
-  }
-
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, .geetest_box, #nc_1_wrapper, iframe[src*="captcha"], #captcha, [class*="verify-wrap"], .waf-nc-title, script[name^="aliyunwaf_"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|安全验证|异常流量|人机验证/.test(compact)) {
-    return 'rate-limited'
-  }
-  if (cards === 0) {
-    // 列表页没卡片：可能是登录墙 / 空页 / 改版。
-    if (/请先登录|登录后才能|请登录|扫码登录/.test(compact)) return 'login-required'
-    if (compact.length < 120) return 'blank'
-  }
-  return null
-}
+export const GUOPIN_BLOCK_SIGNALS = {
+  captchaSelectors: ['.geetest_box', '#nc_1_wrapper', '.waf-nc-title', 'script[name^="aliyunwaf_"]'],
+  rateText: ['人机验证'],
+  loginText: ['请登录', '登录后才能'],
+  loginTextLength: 1_000_000,
+} as const
 
 export interface GuopinAdapterOptions {
   config?: GuopinConfig
@@ -584,7 +573,10 @@ export function createGuopinAdapter(options: GuopinAdapterOptions = {}): SiteAda
 
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockInPage, { card: config.selectors.card })
+        return await page.evaluate(detectBlockWithSignals, {
+          signals: signalsOf(GUOPIN_BLOCK_SIGNALS),
+          card: config.selectors.card,
+        })
       },
     },
 

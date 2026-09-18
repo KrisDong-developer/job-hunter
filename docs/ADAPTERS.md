@@ -88,6 +88,23 @@
 `test/support/jsdom-page.ts` 因此多了一个 `fetchStub`：**无论有没有 stub 都装一个 fetch**，
 并打上 `__WAIQI_FETCH__` 标记 —— 真浏览器里 `window.fetch` 一定存在，夹具要同形。
 
+### 2.2 动了适配器的导出，先 grep 一遍探针脚本（真踩过一次）
+
+`page.evaluate` 的函数必须是**导出的具名函数**（内联箭头函数跑得动，但单测不到、也进不了
+2. 的"按源码重建"护栏），于是它天然是跨模块的公开符号 —— **调用方不止适配器和测试，还有 `test/tools/probe-*.ts`**。
+
+真实故障：`guopin` 迁移到共享判墙后，删掉了自己那个已无用的 `detectBlockInPage` 导出；
+`test/tools/probe-guopin.ts` 还 import 着它，于是 typecheck 报：
+
+```
+test/tools/probe-guopin.ts(33,33): error TS2305: Module '"../../src/host/platform/adapters/guopin.js"'
+  has no exported member 'detectBlockInPage'.
+```
+
+规矩：**改 / 删适配器的导出前，先 grep 一遍 `test/tools/probe-*.ts`**（`npm run probe:*` 那些脚本）。
+它们是"**工具链也是调用方**"的典型：漏掉不一定会让 `npm test` 变红，
+却会让"下次真出问题时唯一的排查手段"先一步坏掉 —— 而那时你正忙着排查别的问题。
+
 ## 3. 失效是怎么被发现的（不是靠"抓不到"）
 
 四个信号，都是字段级的、可定位的：
@@ -136,6 +153,17 @@ npm test
 
 1. 实现 `SiteAdapter`（`platform/types.ts`）：`id` / `displayName` / `capabilities` /
    `criteria` / `crawl` / `guard`（`list()` / `detail()` 是协议里的旧形状，本仓库用 `crawl.*`）；
+   **判墙（`guard.detectBlock`）别再从零写**：用 `platform/block-signals.ts` 的
+   `page.evaluate(detectBlockWithSignals, { signals: signalsOf({ ...平台特有 }), card })`
+   —— 验证码选择器、限流/配额/登录墙文案、`blank` 阈值都在通用词表里，
+   你只需声明**自己特有**的那几条（如 BOSS 的滑块页 URL）。
+   ⚠️ `detectBlockWithSignals` 会被序列化进页面，**它只引用自己的参数** ——
+   想往里加判据就加数据（`signalsOf` 的 extra），不要在里面调任何模块里的函数。
+   ⚠️ 流程**本身**不同的平台（有载荷探针、多段组合判据）别硬套共享函数 ——
+   那就只领 `BlockSignalSet` 词表、判墙函数留在适配器里（`zhaopin` / `sinojobs` / `waiqi` 走这条路线）。
+   ⚠️ 迁移**不能机械替换**：逐个比对下来 10 个适配器挖出 **9 处隐性差异**，
+   **全都没有任何测试会红**（见 README.dev.md 的 P17 台账表）。
+   （P17 已全部完成：10/10）
 2. **在 `platform-facts.ts` 登记一行**（`PLATFORM_FACTS['<id>']`），并给返回对象加 `...platformFacts('<id>')`。
    这是**必须**的：`test/platform/facts.test.ts` 会断言"每个注册平台都登记了事实行"。
    填表纪律见该文件头 —— 未验证的环节写 `'unknown'`（比猜一个值更诚实），

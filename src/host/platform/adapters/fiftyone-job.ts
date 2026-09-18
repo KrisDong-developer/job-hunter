@@ -14,6 +14,8 @@
  */
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
+import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
+import { mergeAdapterConfig } from '../config-merge.js'
 import { humanDelayMs } from '../pacing.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
@@ -145,17 +147,10 @@ export const DEFAULT_FIFTYONE_CONFIG: FiftyOneConfig = {
 
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
 export function mergeFiftyOneConfig(override: unknown): FiftyOneConfig {
-  if (override === null || typeof override !== 'object') return DEFAULT_FIFTYONE_CONFIG
-  const patch = override as Partial<FiftyOneConfig>
-  return {
-    selectors: { ...DEFAULT_FIFTYONE_CONFIG.selectors, ...(patch.selectors ?? {}) },
-    urlParams: { ...DEFAULT_FIFTYONE_CONFIG.urlParams, ...(patch.urlParams ?? {}) },
-    cityCodes: { ...DEFAULT_FIFTYONE_CONFIG.cityCodes, ...(patch.cityCodes ?? {}) },
-    detailUrlTemplate:
-      typeof patch.detailUrlTemplate === 'string' && patch.detailUrlTemplate !== ''
-        ? patch.detailUrlTemplate
-        : DEFAULT_FIFTYONE_CONFIG.detailUrlTemplate,
-  }
+  // 通用合并（`platform/config-merge.ts`）：分组浅合并 + 字符串空值保护 +
+  // 只认默认值里已有的键。以前这里是一份手写实现 —— 10 个适配器各写一遍
+  // 同一套语义，漏掉哪一条都只会以"某平台配置突然被清空"的形式暴露。
+  return mergeAdapterConfig(DEFAULT_FIFTYONE_CONFIG, override)
 }
 
 /**
@@ -259,36 +254,26 @@ export function extractJobsInPage(config: FiftyOneConfig): RawJob[] {
 }
 
 /**
- * **在页面上下文里**判断是否撞上风控 / 登录墙。
+ * 51job 特有的判墙信号（与 `block-signals.ts` 的通用词表**并集**）。
  *
- * 命中即停、交还人工，**不硬重试**（C12 / P5）。宁可少抓，也不能把账号搞坏。
+ * 两条必须显式带上，否则会**悄悄改变行为**：
+ *   * 阿里云 WAF 滑块：`waf-nc-title` 文案 + `aliyunwaf_` 脚本名（get_jobs 实战特征）；
+ *   * 登录墙用的是**很宽的词**（`登录|注册|扫码`），而不是通用词表里那几个完整短语 ——
+ *     收紧成"扫码登录"这类短语会让一条"登录后继续"的墙**判不出来**，
+ *     而 `auth.isLoggedIn` 正是靠 `block !== 'login-required'` 反推的：
+ *     判不出来就会报告"已登录"，然后安静地抓到 0 条（正是本项目一直在修的那类静默失败）；
+ *   * `loginTextLength` 放到极大 = **保留**它原本"没有长度上限"的语义。
+ *     通用词表的 800 上限是为了防"导航栏里有『登录』但没卡片"的误判，
+ *     那是个**收紧**，应当作为独立改动 + 独立断言来做，不能混在迁移里。
  */
-export function detectBlockInPage(arg: { card: string }): BlockKind | null {
-  const body = document.body
-  const text = body === null ? '' : String(body.textContent ?? '')
-  const compact = text.replace(/\s+/g, '')
-  let cards = 0
-  try {
-    cards = document.querySelectorAll(arg.card).length
-  } catch {
-    cards = 0
-  }
-
-  // 极验 / 阿里云 nc / 51job 的阿里云 WAF 滑块（`waf-nc-title` 文案 + `aliyunwaf_` 脚本名，
-  // 来自 get_jobs 项目的实战特征）。
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, iframe[src*="captcha"], #captcha, [class*="verify-wrap"], .waf-nc-title, script[name^="aliyunwaf_"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常/.test(compact)) return 'rate-limited'
-  // 平台侧"今日额度用完"（51job 实测文案）≠ 频控：退避重试没用，今天就此打住。
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
-  if (cards === 0 && /登录|注册|扫码/.test(compact)) return 'login-required'
-  // 阈值故意压得很低：真实的「页面没渲染出来」几乎是全空的，
-  // 而「搜到 0 条」的结果页本身也有一两百字的筛选器文案，不该被误判成空白。
-  if (cards === 0 && compact.length < 80) return 'blank'
-  return null
-}
+const FIFTYONE_BLOCK_SIGNALS = {
+  captchaSelectors: ['.waf-nc-title', 'script[name^="aliyunwaf_"]'],
+  loginText: ['登录', '注册', '扫码'],
+  loginTextLength: 1_000_000,
+  // 51job 的 blank 阈值是 80（不是通用的 120）：它的空结果页有一两百字的筛选器文案，
+  // 阈值放大到 120 会让"搜到 0 条"被误判成"页面空白"，错误码与界面提示都跟着变。
+  blankTextLength: 80,
+} as const
 
 export interface FiftyOneAdapterOptions {
   config?: FiftyOneConfig
@@ -390,7 +375,10 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
     auth: {
       loginUrl: 'https://login.51job.com/login.php',
       async isLoggedIn(page): Promise<boolean> {
-        const block = await page.evaluate(detectBlockInPage, { card: config.selectors.card })
+        const block = await page.evaluate(detectBlockWithSignals, {
+          signals: signalsOf(FIFTYONE_BLOCK_SIGNALS),
+          card: config.selectors.card,
+        })
         return block !== 'login-required'
       },
     },
@@ -428,7 +416,10 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
 
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockInPage, { card: config.selectors.card })
+        return await page.evaluate(detectBlockWithSignals, {
+          signals: signalsOf(FIFTYONE_BLOCK_SIGNALS),
+          card: config.selectors.card,
+        })
       },
     },
   }

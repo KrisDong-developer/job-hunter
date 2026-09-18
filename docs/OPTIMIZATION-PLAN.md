@@ -38,7 +38,7 @@
 | 开发 profile | `p5test`（用 `link:` 指向包根，改完 `npm run build` + 重启即可） |
 | 测试 profile | `p5headless`（跑单轮对话，任务**必须写成一行**） |
 | 数据目录 | `$DSH_HOME\job-hunter\data.db`（**累积型**，断言要用 `>=`/增量，别用精确数） |
-| 单测基线 | **709 个（708 通过 / 1 跳过）**（`npm test`，离线，绝不访问真实招聘站）。P16 调度公平与两层额度后 |
+| 单测基线 | **719 个（718 通过 / 1 跳过）**（`npm test`，离线，绝不访问真实招聘站）。P17 判墙信号表 + 共享构造样板后 |
 
 ### 1.2 不可违反的约束（违反即返工）
 
@@ -197,7 +197,7 @@ cd D:\DSH-work\job-hunter
 npm run typecheck            # 必须干净
 npm run build                # 宿主半 → lib/，客户端半 → client/client.js
 npm run verify               # 19 项构建产物契约自检（含 patch 纯 insert、react external）
-npm test                     # 基线 709；新增测试后要更新文档里的计数
+npm test                     # 基线 719；新增测试后要更新文档里的计数
 ```
 
 浏览器验收（需要真 GUI 时才做）：

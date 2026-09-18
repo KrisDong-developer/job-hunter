@@ -49,6 +49,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { signalsOf, type BlockSignalSet } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
@@ -743,6 +744,19 @@ export function extractJobDetailInPage(config: ZhaopinConfig): RawJobDetail {
 }
 
 /**
+ * 智联特有的判墙信号（与 `block-signals.ts` 的通用词表**并集**）。
+ *
+ * 智联走"共享词表、自有结构"：这里只声明**它比通用词表多的那几条**，
+ * 加上它自己的 `blank` 阈值（80，比通用的 120 更严 —— 它的"搜到 0 条"结果页
+ * 也有一两百字筛选器文案，120 会把那种页面误判成空白）。
+ */
+const ZHAOPIN_BLOCK_SIGNALS = {
+  // 极验的 `.geetest_box` / 易盾的 `#nc_1_wrapper` / 阿里云 WAF 的文案与脚本名
+  captchaSelectors: ['.geetest_box', '#nc_1_wrapper', '.waf-nc-title', 'script[name^="aliyunwaf_"]'],
+  blankTextLength: 80,
+} as const
+
+/**
  * **在页面上下文里**判断是否撞上风控 / 登录墙 / 验证。
  *
  * 关键取舍：智联**加了筛选参数**时会返回 0 条 + 「登录之后再搜索」而不是报错，
@@ -751,7 +765,20 @@ export function extractJobDetailInPage(config: ZhaopinConfig): RawJobDetail {
  *
  * 反过来，`/sou/` 的正常结果页**不会**出现登录闸门，所以"有卡片"就足以否定登录墙。
  */
-export function detectBlockInPage(arg: { card: string; loginPopup: string; noJobTip: string }): BlockKind | null {
+export function detectBlockInPage(arg: {
+  card: string
+  loginPopup: string
+  noJobTip: string
+  /**
+   * **通用词表**（由 `signalsOf(...)` 在宿主侧组装后传进来）。
+   *
+   * 智联走的是"**共享词表、自有结构**"这条路：验证码选择器 / 限流 / 配额 / blank 阈值
+   * 用共享的那一份，但**判断流程仍是它自己的** —— 因为下面那段载荷探针
+   * （`__INITIAL_STATE__.positionList` 配平）与 `noJobTip` 的组合判据是它独有的，
+   * 硬塞进 `detectBlockWithSignals` 只会让那个共享函数长出一堆平台分支。
+   */
+  signals: BlockSignalSet
+}): BlockKind | null {
   const body = document.body
   const text = body === null ? '' : String(body.textContent ?? '')
   const compact = text.replace(/\s+/g, '')
@@ -801,13 +828,21 @@ export function detectBlockInPage(arg: { card: string; loginPopup: string; noJob
   })()
 
   // 极验（geetest）与阿里云 nc 两套验证码都点名；智联登录环节用的是极验/易盾。
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, .geetest_box, #nc_1_wrapper, iframe[src*="captcha"], [class*="verify-wrap"], .waf-nc-title, script[name^="aliyunwaf_"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|安全验证|异常流量/.test(compact)) return 'rate-limited'
+  // 选择器来自**共享词表**（`block-signals.ts`），智联只额外声明自己那几条。
+  for (const selector of arg.signals.captchaSelectors) {
+    try {
+      if (document.querySelector(selector) !== null) return 'captcha'
+    } catch {
+      // 单个选择器非法不影响其它判据
+    }
+  }
+  for (const word of arg.signals.rateText) {
+    if (compact.includes(word)) return 'rate-limited'
+  }
   // 平台侧"额度用完"（智联投递上限约 100，文案含"达到上限"）≠ 频控：今天就此打住。
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
+  for (const word of arg.signals.quotaText) {
+    if (compact.includes(word)) return 'quota-exhausted'
+  }
 
   if (cards === 0) {
     // 载荷里有真数据 → 页面其实是好的（AB 分流落到老路由），不是被墙。
@@ -823,7 +858,9 @@ export function detectBlockInPage(arg: { card: string; loginPopup: string; noJob
     // `noJobTip` 在"真没结果"和"被墙"两种情况下都会出现，所以它**不能单独**当登录依据。
     if (noJobTip && compact.length < 400 && /登录|注册/.test(compact)) return 'login-required'
     if (/很抱歉/.test(compact) && /登录/.test(compact)) return 'login-required'
-    if (compact.length < 80) return 'blank'
+    // 阈值来自共享词表：智联的 80 比通用的 120 更严（它的"搜到 0 条"结果页
+    // 也有一两百字筛选器文案，120 会把那种页面误判成空白）
+    if (compact.length < arg.signals.blankTextLength) return 'blank'
   }
 
   return null
@@ -1032,6 +1069,8 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
           card: config.selectors.card,
           loginPopup: config.selectors.loginPopup,
           noJobTip: config.selectors.noJobTip,
+          // 通用词表在**宿主侧**组装好再传进去（页面里没有这个模块）
+          signals: signalsOf(ZHAOPIN_BLOCK_SIGNALS),
         })
       },
     },

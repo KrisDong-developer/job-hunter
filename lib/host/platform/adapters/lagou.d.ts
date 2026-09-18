@@ -45,7 +45,6 @@
  * `city` 参数就是**中文城市名**（`city=深圳`、全国不带该参数）。所以不需要城市码表：
  * 任何中文城市名都能直接拼，UI 枚举用内置 20 城（identity 映射），别处城市自由文本也能收。
  */
-import type { BlockKind } from '../../../shared/enums.js';
 import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** 列表页选择器（默认射到经典结构，**待 probe:lagou 夹具校准**，DB 可覆盖）。 */
 export interface LagouSelectors {
@@ -223,15 +222,6 @@ export declare function hasNextPageInPage(arg: {
     pagination: string;
     next: string;
 }): boolean;
-/**
- * **在页面上下文里**判断风控 / 登录墙 / 验证。
- *
- * 拉勾最特有的：WAF 滑块验证页（`appkey: "CF_APP_WAF"`、sceneId 随机），URL 变
- * `/s/list_<随机hex>`，正文「请滑动滑块进行验证」—— 判 `captcha`，命中即停（C12，重试 = 再撞滑块）。
- */
-export declare function detectBlockInPage(arg: {
-    card: string;
-}): BlockKind | null;
 export interface LagouAdapterOptions {
     config?: LagouConfig;
     /** 抓取请求之间的随机延时区间（§P5 保守优先）。 */

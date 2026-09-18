@@ -49,6 +49,7 @@
  * 但采集链路不会去自动打开它。
  */
 import type { BlockKind } from '../../../shared/enums.js';
+import { type BlockSignalSet } from '../block-signals.js';
 import type { RawJob, SearchCriteria, SiteAdapter } from '../types.js';
 /** 页面外壳地址（人看的入口）。 */
 export declare const WAIQI_WEB_BASE = "https://www.waiqi.com";
@@ -278,26 +279,12 @@ export declare function fetchListInPage(arg: {
     message: string;
     status: number;
 }>;
-/**
- * **在页面上下文里**判断是否撞上风控 / 登录墙 / 空白页。
- *
- * 与 51job / 智联不同：这里列表不是 DOM 渲染的，所以
- * "卡片数"只能当佐证，**接口返回**才是主判据。
- *
- * 已知的接口侧信号：
- *   * `code=1022` = 需要登录（收藏/订阅类接口会返回；列表接口匿名可用）；
- *   * `code=429` = 平台的频控墙（`访问行为异常，请稍后再试`）—— 匿名接口高频访问时实测会返回，
- *     判成 `rate-limited`，让主链**停手退避**，不硬重试（C12 / P5）；
- *   * `code=1010` = 参数校验失败（例如 `size>50`）—— 那是我们自己的 bug，不是墙，
- *     所以**不**报成 block，让它以 PARSE_FAILED 暴露出来；
- *   * `code=999` = 服务端数据异常（例如 `type=0`）。
- *
- * 命中即停、交还人工，**不硬重试**（C12 / P5）。
- */
 export declare function detectBlockInPage(arg: {
     cardCount: number;
     /** 最近一次列表接口返回的 code；`null` = 还没发过请求。 */
     code: number | null;
+    /** 通用词表（宿主侧用 `signalsOf(...)` 组装后传进来）。见 `block-signals.ts`。 */
+    signals: BlockSignalSet;
 }): BlockKind | null;
 /** 在页面上下文里找「下一页」是否可用。**注意**：真正的闸门是 `maxPages=1`。 */
 export declare function hasNextPageInPage(arg: {

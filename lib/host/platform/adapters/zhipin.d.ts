@@ -1,33 +1,3 @@
-/**
- * BOSS 直聘（zhipin.com）适配器 —— 2026-09-18 由 probe:zhipin 真实夹具校准。
- *
- * ## 环境一致性（D-17a）
- *
- * 与猎聘同一套三件套：patchright 启动式 + 系统 Chrome + stealth 注入。
- * BOSS 的 CDP 检测强度低于猎聘（§7.1：BossHunter 用 CDP attach 日常 Chrome
- * 都能跑完整流程），本探针实测 patchright 启动式未登录即可见列表。
- *
- * ## 未登录形态（2026-09-18 夹具实测，很重要）
- *
- * * **列表可见但薪资隐藏**：`.job-salary` 元素存在但为空 —— 所以本适配器的
- *   `requiredFields` **不含 salary_raw**（否则每条记录都被字段断言隔离），
- *   `fieldCompleteness: 'medium'` 如实声明；登录后薪资可见，届时再升级；
- * * `.boss-name` 装的是**公司名**（未登录视图；BossHunter 选择器
- *   `.boss-name || .company-name` 正是为此）；
- * * 无分页区（`hasNextPage` 恒 false，单页 15 条）；登录后有标准分页，待登录夹具补；
- * * 岗位链接 `/job_detail/<加密id>.html`，**未登录不带 securityId** ——
- *   BossHunter 站点规则"详情 URL 必须带完整 securityId"是**已登录**场景；
- *   本适配器只存原始 href（绝不重构 URL），详情抓取（detail.extract）需登录态
- *   才真正可用。
- * * 访问会被 `_security_check` 参数重定向一次（正常现象，不是风控墙）。
- *
- * ## 详情页选择器（BossHunter site-patterns，2026-05-26 验证）
- *
- * `.info-primary .name h1`（标题）/ `.info-primary .salary`（薪资）/
- * `.info-primary .tag-list span`（经验/学历）/ `.job-sec-text`（JD 全文）/
- * `.sider-company`（公司侧栏）/ `.job-boss-info`（HR）—— 实现见 `extractDetailInPage`。
- */
-import type { BlockKind } from '../../../shared/enums.js';
 import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** 列表页选择器集（BossHunter 生产选择器 + 本项目夹具双重验证）。 */
 export interface ZhipinSelectors {
@@ -94,14 +64,6 @@ export declare function extractJobsInPage(arg: {
 export declare function extractDetailInPage(arg: {
     selectors: ZhipinDetailSelectors;
 }): RawJobDetail;
-/**
- * **在页面上下文里**判断风控/登录墙。
- * BOSS 特有：滑块页 URL `https://www.zhipin.com/web/user/safe/verify-slider`
- * （get_jobs 实证）→ 判 captcha，命中即停交人工。
- */
-export declare function detectBlockInPage(arg: {
-    card: string;
-}): BlockKind | null;
 export interface ZhipinAdapterOptions {
     config?: ZhipinConfig;
     delayRangeMs?: [number, number];

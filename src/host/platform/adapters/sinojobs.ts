@@ -47,6 +47,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { signalsOf, type BlockSignalSet } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 import { platformCriterion } from '../types.js'
@@ -549,24 +550,48 @@ export async function fetchListInPage(arg: {
 }
 
 /**
+ * SinoJobs 特有的判墙信号（与 `block-signals.ts` 的通用词表**并集**）。
+ *
+ * 走"**共享词表、自有结构**"（同 zhaopin）：列表不是 DOM 渲染的，"卡片数"由上层算好后传进来，
+ * 而且它有一个独有的**弹窗判据**（`.xcConfirm` 里带登录字样）——
+ * 这既是结构差异，也不适合塞进共享函数。
+ */
+const SINOJOBS_BLOCK_SIGNALS = {
+  captchaSelectors: ['.waf-nc-title', 'script[name^="aliyunwaf_"]'],
+  // 阈值 80 比通用的 120 更严：它的"搜到 0 条"结果页也有筛选器文案
+  blankTextLength: 80,
+} as const
+
+/**
  * **在页面上下文里**判断是否撞上风控 / 登录墙 / 空白页。
  *
  * 与神仙外企同理：列表不是 DOM 渲染的，"卡片数"只能当佐证，**接口返回**才是主判据 ——
  * 但接口侧的错误（`status != 1`）已经在 `readListPage` 处以抛错暴露成 `PARSE_FAILED`，
  * 这里只处理**页面结构信号**（实测该平台未观察到接口侧的专门风控码）。
  */
-export function detectBlockInPage(arg: { cardCount: number }): BlockKind | null {
+export function detectBlockInPage(arg: {
+  cardCount: number
+  /** 通用词表（宿主侧用 `signalsOf(...)` 组装后传进来）。 */
+  signals: BlockSignalSet
+}): BlockKind | null {
   const body = document.body
   const text = body === null ? '' : String(body.textContent ?? '')
   const compact = text.replace(/\s+/g, '')
 
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, iframe[src*="captcha"], #captcha, [class*="verify-wrap"], .waf-nc-title, script[name^="aliyunwaf_"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|安全验证|异常流量/.test(compact)) return 'rate-limited'
+  for (const selector of arg.signals.captchaSelectors) {
+    try {
+      if (document.querySelector(selector) !== null) return 'captcha'
+    } catch {
+      // 单个选择器非法不影响其它判据
+    }
+  }
+  for (const word of arg.signals.rateText) {
+    if (compact.includes(word)) return 'rate-limited'
+  }
   // 平台侧"额度用完"≠ 频控：退避重试没用，今天就此打住。
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
+  for (const word of arg.signals.quotaText) {
+    if (compact.includes(word)) return 'quota-exhausted'
+  }
 
   // 站内错误弹窗（xcConfirm，`window.wxc.xcConfirm`）：接口失败时页面会弹。
   // 弹窗里带登录字样 → 登录墙；否则只按页面文本继续往下判，**不硬猜**风控类型。
@@ -574,9 +599,8 @@ export function detectBlockInPage(arg: { cardCount: number }): BlockKind | null 
     if (/登录|请先登录|未登录/.test(compact)) return 'login-required'
   }
 
-  // 阈值故意压得很低：真实的"页面没渲染出来"几乎是全空的，
-  // 而"搜到 0 条"的结果页本身也有筛选器文案，不该被误判成空白。
-  if (arg.cardCount === 0 && compact.length < 80) return 'blank'
+  // 阈值来自共享词表（80，比通用的 120 更严）
+  if (arg.cardCount === 0 && compact.length < arg.signals.blankTextLength) return 'blank'
   return null
 }
 
@@ -900,7 +924,10 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
        */
       async detectBlock(page): Promise<BlockKind | null> {
         const cardCount = await page.evaluate(countCardsInPage, { selector: config.selectors.card })
-        return await page.evaluate(detectBlockInPage, { cardCount })
+        return await page.evaluate(detectBlockInPage, {
+          cardCount,
+          signals: signalsOf(SINOJOBS_BLOCK_SIGNALS),
+        })
       },
     },
 

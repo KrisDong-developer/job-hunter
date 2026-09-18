@@ -57,6 +57,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 
@@ -491,39 +492,22 @@ export function extractJobsInPage(arg: {
 }
 
 /**
- * **在页面上下文里**判断是否撞上风控 / 登录墙。
+ * 猎聘特有的判墙信号与开关（与 `block-signals.ts` 的通用词表**并集**）。
  *
- * 猎聘特有：风控命中时页面被 `location.replace('about:blank')` 销毁 ——
- * 这里把 about: 协议与"整页被清空"都判成 `blank`，调用方命中即停（C12）。
- * 登录墙的稳定文案**尚无实测证据，不判**（宁可让 blank / 0 条暴露，也不猜）。
+ *   * 验证码：多出 `.geetest_box` / `#nc_1_wrapper`（探针实测的极验容器），
+ *     以及阿里云 WAF 的 `waf-nc-title` + `aliyunwaf_` 脚本名；
+ *   * `blankOnAboutProtocol`：风控命中时 `security.min.js` 会
+ *     `location.replace('about:blank')` **把页面销毁** —— 那不是文案也不是 DOM 特征，
+ *     是结构性判据，所以只能是开关；
+ *   * `skipLoginWall`：猎聘的登录墙文案**尚无实测证据**，原实现明确写着"不判"
+ *     （宁可让 blank / 0 条暴露，也不猜）。这里把它变成**显式开关** ——
+ *     不判也是一种决定，要写出来，而不是靠"通用词表里恰好没有它要的词"。
  */
-export function detectBlockInPage(arg: { card: string }): BlockKind | null {
-  // 猎聘风控销毁页：URL 变 about:blank（security.min.js 的处置方式）。
-  if (location.protocol === 'about:') return 'blank'
+const LIEPIN_BLOCK_SIGNALS = {
+  captchaSelectors: ['.geetest_box', '#nc_1_wrapper', '.waf-nc-title', 'script[name^="aliyunwaf_"]'],
+} as const
 
-  const body = document.body
-  const text = body === null ? '' : String(body.textContent ?? '')
-  const compact = text.replace(/\s+/g, '')
-  let cards = 0
-  try {
-    cards = document.querySelectorAll(arg.card).length
-  } catch {
-    cards = 0
-  }
-
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, .geetest_box, #nc_1_wrapper, iframe[src*="captcha"], #captcha, [class*="verify-wrap"], .waf-nc-title, script[name^="aliyunwaf_"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|安全验证|异常流量/.test(compact)) {
-    return 'rate-limited'
-  }
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
-  // 整页被清空（风控的另一种处置形态）：比 51job 更激进地判 blank ——
-  // 猎聘的正常"0 结果"页也有筛选器文案，全空几乎只能是被动过手脚。
-  if (cards === 0 && compact.length < 120) return 'blank'
-  return null
-}
+const LIEPIN_BLOCK_FLAGS = { blankOnAboutProtocol: true, skipLoginWall: true } as const
 
 /** **在页面上下文里**看「下一页」是否可用（AntD 分页按钮组）。 */
 export function hasNextPageInPage(arg: {
@@ -672,7 +656,11 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
 
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockInPage, { card: config.selectors.card })
+        return await page.evaluate(detectBlockWithSignals, {
+          signals: signalsOf(LIEPIN_BLOCK_SIGNALS),
+          card: config.selectors.card,
+          flags: LIEPIN_BLOCK_FLAGS,
+        })
       },
     },
 

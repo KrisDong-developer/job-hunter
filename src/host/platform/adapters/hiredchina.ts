@@ -80,6 +80,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 import { platformCriterion } from '../types.js'
@@ -501,43 +502,27 @@ export function hasNextPageInPage(arg: { selector: string; currentPage: number }
 }
 
 /**
- * **在页面上下文里**判墙。
+ * HiredChina 特有的判墙信号（与 `block-signals.ts` 的通用词表**并集**）。
  *
- * HiredChina 特有：`www.hiredchina.com` 的 **Cloudflare managed challenge** 是实测第一层墙
- * （raw HTTP 返回 "Just a moment..." + 注入 `_cf_chl_opt` 脚本）。判成 `captcha` 交还人工（C12）。
- * 其余沿用通用文案判定（验证控件 / 频控 / 登录墙 / 空页）。
+ * 三处必须显式带上，否则会**悄悄改变行为**：
+ *   * **Cloudflare managed challenge**（实测第一层墙：raw HTTP 返回 "Just a moment..." +
+ *     注入 `_cf_chl_opt` 脚本）：`challenge-platform` / `cf_chl` / `cf-browser-verification`
+ *     这一组选择器与文案，通用词表里没有 Cloudflare；
+ *   * `人机验证` 留在 **`rateText`**（同 guopin）：搬去 `captchaText` 会把返回值从
+ *     `rate-limited` 变成 `captcha`，界面给的下一步动作就跟着变了；
+ *   * `loginText` 带上**英文**（`login` / `Sign in`）—— 这是外企站，通用词表只有中文短语。
  */
-export function detectBlockInPage(arg: { card: string; cardBox: string }): BlockKind | null {
-  const body = document.body
-  const text = body === null ? '' : String(body.textContent ?? '')
-  const compact = text.replace(/\s+/g, '')
-
-  let cards = 0
-  try {
-    cards = document.querySelectorAll(arg.card).length
-  } catch {
-    cards = 0
-  }
-
-  // Cloudflare managed challenge：标题/脚本/校验表单任一命中即判 captcha。
-  const challenge = document.querySelector(
-    'script[src*="challenge-platform"], form[action*="cf_chl"], iframe[src*="challenge-platform"], [class*="cf-browser-verification"]',
-  )
-  if (challenge !== null) return 'captcha'
-  if (/justamoment|_cf_chl_opt|cf-browser-verification|cf_chl_/.test(compact)) return 'captcha'
-
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, iframe[src*="captcha"], #captcha, [class*="verify-wrap"], [class*="slide-verify"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|安全验证|异常流量|人机验证/.test(compact)) {
-    return 'rate-limited'
-  }
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
-  if (cards === 0 && /login|Sign in|登录/.test(compact) && compact.length < 800) return 'login-required'
-  if (cards === 0 && compact.length < 120) return 'blank'
-  return null
-}
+const HIREDCHINA_BLOCK_SIGNALS = {
+  captchaSelectors: [
+    'script[src*="challenge-platform"]',
+    'form[action*="cf_chl"]',
+    'iframe[src*="challenge-platform"]',
+    '[class*="cf-browser-verification"]',
+  ],
+  captchaText: ['_cf_chl_opt', 'cf_chl_', 'cf-browser-verification', 'justamoment'],
+  rateText: ['人机验证'],
+  loginText: ['login', 'Sign in', '登录'],
+} as const
 
 export interface HiredChinaAdapterOptions {
   config?: HiredChinaConfig
@@ -659,9 +644,12 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
 
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockInPage, {
+        return await page.evaluate(detectBlockWithSignals, {
+          signals: signalsOf(HIREDCHINA_BLOCK_SIGNALS),
           card: config.selectors.card,
-          cardBox: config.selectors.cardBox,
+          // ⚠️ **刻意不传 `cardBox`**：原实现的 arg 里声明了它，但函数体从未使用过
+          //    （只 querySelectorAll(arg.card)）。传进去会让"卡片数为 0"多一条兜底判据，
+          //    从而少判 blank —— 那是行为改变，不是迁移。
         })
       },
     },

@@ -49,6 +49,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { CORE_FIELDS } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
+import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
@@ -687,38 +688,19 @@ export function hasNextPageInPage(arg: { pagination: string; next: string }): bo
 }
 
 /**
- * **在页面上下文里**判断风控 / 登录墙 / 验证。
+ * 拉勾特有的判墙信号（与 `block-signals.ts` 的通用词表**并集**）。
  *
- * 拉勾最特有的：WAF 滑块验证页（`appkey: "CF_APP_WAF"`、sceneId 随机），URL 变
- * `/s/list_<随机hex>`，正文「请滑动滑块进行验证」—— 判 `captcha`，命中即停（C12，重试 = 再撞滑块）。
+ * 最特有的一条是 **WAF 滑块页的 URL 特征**：`appkey: "CF_APP_WAF"`、sceneId 随机，
+ * URL 变成 `/s/list_<随机hex>`，正文「请滑动滑块进行验证」—— 判 `captcha`，命中即停
+ * （C12：重试等于再撞一次滑块）。文案也一并带上，与 URL 特征双保险。
  */
-export function detectBlockInPage(arg: { card: string }): BlockKind | null {
-  // WAF 滑块验证页（拉勾特有 URL 特征：/s/list_<hex>）。
-  if (/lagou\.com\/s\/list_/.test(location.href)) return 'captcha'
-
-  const body = document.body
-  const text = body === null ? '' : String(body.textContent ?? '')
-  const compact = text.replace(/\s+/g, '')
-  let cards = 0
-  try {
-    cards = document.querySelectorAll(arg.card).length
-  } catch {
-    cards = 0
-  }
-
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, .geetest_box, #nc_1_wrapper, iframe[src*="captcha"], [class*="verify-wrap"], [class*="slide-verify"], .slide-verify-panel',
-  )
-  if (captcha !== null) return 'captcha'
-  // 拉勾 WAF 滑块文案（与 URL 特征双保险）。
-  if (/请滑动滑块进行验证|为了更好的访问体验|请完成验证|滑动滑块/.test(compact)) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|安全验证|异常流量/.test(compact)) return 'rate-limited'
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
-  // 列表页公开可爬，不该被登录挡；真被整页换登录表单时是墙。
-  if (cards === 0 && /手机号登录|邮箱登录|扫码登录/.test(compact) && compact.length < 800) return 'login-required'
-  if (cards === 0 && compact.length < 120) return 'blank'
-  return null
-}
+const LAGOU_BLOCK_SIGNALS = {
+  urlPatterns: ['lagou\\.com/s/list_'],
+  captchaSelectors: ['.geetest_box', '#nc_1_wrapper', '.slide-verify-panel'],
+  captchaText: ['请滑动滑块进行验证', '为了更好的访问体验', '请完成验证', '滑动滑块'],
+  // 拉勾的登录表单用这几个词（通用词表只有「扫码登录」）
+  loginText: ['手机号登录', '邮箱登录'],
+} as const
 
 export interface LagouAdapterOptions {
   config?: LagouConfig
@@ -876,7 +858,10 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
 
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockInPage, { card: config.selectors.card })
+        return await page.evaluate(detectBlockWithSignals, {
+          signals: signalsOf(LAGOU_BLOCK_SIGNALS),
+          card: config.selectors.card,
+        })
       },
     },
 

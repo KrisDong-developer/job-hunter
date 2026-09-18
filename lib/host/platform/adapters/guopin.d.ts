@@ -1,58 +1,3 @@
-/**
- * 国聘网（iguopin.com）适配器 —— 2026-09-18 基于真实线上页面一手调研。
- *
- * 国聘网是「国聘行动」官方平台（国务院国资委推动、央视总台合作），聚合大量央企 /
- * 国企 / 事业单位 / 部分民企岗位，校招（秋招/春招）与社招并重。运行方为国投人力。
- *
- * ## 调研来源（2026-09-18 直接抓取线上 + probe 夹具实证，非二手资料）
- *
- * * **列表页**：真实路由 `/jobList?keyword=<明文>` **302 到 `/job?keyword=Java`**
- *   （probe 实证，2026-09-18）。未登录可看、服务端 SSR。
- * * **详情页**：`https://www.iguopin.com/job/detail?id=<19位数字>`（WebFetch 实证命中
- *   「财税管理岗（校招）」详情页）。页面含标题 / 更新于 / 薪资 / 公司 / 职位性质 /
- *   招聘人数 / 最低学历 / 工作经验 / 专业要求 / 行业要求 / **报名截止** / 职位介绍（度量 JD）。
- * * **列表卡片真实 DOM**（probe 实证，`test/fixtures/guopin-search.html`）：
- *
- *   ```html
- *   <div class="job-card">
- *     <div class="job-title" title="java后端 「北京-东城区」">   ← 标题+城市（全角书名号）
- *       <div class="job-name">java后端</div>
- *     </div>
- *     <div class="job-info">     ← 3 个 tag：「性质/经验/学历」（顺序不固定，经验偶缺）
- *       <span class="tag-item">校招</span><span>应届生</span><span>本科</span>
- *     </div>
- *     <div class="job-tag"><span class="ant-tag">Java工程师</span>…</div>
- *     <a class="company-name" href="/company?id=…" title="…">…</a>  ← 公司（文本可能省略号截断）
- *     <div class="company-info">  ← 顺序固定 ×3：性质/规模/行业
- *       <span class="company-info-item">国企</span><span>1000-2000人</span><span>软件和信息技术服务业</span>
- *     </div>
- *   </div>
- *   ```
- *
- * ## ⚠️ 两个 phase-1 就被 probe 推翻的事实（决定本适配器形态）
- *
- * 1. **列表卡片无薪资**：`.job-info` 只有性质/经验/学历，薪资只出现在详情页。
- *    因此 `requiredFields` **不含 `salary_raw`**（否则每条都被隔离）；`salaryRaw` 留空，
- *    由详情抓取（detail.extract）补。
- * 2. **列表页无平台 id**：无 `/job/detail?id=` 链接、无 `__NEXT_DATA__`/`jobId`/`positionId`
- *    持久化载荷。id 只在详情页。⇒ **upsert 幂等键用内容哈希**（用户拍板）：
- *    `platformJobId = "ch:" + FNV1a(title|company|city|district)`，deterministic，
- *    同岗位重复抓不重复；`sourceUrl` 存列表页 URL（不编详情 URL）。
- *
- * ## 分页 / 城市码：仍未确证（**不编**）
- *
- * * **分页参数未确证**：真实路由 `/job?keyword=` 无页码参数；从页面底部数字分页拿到
- *   真实 href 前，`hasNextPage` 恒 false、`maxPages=1`（单页采集，绝不去猜参数）。
- * * **城市码未实测**：筛选栏有北京/上海…，但 URL 城市参数未实证 → `cityCodes` 置空，
- *   未列出城市 `buildSearchUrl` 返回 null（入口层拒绝）。
- *
- * ## 判定墙
- *
- * 国聘是政府背景平台，未观测到 CDP 检测（对应 §7.1「51job/智联/神仙外企」那一档）。
- * `detectBlock` 走通用文案判定：验证控件 → 频控 → 登录墙 → 空页。列表页未登录可看
- * （投递才要登录），所以 `searchWithoutLogin: true`；antiBot 如实定 `low`。
- */
-import type { BlockKind } from '../../../shared/enums.js';
 import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** 详情 URL 里抠出岗位 id：`/job/detail?id=<数字>`。 */
 export declare const GUOPIN_JOB_ID_PATTERN = "/job/detail\\?id=(\\d+)";
@@ -170,12 +115,22 @@ export declare function extractDetailInPage(arg: {
     deadlinePattern: string;
 }): RawJobDetail;
 /**
- * **在页面上下文里**判断撞上风控 / 登录墙。
- * 国聘是政府平台：antiBot 低档，走通用文案判定，不编平台特有墙信号。
+ * 国聘特有的判墙信号（与 `block-signals.ts` 的通用词表**并集**）。
+ *
+ * 国聘是政府平台、antiBot 低档，原实现就写着"**走通用文案判定，不编平台特有墙信号**" ——
+ * 所以这里是最轻的一档：只多几条验证码选择器与文案。
+ *
+ * 两处必须显式带上（否则会悄悄改行为）：
+ *   * `人机验证` 留在 **`rateText`** 而不是搬去 `captchaText`：搬过去会把返回值从
+ *     `rate-limited` 变成 `captcha`，界面给的下一步动作就跟着变了；
+ *   * `loginTextLength` 放到极大 = **保留**它原本"登录墙不看页面长度"的语义。
  */
-export declare function detectBlockInPage(arg: {
-    card: string;
-}): BlockKind | null;
+export declare const GUOPIN_BLOCK_SIGNALS: {
+    readonly captchaSelectors: readonly [".geetest_box", "#nc_1_wrapper", ".waf-nc-title", "script[name^=\"aliyunwaf_\"]"];
+    readonly rateText: readonly ["人机验证"];
+    readonly loginText: readonly ["请登录", "登录后才能"];
+    readonly loginTextLength: 1000000;
+};
 export interface GuopinAdapterOptions {
     config?: GuopinConfig;
     /** 抓取请求之间的随机延时区间（§P5 保守优先）。 */

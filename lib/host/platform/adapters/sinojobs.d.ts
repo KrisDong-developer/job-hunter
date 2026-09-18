@@ -45,6 +45,7 @@
  * 投递要登录（`/UserCenter/resumeShow.html`），采集链路**不碰**投递与任何 Ucenter 路径。
  */
 import type { BlockKind } from '../../../shared/enums.js';
+import { type BlockSignalSet } from '../block-signals.js';
 import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** 页面外壳地址（人看的入口；筛选条件不在 URL 里，见 `buildSinoJobsSearchUrl`）。 */
 export declare const SINOJOBS_WEB_BASE = "https://sinojobs.com.cn";
@@ -202,6 +203,8 @@ export declare function fetchListInPage(arg: {
  */
 export declare function detectBlockInPage(arg: {
     cardCount: number;
+    /** 通用词表（宿主侧用 `signalsOf(...)` 组装后传进来）。 */
+    signals: BlockSignalSet;
 }): BlockKind | null;
 /** 在页面上下文里找「下一页」是否可用（UI 信号；真正的闸门是 `maxPages` + 接口 total）。 */
 export declare function hasNextPageInPage(arg: {

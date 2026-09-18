@@ -47,6 +47,7 @@
  *   2. path 的 `/p<N>` 会**覆盖** query 的 `p`，两种形式不要混用。
  */
 import type { BlockKind } from '../../../shared/enums.js';
+import { type BlockSignalSet } from '../block-signals.js';
 import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** `/sou/` 列表页的选择器集。**每一项都可以在 DB 里覆盖着改**（ADR-19）。 */
 export interface ZhaopinSelectors {
@@ -258,6 +259,15 @@ export declare function detectBlockInPage(arg: {
     card: string;
     loginPopup: string;
     noJobTip: string;
+    /**
+     * **通用词表**（由 `signalsOf(...)` 在宿主侧组装后传进来）。
+     *
+     * 智联走的是"**共享词表、自有结构**"这条路：验证码选择器 / 限流 / 配额 / blank 阈值
+     * 用共享的那一份，但**判断流程仍是它自己的** —— 因为下面那段载荷探针
+     * （`__INITIAL_STATE__.positionList` 配平）与 `noJobTip` 的组合判据是它独有的，
+     * 硬塞进 `detectBlockWithSignals` 只会让那个共享函数长出一堆平台分支。
+     */
+    signals: BlockSignalSet;
 }): BlockKind | null;
 /**
  * 是否处于「已登录」态（用于 `auth.isLoggedIn`）。

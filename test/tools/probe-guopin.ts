@@ -13,7 +13,7 @@
  *   2. **选择器校准输出**：统计候选卡片 class 的命中数（帮助把 `container` 那段宽松
  *      `closest()` 收紧成精确 class），并采样岗位详情链接与公司链接 href 形态。
  *   3. **解析 CLI**：用 jsdom 离线加载刚保存的夹具，跑 `extractJobsInPage` 与
- *      `detectBlockInPage`，打印命中统计（与 `npm test` 走同一条解析代码）。
+ *      `detectBlockWithSignals`（共享判墙函数），打印命中统计（与 `npm test` 走同一条解析代码）。
  *   4. **结论**：给出「页面是否存活 / 解析到几条 / 组件该往哪修」的读数。
  *
  * 用法：
@@ -30,7 +30,12 @@ import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
-import { DEFAULT_GUOPIN_CONFIG, detectBlockInPage, extractJobsInPage } from '../../src/host/platform/adapters/guopin.js'
+import { detectBlockWithSignals, signalsOf } from '../../src/host/platform/block-signals.js'
+import {
+  DEFAULT_GUOPIN_CONFIG,
+  GUOPIN_BLOCK_SIGNALS,
+  extractJobsInPage,
+} from '../../src/host/platform/adapters/guopin.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 
 const KEYWORD = process.env['GUOPIN_KEY'] ?? 'Java'
@@ -61,7 +66,9 @@ async function analyzeFixture(fixturePath: string): Promise<void> {
   const url = `${DEFAULT_GUOPIN_CONFIG.urlParams.base}?${DEFAULT_GUOPIN_CONFIG.urlParams.keywordParam}=${encodeURIComponent(KEYWORD)}`
   const jsdomPage = new JsdomPage({ html: readFileSync(fixturePath, 'utf8'), url })
 
-  const block = await jsdomPage.evaluate(detectBlockInPage, {
+  // 判墙走**共享函数**（P17）：通用词表 + 国聘自己那几条，在宿主侧组装好再送进页面
+  const block = await jsdomPage.evaluate(detectBlockWithSignals, {
+    signals: signalsOf(GUOPIN_BLOCK_SIGNALS),
     card: DEFAULT_GUOPIN_CONFIG.selectors.card,
   })
   log(`detectBlock → ${block === null ? '无（页面正常）' : block}`)

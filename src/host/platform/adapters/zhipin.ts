@@ -30,6 +30,7 @@
 import type { BlockKind, CoreField } from '../../../shared/enums.js'
 import { humanDelayMs } from '../pacing.js'
 import { platformFacts } from '../platform-facts.js'
+import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 列表页选择器集（BossHunter 生产选择器 + 本项目夹具双重验证）。 */
@@ -306,39 +307,6 @@ export function extractDetailInPage(arg: { selectors: ZhipinDetailSelectors }): 
   }
 }
 
-/**
- * **在页面上下文里**判断风控/登录墙。
- * BOSS 特有：滑块页 URL `https://www.zhipin.com/web/user/safe/verify-slider`
- * （get_jobs 实证）→ 判 captcha，命中即停交人工。
- */
-export function detectBlockInPage(arg: { card: string }): BlockKind | null {
-  // BOSS 滑块验证页（URL 特征，get_jobs 实证）。
-  if (/zhipin\.com\/web\/user\/safe\/verify/.test(location.href)) return 'captcha'
-
-  const body = document.body
-  const text = body === null ? '' : String(body.textContent ?? '')
-  const compact = text.replace(/\s+/g, '')
-  let cards = 0
-  try {
-    cards = document.querySelectorAll(arg.card).length
-  } catch {
-    cards = 0
-  }
-
-  const captcha = document.querySelector(
-    '.geetest_panel, .geetest_holder, iframe[src*="captcha"], #captcha, [class*="verify-wrap"], [class*="slide-verify"]',
-  )
-  if (captcha !== null) return 'captcha'
-  if (/访问过于频繁|操作频繁|请稍后再试|访问受限|请求异常|安全验证|异常流量/.test(compact)) {
-    return 'rate-limited'
-  }
-  if (/今日投递太多|休息一下明天再来|达到上限|次数过多/.test(compact)) return 'quota-exhausted'
-  // 登录墙：BOSS 未登录不挡列表（实测），但整页被登录表单替换时是墙。
-  if (cards === 0 && /扫码登录|手机号登录/.test(compact) && compact.length < 800) return 'login-required'
-  if (cards === 0 && compact.length < 120) return 'blank'
-  return null
-}
-
 export interface ZhipinAdapterOptions {
   config?: ZhipinConfig
   delayRangeMs?: [number, number]
@@ -428,7 +396,13 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
 
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockInPage, { card: config.selectors.card })
+        // 判墙的**通用那一半**（验证码选择器、限流/配额/登录墙文案、blank 阈值）
+        // 已抽到 `block-signals.ts`；这里只声明 BOSS 特有的 URL 特征：
+        // 滑块页 `https://www.zhipin.com/web/user/safe/verify-slider`（get_jobs 实证）。
+        return await page.evaluate(detectBlockWithSignals, {
+          signals: signalsOf({ urlPatterns: ['zhipin\\.com/web/user/safe/verify'] }),
+          card: config.selectors.card,
+        })
       },
     },
 
