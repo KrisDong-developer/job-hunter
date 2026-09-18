@@ -19,6 +19,7 @@ export function TailorPanel(props: { jobId: number; revision: number; onChanged:
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const reload = useCallback(async () => {
     try {
@@ -52,6 +53,31 @@ export function TailorPanel(props: { jobId: number; revision: number; onChanged:
   }
 
   const latest = items[0]
+
+  /** 把这版建议拼成纯文本复制：改动建议 + 技能顺序。 */
+  const copySuggestions = async (): Promise<void> => {
+    if (latest === undefined) return
+    const lines: string[] = []
+    if (latest.notes.length > 0) {
+      lines.push('改动建议：')
+      lines.push(...latest.notes.map((note) => `· ${note}`))
+    }
+    lines.push('调整后的技能顺序：')
+    lines.push(latest.content.skills.slice(0, 12).map((s) => s.name).join('、'))
+    const text = lines.join('\n')
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const area = document.createElement('textarea')
+      area.value = text
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      document.body.removeChild(area)
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
 
   return (
     <section className="jh-tailor">
@@ -133,6 +159,14 @@ export function TailorPanel(props: { jobId: number; revision: number; onChanged:
             ))}
           </p>
           <div className="jh-detail-actions">
+            <button
+              type="button"
+              className="jh-btn jh-btn-inline"
+              disabled={busy !== null}
+              onClick={() => void copySuggestions()}
+            >
+              {copied ? '已复制' : '复制建议'}
+            </button>
             <button
               type="button"
               className="jh-btn jh-btn-inline"

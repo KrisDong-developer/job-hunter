@@ -28,6 +28,20 @@ import {
 import { InlineMd } from '../inline-md.js'
 import { useAsync } from '../use-async.js'
 
+/** 海外时区预设：常用城市 → IANA 时区。给不想手敲 America/New_York 的人一条捷径。 */
+const TZ_PRESETS: Array<{ label: string; tz: string }> = [
+  { label: '纽约 New York', tz: 'America/New_York' },
+  { label: '芝加哥 Chicago', tz: 'America/Chicago' },
+  { label: '洛杉矶 Los Angeles', tz: 'America/Los_Angeles' },
+  { label: '伦敦 London', tz: 'Europe/London' },
+  { label: '巴黎 Paris', tz: 'Europe/Paris' },
+  { label: '柏林 Berlin', tz: 'Europe/Berlin' },
+  { label: '新加坡 Singapore', tz: 'Asia/Singapore' },
+  { label: '香港 Hong Kong', tz: 'Asia/Hong_Kong' },
+  { label: '东京 Tokyo', tz: 'Asia/Tokyo' },
+  { label: '悉尼 Sydney', tz: 'Australia/Sydney' },
+]
+
 /**
  * 校招支线（§4.L）。
  *
@@ -159,6 +173,7 @@ export function CampusScreen(props: { revision: number; onChanged: () => void })
         <div className="jh-inline">
           <input
             className="jh-input"
+            aria-label="公司名"
             placeholder="公司名"
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -166,6 +181,7 @@ export function CampusScreen(props: { revision: number; onChanged: () => void })
           <input
             className="jh-input"
             type="date"
+            aria-label="网申截止日期"
             title="网申截止"
             value={closeAt}
             onChange={(event) => setCloseAt(event.target.value)}
@@ -388,6 +404,7 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
     remoteKind: string
   } | null>(null)
   const [letter, setLetter] = useState<string | null>(null)
+  const [letterCopied, setLetterCopied] = useState(false)
   const [tz, setTz] = useState('America/New_York')
   const [interviewAt, setInterviewAt] = useState('')
   const [display, setDisplay] = useState<{ counterpart: string; local: string; diffHours: number; warning: string | null } | null>(null)
@@ -403,6 +420,27 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  /** 复制到剪贴板；桌面宿主不一定有 clipboard API，退回临时 textarea 兜底。 */
+  const copyText = async (text: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const area = document.createElement('textarea')
+      area.value = text
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      document.body.removeChild(area)
+    }
+  }
+
+  const copyLetter = async (): Promise<void> => {
+    if (letter === null) return
+    await copyText(letter)
+    setLetterCopied(true)
+    window.setTimeout(() => setLetterCopied(false), 2000)
   }
 
   return (
@@ -432,7 +470,10 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
           onClick={() =>
             void run(
               async () => await draftCoverLetter({ jobId: props.jobId, language: 'en' }),
-              (value) => setLetter((value as { content: string }).content),
+              (value) => {
+                setLetter((value as { content: string }).content)
+                setLetterCopied(false)
+              },
             )
           }
         >
@@ -466,7 +507,20 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
             value={interviewAt}
             onChange={(event) => setInterviewAt(event.target.value)}
           />
-          <input className="jh-input" value={tz} onChange={(event) => setTz(event.target.value)} placeholder="America/New_York" />
+          {/* 城市预设下拉：选中即写好 IANA 串，不认识的仍可手动输。
+              值只有在你填的就是预设里的时区时才高亮，否则显示占位文案。 */}
+          <select
+            className="jh-select jh-input-sm"
+            aria-label="常用城市时区预设"
+            value={TZ_PRESETS.some((p) => p.tz === tz) ? tz : ''}
+            onChange={(event) => setTz(event.target.value)}
+          >
+            <option value="">选常用城市…</option>
+            {TZ_PRESETS.map((preset) => (
+              <option key={preset.tz} value={preset.tz}>{preset.label}</option>
+            ))}
+          </select>
+          <input className="jh-input" value={tz} onChange={(event) => setTz(event.target.value)} placeholder="America/New_York" aria-label="时区（IANA）" />
           <button
             type="button"
             className="jh-btn"
@@ -504,6 +558,15 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
 
       {letter === null ? null : (
         <div className="jh-tv-draft">
+          <div className="jh-copy-head">
+            <button
+              type="button"
+              className="jh-btn jh-btn-inline jh-btn-tiny"
+              onClick={() => void copyLetter()}
+            >
+              {letterCopied ? '已复制' : '复制全文'}
+            </button>
+          </div>
           <pre className="jh-tv-pre">{letter}</pre>
         </div>
       )}

@@ -81,8 +81,20 @@ export function runReasonLabel(reason: string | null): string | null {
 export const CORE_FIELDS = ['title', 'salary_raw', 'company', 'source_url'] as const
 export type CoreField = (typeof CORE_FIELDS)[number]
 
-/** 风控命中类型（§4.2.2 `detectBlock`）。 */
-export const BLOCK_KINDS = ['captcha', 'login-required', 'rate-limited', 'blank'] as const
+/**
+ * 风控命中类型（§4.2.2 `detectBlock`）。
+ *
+ * `quota-exhausted`（P1/D-17a 增强）：平台侧"今日额度用完"（如 51job「今日投递太多」、
+ * 智联「达到上限」）。与 `rate-limited` 的本质区别：退避重试**没用**（额度不随时间恢复），
+ * 正确动作是当天对该平台停手。
+ */
+export const BLOCK_KINDS = [
+  'captcha',
+  'login-required',
+  'rate-limited',
+  'quota-exhausted',
+  'blank',
+] as const
 export type BlockKind = (typeof BLOCK_KINDS)[number]
 
 /** 待办类型。降级告警必须主动产生待办（§4.2.4 降级语义 / B13）。 */
@@ -221,6 +233,40 @@ export const APPLICATION_STAGE_LABEL: Record<ApplicationStage, string> = {
   rejected: '已拒绝',
   no_reply: '无回复',
 }
+
+/**
+ * 阶段的先后顺序。回退判断、漏斗排序、看板列序都靠它，
+ * **顺序本身就是业务规则**（§12.1）。
+ */
+export const STAGE_ORDER: readonly ApplicationStage[] = APPLICATION_STAGES
+
+export function stageRank(stage: ApplicationStage): number {
+  return STAGE_ORDER.indexOf(stage)
+}
+
+/**
+ * 终态：到了这里就不该再自动往前走，也没有"下一格"。
+ *
+ * 放在 shared 而不是 host：客户端也要用它决定**要不要渲染"推进"按钮**。
+ * 早先它只在 host，客户端因此只能"永远渲染、终态点了没反应"。
+ */
+export const TERMINAL_STAGES: readonly ApplicationStage[] = ['offer', 'rejected', 'no_reply']
+
+/**
+ * 在途阶段里 stage 的下一格；终态没有下一格，返回 null。
+ *
+ * `advance` 的默认推进目标与看板按钮的目标都从这里取 —— 只有一份顺序，
+ * 不会出现"按钮说去 A、后端去 B"。
+ */
+export function nextStageOf(stage: ApplicationStage): ApplicationStage | null {
+  const index = STAGE_ORDER.indexOf(stage)
+  if (index < 0 || index >= STAGE_ORDER.length - 1) return null
+  const next = STAGE_ORDER[index + 1]
+  return next === undefined || TERMINAL_STAGES.includes(next) ? null : next
+}
+
+/** 投递后完全没进展的阈值（天）——超过就该催了。 */
+export const NO_PROGRESS_DAYS = 21
 
 /** 投递渠道（§11.3：归因分析必需）。 */
 export const APPLICATION_CHANNELS = ['platform', 'referral', 'website', 'headhunter'] as const

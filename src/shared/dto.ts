@@ -619,6 +619,27 @@ export interface InboxDto {
   total: number
 }
 
+/**
+ * 从 HR 消息里抽出的面试安排建议（消息中心的「一键进日程」）。
+ *
+ * **只识别、不写库**：这条只是"HR 可能约了这些"的建议，用户确认后才真正创建面试。
+ * 识别不到某个维度就给 null —— 给假的比给空的更糟。
+ */
+export interface InterviewSuggestionDto {
+  messageId: number
+  /** 能从消息关联到岗位就给；没有则 null（面试仍可无岗位创建）。 */
+  jobId: number | null
+  /** 识别出的面试时间（ISO）；识别不到为 null。 */
+  at: string | null
+  kind: InterviewKind | null
+  place: string | null
+  link: string | null
+  /** llm = 模型识别；fallback = 规则降级。 */
+  via: 'llm' | 'fallback'
+  /** 降级/脱敏等说明，界面如实展示。 */
+  notes: string[]
+}
+
 /** 一条打招呼记录（接触态的载体）。 */
 export interface GreetingDto {
   id: number

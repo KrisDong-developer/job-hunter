@@ -14,8 +14,10 @@
  * 而状态一旦被误改，用户就会漏掉一个真正在推进的岗位。
  * 所以这里只产出 `inviteSignal`，改状态是另一次显式动作（并且会写 `stage_event`）。
  */
-import type { MessageDirection } from '../../shared/enums.js'
-import type { InboxDto, MessageDto } from '../../shared/dto.js'
+import type { InterviewKind, MessageDirection } from '../../shared/enums.js'
+import type { InboxDto, InterviewSuggestionDto, MessageDto } from '../../shared/dto.js'
+import type { AiService } from '../ai/client.js'
+import { extractJson } from '../ai/prompts.js'
 import type { Store } from '../store/store.js'
 import { systemClock, type Clock } from '../util/time.js'
 import { DomainError } from '../util/errors.js'
@@ -55,6 +57,141 @@ export function detectInvite(content: string, direction: MessageDirection): { hi
   return { hit: hits.length > 0, keywords: [...hits] }
 }
 
+// ── 消息 → 面试安排（「一键进日程」的前置识别）──────────────────────────
+
+/** 抽出来的结构化结果。识别不到就给 null，绝不填假值。 */
+interface NormalizedExtract {
+  at: string | null
+  kind: InterviewKind | null
+  place: string | null
+  link: string | null
+}
+
+/**
+ * 识别入口：模型可用且用途开启走模型（可信但经 untrusted 隔离 + 结构校验），
+ * 否则退化到规则识别。返回值里带 `via` / `notes`，让界面如实标注来源（J10）。
+ */
+async function extractInterviewSuggestion(
+  content: string,
+  ai: AiService | undefined,
+): Promise<{ value: NormalizedExtract; via: 'llm' | 'fallback'; notes: string[] }> {
+  if (ai === undefined) {
+    return {
+      value: ruleExtract(content),
+      via: 'fallback',
+      notes: ['未配置模型，用规则识别 —— 只认常见的中文日期/关键词，不准处请手动改。'],
+    }
+  }
+  const outcome = await ai.call<NormalizedExtract>(
+    {
+      purpose: 'message_extract',
+      instruction:
+        '从这条 HR 消息里抽出面试安排。只输出 JSON，不解释。识别不到的项目给空字符串。',
+      untrusted: [{ label: 'HR消息', text: content }],
+      outputSpec:
+        '{"at":"可被解析的日期时间(如 2026-09-20 14:00 或 9月20日 14:00；没有则空字符串)","kind":"onsite|video|phone|other(线上对应 video、电话对应 phone、线下/现场对应 onsite；没有则空字符串)","place":"地点(没有则空字符串)","link":"会议/链接 URL(没有则空字符串)"}',
+      ref: { entity: 'message' },
+    },
+    {
+      parse: (raw) => {
+        const parsed: unknown = extractJson(raw)
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+        return normalizeModelExtract(parsed as Record<string, unknown>)
+      },
+      fallback: () => ruleExtract(content),
+    },
+  )
+  return { value: outcome.value, via: outcome.via, notes: outcome.notes }
+}
+
+/** 模型输出 → 结构化结果；至少要有时间或链接才认为"确实识别出了内容"，否则降级。 */
+function normalizeModelExtract(raw: Record<string, unknown>): NormalizedExtract | undefined {
+  const get = (key: string): string => {
+    const value = raw[key]
+    return value === null || value === undefined ? '' : String(value).trim()
+  }
+  let at: string | null = null
+  const atRaw = get('at')
+  if (atRaw !== '') {
+    const parsed = new Date(atRaw)
+    if (!Number.isNaN(parsed.getTime())) at = parsed.toISOString()
+  }
+  let kind: InterviewKind | null = null
+  const k = get('kind').toLowerCase()
+  if (['onsite', '线下', '现场'].includes(k)) kind = 'onsite'
+  else if (['video', '线上', '视频'].includes(k)) kind = 'video'
+  else if (['phone', '电话'].includes(k)) kind = 'phone'
+  else if (k !== '') kind = 'other'
+
+  const place = get('place') || null
+  const link = get('link') || null
+
+  // 一个都没识别到 → 刻意**不去**触发降级（规则也是同样的空）；让空值原样返回，
+  // 界面据此显示"没识别出内容，请手动填"，而不是假装模型给了一串靠谱字段。
+  return { at, kind, place, link }
+}
+
+/**
+ * 规则降级识别：**保守**，只为常见写法定中轴 ——
+ * 中文日期/时间/关键字 + URL + 地点关键词。宁可漏，不给假。
+ */
+function ruleExtract(content: string): NormalizedExtract {
+  let at: string | null = null
+
+  // 链接
+  const matched = /\bhttps?:\/\/[^\s，。；()（）]+/i.exec(content)
+  const link = matched?.[0]?.replace(/[，。；()（）]+$/, '') || null
+
+  // 形式
+  let kind: InterviewKind | null = null
+  if (/线上|视频|zoom|腾讯会议/i.test(content)) kind = 'video'
+  else if (/电话|致电|来电|电话沟通/i.test(content)) kind = 'phone'
+  else if (/现场|线下|到公司|到访|onsite/i.test(content)) kind = 'onsite'
+
+  // 时间：ISO 风格 → 中文「x月x日 时:分」→ 「明天/今天 + 时:分」
+  const seg = (m: RegExpExecArray | null, i: number): string => (m !== null && m[i] !== undefined ? m[i] : '')
+  const num = (m: RegExpExecArray | null, i: number, fallback = 0): number => {
+    const raw = seg(m, i)
+    return raw === '' ? fallback : Number.parseInt(raw, 10)
+  }
+  const isoMatch = /\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T ](\d{1,2}):(\d{2}))?/.exec(content)
+  if (isoMatch !== null) {
+    const d = new Date(num(isoMatch, 1), num(isoMatch, 2, 1) - 1, num(isoMatch, 3, 1), num(isoMatch, 4), num(isoMatch, 5))
+    if (!Number.isNaN(d.getTime())) at = d.toISOString()
+  } else {
+    const cnMatch = /(\d{1,2})月(\d{1,2})日(?:[^\d:]|)(?:(\d{1,2})[:：](\d{2}))?/.exec(content)
+    if (cnMatch !== null) {
+      const now = new Date()
+      const month = num(cnMatch, 1, 1)
+      const day = num(cnMatch, 2, 1)
+      const hour = num(cnMatch, 3)
+      const minute = num(cnMatch, 4)
+      let year = now.getFullYear()
+      const make = (y: number): Date => new Date(y, month - 1, day, hour, minute)
+      const d = make(year)
+      at = d.getTime() < now.getTime() ? make(year + 1).toISOString() : d.toISOString()
+    } else if (/明天/.test(content)) {
+      const timeMatch = /(\d{1,2})[:：](\d{2})/.exec(content)
+      const d = new Date(Date.now() + 86_400_000)
+      d.setHours(num(timeMatch, 1, 10), num(timeMatch, 2), 0, 0)
+      at = d.toISOString()
+    } else if (/今天|今日/.test(content)) {
+      const timeMatch = /(\d{1,2})[:：](\d{2})/.exec(content)
+      if (timeMatch !== null) {
+        const d = new Date()
+        d.setHours(num(timeMatch, 1), num(timeMatch, 2), 0, 0)
+        at = d.toISOString()
+      }
+    }
+  }
+
+  // 地点：跟着"地点/地址/位于"等明确的引导词；"来/到"太宽松（会在普通句子里乱抓），不采用。
+  const placeMatch = /(?:地点|地址|位于|在|到访)\s*[:：]?\s*([^，。；\n]{2,})/.exec(content)
+  const place = placeMatch?.[1]?.trim().slice(0, 60) || null
+
+  return { at, kind, place, link }
+}
+
 export interface MessageService {
   record(input: {
     platformId: string
@@ -71,13 +208,21 @@ export interface MessageService {
    * 走闸门（模型发起必然审批），并且回复内容会进审批文案的正文。
    */
   reply(input: { messageId: number; content: string; actor: string; guiConfirmed?: boolean }): Promise<MessageDto>
+  /** 识别面试邀约信号（规则）。 */
   markRead(id: number): boolean
   unreadCount(): number
+  /**
+   * 从消息里抽出面试时间/地点/形式（「一键进日程」的前置判断）。
+   * **只识别不写库**：模型可用走模型，否则规则降级；结果要用户确认后才创建面试。
+   */
+  extractInterview(id: number): Promise<InterviewSuggestionDto>
 }
 
 export interface MessageDeps {
   store: Store
   clock?: Clock
+  /** 识别面试安排的模型能力；缺省时退化为纯规则识别。 */
+  ai?: AiService
   guardRun?: <T>(input: {
     action: string
     actor: string
@@ -207,6 +352,23 @@ export function createMessageService(deps: MessageDeps): MessageService {
 
     unreadCount(): number {
       return store.pipeline.countUnread()
+    },
+
+    async extractInterview(id): Promise<InterviewSuggestionDto> {
+      const record = store.pipeline
+        .listMessages({ limit: 500 })
+        .find((item) => item.id === id)
+      if (record === undefined) {
+        throw new DomainError('NOT_FOUND', `消息不存在：${String(id)}`, { detail: { messageId: id } })
+      }
+      const { value, via, notes } = await extractInterviewSuggestion(record.content, deps.ai)
+      return {
+        messageId: id,
+        jobId: record.jobId,
+        ...value,
+        via,
+        notes,
+      }
     },
   }
 }

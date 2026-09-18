@@ -9,6 +9,7 @@
  */
 import type { Store } from '../store/store.js'
 import type { SessionService } from '../platform/session.js'
+import { stableRatio } from '../scheduler/schedule.js'
 import { DomainError } from '../util/errors.js'
 import { systemClock, type Clock } from '../util/time.js'
 import type { GuardDeniedReason, GuardInput } from './types.js'
@@ -26,6 +27,20 @@ export interface GuardConfig {
   requireApproval: boolean
   /** 审计开关。**模型不得关闭**（§22.4 禁止项）。 */
   auditEnabled: boolean
+  /**
+   * 发送动作的本地时间窗口（P2/D-17a，`'HH:MM-HH:MM'`，如 `'09:00-16:00'`；
+   * 支持跨午夜如 `'22:00-06:00'`；空串 = 不限）。
+   *
+   * 凌晨/深夜发消息是最强的机器信号之一；真人求职者只在清醒时段操作。
+   * 默认 `'09:00-16:00'`（BossHunter 实战同款保守窗口）。
+   */
+  sendWindow: string
+  /**
+   * 随机休息日概率（P2/D-17a，0–1，默认 0.05）。
+   * 按"当天日期"确定性命中（FNV-1a），同一天内所有动作结论一致 ——
+   * 不是每次调用重掷骰子（那会让"今天到底休不休"漂移）。
+   */
+  dayOffProbability: number
 }
 
 export const DEFAULT_GUARD_CONFIG: GuardConfig = {
@@ -35,6 +50,8 @@ export const DEFAULT_GUARD_CONFIG: GuardConfig = {
   batchLimit: 5,
   requireApproval: true,
   auditEnabled: true,
+  sendWindow: '09:00-16:00',
+  dayOffProbability: 0.05,
 }
 
 /** 模型的**禁止项**：这些键碰都不能碰（§22.4）。 */
@@ -44,6 +61,8 @@ export const FORBIDDEN_FOR_MODEL = [
   'batchLimit',
   'dailyLimits',
   'cooldownMinutes',
+  'sendWindow',
+  'dayOffProbability',
 ] as const
 
 /** 动作 → 功能开关的映射。没有映射的动作不受开关约束。 */
@@ -76,6 +95,9 @@ function deny(reason: GuardDeniedReason, message: string, hint?: string): RuleVe
 export function readGuardConfig(store: Store): GuardConfig {
   const stored = store.setting.get<Partial<GuardConfig>>('guard-config', 'global', '')
   if (stored === undefined) return DEFAULT_GUARD_CONFIG
+  const dayOff = typeof stored.dayOffProbability === 'number' && Number.isFinite(stored.dayOffProbability)
+    ? Math.min(1, Math.max(0, stored.dayOffProbability))
+    : DEFAULT_GUARD_CONFIG.dayOffProbability
   return {
     levels: { ...DEFAULT_GUARD_CONFIG.levels, ...(stored.levels ?? {}) },
     dailyLimits: { ...DEFAULT_GUARD_CONFIG.dailyLimits, ...(stored.dailyLimits ?? {}) },
@@ -84,6 +106,8 @@ export function readGuardConfig(store: Store): GuardConfig {
     batchLimit: typeof stored.batchLimit === 'number' ? stored.batchLimit : DEFAULT_GUARD_CONFIG.batchLimit,
     requireApproval: stored.requireApproval !== false,
     auditEnabled: stored.auditEnabled !== false,
+    sendWindow: typeof stored.sendWindow === 'string' ? stored.sendWindow : DEFAULT_GUARD_CONFIG.sendWindow,
+    dayOffProbability: dayOff,
   }
 }
 
@@ -96,6 +120,8 @@ export function writeGuardConfig(store: Store, patch: Partial<GuardConfig>, now:
     batchLimit: patch.batchLimit ?? current.batchLimit,
     requireApproval: patch.requireApproval ?? current.requireApproval,
     auditEnabled: patch.auditEnabled ?? current.auditEnabled,
+    sendWindow: patch.sendWindow ?? current.sendWindow,
+    dayOffProbability: patch.dayOffProbability ?? current.dayOffProbability,
   }
   store.setting.set('guard-config', 'global', '', next, now)
   return next
@@ -117,6 +143,88 @@ export function checkSwitch(store: Store, input: GuardInput): RuleVerdict {
     'switch',
     `动作「${input.action}」对应的发送分层未开启（${key}）`,
     '到设置里打开对应的发送分层；这是用户自己的风险开关，模型不得代为开启。',
+  )
+}
+
+/** 发送窗口（`'HH:MM-HH:MM'`，本地时间，支持跨午夜）。 */
+export interface SendWindow {
+  startMin: number
+  endMin: number
+}
+
+/** 解析窗口串。非法返回 `null`（调用方决定 fail-closed 还是修配置）。 */
+export function parseSendWindow(raw: string): SendWindow | null {
+  const match = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(raw.trim())
+  if (match === null) return null
+  const [, sh, sm, eh, em] = match
+  const startH = Number(sh)
+  const startM = Number(sm)
+  const endH = Number(eh)
+  const endM = Number(em)
+  if (startH > 23 || endH > 23 || startM > 59 || endM > 59) return null
+  return { startMin: startH * 60 + startM, endMin: endH * 60 + endM }
+}
+
+/** `minuteOfDay`（0–1439）是否落在窗口内。跨午夜窗口（`start > end`）按两侧并集算。 */
+export function inSendWindow(window: SendWindow, minuteOfDay: number): boolean {
+  if (window.startMin <= window.endMin) {
+    return minuteOfDay >= window.startMin && minuteOfDay < window.endMin
+  }
+  return minuteOfDay >= window.startMin || minuteOfDay < window.endMin
+}
+
+/** 第 1.5 项（P2/D-17a）：发送时间窗口。只约束发送类动作（ACTION_QUOTA 有映射的那些）。 */
+export function checkSendWindow(ctx: RuleContext, input: GuardInput): RuleVerdict {
+  if (ACTION_QUOTA[input.action] === undefined) return OK
+  const config = readGuardConfig(ctx.store)
+  const raw = config.sendWindow.trim()
+  if (raw === '') return OK
+  const window = parseSendWindow(raw)
+  if (window === null) {
+    // 闸门配置坏了要 fail-closed 且可见，而不是悄悄放行。
+    return deny(
+      'window',
+      `发送窗口配置无法解析：「${config.sendWindow}」`,
+      '格式应为 HH:MM-HH:MM（本地时间），如 09:00-16:00 或跨午夜的 22:00-06:00；到设置里修正。',
+    )
+  }
+  const clock = ctx.clock ?? systemClock
+  const now = new Date(clock())
+  const minuteOfDay = now.getHours() * 60 + now.getMinutes()
+  if (inSendWindow(window, minuteOfDay)) return OK
+  return deny(
+    'window',
+    `现在不在发送窗口内（${raw}，本地时间）`,
+    '凌晨/深夜发消息是最强的机器信号之一，真人只在清醒时段操作；等窗口开启，或到设置里调整窗口。',
+  )
+}
+
+/**
+ * 今天是不是随机休息日（P2/D-17a）。
+ * 用日期做 FNV-1a（与调度器的 `stableRatio` 同款），**确定性**命中：
+ * 同一天里问多少次结论都一样；跨天自然换结论。纯函数，离线可测。
+ */
+export function isDayOff(dateKey: string, probability: number): boolean {
+  if (probability <= 0) return false
+  if (probability >= 1) return true
+  return stableRatio(`day-off#${dateKey}`) < probability
+}
+
+/** 第 1.6 项（P2/D-17a）：随机休息日。5% 的日子整体不发送，模拟"人不会天天投"。 */
+export function checkDayOff(ctx: RuleContext, input: GuardInput): RuleVerdict {
+  if (ACTION_QUOTA[input.action] === undefined) return OK
+  const config = readGuardConfig(ctx.store)
+  if (config.dayOffProbability <= 0) return OK
+  const clock = ctx.clock ?? systemClock
+  const now = new Date(clock())
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const date = String(now.getDate()).padStart(2, '0')
+  const dateKey = `${String(now.getFullYear())}-${month}-${date}`
+  if (!isDayOff(dateKey, config.dayOffProbability)) return OK
+  return deny(
+    'day-off',
+    `今天是随机休息日（概率 ${(config.dayOffProbability * 100).toFixed(1)}%，已命中）`,
+    '"总有完全不投的那天"是真人节奏的一部分；明天再发，或到设置里把休息日概率调低。',
   )
 }
 
@@ -224,6 +332,8 @@ export function runRuleChain(ctx: RuleContext, input: GuardInput): RuleVerdict {
   const checks = [
     (): RuleVerdict => checkForbidden(ctx, input),
     (): RuleVerdict => checkSwitch(ctx.store, input),
+    (): RuleVerdict => checkSendWindow(ctx, input),
+    (): RuleVerdict => checkDayOff(ctx, input),
     (): RuleVerdict => checkStealth(ctx, input),
     (): RuleVerdict => checkBatch(ctx.store, input),
     (): RuleVerdict => checkQuota(ctx, input),

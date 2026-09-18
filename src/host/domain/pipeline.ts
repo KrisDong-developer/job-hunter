@@ -17,22 +17,24 @@ import type {
   ContactStage,
   StageSource,
 } from '../../shared/enums.js'
-import { APPLICATION_CHANNELS, APPLICATION_STAGES } from '../../shared/enums.js'
+import {
+  APPLICATION_CHANNELS,
+  APPLICATION_STAGES,
+  NO_PROGRESS_DAYS,
+  STAGE_ORDER,
+  TERMINAL_STAGES,
+  stageRank,
+} from '../../shared/enums.js'
 import type { ApplicationDto, BoardDto, BoardCardDto, StageEventDto } from '../../shared/dto.js'
 import type { Store } from '../store/store.js'
 import type { ApplicationRecord, GreetingRecord } from '../store/repo/pipeline.js'
 import { systemClock, type Clock } from '../util/time.js'
 import { DomainError } from '../util/errors.js'
 
-/** 阶段的先后顺序。回退判断与漏斗排序都靠它，**顺序本身就是业务规则**。 */
-export const STAGE_ORDER: readonly ApplicationStage[] = APPLICATION_STAGES
-
-export function stageRank(stage: ApplicationStage): number {
-  return STAGE_ORDER.indexOf(stage)
-}
-
-/** 终态：到了这里就不该再自动往前走。 */
-export const TERMINAL_STAGES: readonly ApplicationStage[] = ['offer', 'rejected', 'no_reply']
+/* 阶段顺序 / 终态 / 无进展阈值现在定义在 `shared/enums.ts`：
+   客户端也要用它们决定看板怎么画（列序、"推进到 X"的文案、终态不给按钮），
+   留在 host 会让两边各写一份顺序，迟早对不上。这里转发，保持既有 import 不用改。 */
+export { NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank }
 
 export interface PipelineService {
   /** 记一次投递。`actor` 决定审计归属（gui / model）。 */
@@ -87,6 +89,13 @@ export interface PipelineService {
   contactStage(jobId: number): ContactStage
   /** 未读超时 / 已读未回超时的**建议**（§12.2 的两条分支，§3.3 的核心洞察）。 */
   followUpSuggestions(): FollowUpSuggestion[]
+  /**
+   * 处置一条跟进建议（§12.2 收口）。
+   *
+   * 建议是**推导**出来的（没有持久化行），所以"解决"= 记住 `jobId:kind` 已被用户看过/处理过，
+   * `followUpSuggestions` 不再重复返回同一条，直到它下次重新达标。
+   */
+  resolveFollowUp(jobId: number, kind: string): void
 }
 
 /**
@@ -111,8 +120,7 @@ export interface FollowUpSuggestion {
 export const UNREAD_TIMEOUT_HOURS = 72
 /** 已读未回超时阈值（小时）——超过就建议改简历/话术，而不是继续加量（§3.3 / §3.2）。 */
 export const READ_TIMEOUT_HOURS = 24 * 7
-/** 投递后完全没进展的阈值（天）。 */
-export const NO_PROGRESS_DAYS = 21
+/** 投递后完全没进展的阈值（天）现在也在 shared/enums.ts（客户端要用来判断"该催了"）。 */
 
 export interface PipelineDeps {
   store: Store
@@ -392,6 +400,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
 
     followUpSuggestions(): FollowUpSuggestion[] {
       const now = clock()
+      const dismissed = new Set(store.setting.get<string[]>('followup-dismissed', 'global') ?? [])
       const out: FollowUpSuggestion[] = []
       for (const greeting of store.pipeline.listGreetings({ limit: 200 })) {
         if (greeting.jobId === null) continue
@@ -409,6 +418,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
           idleHours: Math.round(idleHours),
         }
         if (greeting.stage === 'delivered' && idleHours >= UNREAD_TIMEOUT_HOURS) {
+          if (dismissed.has(`${greeting.jobId}:unread-timeout`)) continue
           out.push({
             ...base,
             kind: 'unread-timeout',
@@ -416,6 +426,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
             advice: '未读超时通常说明这个岗位的 HR 不活跃或不看这类消息 —— 建议放弃，把时间给别的岗位。',
           })
         } else if (greeting.stage === 'read' && idleHours >= READ_TIMEOUT_HOURS) {
+          if (dismissed.has(`${greeting.jobId}:read-no-reply`)) continue
           out.push({
             ...base,
             kind: 'read-no-reply',
@@ -425,6 +436,13 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
         }
       }
       return out.sort((a, b) => b.idleHours - a.idleHours)
+    },
+
+    resolveFollowUp(jobId, kind): void {
+      const key = `${jobId}:${kind}`
+      const existing = store.setting.get<string[]>('followup-dismissed', 'global') ?? []
+      if (existing.includes(key)) return
+      store.setting.set('followup-dismissed', 'global', '', [...existing, key], clock())
     },
   }
 }

@@ -145,6 +145,13 @@ export interface LoginFlow {
   /** 直接驱动一轮检测（测试与「手动再查一次」都用它）。 */
   pollOnce(platformId: string): Promise<LoginStatusDto>
   cancelAll(): void
+  /**
+   * 是否有平台正在跑登录引导（轮询中）。
+   *
+   * 给"浏览器空闲自关"当守卫用：登录窗口是**用户正在操作**的那个页面，
+   * 空闲到点把它关掉等于把用户正在输密码的窗口关掉。
+   */
+  isRunning(): boolean
 }
 
 interface FlowState {
@@ -315,6 +322,13 @@ export function createLoginFlow(deps: LoginFlowDeps): LoginFlow {
         }
         flows.set(platformId, { ...flow, cancelled: true, state: flow.state === 'running' ? 'idle' : flow.state, page: null })
       }
+    },
+
+    isRunning(): boolean {
+      for (const flow of flows.values()) {
+        if (flow.state === 'running') return true
+      }
+      return false
     },
   }
 }

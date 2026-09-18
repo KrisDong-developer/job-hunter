@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CRAWL_STATE_LABEL,
   CRAWL_STATE_TONE,
@@ -48,6 +48,7 @@ import {
   type PlatformOverviewDto,
 } from '../api.js'
 import { useAsync } from '../use-async.js'
+import { FieldHint } from '../field-hint.js'
 import { InlineMd } from '../inline-md.js'
 import { Modal } from '../modal.js'
 import { Term } from '../terms.js'
@@ -570,7 +571,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                     )}
                     <button
                       type="button"
-                      className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger"
+                      className="jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger-ghost"
                       disabled={feedback.running}
                       title="删除这个方案（会先让你确认）。已经抓到的岗位不受影响。"
                       onClick={() => setPendingDelete(plan)}
@@ -631,17 +632,25 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
             <p className="jh-note">平台来自适配器注册表；当前没有任何适配器被注册，所以无法采集。</p>
           </div>
         ) : (
-          <ul className="jh-list">
+          <ul className="jh-list jh-status-list">
             {platformList.map((item) => {
               const missing = item.fields.filter((field) => field.consecutiveMiss > 0)
               return (
                 <li key={item.id}>
-                  <code>{item.id}</code> · <StateTag state={item.health} kind="health" />
-                  {' · '}
+                  {/* 状态圆点而不是浏览器默认的 list-style 小黑点：
+                      小黑点不带任何状态含义，还和真正的状态色混在一起。
+                      圆点按"健康 + 登录"取色，**同时**保留后面的文字 —— 不只靠颜色。
+                      另外给它 aria-hidden：状态由后面的文字念出来，圆点是纯视觉。 */}
+                  <span
+                    className={`jh-status-dot${item.health === 'healthy' && item.account.loggedIn ? ' jh-status-dot-on' : item.health === 'broken' ? ' jh-status-dot-bad' : ' jh-status-dot-warn'}`}
+                    aria-hidden="true"
+                  />
+                  <code>{item.id}</code> <StateTag state={item.health} kind="health" />
+                  {' '}
                   <span className={item.account.loggedIn ? 'jh-ok' : 'jh-warn'}>
                     {item.account.loggedIn ? '已登录' : '未登录'}
                   </span>
-                  {' · '}
+                  {' '}
                   {item.login.state === 'running' ? (
                     <span className="jh-warn">登录检测中…</span>
                   ) : (
@@ -1024,12 +1033,12 @@ function RunHistoryTable(props: {
         <table className="jh-table jh-table-runs">
           <thead>
             <tr>
-              <th className="jh-col-sticky">开始</th>
-              <th>状态</th>
-              {showReason ? <th>触发</th> : null}
-              <th className="jh-num">新增</th>
-              <th className="jh-num jh-col-hide-sm">更新</th>
-              <th>结果说明</th>
+              <th scope="col" className="jh-col-sticky">开始</th>
+              <th scope="col">状态</th>
+              {showReason ? <th scope="col">触发</th> : null}
+              <th scope="col" className="jh-num">新增</th>
+              <th scope="col" className="jh-num jh-col-hide-sm">更新</th>
+              <th scope="col">结果说明</th>
             </tr>
           </thead>
         <tbody>
@@ -1054,14 +1063,16 @@ function RunHistoryTable(props: {
                   ) : failure === null ? (
                     <span className="jh-muted">—</span>
                   ) : (
-                    // 单元格里只留一句人话；点开是弹窗
+                    // 单元格里只留"图标 + 一句人话（过长则截断）+ 详情"；点开是弹窗。
+                    // 图标让"这是错误"不只靠颜色表达；截断是为了不再把状态列撑宽。
                     <button
                       type="button"
                       className="jh-err-chip"
                       title={failure.detail === null ? failure.short : failure.detail.split('\n')[0]}
                       onClick={() => props.onOpenError(run, failure)}
                     >
-                      {failure.short}
+                      <span className="jh-err-chip-icon" aria-hidden="true">⚠</span>
+                      <span className="jh-err-chip-short">{failure.short}</span>
                       <span className="jh-err-chip-more">详情</span>
                     </button>
                   )}
@@ -1076,14 +1087,7 @@ function RunHistoryTable(props: {
   )
 }
 
-/** 一个收纳在问号里的说明（取代输入框下方的长段解释）。 */
-function FieldHint(props: { text: string }) {
-  return (
-    <span className="jh-field-hint" title={props.text} aria-label={props.text}>
-      ?
-    </span>
-  )
-}
+/* FieldHint 已抽到 `../field-hint.js` —— 设置页也要用同一种"长解释收进问号"。 */
 
 /**
  * 方案编辑器（**弹窗**）。
@@ -1107,13 +1111,40 @@ function PlanEditorModal(props: {
   const [form, setForm] = useState<PlanForm>(props.initial)
   const [localDuplicates, setLocalDuplicates] = useState<PlanDuplicateDto[]>([])
 
+  const patch = (next: Partial<PlanForm>): void => setForm((current) => ({ ...current, ...next }))
+
+  // 总残留重复 = 保存接口返回的 + 本地实时校验得到的。
+  const duplicates = [...props.duplicates, ...localDuplicates]
+  const startMissing = parseClockValue(form.windowStart) === null
+  const endMissing = parseClockValue(form.windowEnd) === null
+
+  /**
+   * 实时查重（防抖）：平台/筛选条件一改就自动校验，不用再手动点「检查是否重复」。
+   * 只对**真正影响查重**的输入（平台 + 条件）做键，避免每次敲字都触发；
+   * 新建时没有旧方案可比，直接清空。
+   */
+  const validationKey = `${form.platforms.join(',')}\u0000${JSON.stringify(form.criteria)}`
+  useEffect(() => {
+    if (props.planId === null) {
+      setLocalDuplicates([])
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void props
+        .onValidate(form)
+        .then(setLocalDuplicates)
+        .catch(() => setLocalDuplicates([]))
+    }, 600)
+    return () => window.clearTimeout(timer)
+    // form 是当前渲染的引用；依赖只在查重语义变化时更新，见上方 validationKey。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validationKey, props.planId])
+
   const dimensions = useAsync(
     (signal) => fetchCriteriaDimensions(form.platforms, signal),
     [form.platforms.join(',')],
   )
   const items: CriteriaDimensionDto[] = dimensions.state.status === 'ok' ? dimensions.state.data.items : []
-
-  const patch = (next: Partial<PlanForm>): void => setForm((current) => ({ ...current, ...next }))
 
   const togglePlatform = (id: string): void => {
     const next = form.platforms.includes(id)
@@ -1128,10 +1159,6 @@ function PlanEditorModal(props: {
     else next[key] = value
     patch({ criteria: next })
   }
-
-  const duplicates = [...props.duplicates, ...localDuplicates]
-  const startMissing = parseClockValue(form.windowStart) === null
-  const endMissing = parseClockValue(form.windowEnd) === null
 
   return (
     <Modal

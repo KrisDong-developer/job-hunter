@@ -47,7 +47,22 @@ export interface FiftyOneUrlParams {
     postedWithinParam: string;
 }
 /**
- * 51job 支持的排序取值域（实测于搜索页 URL）。
+ * 51job 支持的排序取值域（探针实测 2026-09，搜索页「综合/活跃/最新/薪资/距离」五个按钮）。
+ *
+ * 取值来自探针逐项点击排序按钮后，读取 API `we.51job.com/api/job/search-pc` 请求里
+ * `sortType=` 的实值（并用激活态 `.ss.on` 双重确认）：
+ *
+ * | 按钮文字 | sortType |
+ * |---|---|
+ * | 综合排序 | `0` |
+ * | 最新优先 | `1` |
+ * | 薪资优先 | `3` |
+ * | 活跃职位优先 | `5` |
+ * | 距离优先 | （未启用，无实值） |
+ *
+ * ⚠️ **「距离优先」故意不列出**：探针点击后按钮无「on」高亮、也不发请求（疑似依赖
+ * 定位/经纬度上下文，当前未启用时点击不生效）。没测出实值就不编 —— 编错了用户选了
+ * 只会静默拿到另一种排序（更糟）。所以 `render` 里只有上面四档。
  *
  * **只在声明里出现**：界面据它渲染下拉，校验据它拒绝非法值。
  * 加一项只需要改这里和 `SORT_OPTIONS`。
@@ -56,7 +71,13 @@ export declare const SORT_OPTIONS: Array<{
     value: string;
     label: string;
 }>;
-/** 发布时间窗取值域（天）。 */
+/**
+ * 发布时间窗取值域（天）。
+ *
+ * **探针实测：本页面不存在「发布时间」筛选控件**（全文无「24小时/三天/一周/一个月」等文案）。
+ * API 虽保留 `issueDate` 参数但恒为空。所以值域为空 —— 界面据此禁用该维度并给出原因，
+ * 而不是摆一堆点击后不生效的选项。
+ */
 export declare const POSTED_WITHIN_OPTIONS: Array<{
     value: string;
     label: string;
@@ -103,6 +124,14 @@ export interface FiftyOneAdapterOptions {
 }
 /** 构造 51job 适配器。 */
 export declare function createFiftyOneAdapter(options?: FiftyOneAdapterOptions): SiteAdapter;
-/** 在页面上下文里找「下一页」是否可用（P1 只用于判断是否还有更多页）。 */
+/**
+ * 在页面上下文里找「下一页」是否可用（P1 只用于判断是否还有更多页）。
+ *
+ * 探针实测（2026-09）：51job 搜索页分页是 Element Plus：
+ * `div.el-pagination.is-background > button.btn-prev + ul.el-pager + button.btn-next`，
+ * 最大页数固定 50。**「下一页」的禁用态是按钮原生 `disabled` 属性**（实测末页时
+ * `<button class="btn-next" disabled="disabled">`，DOM 上没有 `.is-disabled` 类）。
+ * 所以这里必须查 `disabled` 属性而非 class —— 旧代码查 `.next:not(.disabled)` 会在末页误判「还有下一页」。
+ */
 export declare function hasNextPageInPage(_arg: Record<string, never>): boolean;
 //# sourceMappingURL=fiftyone-job.d.ts.map

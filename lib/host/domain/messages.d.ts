@@ -15,7 +15,8 @@
  * 所以这里只产出 `inviteSignal`，改状态是另一次显式动作（并且会写 `stage_event`）。
  */
 import type { MessageDirection } from '../../shared/enums.js';
-import type { InboxDto, MessageDto } from '../../shared/dto.js';
+import type { InboxDto, InterviewSuggestionDto, MessageDto } from '../../shared/dto.js';
+import type { AiService } from '../ai/client.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';
 /**
@@ -55,12 +56,20 @@ export interface MessageService {
         actor: string;
         guiConfirmed?: boolean;
     }): Promise<MessageDto>;
+    /** 识别面试邀约信号（规则）。 */
     markRead(id: number): boolean;
     unreadCount(): number;
+    /**
+     * 从消息里抽出面试时间/地点/形式（「一键进日程」的前置判断）。
+     * **只识别不写库**：模型可用走模型，否则规则降级；结果要用户确认后才创建面试。
+     */
+    extractInterview(id: number): Promise<InterviewSuggestionDto>;
 }
 export interface MessageDeps {
     store: Store;
     clock?: Clock;
+    /** 识别面试安排的模型能力；缺省时退化为纯规则识别。 */
+    ai?: AiService;
     guardRun?: <T>(input: {
         action: string;
         actor: string;

@@ -80,3 +80,25 @@ export const DAILY_CRAWL_LIMIT = 8
 
 /** 连续失败达到这个次数 → 风控暂停（SR-21），需人工确认才恢复。 */
 export const RISK_PAUSE_THRESHOLD = 3
+
+// ── 浏览器空闲自关（NFR-7 / C12）───────────────────────────────────────
+
+/**
+ * 设置表里"浏览器空闲多少分钟后关闭"的键（`scope='global'`、`scope_ref=''`）。
+ * 放在 shared：界面要显示它、HTTP 路由要校验它、宿主半要读它。
+ */
+export const BROWSER_IDLE_KEY = 'browserIdleCloseMinutes'
+
+/**
+ * 默认空闲关闭时间（分钟）。
+ *
+ * 为什么是 10 分钟而不是 PDF 渲染器那样的 90 秒：抓取浏览器是 headful 的，
+ * 启动要几秒、还要复用登录态；连续补跑 / 手动连点两次采集很常见，
+ * 90 秒会让第二次采集每次都重新冷启动。10 分钟既盖住"连着跑几次"，
+ * 又不至于让一个 Chromium 整晚挂在内存里（NFR-7：单轮资源可控）。
+ */
+export const BROWSER_IDLE_DEFAULT_MIN = 10
+
+/** 允许范围：0 = 不自动关（保持旧行为）；上限 240 分钟。 */
+export const BROWSER_IDLE_MIN_MIN = 0
+export const BROWSER_IDLE_MAX_MIN = 240

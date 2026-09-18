@@ -1,6 +1,7 @@
 import type { CrawlSummaryDto } from '../../shared/dto.js';
 import { type Clock } from '../util/time.js';
 import type { Mutex } from '../platform/mutex.js';
+import { type BurstGuardLike } from '../platform/pacing.js';
 import type { AdapterRegistry } from '../platform/registry.js';
 import type { PageSource, SearchCriteria } from '../platform/types.js';
 import type { Store } from '../store/store.js';
@@ -14,6 +15,14 @@ export interface CrawlDeps {
     pageSource: PageSource;
     jobs: JobService;
     companies: CompanyService;
+    /**
+     * 可选：突发惩罚守卫的工厂（P5/D-17a）。
+     *
+     * 适配器内部的高斯页间延时防的是"节奏规律"，这里防的是"连续快请求" ——
+     * 15s 内 ≥3 页 / 45s 内 ≥6 页时加罚延迟。注入工厂是为了离线测试
+     * 能用零惩罚桩替换，不必真等惩罚时长。
+     */
+    createBurstGuard?: () => BurstGuardLike;
     /**
      * 可选：采集之后跑情报引擎（P4）。
      * 用窄接口而不是直接依赖 `IntelService`，避免 domain 层互相缠绕，也方便测试关掉它。

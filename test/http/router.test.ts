@@ -338,15 +338,21 @@ test('P3：平台概览带出登录态；登录引导与待办关闭', async () 
     const platforms = await call(runtime, 'GET', '/platforms')
     assert.equal(platforms.status, 200)
     const items = (platforms.body as { items: Array<{ id: string; health: string; account: { loggedIn: boolean }; login: { state: string } }> }).items
-    assert.equal(items.length, 1)
-    assert.equal(items[0]?.id, '51job')
-    assert.equal(items[0]?.health, 'healthy')
-    assert.equal(items[0]?.account.loggedIn, false, '还没登录过')
-    assert.equal(items[0]?.login.state, 'idle')
+    // 已注册的适配器都会出现在这里 —— 新增平台时这条断言**刻意**要跟着改，
+    // 免得"加了适配器但概览里看不见"这种静默漏注册没人发现。
+    assert.deepEqual(
+      items.map((item) => item.id).sort(),
+      ['51job', 'guopin', 'indeed', 'lagou', 'liepin', 'waiqi', 'zhaopin', 'zhipin'],
+    )
+    const fiftyone = items.find((item) => item.id === '51job')
+    assert.ok(fiftyone)
+    assert.equal(fiftyone.health, 'healthy')
+    assert.equal(fiftyone.account.loggedIn, false, '还没登录过')
+    assert.equal(fiftyone.login.state, 'idle')
 
     const login = await call(runtime, 'GET', '/login/status')
     assert.equal(login.status, 200)
-    assert.equal((login.body as { items: unknown[] }).items.length, 1)
+    assert.equal((login.body as { items: unknown[] }).items.length, items.length)
 
     // 未注册平台去登录 → 明确 404，而不是假装成功
     assert.equal((await call(runtime, 'POST', '/platforms/nope/login/start', { body: {} })).status, 404)

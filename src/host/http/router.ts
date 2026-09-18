@@ -23,12 +23,16 @@ import { SALARY_BASES, type SalaryBasis } from '../../shared/dto.js'
 import type { JobState } from '../../shared/enums.js'
 import {
   APPLICATION_STAGES,
+  JOB_FLAG_TYPES,
   JOB_STATES,
   RESUME_FORMATS,
   RESUME_LANGUAGES,
   RESUME_STATES,
   RESUME_TEMPLATES,
+  TODO_KINDS,
+  TODO_LEVELS,
 } from '../../shared/enums.js'
+import type { JobFlagType } from '../../shared/enums.js'
 import type {
   ApplicationChannel,
   ApplicationStage,
@@ -43,6 +47,7 @@ import type {
   TripartiteState,
   VisaStance,
 } from '../../shared/enums.js'
+import type { TodoKind, TodoLevel } from '../../shared/enums.js'
 import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../shared/enums.js'
 import { TONE_LABEL } from '../../shared/labels.js'
 import { normalizeResumeContent } from '../../shared/resume.js'
@@ -221,9 +226,11 @@ function planCreateOf(body: Record<string, unknown>): PlanConfigInput {
 /**
  * 解析配置补丁（P5）。
  *
- * 只认识 `ai` 与 `guard` 两个顶层键，其余一律忽略 ——
+ * 只认识 `ai`、`guard`、`browser` 三个顶层键，其余一律忽略 ——
  * 让界面**不可能**通过手搓 JSON 去碰它不该碰的东西。
  * guard 那半边的键是否合法由 `guard/actions/settings.ts` 判定（模型有禁止项，用户没有）。
+ * browser 暴露 `idleCloseMinutes`（数字）、`engine`（字符串枚举）、`stealthInit`（布尔）
+ * —— 取值合法性由 `normalizeBrowserConfig` 收敛，这里只做类型白名单。
  */
 function settingsPatchOf(body: Record<string, unknown>): SettingsPatch {
   const patch: SettingsPatch = {}
@@ -252,9 +259,21 @@ function settingsPatchOf(body: Record<string, unknown>): SettingsPatch {
       ...(typeof source['auditEnabled'] === 'boolean' ? { auditEnabled: source['auditEnabled'] } : {}),
       ...(typeof source['batchLimit'] === 'number' ? { batchLimit: source['batchLimit'] } : {}),
       ...(typeof source['cooldownMinutes'] === 'number' ? { cooldownMinutes: source['cooldownMinutes'] } : {}),
+      ...(typeof source['sendWindow'] === 'string' ? { sendWindow: source['sendWindow'] } : {}),
+      ...(typeof source['dayOffProbability'] === 'number' ? { dayOffProbability: source['dayOffProbability'] } : {}),
       ...(typeof source['dailyLimits'] === 'object' && source['dailyLimits'] !== null
         ? { dailyLimits: source['dailyLimits'] as never }
         : {}),
+    }
+  }
+  const browser = body['browser']
+  if (typeof browser === 'object' && browser !== null) {
+    const source = browser as Record<string, unknown>
+    patch.browser = {
+      ...(typeof source['idleCloseMinutes'] === 'number' ? { idleCloseMinutes: source['idleCloseMinutes'] } : {}),
+      // D-17a：引擎偏好与 stealth 注入开关（类型白名单；取值由 normalizeBrowserConfig 收敛）
+      ...(typeof source['engine'] === 'string' ? { engine: source['engine'] as never } : {}),
+      ...(typeof source['stealthInit'] === 'boolean' ? { stealthInit: source['stealthInit'] } : {}),
     }
   }
   return patch
@@ -340,9 +359,21 @@ function buildJobQuery(query: URLSearchParams): JobQuery {
   const minSalaryRaw = query.get('minSalary')
   const minSalary = minSalaryRaw === null || minSalaryRaw === '' ? undefined : Number.parseInt(minSalaryRaw, 10)
 
+  // 多城市：逗号分隔（如 `cities=深圳,北京`）；空则不带。
+  const cities = (query.get('cities') ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  // 屏蔽标注类型：逗号分隔，只认合法的 JOB_FLAG_TYPES，非法项静默丢弃
+  // （非法值不该让整个列表查询崩掉 —— 它是界面拼出来的补充参数）。
+  const excludeFlags = (query.get('excludeFlags') ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item): item is JobFlagType => (JOB_FLAG_TYPES as readonly string[]).includes(item))
+
   return {
     ...(state === undefined ? {} : { state }),
-    ...(query.get('city') === null || query.get('city') === '' ? {} : { city: query.get('city') as string }),
+    ...(cities.length > 0 ? { cities } : query.get('city') === null || query.get('city') === '' ? {} : { city: query.get('city') as string }),
     ...(query.get('q') === null || query.get('q') === '' ? {} : { keyword: query.get('q') as string }),
     ...(query.get('platformId') === null || query.get('platformId') === ''
       ? {}
@@ -351,6 +382,7 @@ function buildJobQuery(query: URLSearchParams): JobQuery {
     ...(orderByRaw === null || orderByRaw === ''
       ? {}
       : { orderBy: orderByRaw as (typeof ORDER_BY_VALUES)[number] }),
+    ...(excludeFlags.length > 0 ? { excludeFlagTypes: excludeFlags } : {}),
     ...(query.get('desc') === null ? {} : { descending: query.get('desc') !== '0' && query.get('desc') !== 'false' }),
   }
 }
@@ -359,6 +391,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
   const segments = req.path.split('/').filter((part) => part !== '')
   const method = req.method.toUpperCase()
   const isMutation = method !== 'GET' && method !== 'HEAD'
+  const now = (): string => new Date().toISOString()
 
   // 变更类请求必须过同源校验（C4：宿主对我们的路由不提供任何鉴权）
   if (isMutation && !req.sameOrigin) {
@@ -400,6 +433,54 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       hasMore: (page - 1) * pageSize + items.length < total,
     }
     return json(200, body)
+  }
+
+  // ── GET /jobs/cities：出去重后的城市列表（界面多选城市用）────────────
+  // 放在 `/jobs/:id` 之前：`cities` 是字面路径，不能让它被当成岗位 id 解析。
+  if (method === 'GET' && segments.length === 2 && segments[0] === 'jobs' && segments[1] === 'cities') {
+    requireData(runtime)
+    const jobService = runtime.jobs()
+    if (jobService === undefined) throw dataNotReady(runtime)
+    return json(200, { items: jobService.listCities() })
+  }
+
+  // ── POST /jobs/batch/mark：批量标记（同一状态应用到多个岗位）─────────
+  if (segments.length === 3 && segments[0] === 'jobs' && segments[1] === 'batch' && segments[2] === 'mark') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '批量标记只支持 POST')
+    requireData(runtime)
+    const jobService = runtime.jobs()
+    if (jobService === undefined) throw dataNotReady(runtime)
+    const body = await readObject(req)
+    const ids = Array.isArray(body['ids'])
+      ? body['ids'].filter((value): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0)
+      : []
+    const state = body['state']
+    if (typeof state !== 'string' || !JOB_STATES.includes(state as JobState)) {
+      throw new DomainError('INVALID_INPUT', '批量标记需要合法的 state', {
+        hint: `合法取值：${JOB_STATES.join(' / ')}`,
+      })
+    }
+    if (ids.length === 0) {
+      throw new DomainError('INVALID_INPUT', 'ids 不能为空，且每一项都必须是正整数')
+    }
+    const applied: Array<{ id: number; state: string }> = []
+    const missing: number[] = []
+    for (const id of [...new Set(ids)]) {
+      try {
+        const updated = jobService.mark(id, state as JobState)
+        applied.push({ id: updated.id, state: updated.state })
+      } catch (error) {
+        if (error instanceof DomainError && error.code === 'NOT_FOUND') {
+          missing.push(id)
+          continue
+        }
+        throw error
+      }
+    }
+    if (applied.length > 0) {
+      runtime.events().publish('jobs.marked', { ids: applied.map((item) => item.id), state })
+    }
+    return json(200, { ok: true, applied, missing, total: applied.length })
   }
 
   // ── GET /jobs/:id ／ POST /jobs/:id/mark ───────────────────────────
@@ -472,13 +553,25 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     }
   }
 
-  // ── 公司画像与识别依据（P4）────────────────────────────────────────
-  if (segments.length === 2 && segments[0] === 'companies') {
-    if (method !== 'GET') throw new DomainError('INVALID_INPUT', '公司信息目前只支持 GET')
+  // ── 公司画像与识别依据（P4）：列表浏览 + 单公司详情 + 人工复核 ──────
+  if (segments.length >= 1 && segments[0] === 'companies') {
     requireData(runtime)
     const store = runtime.store()
     const jobService = runtime.jobs()
     if (store === undefined || jobService === undefined) throw dataNotReady(runtime)
+
+    // GET /companies —— 列表（外包/诈骗/黑名单集中曝光）
+    if (method === 'GET' && segments.length === 1) {
+      const blacklisted = req.query.get('blacklisted')
+      const manualLabel = req.query.get('manualLabel')
+      const result = store.company.list({
+        ...(blacklisted === null || blacklisted === '' ? {} : { blacklisted: blacklisted !== '0' }),
+        ...(manualLabel === null || manualLabel === '' ? {} : { manualLabel }),
+        limit: parsePositiveInt(req.query.get('limit'), 100, 1, 500),
+        offset: parsePositiveInt(req.query.get('offset'), 0, 0, 500_000),
+      })
+      return json(200, { items: result.items, total: result.total })
+    }
 
     const companyId = Number.parseInt(segments[1] ?? '', 10)
     if (!Number.isFinite(companyId)) {
@@ -487,6 +580,24 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     const company = store.company.get(companyId)
     if (company === undefined) {
       throw new DomainError('NOT_FOUND', `公司不存在：${String(companyId)}`)
+    }
+
+    // PATCH /companies/:id —— 人工复核（只认白名单键）
+    if (method === 'PATCH' && segments.length === 2) {
+      const body = await readObject(req)
+      const patch: { blacklisted?: boolean; note?: string | null; manualLabel?: string | null } = {}
+      if (typeof body['blacklisted'] === 'boolean') patch.blacklisted = body['blacklisted']
+      if (body['note'] !== undefined) patch.note = typeof body['note'] === 'string' ? body['note'] : null
+      if (body['manualLabel'] !== undefined) {
+        patch.manualLabel = typeof body['manualLabel'] === 'string' && body['manualLabel'] !== '' ? body['manualLabel'] : null
+      }
+      const reviewed = store.company.updateReview(companyId, patch, now())
+      runtime.events().publish('company.reviewed', { companyId, blacklisted: patch.blacklisted })
+      return json(200, { ok: true, reviewed })
+    }
+
+    if (method !== 'GET' || segments.length !== 2) {
+      throw new DomainError('INVALID_INPUT', '公司信息只支持 GET（列表/详情）与 PATCH（复核）')
     }
 
     const profile = store.company.getProfile(companyId)
@@ -524,6 +635,68 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       flagCounts,
     }
     return json(200, body)
+  }
+
+  // ── 去重复核（§4.10.1 铁律 2：去重必须可逆，人工能拆开）─────────────
+  if (segments.length >= 1 && segments[0] === 'dedup') {
+    requireData(runtime)
+    const store = runtime.store()
+    if (store === undefined) throw dataNotReady(runtime)
+
+    // GET /dedup/groups —— 列出分组，附每个成员的岗位摘要（判断是否误判）
+    if (method === 'GET' && segments.length === 2 && segments[1] === 'groups') {
+      const groups = store.dedupGroup.list(parsePositiveInt(req.query.get('limit'), 50, 1, 200))
+      return json(200, {
+        items: groups.map((group) => ({
+          id: group.id,
+          primaryJobId: group.primaryJobId,
+          basis: group.basis,
+          score: group.score,
+          createdAt: group.createdAt,
+          members: group.memberIds
+            .map((jobId) => store.job.detail(jobId))
+            .filter((job): job is NonNullable<typeof job> => job !== undefined)
+            .map((job) => ({
+              id: job.id,
+              platformId: job.platformId,
+              title: job.title,
+              companyName: job.companyName,
+              city: job.city,
+              isPrimary: job.id === group.primaryJobId,
+            })),
+        })),
+        count: store.dedupGroup.count(),
+      })
+    }
+
+    // DELETE /dedup/groups/:id —— 拆分整组：所有成员独立，删除分组
+    if (method === 'DELETE' && segments.length === 3 && segments[0] === 'dedup' && segments[1] === 'groups') {
+      const groupId = Number.parseInt(segments[2] ?? '', 10)
+      if (!Number.isFinite(groupId)) throw new DomainError('INVALID_INPUT', `非法分组 id：${segments[2] ?? ''}`)
+      if (store.dedupGroup.get(groupId) === undefined) {
+        throw new DomainError('NOT_FOUND', `去重分组不存在：${String(groupId)}`)
+      }
+      store.dedupGroup.deleteGroup(groupId)
+      return json(200, { ok: true })
+    }
+
+    // POST /dedup/groups/:id/split —— 把一个岗位从组里拆出（不再是合并岗位）
+    if (method === 'POST' && segments.length === 4 && segments[1] === 'groups' && segments[3] === 'split') {
+      const groupId = Number.parseInt(segments[2] ?? '', 10)
+      if (!Number.isFinite(groupId)) throw new DomainError('INVALID_INPUT', `非法分组 id：${segments[2] ?? ''}`)
+      const body = await readObject(req)
+      const jobId = typeof body['jobId'] === 'number' ? body['jobId'] : Number.NaN
+      if (!Number.isFinite(jobId) || jobId <= 0) throw new DomainError('INVALID_INPUT', 'jobId 必填且为正整数')
+      const group = store.dedupGroup.get(groupId)
+      if (group === undefined) throw new DomainError('NOT_FOUND', `去重分组不存在：${String(groupId)}`)
+      if (!group.memberIds.includes(jobId)) {
+        throw new DomainError('INVALID_INPUT', `岗位 #${String(jobId)} 不属于分组 #${String(groupId)}`)
+      }
+      store.dedupGroup.removeMember(groupId, jobId)
+      return json(200, { ok: true })
+    }
+
+    throw new DomainError('INVALID_INPUT', '不认识的去重操作', { hint: '合法路径：GET /dedup/groups、DELETE /dedup/groups/:id、POST /dedup/groups/:id/split' })
   }
 
   // ── 情报引擎：词表与重算（P4）──────────────────────────────────────
@@ -805,14 +978,82 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
   }
 
   // ── 待办（P3：补跑待办要让用户能关掉）──────────────────────────────
-  if (segments.length === 3 && segments[0] === 'todos' && segments[2] === 'close') {
-    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '关闭待办只支持 POST')
+  if (segments.length >= 1 && segments[0] === 'todos') {
     requireData(runtime)
-    const id = Number.parseInt(segments[1] ?? '', 10)
-    if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法待办 id：${segments[1] ?? ''}`)
-    const closed = runtime.closeTodo(id)
-    if (!closed) throw new DomainError('NOT_FOUND', `待办不存在或已关闭：${String(id)}`)
-    return json(200, { ok: true })
+    const store = runtime.store()
+    if (store === undefined) throw dataNotReady(runtime)
+
+    // ── GET /todos 列表 + 筛选（kind / level）────────────────────
+    if (method === 'GET' && segments.length === 1) {
+      const kindRaw = req.query.get('kind')
+      const levelRaw = req.query.get('level')
+      if (kindRaw !== null && kindRaw !== '' && !(TODO_KINDS as readonly string[]).includes(kindRaw)) {
+        throw new DomainError('INVALID_INPUT', `非法待办类别：${kindRaw}`, {
+          hint: `合法取值：${TODO_KINDS.join(' / ')}`,
+        })
+      }
+      if (levelRaw !== null && levelRaw !== '' && !(TODO_LEVELS as readonly string[]).includes(levelRaw)) {
+        throw new DomainError('INVALID_INPUT', `非法待办级别：${levelRaw}`, {
+          hint: `合法取值：${TODO_LEVELS.join(' / ')}`,
+        })
+      }
+      return json(200, {
+        items: store.todo.listOpen({
+          limit: parsePositiveInt(req.query.get('limit'), 50, 1, 500),
+          ...(kindRaw === null || kindRaw === '' ? {} : { kind: kindRaw as TodoKind }),
+          ...(levelRaw === null || levelRaw === '' ? {} : { level: levelRaw as TodoLevel }),
+        }),
+        countOpen: store.todo.countOpen(),
+      })
+    }
+
+    const todoId = Number.parseInt(segments[1] ?? '', 10)
+    if (!Number.isFinite(todoId)) throw new DomainError('INVALID_INPUT', `非法待办 id：${segments[1] ?? ''}`)
+
+    // ── GET /todos/:id 单条（含 detail）────────────────────────────
+    if (method === 'GET' && segments.length === 2) {
+      const todo = store.todo.get(todoId)
+      if (todo === undefined) throw new DomainError('NOT_FOUND', `待办不存在：${String(todoId)}`)
+      return json(200, todo)
+    }
+
+    // ── D：POST /todos/:id/confirm-actions/resume ─────────────────
+    // guard 在审批超时/无界面时把高危动作落成一条 kind='confirm-action' 待办。
+    // 正文全文不入库存（§4.1），所以这里不能"原样重放"，而是：
+    //   关闭待办 + 把 {action, target, actor} 意图交回界面，由界面带用户到正确上下文重新发起。
+    if (method === 'POST' && segments.length === 4 && segments[2] === 'confirm-actions' && segments[3] === 'resume') {
+      const todo = store.todo.get(todoId)
+      if (todo === undefined || todo.state !== 'open') {
+        throw new DomainError('NOT_FOUND', `待办不存在或已关闭：${String(todoId)}`)
+      }
+      if (todo.kind !== 'confirm-action') {
+        throw new DomainError('INVALID_INPUT', `这条待办不是待确认动作（kind=${String(todo.kind)}）`)
+      }
+      const detail = todo.detail as {
+        action?: string
+        actor?: string
+        target?: Record<string, number | string>
+      }
+      const action = detail.action
+      const target = detail.target ?? {}
+      if (typeof action !== 'string' || typeof target['jobId'] !== 'number') {
+        throw new DomainError('INVALID_INPUT', '这条待确认动作缺少可恢复的目标（action/jobId），无法恢复', {
+          hint: '可能来自更早版本；直接关闭即可。',
+        })
+      }
+      store.todo.close(todoId, now())
+      return json(200, {
+        ok: true,
+        intent: { action, actor: detail.actor ?? 'gui', target },
+        note: '原正文未入库（隐私策略），已带你到目标上下文；请重新发起。',
+      })
+    }
+
+    if (segments.length === 3 && segments[2] === 'close') {
+      const closed = store.todo.close(todoId, now())
+      if (!closed) throw new DomainError('NOT_FOUND', `待办不存在或已关闭：${String(todoId)}`)
+      return json(200, { ok: true })
+    }
   }
 
   // ── 审计与模型调用留痕（P5：I5 知情同意要可查）─────────────────────
@@ -1159,6 +1400,16 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     return json(200, { ok: true, message })
   }
 
+  if (method === 'POST' && segments.length === 3 && segments[0] === 'messages' && segments[2] === 'extract-interview') {
+    requireData(runtime)
+    const id = Number.parseInt(segments[1] ?? '', 10)
+    if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法消息 id：${segments[1] ?? ''}`)
+    // 只识别、不写库：这条只是"HR 可能约了这些"的建议，创建面试由用户在界面上确认。
+    const extraction = await runtime.messages().extractInterview(id)
+    runtime.events().publish('message.extracted', { id, via: extraction.via })
+    return json(200, { ok: true, extraction })
+  }
+
   // ── P7：面试日程（§13 U7）────────────────────────────────────────
   if (segments.length >= 1 && segments[0] === 'interviews') {
     requireData(runtime)
@@ -1359,6 +1610,25 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
   if (method === 'GET' && segments.length === 1 && segments[0] === 'followups') {
     requireData(runtime)
     return json(200, { items: runtime.followUps() })
+  }
+
+  // 处置一条跟进建议（§12.2 收口）：建议是推导出的，没有 id，用 jobId+kind 定位
+  if (method === 'POST' && segments.length === 2 && segments[0] === 'followups' && segments[1] === 'resolve') {
+    requireData(runtime)
+    const body = await readObject(req)
+    const jobId = typeof body['jobId'] === 'number' ? body['jobId'] : Number.NaN
+    const kind = body['kind']
+    if (!Number.isFinite(jobId) || jobId <= 0) {
+      throw new DomainError('INVALID_INPUT', 'jobId 必填且为正整数')
+    }
+    if (kind !== 'unread-timeout' && kind !== 'read-no-reply') {
+      throw new DomainError('INVALID_INPUT', 'kind 必须是 unread-timeout 或 read-no-reply', {
+        hint: '跟进建议只有这两类（见 GET /followups）。',
+      })
+    }
+    runtime.pipeline().resolveFollowUp(jobId, kind)
+    runtime.events().publish('followup.resolved', { jobId, kind })
+    return json(200, { ok: true })
   }
 
   // 话术模板（§11.3 `GreetingTemplate`）

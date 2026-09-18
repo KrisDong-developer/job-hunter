@@ -350,7 +350,9 @@ function ResumeWork(props: {
 
   return (
     <>
-      <header className="jh-work-head">
+      {/* <div> 而不是 <header>：它落在 .jh-resume-work（section）内，
+         会额外形成一个作用域化的 banner landmark（实测这一屏 banner × 2）。视觉零变化。 */}
+      <div className="jh-work-head">
         {/* 标题直接可改：回车即保存 —— 文档类工具里"点标题改名"是肌肉记忆 */}
         <input
           className="jh-input jh-editable"
@@ -429,7 +431,7 @@ function ResumeWork(props: {
             {busy === '保存' ? '保存中…' : '保存'}
           </button>
         </div>
-      </header>
+      </div>
 
       {error === null ? null : <p className="jh-error">{error}</p>}
       {notice === null ? null : <p className="jh-ok">{notice}</p>}
@@ -535,6 +537,7 @@ function ResumeWork(props: {
           <section className="jh-form-card">
             <div className="jh-form-head"><h3>个人简介</h3></div>
             <textarea className="jh-textarea" rows={5} value={content.summary}
+              aria-label="个人简介"
               placeholder="三五句话：做什么方向、几年、最拿得出手的一件事。"
               onChange={(event) => patchContent({ ...content, summary: event.target.value })} />
           </section>
@@ -548,6 +551,7 @@ function ResumeWork(props: {
             </div>
             <ChipsEditor
               values={content.skills.map((skill) => skill.name)}
+              label="新增技能标签"
               placeholder="Java、MySQL…"
               onChange={(names) =>
                 patchContent({
@@ -647,7 +651,7 @@ function ResumeWork(props: {
                       })} />
                   </label>
                 </div>
-                <div className="jh-field">
+                <label className="jh-field">
                   <span>主要成果（一条一行，回车接着加）</span>
                   <LinesEditor
                     lines={experience.highlights}
@@ -658,11 +662,12 @@ function ResumeWork(props: {
                         i === index ? { ...item, highlights } : item),
                     })}
                   />
-                </div>
-                <div className="jh-field">
+                </label>
+                <label className="jh-field">
                   <span>技术栈</span>
                   <ChipsEditor
                     values={experience.stack ?? []}
+                    label="新增工作经历技术栈"
                     placeholder="Java、MySQL…"
                     onChange={(stack) => patchContent({
                       ...content,
@@ -670,7 +675,7 @@ function ResumeWork(props: {
                         i === index ? { ...item, stack: stack.length === 0 ? undefined : stack } : item),
                     })}
                   />
-                </div>
+                </label>
               </BlockCard>
             ))}
             <button
@@ -731,7 +736,7 @@ function ResumeWork(props: {
                       })} />
                   </label>
                 </div>
-                <div className="jh-field">
+                <label className="jh-field">
                   <span>做了什么</span>
                   <LinesEditor
                     lines={project.highlights}
@@ -741,11 +746,12 @@ function ResumeWork(props: {
                       projects: content.projects.map((item, i) => (i === index ? { ...item, highlights } : item)),
                     })}
                   />
-                </div>
-                <div className="jh-field">
+                </label>
+                <label className="jh-field">
                   <span>技术栈</span>
                   <ChipsEditor
                     values={project.stack ?? []}
+                    label="新增项目技术栈"
                     placeholder="Kafka、Redis…"
                     onChange={(stack) => patchContent({
                       ...content,
@@ -753,7 +759,7 @@ function ResumeWork(props: {
                         i === index ? { ...item, stack: stack.length === 0 ? undefined : stack } : item),
                     })}
                   />
-                </div>
+                </label>
               </BlockCard>
             ))}
             <button
@@ -1078,6 +1084,8 @@ function LinesEditor(props: {
 function ChipsEditor(props: {
   values: string[]
   placeholder: string
+  /** 可访问名称。录入框只有 placeholder，输入一次后就拿不到标签了。 */
+  label: string
   onChange: (values: string[]) => void
 }) {
   const [text, setText] = useState('')
@@ -1105,6 +1113,7 @@ function ChipsEditor(props: {
       ))}
       <input
         className="jh-input jh-chip-input"
+        aria-label={props.label}
         value={text}
         placeholder={props.placeholder}
         onChange={(event) => setText(event.target.value)}

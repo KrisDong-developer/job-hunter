@@ -7,7 +7,15 @@ import {
   needsApproval,
   type Guard,
 } from '../../src/host/guard/index.js'
-import { FORBIDDEN_FOR_MODEL, DEFAULT_GUARD_CONFIG, writeGuardConfig } from '../../src/host/guard/rules.js'
+import {
+  FORBIDDEN_FOR_MODEL,
+  DEFAULT_GUARD_CONFIG,
+  isDayOff,
+  parseSendWindow,
+  inSendWindow,
+  runRuleChain,
+  writeGuardConfig,
+} from '../../src/host/guard/rules.js'
 import { guardAuthority, type GuardToken } from '../../src/host/guard/token.js'
 import { sendGreeting, GREETING_SEND_ACTION } from '../../src/host/guard/actions/greeting.js'
 import { writeGuardSettings, SETTINGS_WRITE_ACTION } from '../../src/host/guard/actions/settings.js'
@@ -40,6 +48,9 @@ const okSession = {
 } as unknown as SessionService
 
 function makeGuard(store: Store, port = yesPort, session: SessionService = okSession): Guard {
+  // 发送窗口/休息日按**本地时钟**判定，会让用例随时段漂移 —— 这里统一关掉，
+  // 它们自己的行为在专门的用例里用受控窗口测。
+  writeGuardConfig(store, { sendWindow: '', dayOffProbability: 0 }, T)
   return createGuard({
     store,
     approval: port,
@@ -532,4 +543,120 @@ test('审批文案渲染：正文全文附在最后，字段齐全', () => {
   assert.ok(text.startsWith('【需要你确认】'))
   assert.ok(text.includes('· 发起者：模型（对话里发起）'))
   assert.ok(text.endsWith('你好，我想应聘。'))
+})
+
+// ── P2/D-17a：发送窗口与随机休息日 ────────────────────────────────────
+
+test('parseSendWindow / inSendWindow：解析与判定（含跨午夜）', () => {
+  assert.deepEqual(parseSendWindow('09:00-16:00'), { startMin: 540, endMin: 960 })
+  assert.deepEqual(parseSendWindow('22:00-06:00'), { startMin: 1320, endMin: 360 })
+  assert.deepEqual(parseSendWindow('9:00-16:00'), { startMin: 540, endMin: 960 }, '1–2 位小时都认')
+  for (const bad of ['24:00-25:00', '09:60-10:00', '0900-1000', '09:00~16:00', '', '  ']) {
+    assert.equal(parseSendWindow(bad), null, `${bad} 应判非法`)
+  }
+
+  const day = parseSendWindow('09:00-16:00')!
+  assert.equal(inSendWindow(day, 539), false)
+  assert.equal(inSendWindow(day, 540), true)
+  assert.equal(inSendWindow(day, 959), true)
+  assert.equal(inSendWindow(day, 960), false, '终点不含（与"到 16:00"直觉一致）')
+
+  const night = parseSendWindow('22:00-06:00')!
+  assert.equal(inSendWindow(night, 1320), true)
+  assert.equal(inSendWindow(night, 1439), true)
+  assert.equal(inSendWindow(night, 0), true)
+  assert.equal(inSendWindow(night, 359), true)
+  assert.equal(inSendWindow(night, 360), false)
+  assert.equal(inSendWindow(night, 720), false)
+})
+
+test('发送窗口：窗口外的发送被拒，窗口内放行（时钟受控）', async () => {
+  await withStore(async (store) => {
+    // 与实现同款换算：把固定时钟换成本地分钟，窗口按它构造 → 任何时区的机器上结论一致
+    const localMinute = new Date(T).getHours() * 60 + new Date(T).getMinutes()
+    const fmt = (min: number): string =>
+      `${String(Math.floor((min % 1440) / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+    const inside = `${fmt(localMinute)}-${fmt(localMinute + 1)}`
+    const outside = `${fmt(localMinute + 1)}-${fmt(localMinute + 2)}`
+
+    const send: GuardInput = {
+      action: 'greeting.send',
+      actor: 'gui',
+      danger: 'high',
+      target: { platformId: '51job' },
+    }
+
+    makeGuard(store) // 先建立"窗口关闭"的基线配置
+    writeGuardConfig(store, { sendWindow: outside, dayOffProbability: 0 }, T)
+    const denied = runRuleChain({ store, session: okSession, clock: fixedClock(T) }, send)
+    assert.equal(denied.ok, false)
+    assert.equal(denied.reason, 'window')
+    assert.ok(denied.message?.includes('不在发送窗口内'))
+
+    writeGuardConfig(store, { sendWindow: inside }, T)
+    const allowed = runRuleChain({ store, session: okSession, clock: fixedClock(T) }, send)
+    assert.equal(allowed.ok, true, '窗口内且其余条件满足 → 过')
+
+    // 空串 = 不限：任何时刻放行
+    writeGuardConfig(store, { sendWindow: '' }, T)
+    assert.equal(runRuleChain({ store, session: okSession, clock: fixedClock(T) }, send).ok, true)
+
+    // 配置坏了要 fail-closed，不能悄悄放行
+    writeGuardConfig(store, { sendWindow: '不是窗口' }, T)
+    const broken = runRuleChain({ store, session: okSession, clock: fixedClock(T) }, send)
+    assert.equal(broken.ok, false)
+    assert.equal(broken.reason, 'window')
+    assert.ok(broken.message?.includes('无法解析'))
+
+    // 非发送动作不受窗口约束
+    writeGuardConfig(store, { sendWindow: outside }, T)
+    assert.equal(
+      runRuleChain({ store, session: okSession, clock: fixedClock(T) }, { action: 'job.list', actor: 'gui', danger: 'low' }).ok,
+      true,
+    )
+  })
+})
+
+test('随机休息日：确定性命中（同一天结论恒定）、概率 0/1 边界、发送动作被拦', async () => {
+  await withStore(async (store) => {
+    // 纯函数：同一天问多少次都一样；概率边界
+    const p = 0.05
+    for (const dateKey of ['2026-09-16', '2026-10-01', '2027-01-15']) {
+      assert.equal(isDayOff(dateKey, p), isDayOff(dateKey, p), `${dateKey} 同日结论恒定`)
+    }
+    assert.equal(isDayOff('2026-09-16', 0), false)
+    assert.equal(isDayOff('2026-09-16', 1), true)
+    // 长期频率落在合理区间（FNV-1a 应当接近均匀）：用真实日期序列做键
+    let hits = 0
+    const base = new Date('2026-01-01T00:00:00Z').getTime()
+    for (let offset = 0; offset < 2000; offset += 1) {
+      const day = new Date(base + offset * 86_400_000)
+      const dateKey = `${String(day.getFullYear())}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
+      if (isDayOff(dateKey, p)) hits += 1
+    }
+    assert.ok(hits > 2000 * 0.005 && hits < 2000 * 0.15, `频率异常：${String(hits)}/2000`)
+
+    const send: GuardInput = {
+      action: 'greeting.send',
+      actor: 'gui',
+      danger: 'high',
+      target: { platformId: '51job' },
+    }
+    makeGuard(store)
+    // 概率 1：必命中 → 拒
+    writeGuardConfig(store, { dayOffProbability: 1 }, T)
+    const denied = runRuleChain({ store, session: okSession, clock: fixedClock(T) }, send)
+    assert.equal(denied.ok, false)
+    assert.equal(denied.reason, 'day-off')
+    assert.ok(denied.message?.includes('休息日'))
+    // 概率 0：不休息 → 过
+    writeGuardConfig(store, { dayOffProbability: 0 }, T)
+    assert.equal(runRuleChain({ store, session: okSession, clock: fixedClock(T) }, send).ok, true)
+    // 非发送动作不受休息日约束
+    writeGuardConfig(store, { dayOffProbability: 1 }, T)
+    assert.equal(
+      runRuleChain({ store, session: okSession, clock: fixedClock(T) }, { action: 'job.list', actor: 'gui', danger: 'low' }).ok,
+      true,
+    )
+  })
 })

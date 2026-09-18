@@ -28,7 +28,13 @@ export interface TodoRepo {
      * @returns 新建的 id；已存在时返回 null
      */
     createOnce(input: CreateTodoInput, now: string): number | null;
-    listOpen(limit?: number): TodoRecord[];
+    listOpen(filters?: number | {
+        kind?: TodoKind;
+        level?: TodoLevel;
+        limit?: number;
+    }): TodoRecord[];
+    /** 读单条待办（含 detail），供"待确认动作一键执行/恢复"用。 */
+    get(id: number): TodoRecord | undefined;
     countOpen(): number;
     /** 用户点「知道了／忽略」。 */
     close(id: number, now: string): boolean;

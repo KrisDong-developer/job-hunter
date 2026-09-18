@@ -13,7 +13,15 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Disposer, PluginContext } from '../shared/dsh.js';
 import type { HostRuntime } from './runtime.js';
 import { type EventBus } from './http/sse.js';
-/** 带 HTTP 状态码的类型化错误。 */
+/**
+ * 宿主 HTTP 服务内部使用的类型化错误。
+ *
+ * 路由处理器抛出本类型时，`router` 层会统一捕获并映射为对应的 HTTP 响应
+ * （状态码 + JSON body），避免每个处理器各自手写 `writeHead`/`end`。
+ *
+ * - `status`：要返回给客户端的 HTTP 状态码。
+ * - `code`：机器可读错误码，作为响应体中的 `code` 字段，与 §9 错误模型对齐。
+ */
 export declare class HttpError extends Error {
     readonly status: number;
     readonly code: string;

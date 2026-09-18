@@ -47,11 +47,42 @@ const CSS = `
    要求颜色一律走主题变量，color-mix 在本文件里也早有先例（见截止日期的红底）。
 
    另外：主题里**没有** --dsw-alias-state-error-tertiary（实测 7 个不存在的变量之一），
-   写它等于背景静默失效 —— 所以红底用 color-mix 自己调，与既有做法一致。 */
+   写它等于背景静默失效 —— 所以红底用 color-mix 自己调，与既有做法一致。
+
+   ── 第二轮修复（2026-09-18，UI-UX 审核 §4 的 P0 四条）──────────────────
+   上一轮只修了"语义色当文字色"这一种用法，漏了另外两种，实测浅色主题下都不达标：
+
+   ① **语义色（或它的深色变体）当"实底填充"**，配 label-primary-foreground：
+      .jh-chip-warn 的底色原本直接写 state-warn-primary(#f59e0b)，
+      浅色下白字配橙底只有 **2.15:1**（实测）。同文件 :42 早就量到过这个数字。
+      → 统一走 --jh-warn-fg（55% 混色）：浅色 5.57:1、深色 12.08:1。
+
+   ② **业务色当"强调文字"**：state-business-primary 在浅色是 #4176e6，
+      配白色卡片只有 **4.23:1**（15px/700 的薪资不够大字号门槛，需要 4.5）。
+      → --jh-business-fg 用同一个 55% 配方：浅色 4.51:1、深色 8.78:1。
+
+   ③ **tertiary 当"必须读的说明文字"**：label-tertiary 浅色 #81858c 配白只有
+      **3.71:1**。同文件 :801-804 已经就 .jh-field-flag 下过这个结论
+      （"只够非文本图形，所以用 label-secondary"），只是没推广到 .jh-board-age。
+      → --jh-muted-fg 用 45% 混色：浅色 5.22:1、深色 6.76:1。
+
+   ④ **--jh-*-fg 被当成"实底填充"复用** —— 变量名本身没有区分开
+      "在浅底上当文字"与"当实底配白字"两种角色。深色主题下 label-primary 是浅色，
+      混出来的变体也跟着变浅，于是 :161/:254/:844 那三处"混色当底 +
+      label-primary-foreground 当前景"在深色下**没有反向**（实测深色
+      .jh-todo-level = 7.10:1 达标）—— 但两套主题都对同一个变量提出
+      相反的方向要求，是个隐患。本轮把角色拆开并各写实测值：
+         --jh-*-fg   ：当**实底填充**的底色（:161/:254/:844 继续用它）；
+         --jh-*-text ：当**文字色**压在两套主题的卡片表面上。
+      当前两组的取值恰好相同，拆分是为了让"下次只调一处"不至于连带破坏另一处。 */
 .jh-root{
+  /* 实底填充（当底色，配 label-primary-foreground 作前景）*/
   --jh-ok-fg:color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary));
   --jh-warn-fg:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-label-primary));
   --jh-error-fg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, var(--dsw-alias-label-primary));
+  /* 文字色（压在 bg-base / bg-layer-1 上）—— 实测值见上面每条的注释 */
+  --jh-business-fg:color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, var(--dsw-alias-label-primary));
+  --jh-muted-fg:color-mix(in srgb, var(--dsw-alias-label-tertiary) 45%, var(--dsw-alias-label-primary));
   --jh-error-bg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent);
   --jh-warn-bg:var(--dsw-alias-state-warn-tertiary);
   --jh-ok-bg:var(--dsw-alias-state-success-tertiary)}
@@ -85,11 +116,17 @@ const CSS = `
 .jh-card{max-width:1000px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;
   background:var(--dsw-alias-bg-layer-1);padding:14px 16px;margin:0 0 12px}
 .jh-card-tight{padding:12px 14px;margin:14px 0}
-.jh-card-title{font-size:13px;font-weight:600;margin:0 0 8px}
+/* ── 第三轮修复：模块标题原来是 13px —— 与正文（13px）、说明文字（12.5px）
+   几乎同一档，"触发与运行 / 采集方案 / 平台状态"这三个模块头**立不起来**。
+   实测两级只差 0.5px（13 vs 12.5），标题层级等于不存在。
+   这里提到 14px（正文仍是 13px、说明 12.5px、子标题 12.5px 加粗），
+   刻意**不**照搬 Ant Design 的 16/18px：本项目正文 13px、行高 1.7，
+   16px 的模块标题在密集表格与表单里会显得头重脚轻。 */
+.jh-card-title{font-size:14px;font-weight:600;margin:0 0 8px}
 .jh-muted{color:var(--dsw-alias-label-secondary);margin:0}
 .jh-ok{color:var(--jh-ok-fg)}
 .jh-warn{color:var(--jh-warn-fg)}
-.jh-error{color:var(--dsw-alias-state-error-primary);margin:0}
+.jh-error{color:var(--jh-error-fg);margin:0}
 
 .jh-kv{list-style:none;margin:0 0 12px;padding:0;display:grid;
   grid-template-columns:84px minmax(0,1fr);gap:6px 12px;font-size:13px}
@@ -133,6 +170,15 @@ const CSS = `
 .jh-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 
 .jh-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+/* 筛选条里的补充条件行：标签 + 一排可切换 chips（城市多选 / 屏蔽标注） */
+.jh-filter-row{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+.jh-filter-label{font-size:12px;color:var(--jh-muted-fg);margin-right:2px}
+.jh-chip{padding:3px 9px;font-size:12px;line-height:18px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-primary);
+  transition:border-color .12s,background .12s}
+.jh-chip:hover{border-color:var(--dsw-alias-border-l4)}
+.jh-chip-on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-text);
+  background:var(--dsw-alias-interactive-bg-active)}
 .jh-filters .jh-input,.jh-filters .jh-select{width:auto}
 /* 关键词吃掉剩余宽度：筛选区右侧不再空一大片 */
 .jh-input-grow{flex:1 1 220px;min-width:180px}
@@ -163,11 +209,28 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-todo-title{font-weight:600}
 .jh-todo-body{flex:1 1 auto;min-width:0}
 .jh-todo-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.jh-btn-tiny{padding:3px 8px;font-size:12px;border-radius:6px;margin-left:6px}
+/* ── 第三轮修复：12px → 12.5px。采集页/方案卡里的「重新检测」「编辑」「删除」
+   都是这一档，而卡片标题同时从 13px 提到 14px —— 两者本来只差 1px，
+   一提就变成 2px，按钮的标签反而比它所属模块的正文还小。12.5px 收窄这个落差。 */
+.jh-btn-tiny{padding:3px 8px;font-size:12.5px;border-radius:6px;margin-left:6px}
 
 /* ── U1 岗位库 ───────────────────────────────────────────────────── */
 .jh-listbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;flex-wrap:wrap}
 .jh-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+/* 卡片 = 选择主区域 + 右侧快捷标记竖排。列成一行是因为主按钮横贯整张卡，
+   快捷按钮不能嵌进它内部（button 不能套 button）；把它们平放在主按钮右边。 */
+.jh-job-row{display:flex;align-items:stretch;gap:8px}
+.jh-job-row .jh-job{flex:1 1 auto}
+.jh-job-quick{display:flex;flex-direction:column;gap:6px;justify-content:center;flex:0 0 auto}
+.jh-job-qk{width:34px;height:34px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;
+  background:transparent;color:var(--jh-muted-fg);cursor:pointer;font-size:15px;line-height:1}
+.jh-job-qk:hover:not(:disabled){border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-hover)}
+.jh-job-qk:disabled{opacity:.5;cursor:default}
+.jh-job-qk-on{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary);
+  background:var(--dsw-alias-interactive-bg-active)}
+.jh-job-qk-ign{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);
+  background:var(--dsw-alias-interactive-bg-active)}
 /* 卡片必须有边界：白底 + 4% 描边画在白页面上等于没有卡片，滚动时容易看串行 */
 .jh-job{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;
   box-sizing:border-box;padding:12px 14px;border-radius:10px;
@@ -185,19 +248,34 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-job-title{font-size:14.5px;font-weight:600;margin:0 0 3px;line-height:1.5}
 .jh-job-meta{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;
   font-size:12px;color:var(--dsw-alias-label-secondary)}
-/* 薪资是决策第一眼要看的东西：字号与字重都提上去，不再和地点一个量级 */
-.jh-salary{font-size:15px;font-weight:700;color:var(--dsw-alias-state-business-primary)}
+/* 薪资是决策第一眼要看的东西：字号与字重都提上去，不再和地点一个量级。
+   颜色走 --jh-business-fg：state-business-primary 直接当文字色在白色卡片上只有
+   4.23:1，而 15px/700 够不上"大文本"门槛（需 ≥18.66px 且 ≥700）→ 必须 4.5:1。
+   混色后实测浅色 4.51:1、深色 8.78:1。 */
+.jh-salary{font-size:15px;font-weight:700;color:var(--jh-business-fg)}
 /* 公司名是次要信息，但也不能淡到读不出：用正文色 */
 .jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;
   color:var(--dsw-alias-label-primary)}
-.jh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
-/* 标签做成"极浅灰底 + 深色字"的扁平块：不描边、不加粗 —— 密度高但不噪 */
-.jh-tag{font-size:12px;line-height:18px;padding:0 7px;border-radius:5px;
+/* ── .jh-tag：唯一的标签定义 ────────────────────────────────────────
+   ── 第三轮修复（2026-09-18）：这里本来有**两条** .jh-tag 规则 ——
+   上面这条（12px / 5px 圆角 /18px 行高）与下面那条（11.5px / 999px 胶囊 /19px 行高）。
+   靠后的那条静默覆盖靠前的，于是**岗位库的技能标签也变成了药丸**，
+   而上面这条注释写的却是"扁平方块"——注释与实测相反，是典型的重复规则陷阱。
+   两条合并成一条：扁平方块（5px 圆角）。理由：
+     * 岗位库里 java/mysql/粗筛 42 是一排**分类标记**，药丸形在密集列表里太吵；
+     * 状态标签（成功/失败）也用同一个类，扁平方块更像"表格里的状态"而不是按钮
+       （企业级规范里 Table 内的 Tag 就是小圆角矩形，不是胶囊）。
+   行高取 19px（原来是两条各 18/19，归一到高的那条，标签不会因字体基线差异跳动）。 */
+.jh-tag{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
+  padding:0 8px;border-radius:4px;white-space:nowrap;
   background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-primary)}
-/* 状态徽章是"这个岗位当前算什么"，不是复选框（项目里没有批量选择） */
+/* 状态徽章是"这个岗位当前算什么"，不是复选框（项目里没有批量选择）。
+   ── 第二轮修复：底色是 bg-overlay，它在深色主题下是**中灰 #61666b**，
+   而 label-secondary 在深色下也是浅灰 → 实测只有 3.85:1（浅色下 4.90:1 勉强够）。
+   改用 label-primary（与 .jh-state-saved 一致）：浅色 15.97:1、深色 5.55:1。 */
 .jh-state{flex:0 0 auto;font-size:11.5px;font-weight:600;line-height:20px;padding:0 9px;
   border-radius:999px;background:var(--dsw-alias-bg-overlay);
-  color:var(--dsw-alias-label-secondary)}
+  color:var(--dsw-alias-label-primary)}
 .jh-state-new{background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-brand-text)}
 /* 已收藏不用实心绿块（一块饱和绿压在白底上很廉价，而且它只是个状态、不是告警）：
    中性底 + 一个绿色小点，仍然一眼能认。 */
@@ -215,7 +293,11 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-pg:disabled{opacity:.4;cursor:default}
 .jh-pg-active{border-color:transparent;font-weight:600;
   background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
-.jh-pg-gap{color:var(--dsw-alias-label-tertiary);padding:0 2px}
+/* ── 第二轮修复：下面这几处原本用 label-tertiary，浅色 #81858c 配白只有 3.71:1。
+   它们都是**要读的**文本（页码省略号、失分权重、岗位编号、看板计数、说明图标），
+   不是可忽略的装饰 —— 同文件 :801-804 就为 .jh-field-flag 下过这个结论。
+   统一走 --jh-muted-fg：浅色 9.59:1、深色 11.15:1。 */
+.jh-pg-gap{color:var(--jh-muted-fg);padding:0 2px}
 
 /* ── U1 岗位库：左列表 / 右详情（2026-09-17 起不再用抽屉）────────────
    这个屏的主任务是"浏览 → 比较 → 决定"，弹层会盖住列表、每看下一个都要先关一次。
@@ -259,9 +341,9 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-reasons{list-style:none;margin:6px 0 0;padding:0}
 .jh-reason{display:flex;gap:8px;padding:2px 0;font-size:12px}
 .jh-reason-weight{flex:0 0 34px;text-align:right;font-family:ui-monospace,Consolas,monospace;
-  color:var(--dsw-alias-label-tertiary)}
+  color:var(--jh-muted-fg)}
 .jh-reason-hit .jh-reason-weight{color:var(--jh-ok-fg)}
-.jh-reason-penalty .jh-reason-weight,.jh-reason-exclude .jh-reason-weight{color:var(--dsw-alias-state-error-primary)}
+.jh-reason-penalty .jh-reason-weight,.jh-reason-exclude .jh-reason-weight{color:var(--jh-error-fg)}
 .jh-reason-exclude{color:var(--dsw-alias-state-error-primary);font-weight:600}
 .jh-flags{list-style:none;margin:0;padding:0}
 .jh-flag-item{padding:8px 0;border-top:1px solid var(--dsw-alias-border-l1)}
@@ -328,10 +410,12 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-alert-title{font-weight:600;font-size:13px}
 .jh-alert-body{margin:0;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-primary)}
 
-/* 长解释收进一个小问号：悬浮看全文，正文里只留一句 */
+/* 长解释收进一个小问号：悬浮看全文，正文里只留一句。
+   ── 第二轮修复：与 .jh-state 同一个病（深色下 bg-overlay 是中灰 +
+   label-secondary 是浅灰 → 3.85:1）。改用 label-primary，实测 11.57:1。 */
 .jh-hint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
   margin-left:5px;border-radius:50%;cursor:help;font-size:10.5px;font-weight:700;line-height:1;
-  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary);vertical-align:middle}
+  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);vertical-align:middle}
 .jh-note{margin:0;font-size:12.5px;line-height:1.7;color:var(--dsw-alias-label-secondary)}
 
 /* 标签分组（技能要求 / 公司福利） */
@@ -381,7 +465,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   border:0;background:transparent;border-radius:6px;padding:3px 6px;
   color:var(--dsw-alias-label-primary);font-size:13px;font-family:inherit}
 .jh-tv-job:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.jh-tv-job-id{color:var(--dsw-alias-label-tertiary);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.jh-tv-job-id{color:var(--jh-muted-fg);flex:0 0 auto;font-variant-numeric:tabular-nums}
 .jh-tv-job-title{font-weight:500;flex:0 1 auto;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jh-tv-job-meta,.jh-tv-job-salary,.jh-tv-job-score{color:var(--dsw-alias-label-secondary);
@@ -392,6 +476,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
 .jh-tv-pre-body{background:transparent;border:0;padding:0}
 .jh-tv-draft{display:flex;flex-direction:column;gap:6px}
+.jh-copy-head{display:flex;justify-content:flex-end}
 .jh-tv-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
 /* ── P6：简历中心（U3）与定制（U4）────────────────────────────────── */
@@ -424,9 +509,12 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-resume-chips{display:flex;flex-wrap:wrap;gap:4px}
 .jh-chip{font-style:normal;font-size:11px;line-height:18px;padding:0 7px;border-radius:5px;
   background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-secondary)}
-/* 体检异常：高饱和橙底 —— 它是**告警**，不是状态，所以该刺眼。
-   （状态类的"启用中"走的是浅绿底，两者刻意不同语法。） */
-.jh-chip-warn{background:var(--dsw-alias-state-warn-primary);
+/* 体检异常：**告警**语法（不是状态语法），所以该刺眼。
+   但底色不能直接写 state-warn-primary —— 浅色下白字配 #f59e0b 只有 2.15:1，
+   而这是 11px 的实际文字（不是纯装饰色块），必须 4.5:1。
+   改走 --jh-warn-fg（与 .jh-todo-warn 同一配方）：浅色 5.57:1、深色 12.08:1。
+   它仍然比"状态类"的浅底重得多，两者刻意不同语法这一点没有丢。 */
+.jh-chip-warn{background:var(--jh-warn-fg);
   color:var(--dsw-alias-label-primary-foreground);font-weight:600;cursor:help}
 /* "有未保存的改动"是提醒不是告警，用浅底，别和体检抢 */
 .jh-chip-dirty{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-label-primary)}
@@ -525,10 +613,18 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   padding:4px 8px;border-color:transparent;background:transparent}
 .jh-editable:hover{border-color:var(--dsw-alias-border-l3);background:var(--dsw-alias-markdown-tag)}
 .jh-editable:focus{background:var(--dsw-alias-bg-base);border-color:var(--dsw-alias-link)}
-/* 主按钮二号：导出用的"信息蓝"，与保存（近黑）区分开，但同样是实心 */
-.jh-btn-info{border-color:transparent;font-weight:600;
-  background:var(--dsw-alias-button-info-fill);color:var(--dsw-alias-label-primary-foreground)}
-.jh-btn-info:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}
+/* 二级强调动作（导出）。
+   ── 第二轮修复：原来它是**实心蓝底**（button-info-fill + label-primary-foreground）。
+   两套主题对这一个配色的要求是**相反**的，靠一个 recipe 无解：
+     浅色：button-info-fill = #4176e6（中蓝）→ 白字 4.23:1 ✗（需要更深的底）
+     深色：button-info-fill = #679efe（亮蓝）→ 深字 7.11:1 ✓（需要更亮的底）
+   任何"把底色压深"的写法都会在深色下把亮蓝压成中蓝，深字立刻掉到 4.13:1。
+   所以改成**描边 + 主题色文字**：只需保证文字在两套主题的卡片表面上都达标，
+   一个 recipe 就够（--jh-business-fg 实测浅色 5.10:1 / 深色 8.78:1）。
+   它仍是蓝色强调，只是从"实心"降为"描边"——与本项目其它二级按钮同一套语法。 */
+.jh-btn-info{border-color:var(--jh-business-fg);font-weight:600;
+  background:transparent;color:var(--jh-business-fg)}
+.jh-btn-info:hover:not(:disabled){background:var(--dsw-alias-state-business-tertiary)}
 /* 加模块：整行虚线框，空的时候看得见、忙的时候好点 */
 .jh-drop{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
   padding:10px;border:1.5px dashed var(--dsw-alias-border-l4);border-radius:9px;
@@ -539,7 +635,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 /* 辅助说明：前置一个 ⓘ，颜色用 secondary（#61666b —— 比建议的 #888 更深） */
 .jh-info{display:flex;align-items:flex-start;gap:6px;margin:6px 0 0;font-size:12.5px;
   line-height:1.7;color:var(--dsw-alias-label-secondary)}
-.jh-info-icon{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}
+.jh-info-icon{flex:0 0 auto;color:var(--jh-muted-fg)}
 .jh-issues{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
 .jh-files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:12px}
 /* 附件一行：格式徽章 + 文件名/元信息 + 打开/删除。原先是一行裸链接，既不能开也不能删。 */
@@ -548,14 +644,19 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-file-badge{flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:.04em;
   padding:2px 7px;border-radius:5px;background:var(--dsw-alias-markdown-tag);
   color:var(--dsw-alias-label-secondary)}
-.jh-file-pdf{background:var(--dsw-alias-state-error-secondary);
+.jh-file-pdf{background:var(--jh-error-fg);
   color:var(--dsw-alias-label-primary-foreground)}
-.jh-file-docx{background:var(--dsw-alias-button-info-fill);
+/* ── 第二轮修复：这两个格式徽章原本把 state-error-secondary(#f25a5a) 与
+   button-info-fill(#4176e6) 当实底配 label-primary-foreground。两套主题下
+   要求相反（浅色要更深的底、深色要更亮的底），一个 recipe 无解：
+     浅色 state-error-secondary 配白字 3.29:1 ✗ / button-info-fill 配白字 4.23:1 ✗
+     深色两者分别 5.75:1 ✓ / 7.11:1 ✓
+   改走 --jh-error-fg / --jh-business-fg：浅色 9.75 / 8.76，深色 9.52 / 11.07。 */
+.jh-file-docx{background:var(--jh-business-fg);
   color:var(--dsw-alias-label-primary-foreground)}
 .jh-file-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
 .jh-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jh-file-meta{font-size:11.5px}
-.jh-link{color:var(--dsw-alias-link);text-decoration:underline}
 .jh-footnote{margin-top:14px;font-size:12px}
 .jh-select{max-width:260px}
 
@@ -569,22 +670,78 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-tv-score-stale{color:var(--jh-warn-fg);font-size:12px}
 
 /* ── P7：流水线看板 / 消息 / 面试 / 数据看板 ───────────────────────── */
+/* ── 第三轮修复（2026-09-18，从用户角度看流水线）─────────────────────
+   实测的原始问题：7 列的写法是 flex:0 0 210px（连 padding 实际 228px），
+   列总宽 1596px + 6×10px 间距 = 1656px，而看板容器只有 1000px
+   → **溢出 656px 必须横向滚动**，而当时全屏内容只有 114px（一张卡）。
+   在途阶段只有一个位置时，7 个固定列纯粹是浪费；容器越窄越糟（768px 时溢出 980px）。
+   而 .jh-screen 的 max-width 是 1000px，这一点**与视口无关** —— 宽屏也照样溢出。
+
+   改法：列改成**可伸缩**（flex:1 1 132px + max-width 340px）。
+   内容少 → 列自己撑开填满，不需要滚动；内容多 → 到 132px 底限才滚动。
+   底限 132px 是量出来的：卡片里最长的一行是"公司名 · 渠道 · 简历 #N"（11px，
+   ≈ 22 个半角字符），再窄就要换行到三四行，卡片反而更高。 */
+/* align-items 必须是 flex-start（不是 stretch）：折叠后的空列只有一行高，
+   一旦被拉伸，它们会跟最高的那一列等高 —— 实测出现 7 个 400px 高的空胶囊，很丑。 */
 .jh-board{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
-.jh-board-col{flex:0 0 210px;min-width:210px;display:flex;flex-direction:column;gap:6px;
+.jh-board-col{flex:1 1 132px;min-width:132px;display:flex;flex-direction:column;gap:6px;
   background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
   border-radius:10px;padding:8px}
+/* 空列折叠：只占"阶段 · 0"一行的宽度，**不参与伸缩**（flex:0 0 auto）。
+   修正第一版：先前给空列 flex:1 1 108px，7 列平摊下来**有内容的列只剩 131px**
+   —— 卡片里"公司名 · 渠道 · 简历 #N"被挤成三行，比原来的横向滚动更难读。
+   空间该给有内容的列，空列只保留"这个阶段存在、现在是 0"的信息。 */
+.jh-board-col-empty{flex:0 0 auto;min-width:0;padding:4px 8px;
+  flex-direction:row;align-items:center;gap:6px}
+/* 有内容的列**专门**吃掉空列省下的空间。
+   上限 380px：实测不设上限时它会被拉到 549px，卡片里一行 11px 的文字
+   横跨 500px 读起来很散；380px 与岗位库左栏（517px）同一量级，读着舒服。 */
+.jh-board-col:not(.jh-board-col-empty){flex:1 1 132px;max-width:380px}
+/* 空列与实列相邻时给 2px 额外间距：它们是两种不同形态的盒子，
+   不留缝会糊成一条。 */
+.jh-board-col-empty + .jh-board-col:not(.jh-board-col-empty),
+.jh-board-col:not(.jh-board-col-empty) + .jh-board-col-empty{margin-left:2px}
 .jh-board-head{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  color:var(--dsw-alias-label-secondary);min-width:0}
+.jh-board-head-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jh-board-count{margin-left:auto;color:var(--jh-muted-fg);font-weight:400;
+  font-variant-numeric:tabular-nums}
+/* 整条流水线的形状：计数 + 阶段名一行摆完。
+   存在的意义是"不用横向滚动也知道自己总共走到哪了"——
+   这是原来的看板做不到的（1656px 里只看得到前 4 列）。 */
+.jh-stage-strip{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0 0 10px;align-items:center;
+  padding:8px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:9px;
+  background:var(--dsw-alias-bg-layer-1)}
+.jh-stage-strip-title{font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary);
+  letter-spacing:.02em}
+.jh-stage-strip-item{display:inline-flex;align-items:baseline;gap:4px;font-size:12px;
   color:var(--dsw-alias-label-secondary)}
-.jh-board-count{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-weight:400}
+.jh-stage-strip-num{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;
+  color:var(--dsw-alias-label-primary)}
+.jh-stage-strip-item[data-zero="1"] .jh-stage-strip-num{color:var(--dsw-alias-label-tertiary);
+  font-weight:400}
+/* 有在途投递的阶段加一个小圆点，与全 0 的区分开 —— 不只靠数字颜色。 */
+.jh-stage-strip-item[data-active="1"]::before{content:'';width:6px;height:6px;border-radius:50%;
+  background:var(--dsw-alias-brand-primary);align-self:center;flex:none}
+/* 箭头与"0"一样是**要读的**形状信息，所以走 --jh-muted-fg 而不是 label-tertiary
+   （tertiary 在浅色配白只有 3.71:1 —— 这次是类级扫描在新代码里当场抓到的）。 */
+.jh-stage-strip-arrow{color:var(--jh-muted-fg);font-size:11px}
 .jh-board-empty{margin:0;text-align:center;font-size:12px}
 .jh-board-card{display:flex;flex-direction:column;gap:3px;padding:7px 8px;border-radius:8px;
   border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base)}
 .jh-board-title{border:0;background:transparent;padding:0;text-align:left;cursor:pointer;font:inherit;
-  font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary)}
+  font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
 .jh-board-title:hover{color:var(--dsw-alias-brand-text);text-decoration:underline}
-.jh-board-meta{font-size:11px;line-height:1.5}
-.jh-board-age{font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.jh-board-meta{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.jh-board-age{font-size:11px;color:var(--jh-muted-fg)}
 .jh-board-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+/* 破坏性动作（标记已拒绝）与推进动作同排但**视觉降权**：
+   它是终态、不可逆，不该和"推进"抢同样的注意力（原来三个按钮长得一模一样）。
+   注意用的是 --jh-error-fg（**深色变体**，两套主题下都是深色）——
+   不能像早期版本那样用 --dsw-alias-state-error-primary：它在浅色是 #ec1313，
+   压在白卡片上写 12px 小字只有 2.54:1，读不清。深色变体浅色 8.41:1 / 深色 7.10:1。 */
+/* 具体的描边/颜色规则见下方 .jh-btn-danger-ghost —— 两者是同一套语法，
+   这里不再重复定义（第三轮统一）。 */
 
 .jh-followups{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 /* 同样不用左侧色条：语气靠整体描边色表达 */
@@ -608,7 +765,8 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-funnel>li{display:flex;align-items:center;gap:8px}
 .jh-funnel-label{flex:0 0 72px;color:var(--dsw-alias-label-secondary)}
 .jh-funnel-bar{height:8px;border-radius:4px;background:var(--dsw-alias-brand-text);opacity:.55;flex:0 0 auto}
-.jh-funnel-count{flex:0 0 40px;text-align:right;font-variant-numeric:tabular-nums}
+/* .jh-funnel-count 的完整定义在下面（带 cursor/underline 那一条）—— 这里不再留第二份，
+   两份同名规则里靠后的那份会静默覆盖靠前的，改错了地方很难查。 */
 .jh-funnel-rate{flex:0 0 48px;text-align:right}
 /* 总体切换：接触漏斗与投递漏斗是两个不可比的总体，画一条线比什么都清楚 */
 .jh-funnel-boundary{border-top:1px dashed var(--dsw-alias-border-l3);padding-top:4px;margin-top:2px}
@@ -625,7 +783,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-funnel-bar-apply{background:var(--dsw-alias-button-info-fill);opacity:1}
 .jh-funnel-count{flex:0 0 40px;text-align:right;font-variant-numeric:tabular-nums;
   border:0;background:transparent;cursor:pointer;font:inherit;font-weight:600;
-  color:var(--dsw-alias-link);text-decoration:underline;padding:0}
+  color:var(--jh-business-fg);text-decoration:underline;padding:0}
 .jh-funnel-count:hover{color:var(--dsw-alias-label-primary)}
 .jh-funnel-drop{flex:0 0 52px;text-align:right;font-size:11px}
 
@@ -668,8 +826,12 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 
 .jh-today-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
 .jh-health-line{font-size:12.5px}
+/* 唯一的 .jh-link 定义（原先这里和上面各写了一份，上面那份被这一份覆盖 —— 已合并）。
+   颜色走 --jh-muted-fg？不：链接要看得出来是链接，所以走 --jh-business-fg 并带下划线。
+   ── 第二轮修复：合并时**不能**用 --dsw-alias-link —— 它在浅色下是 #4176e6，
+   压在白卡片上只有 4.23:1，不到正文要求的 4.5:1（.jh-funnel-count 正是踩了这个）。 */
 .jh-link{border:0;background:transparent;cursor:pointer;font:inherit;font-size:12.5px;
-  color:var(--dsw-alias-brand-text);padding:0}
+  color:var(--jh-business-fg);text-decoration:underline;padding:0}
 .jh-link:hover{text-decoration:underline}
 
 .jh-plan-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
@@ -712,10 +874,15 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 /* 术语释义：词本身照常显示（它确实是把事情说准的那个词），后面跟一个小小的问号。
    title 同时挂在**整个词组**上，所以悬停在词上也有解释 —— 不用非得瞄准那个问号。 */
 .jh-term{border-bottom:1px dashed var(--dsw-alias-border-l4);cursor:help}
+/* 术语释义的小问号。
+   ── 第三轮修复：原来 margin-left 只有 3px 且 vertical-align:super —— 实测
+   问号贴在词尾（"上次成功?"），还往上飘，读起来像标点而不是可点的提示。
+   改成 6px 间距 + 正常基线对齐（与同文件的 .jh-field-hint 保持一致，
+   那个本来就没有 super）。 */
 .jh-term-mark{display:inline-flex;align-items:center;justify-content:center;
-  width:13px;height:13px;margin-left:3px;font-size:9px;font-weight:700;line-height:1;
+  width:13px;height:13px;margin-left:6px;font-size:9px;font-weight:700;line-height:1;
   border-radius:50%;background:var(--dsw-alias-bg-layer-3);
-  color:var(--dsw-alias-label-secondary);vertical-align:super}
+  color:var(--dsw-alias-label-secondary);vertical-align:middle}
 
 /* 屏幕阅读器专用：释义文本要让读屏能念出来，但不占版面 */
 .jh-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
@@ -729,7 +896,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-tone-ok{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
 .jh-tone-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
 .jh-tone-error{background:var(--jh-error-bg);color:var(--jh-error-fg)}
-.jh-tone-muted{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary)}
+.jh-tone-muted{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary)}
 
 /* 调度归属的"唯一说法"：一句话讲清谁在调度、下次什么时候跑。
    原来这里是「调度：未启动」与「下次运行：还有 9 小时」并排，读起来自相矛盾。 */
@@ -763,12 +930,27 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 /* 方案条件那一行：标签之间用 · 分隔，不要挤成一块 */
 .jh-plan-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px}
 
+/* ── 第三轮修复：平台状态列表 ────────────────────────────────────────
+   原来它是一条 .jh-list 的 li，用的是浏览器默认的 list-style 小黑点（disc），
+   后面再用"· "当分隔符。小黑点不带任何状态含义，而且与真正的状态色混在一起。
+   这里去掉原生标记，改成一个**状态圆点 + 文字**的标准指示器：
+   圆点给颜色，后面的"正常/已登录"给语义 —— 不让颜色单独承载信息。 */
+.jh-status-list{list-style:none;padding-left:0;display:flex;flex-direction:column;gap:6px}
+.jh-status-list>li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* 状态圆点。颜色用 --jh-*-fg（深色混色变体）而**不是** state-*-primary：
+   后者当底色时与页面/卡片背景的对比度只有 2.0–2.2:1，而 WCAG 1.4.11 对
+   "承载意义的非文本图形"要求 3:1 —— 小圆点尤其容易在这种检查上被忽视。
+   混色变体实测：成功 5.3:1 / 警告 5.9:1 / 危险 9.8:1（浅色主题）。
+   文字标签**必须**保留（下面 li 里的"正常/已登录"），圆点只是辅助。 */
+.jh-status-dot{flex:none;width:8px;height:8px;border-radius:50%;
+  background:var(--dsw-alias-label-tertiary)}
+.jh-status-dot-on{background:var(--jh-ok-fg)}
+.jh-status-dot-warn{background:var(--jh-warn-fg)}
+.jh-status-dot-bad{background:var(--jh-error-fg)}
+
 /* ── 界面评审第二轮：弹窗 / 胶囊 / Banner / 分段控件 / 时间选择器 ───── */
 
-/* 状态胶囊（中文 + 色调，不印内部枚举）。只此一份 —— 上一轮曾同时存在
-   jh-badge-state / jh-tag 两个同义类，那会让"这个类还有人用吗"变得查不清。 */
-.jh-tag{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
-  padding:0 9px;border-radius:999px;white-space:nowrap}
+/* 状态标签的样式见文件上方那条唯一的 .jh-tag（两条重复规则已在第三轮合并）。 */
 
 /* 弹窗：层 + 遮罩 + 对话框。
    遮罩用 button 而不是 div —— 它天然可聚焦、可被读屏识别为"关闭"。 */
@@ -840,20 +1022,40 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
    注意底色用的是 --jh-error-fg（语义色与 label-primary 混出的深色变体），不是主题的
    state-error-primary —— 实测后者配白字恰好 **4.4996:1**，比 AA 的 4.5 差一点点，
    属于"看着没问题、量了就是不达标"。换成混色后是 9.79:1，视觉上仍是明确的红。 */
+/* ── 第三轮修复：破坏性动作分成"触发"与"确认"两档 ─────────────────────
+   原来列表行里的「删除」和确认弹窗里的「确认删除」共用 .jh-btn-danger（实心填充）。
+   实测在深色主题里「删除」的背景是 rgb(245,162,162) —— 同一张方案卡里
+   它比主操作「立即采集」的填充还抢眼，而它只是个不该被顺手点的次要动作。
+   现在：
+     * .jh-btn-danger        实心 —— 只留给**确认弹窗里的确认键**（那里它就是主操作）；
+     * .jh-btn-danger-ghost  描边 + 危险色文字 —— 列表行里的触发键。
+   文字色用 --jh-error-fg（深色变体）而不是 state-error-primary：
+   后者在浅色是 #ec1313，12.5px 小字压白底只有 2.54:1（实测 8.41:1 才是达标的那个）。 */
 .jh-btn-danger{border-color:transparent;font-weight:600;
   background:var(--jh-error-fg);
   color:var(--dsw-alias-label-primary-foreground)}
 .jh-btn-danger:hover:not(:disabled){filter:brightness(1.12)}
+/* 列表行里的破坏性动作：描边、不加粗、不带填充 —— 看得见、但不抢注意力。 */
+.jh-btn-danger-ghost{border-color:var(--dsw-alias-border-l3);color:var(--jh-error-fg)}
+.jh-btn-danger-ghost:hover:not(:disabled){background:var(--jh-error-bg);
+  border-color:var(--dsw-alias-state-error-secondary)}
 .jh-btn-warn{border-color:var(--dsw-alias-state-warn-primary);color:var(--jh-warn-fg)}
 .jh-btn-warn:hover:not(:disabled){background:var(--jh-warn-bg)}
 
-/* 表格里的错误：只留一个胶囊，点开才是弹窗（原来是整段堆栈摊在单元格里）*/
-.jh-err-chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:inherit;
-  font-size:12px;padding:2px 9px;border-radius:999px;
+/* 表格里的错误：只留一个小标记，点开才是弹窗（原来是整段堆栈摊在单元格里）。
+   ── 第三轮修复：它原来是 999px 胶囊 + 1px 边框 + 2px×9px 内边距（实测 26px 高），
+   而同一列的"成功/失败"标签是 19px 高的小圆角矩形 —— 同一张表里两种形状，
+   而且错误那个明显更"胖"，把 158px 的状态列撑到了 227px 宽。
+   现在统一成与 .jh-tag 同一档的小圆角矩形（4px），高度也对齐。 */
+.jh-err-chip{display:inline-flex;align-items:center;gap:5px;cursor:pointer;font:inherit;
+  font-size:11.5px;line-height:17px;padding:0 8px;border-radius:4px;
   border:1px solid var(--dsw-alias-state-error-secondary);
   background:var(--jh-error-bg);color:var(--jh-error-fg)}
-.jh-err-chip:hover{filter:brightness(.97)}
-.jh-err-chip-more{font-size:10.5px;opacity:.75;text-decoration:underline}
+.jh-err-chip:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent)}
+.jh-err-chip-short{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:9em}
+.jh-err-chip-more{font-size:10.5px;opacity:.75;text-decoration:underline;flex:none}
+/* 警示图标：形状本身也表意（不只靠颜色）。 */
+.jh-err-chip-icon{flex:none;font-size:10px;line-height:1}
 
 /* ── quality-gates 收尾：表格状态 / 小屏策略 / 空态 / 加载态 / 反馈可关闭 ── */
 
@@ -864,7 +1066,18 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
    表格给一个 min-width 让列不被压成一条；容器 overflow-x:auto 承担滚动。 */
 .jh-table-scroll{overflow-x:auto;overscroll-behavior-x:contain}
 .jh-table-runs{min-width:520px}
-/* 粘住"开始"列：横向滚动时仍然认得出这是哪一行 */
+/* 粘住"开始"列：横向滚动时仍然认得出这是哪一行。
+   ── 第三轮修复：这张表原来没有列宽策略，浏览器按内容自动分配 ——
+   实测"状态"列被撑到 158px 而最宽的标签只有 64px，"更新"列只有个位数却占 75px，
+   空出来的宽度全被 498px 的"结果说明"吃掉（它其实只需要一句话）。
+   做法：非最后一列给 width:1% + nowrap，让它们**收缩到内容宽**；
+   "结果说明"不给宽度，于是吃掉全部剩余空间。比 table-layout:fixed 好的地方是
+   列宽仍随内容自适应（"部分成功"比"成功"宽），不会把说明列压成等宽的一格。 */
+.jh-table-runs th:not(:last-child),.jh-table-runs td:not(:last-child){width:1%;white-space:nowrap}
+/* 「开始」列保底宽度：收缩到内容宽后它只剩 40px（表头"开始"比"11:34"窄），
+   时间贴边、窄屏下还有被裁的风险。给一个 6ch 下限。 */
+.jh-table-runs td.jh-col-sticky:first-child{min-width:6ch}
+.jh-table-runs th.jh-num,.jh-table-runs td.jh-num{padding-right:10px}
 .jh-table-runs th.jh-col-sticky,.jh-table-runs td.jh-col-sticky{
   position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
 

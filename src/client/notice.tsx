@@ -27,7 +27,7 @@ export function JobHunterNotice() {
   if (!open) return null
 
   return (
-    <div className="jh-notice" role="status">
+    <div className="jh-notice" role="status" aria-live="polite">
       <span className="jh-notice-text">求职找工作已就绪</span>
       <button
         type="button"

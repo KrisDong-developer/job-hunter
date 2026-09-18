@@ -1,4 +1,7 @@
+import { type TimerPort } from '../scheduler/timer-port.js';
 import type { PageLike, PageSource } from './types.js';
+/** 浏览器引擎（D-17a）。`auto` = 优先 patchright，装不上退 playwright-core。 */
+export type BrowserEngine = 'auto' | 'patchright' | 'playwright-core';
 /** 启动配置。 */
 export interface BrowserConfig {
     /** 显式指定浏览器可执行文件；不填则按发现顺序兜底。 */
@@ -7,6 +10,10 @@ export interface BrowserConfig {
     locale?: string;
     timezoneId?: string;
     args?: string[];
+    /** 引擎偏好（D-17a）。默认 `auto`。 */
+    engine?: BrowserEngine;
+    /** 是否注入 stealth 脚本（D-17a）。默认 `true`；某站点被误伤时可关。 */
+    stealthInit?: boolean;
 }
 /** 与本包交互所需的最小页面面。 */
 export interface BrowserPage extends PageLike {
@@ -23,6 +30,33 @@ export interface BrowserManager {
     /** 插件卸载时调用；可重复调用。 */
     close(): Promise<void>;
     isRunning(): boolean;
+    /**
+     * 立刻开始计一轮空闲（"用完就还回去"的时刻调用）。
+     *
+     * `release()` 已经在末尾自动调用它；这个方法给"只用了一次 `ensure()`
+     * 而没走 `page()`"的调用方兜底，也让测试能显式起表。
+     */
+    touch(): void;
+    /** 当前是否已经排上了空闲关闭定时器（诊断与测试用）。 */
+    idleScheduled(): boolean;
+    /**
+     * 运行期改空闲关闭时长（设置里改完立刻生效，不用重启插件）。
+     * `0` / 非正数 = 关掉自动关闭，并清掉已排的定时器。
+     */
+    setIdleCloseMs(ms: number): void;
+    /**
+     * 运行期改引擎偏好 / stealth 注入开关（D-17a）。
+     *
+     * 这两项只在**启动浏览器那一刻**起作用。浏览器正开着时只记账并提示
+     * "下次启动生效"（浏览器空闲自关后自然会用新值），绝不为了应用新设置
+     * 去关一个可能正在采集的实例。
+     */
+    applyRuntimeConfig(patch: {
+        engine?: BrowserEngine;
+        stealthInit?: boolean;
+    }): void;
+    /** 当前实际解析到的引擎名；还没启动过时是 `null`（诊断与 `/health` 用）。 */
+    activeEngine(): 'patchright' | 'playwright-core' | null;
 }
 /**
  * 浏览器发现顺序（§4.2.1）：配置指定 → 系统 Chrome → 系统 Edge → playwright 缓存。
@@ -35,6 +69,14 @@ export declare function discoverExecutable(candidates: readonly string[], exists
 export declare const CHROMIUM_LOCK_FILES: readonly ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"];
 /** 列出实际存在的锁文件。 */
 export declare function staleLockFiles(profileDir: string, exists?: (path: string) => boolean): string[];
+/**
+ * 从启动参数里解析 TCP 调试端口（`--remote-debugging-port=<port>`）。
+ *
+ * 为什么需要它：playwright 默认用 **pipe** 方式驱动 CDP，**没有** TCP 端口可探测，
+ * 端口守卫无事可做；只有显式带了这个参数（或将来接"寄生日常 Chrome"模式）时，
+ * 端口才真的暴露 —— 守卫恰好也只需要在那一刻工作。纯函数，离线可测。
+ */
+export declare function debugPortFromArgs(args: readonly string[]): number | undefined;
 export interface BrowserManagerOptions {
     /** 持久化 profile 目录（`$DSH_HOME/job-hunter/browser-profile/`）。 */
     profileDir: string;
@@ -43,6 +85,25 @@ export interface BrowserManagerOptions {
         info(message: string): void;
         warn(message: string): void;
     };
+    /**
+     * 空闲多少毫秒后自动关闭浏览器。`0` / 不填 / 非正数 = 不自动关闭（旧行为）。
+     *
+     * 由 `runtime` 从设置（分钟）换算后传入 —— 这里只认毫秒，不读设置，
+     * 这样管理器本身没有 store 依赖，也就能被纯单测直接驱动。
+     */
+    idleCloseMs?: number;
+    /**
+     * 空闲到点时再问一次"现在能关吗"。
+     *
+     * 三个**必须**拦住的场景（否则会把用户正在用的浏览器关掉）：
+     *   * 登录引导轮询中 —— 用户正在那个窗口里登录；
+     *   * 采集/补跑正在进行 —— 互斥锁被持有（mutex.isBusy()）；
+     *   * PDF 渲染中（它有自己的实例，与本实例无关）。
+     * 返回 false = 这次不关，并**重新计时**（不是放弃：下一次空闲还会再试）。
+     */
+    shouldKeepAlive?: () => boolean;
+    /** 定时器端口：生产用原生，测试注入 `createManualTimer()`，不必真等 10 分钟。 */
+    timers?: TimerPort;
 }
 /**
  * 创建浏览器管理器。

@@ -12,23 +12,60 @@ import type { PageLike, PageSource } from '../../src/host/platform/types.js'
 interface GlobalWithDom {
   document?: unknown
   window?: unknown
+  location?: unknown
 }
+
+/** 页面上下文里的一次请求（适配器调用 `fetch` 时记录）。 */
+export interface CapturedRequest {
+  url: string
+  init: Record<string, unknown> | undefined
+}
+
+/** 页面上下文里的 `fetch` 桩：给定请求返回一份 JSON。 */
+export type PageFetchStub = (
+  url: string,
+  init?: Record<string, unknown>,
+) => Promise<{ json(): Promise<unknown>; status?: number; ok?: boolean }>
 
 export interface JsdomPageOptions {
   html: string
   url: string
   /** 可选：按 URL 换夹具内容（多页测试用）。返回 undefined 表示沿用当前内容。 */
   loader?: (url: string) => string | undefined
+  /**
+   * 可选：给页面上下文装一个 `fetch`。
+   *
+   * 为什么需要它：神仙外企的适配器**在页面里发请求**（列表不是 DOM 渲染的），
+   * 所以它依赖页面上下文的 `fetch`。真路径上那是浏览器的 fetch；
+   * 离线路径上由这里提供，且**只挂在全局、不提供给 `window`** ——
+   * 这正是真浏览器的样子（`window` 就是全局）。适配器里写的是 `globalThis.fetch`，
+   * 所以两条路径逐字一致。
+   */
+  fetchStub?: PageFetchStub
 }
 
-/** 一个用 jsdom 支撑的页面。`goto` 只换内容，不发任何网络请求。 */
+/**
+ * 用 jsdom 支撑的离线页面夹具，实现采集层的 `PageLike` 接口。
+ *
+ * 用途：适配器的解析函数在真实路径上会被序列化送进 Chromium 执行，因此只认
+ * 全局 `document`。本类在 `evaluate` 调用期间把 jsdom 的 `document`/`window`
+ * 临时挂到全局对象上，让**同一份解析代码**在离线测试与真实浏览器里逐字执行。
+ *
+ * - `goto`：夹具没有网络，只记录当前 URL，必要时通过 `loader` 按 URL 换内容。
+ * - `evaluate`：把 jsdom 环境装到全局后执行传入函数（签名与真实路径的异步往返兼容）。
+ * - `waitForTimeout` / `waitForSelector`：静态 DOM 下的简化实现，无真实等待。
+ */
 export class JsdomPage implements PageLike {
   private dom: JSDOM
   private currentUrl: string
   private readonly loader: ((url: string) => string | undefined) | undefined
+  private readonly fetchStub: PageFetchStub | undefined
+  /** 页面上下文里发出去的所有请求（断言"到底带了什么参数"用）。 */
+  readonly requests: CapturedRequest[] = []
 
   constructor(options: JsdomPageOptions) {
     this.loader = options.loader
+    this.fetchStub = options.fetchStub
     this.currentUrl = options.url
     this.dom = new JSDOM(options.html, { url: options.url })
   }
@@ -45,17 +82,38 @@ export class JsdomPage implements PageLike {
   }
 
   async evaluate<R, A>(fn: (arg: A) => R, arg: A): Promise<R> {
-    const globals = globalThis as GlobalWithDom
+    const globals = globalThis as GlobalWithDom & { fetch?: unknown; __WAIQI_FETCH__?: unknown }
     const previousDocument = globals.document
     const previousWindow = globals.window
+    const previousLocation = globals.location
+    const previousFetch = globals.fetch
+    const previousMarker = globals.__WAIQI_FETCH__
     globals.document = this.dom.window.document
     globals.window = this.dom.window
+    // 真浏览器的页面一定有 location（猎聘适配器用它读 about:blank 风控销毁信号）。
+    globals.location = this.dom.window.location
+    // **无论有没有 stub 都要给一个 fetch**：页面上下文里 fetch 一定存在
+    // （真浏览器如此）。适配器会用 `__WAIQI_FETCH__` 这个标记确认
+    // "这个 fetch 确实是页面上下文的"，从而绝不回退到宿主 Node 的 fetch ——
+    // 那会让离线测试真的打到线上（§14 明令禁止）。
+    globals.fetch =
+      this.fetchStub === undefined
+        ? () => Promise.reject(new Error('no fetch stub in offline fixture'))
+        : (url: string, init?: Record<string, unknown>) => {
+            this.requests.push({ url, init })
+            return this.fetchStub?.(url, init) ?? Promise.reject(new Error('fetch stub missing'))
+          }
+    globals.__WAIQI_FETCH__ = globals.fetch
     try {
-      // 夹具是同步的；真路径上这是异步往返。签名保持兼容。
+      // 夹具是同步的；真路径上这是异步往返。签名保持兼容 ——
+      // 返回 Promise 的函数会被 await，所以"页面里的异步请求"这条路也走得通。
       return await Promise.resolve(fn(arg))
     } finally {
       globals.document = previousDocument
       globals.window = previousWindow
+      globals.location = previousLocation
+      globals.fetch = previousFetch
+      globals.__WAIQI_FETCH__ = previousMarker
     }
   }
 

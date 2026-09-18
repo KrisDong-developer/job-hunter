@@ -51,6 +51,20 @@ export interface CompanyRepo {
   findByAlias(alias: string): CompanyRecord | undefined
   addAlias(companyId: number, alias: string): void
   getProfile(companyId: number): CompanyProfileRecord | undefined
+  /**
+   * 人工复核（§4.3 / D-16）—— 自动识别错了用户要能纠正。
+   * `blacklisted` / `note` 在 `company` 表，`manualLabel` 在 `company_profile` 表。
+   */
+  updateReview(
+    companyId: number,
+    patch: { blacklisted?: boolean; note?: string | null; manualLabel?: string | null },
+    now: string,
+  ): { company: CompanyRecord | undefined; profile: CompanyProfileRecord | undefined }
+  /** 公司列表浏览（外包/诈骗/黑名单集中曝光用）。 */
+  list(filter: { blacklisted?: boolean; manualLabel?: string | null; limit?: number; offset?: number }): {
+    items: Array<{ company: CompanyRecord; profile: CompanyProfileRecord | null }>
+    total: number
+  }
   /** 重算统计量（岗位数 / 技术栈广度 / 地域跨度 / 驻场比例）。 */
   recomputeProfile(companyId: number, now: string): CompanyProfileRecord
   /** 只更新识别分数（外包分 / 诈骗分 / 名称关键词命中），不动统计量。 */
@@ -123,6 +137,51 @@ export function createCompanyRepo(db: DatabaseSync): CompanyRepo {
   )
   const countStmt = db.prepare('SELECT count(*) AS n FROM company')
 
+  // ── 人工复核写路径（D-16）───────────────────────────────────────
+  const updateReviewMeta = db.prepare('UPDATE company SET blacklisted = ?, note = ? WHERE id = ?')
+  const upsertManualLabel = db.prepare(
+    `INSERT INTO company_profile (company_id, manual_label, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(company_id) DO UPDATE SET manual_label = excluded.manual_label, updated_at = excluded.updated_at`,
+  )
+  const listAllRows = db.prepare(
+    `SELECT c.id, c.name, c.name_norm, c.aliases_json, c.industry, c.size, c.nature,
+            c.blacklisted, c.note, c.created_at,
+            p.job_count, p.outsourcing_score, p.fraud_score, p.manual_label
+     FROM company c LEFT JOIN company_profile p ON p.company_id = c.id
+     ORDER BY coalesce(p.job_count, 0) DESC, c.id`,
+  )
+
+  const toListRow = (row: Row): { company: CompanyRecord; profile: CompanyProfileRecord | null } => ({
+    company: {
+      id: asInt(row['id']),
+      name: asText(row['name']),
+      nameNorm: asText(row['name_norm']),
+      aliases: asJson<string[]>(row['aliases_json'], []),
+      industry: asTextOrNull(row['industry']),
+      size: asTextOrNull(row['size']),
+      nature: asTextOrNull(row['nature']),
+      blacklisted: asBool(row['blacklisted']),
+      note: asTextOrNull(row['note']),
+      createdAt: asText(row['created_at']),
+    },
+    profile:
+      row['job_count'] === null && row['outsourcing_score'] === null && row['manual_label'] === null
+        ? null
+        : {
+            companyId: asInt(row['id']),
+            jobCount: asInt(row['job_count']),
+            stackDiversity: 0,
+            geoSpread: 0,
+            onsiteRatio: null,
+            nameKeywordHits: 0,
+            outsourcingScore: asRealOrNull(row['outsourcing_score']),
+            fraudScore: asRealOrNull(row['fraud_score']),
+            manualLabel: asTextOrNull(row['manual_label']),
+            updatedAt: asText(row['created_at']),
+          },
+  })
+
   const toProfile = (row: Row): CompanyProfileRecord => ({
     companyId: asInt(row['company_id']),
     jobCount: asInt(row['job_count']),
@@ -191,6 +250,39 @@ export function createCompanyRepo(db: DatabaseSync): CompanyRepo {
       const current = asJson<string[]>(row['aliases_json'], [])
       if (current.includes(alias)) return
       updateAliases.run(JSON.stringify([...current, alias]), companyId)
+    },
+
+    updateReview(companyId, patch, now) {
+      const self = this as CompanyRepo
+      const base = self.get(companyId)
+      if (base === undefined) {
+        return { company: undefined, profile: undefined }
+      }
+      const blacklisted = patch.blacklisted ?? base.blacklisted
+      const note = patch.note !== undefined ? patch.note : base.note
+      updateReviewMeta.run(blacklisted ? 1 : 0, note, companyId)
+      if (patch.manualLabel !== undefined) {
+        upsertManualLabel.run(companyId, patch.manualLabel, now)
+      }
+      const profileRow = selectProfile.get(companyId) as Row | undefined
+      return {
+        company: self.get(companyId),
+        profile: profileRow === undefined ? undefined : toProfile(profileRow),
+      }
+    },
+
+    list(filter): { items: Array<{ company: CompanyRecord; profile: CompanyProfileRecord | null }>; total: number } {
+      let rows = (listAllRows.all() as Row[]).map(toListRow)
+      if (filter.blacklisted !== undefined) {
+        rows = rows.filter((entry) => entry.company.blacklisted === filter.blacklisted)
+      }
+      if (filter.manualLabel !== undefined) {
+        rows = rows.filter((entry) => entry.profile?.manualLabel === filter.manualLabel)
+      }
+      const total = rows.length
+      const offset = filter.offset ?? 0
+      const limit = filter.limit ?? 100
+      return { items: rows.slice(offset, offset + limit), total }
     },
 
     getProfile(companyId): CompanyProfileRecord | undefined {

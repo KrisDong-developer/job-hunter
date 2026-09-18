@@ -61,6 +61,13 @@ export interface LlmPortDeps {
   onWarn?: (message: string) => void
 }
 
+/**
+ * LLM 模型路由不可用错误。
+ *
+ * 当插件既没有配置自己的模型选路（`route`），宿主默认模型（`defaultModel`）
+ * 又不可用时抛出。调用方（工具层）捕获后应降级处理——跳过依赖 LLM 的环节
+ * 或向用户给出可操作的提示，而不是让整个请求直接失败。
+ */
 export class LlmRouteUnavailableError extends Error {
   constructor(message: string) {
     super(message)

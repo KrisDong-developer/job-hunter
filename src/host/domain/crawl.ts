@@ -16,6 +16,7 @@ import { DomainError, messageOf } from '../util/errors.js'
 import { parseSalary } from '../util/salary.js'
 import { systemClock, type Clock } from '../util/time.js'
 import type { Mutex } from '../platform/mutex.js'
+import { BurstGuard, type BurstGuardLike } from '../platform/pacing.js'
 import { applyFieldPresence, recordRunFailure, recordRunSuccess } from '../platform/health.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import type { PageSource, RawJob, SearchCriteria, SiteAdapter } from '../platform/types.js'
@@ -33,6 +34,14 @@ export interface CrawlDeps {
   pageSource: PageSource
   jobs: JobService
   companies: CompanyService
+  /**
+   * 可选：突发惩罚守卫的工厂（P5/D-17a）。
+   *
+   * 适配器内部的高斯页间延时防的是"节奏规律"，这里防的是"连续快请求" ——
+   * 15s 内 ≥3 页 / 45s 内 ≥6 页时加罚延迟。注入工厂是为了离线测试
+   * 能用零惩罚桩替换，不必真等惩罚时长。
+   */
+  createBurstGuard?: () => BurstGuardLike
   /**
    * 可选：采集之后跑情报引擎（P4）。
    * 用窄接口而不是直接依赖 `IntelService`，避免 domain 层互相缠绕，也方便测试关掉它。
@@ -67,7 +76,17 @@ export interface RunCrawlOptions {
 
 /** 风控类型 → 领域错误码。 */
 function blockToCode(kind: BlockKind): string {
-  return kind === 'login-required' ? 'NOT_LOGGED_IN' : 'BLOCKED'
+  if (kind === 'login-required') return 'NOT_LOGGED_IN'
+  if (kind === 'quota-exhausted') return 'PLATFORM_QUOTA'
+  return 'BLOCKED'
+}
+
+/** 风控类型 → 人话（落进 crawl_run.error_msg，界面直接展示）。 */
+function blockMessage(kind: BlockKind): string {
+  if (kind === 'quota-exhausted') {
+    return '平台侧今日额度已用完（quota-exhausted）—— 退避重试没有意义，今天对该平台停手'
+  }
+  return `命中风控/登录墙：${kind}`
 }
 
 function requireRun(run: CrawlRunDto | undefined, runId: number): CrawlRunDto {
@@ -123,6 +142,7 @@ async function executeCrawl(
   const collected: RawJob[] = []
   let pages = 0
   let failure: { code: string; message: string } | null = null
+  const burst: BurstGuardLike = deps.createBurstGuard?.() ?? new BurstGuard()
 
   const page = await deps.pageSource.acquire()
   try {
@@ -132,6 +152,11 @@ async function executeCrawl(
     const requested = options.criteria.maxPages ?? options.maxPages ?? 1
     const maxPages = Math.max(1, Math.min(Math.trunc(requested), adapter.maxPages))
     for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
+      // 突发惩罚（P5/D-17a）：最近翻页太密就先罚一会儿再动。
+      // 第一页没有任何 mark，天然罚 0；离线夹具的 waitForTimeout 不真等。
+      const penaltyMs = burst.penaltyMs()
+      if (penaltyMs > 0) await page.waitForTimeout(penaltyMs)
+
       try {
         await adapter.crawl.gotoSearch(page, { ...options.criteria, page: pageNo })
       } catch (error) {
@@ -141,7 +166,7 @@ async function executeCrawl(
 
       const block = await adapter.guard.detectBlock(page).catch(() => null)
       if (block !== null) {
-        failure = { code: blockToCode(block), message: `命中风控/登录墙：${block}` }
+        failure = { code: blockToCode(block), message: blockMessage(block) }
         break
       }
 
@@ -153,6 +178,7 @@ async function executeCrawl(
         break
       }
 
+      burst.mark()
       collected.push(...raw)
       pages += 1
       if (raw.length === 0) break

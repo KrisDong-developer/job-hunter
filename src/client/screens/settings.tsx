@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ApiError,
   fetchAudit,
@@ -11,7 +11,13 @@ import {
   type SettingsDto,
 } from '../api.js'
 import { InlineMd } from '../inline-md.js'
+import { FieldHint } from '../field-hint.js'
 import { useAsync } from '../use-async.js'
+import {
+  BROWSER_IDLE_DEFAULT_MIN,
+  BROWSER_IDLE_MAX_MIN,
+  BROWSER_IDLE_MIN_MIN,
+} from '../../shared/constants.js'
 
 /**
  * U10 设置 + U11 日志与诊断（§5.4）。
@@ -31,6 +37,47 @@ export function SettingsScreen(props: { revision: number }) {
   const [busy, setBusy] = useState(false)
 
   const current: SettingsDto | null = settings.state.status === 'ok' ? settings.state.data : null
+
+  /**
+   * 浏览器空闲关闭：输入框是**受控的草稿值**，失焦 / 回车才提交。
+   *
+   * 为什么不 onChange 就提交：那样每敲一个数字都会发一次 PATCH，
+   * 而且"1"到"10"中途会先把设置改成 1 分钟 —— 用户还没输完就已经生效了。
+   * 也不用 `key` 重挂载来同步服务端值：那会在用户打字时把光标顶掉。
+   */
+  const savedIdle = current?.browser.idleCloseMinutes ?? null
+  const [idleDraft, setIdleDraft] = useState<string>(savedIdle === null ? '' : String(savedIdle))
+  const idleFocused = useRef(false)
+  useEffect(() => {
+    // 服务端值变了、而用户没在编辑，就同步过来（改完保存后的回读走这条）
+    if (!idleFocused.current && savedIdle !== null) setIdleDraft(String(savedIdle))
+  }, [savedIdle])
+
+  const saveIdle = async (): Promise<void> => {
+    if (savedIdle === null) return
+    const parsed = Number.parseInt(idleDraft.trim(), 10)
+    // 输不出数字就当没改过：退回服务端的值，而不是把设置写成 NaN
+    if (!Number.isFinite(parsed)) {
+      setIdleDraft(String(savedIdle))
+      return
+    }
+    const clamped = Math.min(BROWSER_IDLE_MAX_MIN, Math.max(BROWSER_IDLE_MIN_MIN, parsed))
+    setIdleDraft(String(clamped))
+    if (clamped === savedIdle) return
+    setBusy(true)
+    try {
+      await updateSettings({ browser: { idleCloseMinutes: clamped } })
+      setMessage({
+        tone: 'ok',
+        text: clamped <= 0 ? '已改为：浏览器空闲后不自动关闭。' : `已改为：浏览器空闲 ${String(clamped)} 分钟后自动关闭。`,
+      })
+      settings.reload()
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof ApiError ? error.display : String(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const toggle = async (purpose: string, enabled: boolean): Promise<void> => {
     setBusy(true)
@@ -149,6 +196,52 @@ export function SettingsScreen(props: { revision: number }) {
         )}
       </section>
 
+      {/* ── 浏览器（不是闸门配置：模型也能改，无需令牌）────────────────── */}
+      <section className="jh-card">
+        <h2 className="jh-card-title">浏览器</h2>
+        {current === null ? (
+          <p className="jh-muted">正在读取…</p>
+        ) : (
+          <>
+            <label className="jh-field">
+              <span className="jh-field-label">
+                采集浏览器空闲多久后自动关闭
+                <FieldHint text="采集要复用你自己登录过的浏览器，所以它是 headful 的（你能看见那个窗口）。用完一直开着会占内存，所以空闲到点就自动关掉；下一次采集会重新打开，登录态在磁盘上、不会丢。填 0 表示不自动关闭。" />
+              </span>
+              <div className="jh-field-row">
+                <input
+                  className="jh-input jh-input-narrow"
+                  type="number"
+                  min={BROWSER_IDLE_MIN_MIN}
+                  max={BROWSER_IDLE_MAX_MIN}
+                  step={1}
+                  aria-label="采集浏览器空闲多少分钟后自动关闭"
+                  disabled={busy}
+                  value={idleDraft}
+                  onFocus={() => { idleFocused.current = true }}
+                  onChange={(event) => setIdleDraft(event.target.value)}
+                  onBlur={() => { idleFocused.current = false; void saveIdle() }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void saveIdle()
+                    }
+                  }}
+                />
+                <span className="jh-muted">分钟</span>
+              </div>
+            </label>
+            <p className="jh-note">
+              {current.browser.idleCloseMinutes <= 0
+                ? '当前：不自动关闭 —— 浏览器会一直开着，直到你关掉它或卸载插件。'
+                : `当前：空闲 ${String(current.browser.idleCloseMinutes)} 分钟后关闭（默认 ${String(BROWSER_IDLE_DEFAULT_MIN)} 分钟）。`}
+              {' '}
+              正在登录或正在采集时不会被关掉。
+            </p>
+          </>
+        )}
+      </section>
+
       {/* ── U11：日志与诊断 ───────────────────────────────────────────── */}
       <section className="jh-card">
         <h2 className="jh-card-title">诊断</h2>
@@ -191,12 +284,12 @@ export function SettingsScreen(props: { revision: number }) {
             <table className="jh-table">
               <thead>
                 <tr>
-                  <th>时间</th>
-                  <th>用途</th>
-                  <th>模型</th>
-                  <th>外发字段</th>
-                  <th>Token</th>
-                  <th>结果</th>
+                  <th scope="col">时间</th>
+                  <th scope="col">用途</th>
+                  <th scope="col">模型</th>
+                  <th scope="col">外发字段</th>
+                  <th scope="col">Token</th>
+                  <th scope="col">结果</th>
                 </tr>
               </thead>
               <tbody>
@@ -226,11 +319,11 @@ export function SettingsScreen(props: { revision: number }) {
             <table className="jh-table">
               <thead>
                 <tr>
-                  <th>时间</th>
-                  <th>谁</th>
-                  <th>动作</th>
-                  <th>结果</th>
-                  <th>说明</th>
+                  <th scope="col">时间</th>
+                  <th scope="col">谁</th>
+                  <th scope="col">动作</th>
+                  <th scope="col">结果</th>
+                  <th scope="col">说明</th>
                 </tr>
               </thead>
               <tbody>

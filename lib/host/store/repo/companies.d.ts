@@ -46,6 +46,31 @@ export interface CompanyRepo {
     findByAlias(alias: string): CompanyRecord | undefined;
     addAlias(companyId: number, alias: string): void;
     getProfile(companyId: number): CompanyProfileRecord | undefined;
+    /**
+     * 人工复核（§4.3 / D-16）—— 自动识别错了用户要能纠正。
+     * `blacklisted` / `note` 在 `company` 表，`manualLabel` 在 `company_profile` 表。
+     */
+    updateReview(companyId: number, patch: {
+        blacklisted?: boolean;
+        note?: string | null;
+        manualLabel?: string | null;
+    }, now: string): {
+        company: CompanyRecord | undefined;
+        profile: CompanyProfileRecord | undefined;
+    };
+    /** 公司列表浏览（外包/诈骗/黑名单集中曝光用）。 */
+    list(filter: {
+        blacklisted?: boolean;
+        manualLabel?: string | null;
+        limit?: number;
+        offset?: number;
+    }): {
+        items: Array<{
+            company: CompanyRecord;
+            profile: CompanyProfileRecord | null;
+        }>;
+        total: number;
+    };
     /** 重算统计量（岗位数 / 技术栈广度 / 地域跨度 / 驻场比例）。 */
     recomputeProfile(companyId: number, now: string): CompanyProfileRecord;
     /** 只更新识别分数（外包分 / 诈骗分 / 名称关键词命中），不动统计量。 */

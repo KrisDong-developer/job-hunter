@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { JobDto } from '../../../shared/dto.js';
-import { type JobState } from '../../../shared/enums.js';
+import { type JobFlagType, type JobState } from '../../../shared/enums.js';
 /** 岗位写入/筛选所需的标量字段（活对象已被适配器剥掉，§4.3 P7）。 */
 export interface JobUpsertInput {
     platformId: string;
@@ -33,6 +33,9 @@ export interface MatchStamp {
 export interface JobQuery {
     state?: JobState;
     platformId?: string;
+    /** 多城市：命中任意一个即可（`IN` 查询）。 */
+    cities?: string[];
+    /** 兼容的单城市旧字段（有 `cities` 时以 `cities` 为准）。 */
     city?: string;
     companyId?: number;
     /** 标题模糊匹配（走 LIKE，仅作粗筛）。 */
@@ -41,6 +44,11 @@ export interface JobQuery {
     minSalaryAtLeast?: number;
     orderBy?: 'crawled_at' | 'salary_min' | 'title' | 'last_seen_at';
     descending?: boolean;
+    /**
+     * 屏蔽这些标注类型的岗位：命中任意一个标注的岗位一律不显示（`NOT EXISTS`）。
+     * 「一键屏蔽疑似外包/高风险」落在这里 —— 风险标签是已算好的事实，屏蔽是查询层的事。
+     */
+    excludeFlagTypes?: JobFlagType[];
 }
 export interface JobRepo {
     /** 幂等写入：按 `(platform_id, platform_job_id)` upsert，重复跑不产生重复数据（§6.1）。 */
@@ -68,6 +76,8 @@ export interface JobRepo {
     countSince(iso: string): number;
     countByState(): Record<string, number>;
     latest(limit?: number): JobDto[];
+    /** 出去重后的城市列表（界面多选城市用；空城市不返回）。 */
+    listCities(): string[];
 }
 export declare function createJobRepo(db: DatabaseSync): JobRepo;
 //# sourceMappingURL=jobs.d.ts.map

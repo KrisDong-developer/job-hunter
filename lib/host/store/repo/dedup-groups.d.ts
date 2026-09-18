@@ -30,6 +30,14 @@ export interface DedupGroupRepo {
     findByJob(jobId: number): DedupGroupRecord | undefined;
     list(limit: number): DedupGroupRecord[];
     count(): number;
+    /**
+     * 把一个岗位从分组里拆出去（§4.10.1 铁律 2：去重必须可逆）。
+     *
+     * 拆完后若组里只剩一个成员，整个分组失去意义 —— 会被删除并清掉剩余成员的关联。
+     */
+    removeMember(groupId: number, jobId: number): void;
+    /** 删除整组，并清掉所有成员的分组关联（让它们各自独立）。 */
+    deleteGroup(groupId: number): void;
 }
 export declare function createDedupGroupRepo(db: DatabaseSync): DedupGroupRepo;
 //# sourceMappingURL=dedup-groups.d.ts.map

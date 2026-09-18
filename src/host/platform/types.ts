@@ -45,8 +45,34 @@ export interface SearchCriteria {
   sort?: string
   /** 发布时间窗（SR-40）：天。 */
   postedWithinDays?: number
+  /**
+   * 平台特有筛选维度的值（**适配器在 `criteriaDimensions` 里声明过才会有值**）。
+   *
+   * 为什么不直接摊平成 `workExp` / `education` 这样的顶层键：
+   * 一个方案可以同时选**多个平台**，而同一个键在不同平台的含义可能不同
+   * （`type` 在神仙外企是"外企/不限"，在别的平台可能是别的意思）。
+   * 摊平之后，没声明过这个键的适配器会把它当成"自由参数"拼进自己的 URL ——
+   * 那是静默的语义污染；放在一个显式的命名空间里，适配器只有主动去读才拿得到。
+   *
+   * 落地例子：`{ workExp: '3', education: '2', type: '1' }`（神仙外企）。
+   */
+  platform?: Record<string, string>
   /** 平台特有的补充参数（来自方案配置）。 */
   extra?: Record<string, string>
+}
+
+/**
+ * 读一个平台特有维度的值。
+ *
+ * 存在的理由：适配器可能被两种方式构造 ——
+ * 由 `criteriaToSearchCriteria`（走 `platform` 命名空间），或者由调用方直接拼一个
+ * `SearchCriteria`（测试、脚本）。这个助手让两种来路读法一致，不必在每个调用点写两遍。
+ */
+export function platformCriterion(criteria: SearchCriteria, key: string): string {
+  const scoped = criteria.platform?.[key]
+  if (scoped !== undefined && scoped !== '') return scoped
+  const loose = (criteria as Record<string, unknown>)[key]
+  return typeof loose === 'string' ? loose : ''
 }
 
 /**
@@ -155,6 +181,18 @@ export interface SiteAdapter {
     gotoSearch(page: PageLike, criteria: SearchCriteria): Promise<void>
     readListPage(page: PageLike): Promise<RawJob[]>
     hasNextPage(page: PageLike): Promise<boolean>
+  }
+
+  /**
+   * 详情页解析（可选，P2 详情抓取）。
+   *
+   * 只在有**已验证选择器证据**的平台实现（如 zhipin：BossHunter site-patterns
+   * 2026-05-26 验证过 `.job-sec-text` 等选择器）；没有证据就不声明 ——
+   * 调用方据此如实降级（ jdText 留空，而不是编一份）。
+   */
+  detail?: {
+    /** 在已导航到岗位详情页的页面上解析 JD 与扩展字段。 */
+    extract(page: PageLike): Promise<RawJobDetail>
   }
 
   guard: {

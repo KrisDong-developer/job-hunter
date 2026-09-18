@@ -9,3 +9,4 @@ node_modules/
 # 唯一忽略的是 sourcemap —— 运行时用不到，只为省仓库体积。
 lib/**/*.map
 client/**/*.map
+.probe*

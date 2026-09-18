@@ -61,12 +61,17 @@
     "clean": "node scripts/clean.mjs",
     "verify": "node scripts/verify.mjs",
     "test": "node scripts/test.mjs",
-    "crawl:fixture": "node scripts/run-ts.mjs test/tools/crawl-fixture.ts"
+    "crawl:fixture": "node scripts/run-ts.mjs test/tools/crawl-fixture.ts",
+    "probe:liepin": "node scripts/run-ts.mjs test/tools/probe-liepin-v8.ts",
+    "probe:lagou": "node scripts/run-ts.mjs test/tools/probe-lagou.ts",
+    "probe:zhipin": "node scripts/run-ts.mjs test/tools/probe-zhipin.ts",
+    "probe:waiqi": "node scripts/run-ts.mjs test/tools/probe-waiqi.ts"
   },
   "peerDependencies": {
     "react": "^18.2.0"
   },
   "dependencies": {
+    "patchright": "^1.63.0",
     "playwright-core": "^1.63.0"
   },
   "devDependencies": {

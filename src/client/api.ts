@@ -31,6 +31,7 @@ import type {
   InterviewConflictDto,
   InterviewDto,
   InterviewPrepDto,
+  InterviewSuggestionDto,
   MessageDto,
   ResumeCompareDto,
   SalaryBandDto,
@@ -85,7 +86,7 @@ import type {
   TodayDto,
   WeeklyTriggerDto,
 } from '../shared/dto.js'
-import type { JobState } from '../shared/enums.js'
+import type { JobFlagType, JobState } from '../shared/enums.js'
 import type { ResumeContent } from '../shared/resume.js'
 
 export type {
@@ -114,7 +115,20 @@ export type {
   WeeklyTriggerDto,
 }
 
-/** 带宿主返回的 `code` / `hint` 的 API 错误，界面可以直接把 `hint` 显示给用户。 */
+/**
+ * 客户端调用宿主 API 失败时的统一错误类型。
+ *
+ * 宿主接口遵循统一响应协议（`{ ok, code, message, hint? }`），本类把
+ * HTTP 状态码、机器可读错误码、以及面向用户的可读提示打包成一个 Error，
+ * 界面层拿到后可以直接把 `display` 展示给用户，无需再解析原始响应体。
+ *
+ * 字段说明：
+ * - `status`：HTTP 状态码，用于日志与请求调试定位。
+ * - `code`：机器可读错误码（如 `NEEDS_CONFIRM`、`GUARD_DENIED`），供逻辑分支判断。
+ * - `hint`：宿主返回的用户可读文案；为空时界面退化为使用 `message`。
+ * - `body`：原始响应体。审批类流程需要读其中的额外字段（如 `confirmText`）。
+ * - `display`：给用户看的一行字，优先采用宿主给的 `hint`。
+ */
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -182,9 +196,13 @@ export async function fetchToday(signal?: AbortSignal): Promise<TodayDto> {
 
 export interface JobListParams {
   q?: string
+  /** 城市数组：命中任意一个即可。 */
+  cities?: string[]
   city?: string
   state?: string
   minSalary?: number | null
+  /** 屏蔽这些标注类型的岗位（传出 `excludeFlags`，黑白名单只有这里的类型）。 */
+  excludeFlags?: JobFlagType[]
   orderBy?: string
   descending?: boolean
   page?: number
@@ -194,16 +212,29 @@ export interface JobListParams {
 export async function fetchJobs(params: JobListParams, signal?: AbortSignal): Promise<JobPageDto> {
   const query = new URLSearchParams()
   if (params.q !== undefined && params.q !== '') query.set('q', params.q)
-  if (params.city !== undefined && params.city !== '') query.set('city', params.city)
+  if (params.cities !== undefined && params.cities.length > 0) query.set('cities', params.cities.join(','))
+  else if (params.city !== undefined && params.city !== '') query.set('city', params.city)
   if (params.state !== undefined && params.state !== '') query.set('state', params.state)
   if (params.minSalary !== undefined && params.minSalary !== null) {
     query.set('minSalary', String(params.minSalary))
+  }
+  if (params.excludeFlags !== undefined && params.excludeFlags.length > 0) {
+    query.set('excludeFlags', params.excludeFlags.join(','))
   }
   if (params.orderBy !== undefined && params.orderBy !== '') query.set('orderBy', params.orderBy)
   query.set('desc', params.descending === false ? '0' : '1')
   query.set('page', String(params.page ?? 1))
   query.set('pageSize', String(params.pageSize ?? 20))
   return await request<JobPageDto>(`/jobs?${query.toString()}`, signal === undefined ? {} : { signal })
+}
+
+/** 出去重后的城市列表（界面多选城市用）。 */
+export async function fetchJobCities(signal?: AbortSignal): Promise<string[]> {
+  const result = await request<{ ok?: boolean; items: string[] }>(
+    '/jobs/cities',
+    signal === undefined ? {} : { signal },
+  )
+  return result.items
 }
 
 export async function fetchJobDetail(id: number, signal?: AbortSignal): Promise<JobDetailDto> {
@@ -464,6 +495,8 @@ export interface SettingsDto {
     requireApproval: boolean
     auditEnabled: boolean
   }
+  /** 浏览器运行期设置（目前只有空闲自关）。不是闸门配置，模型也可改。 */
+  browser: { idleCloseMinutes: number }
   derived: {
     purposes: Array<{ purpose: string; label: string; enabled: boolean }>
     modelEditable: string[]
@@ -484,8 +517,15 @@ export async function draftGreeting(
 }
 
 /**
- * 发送打招呼。**两段式**：第一次不带 `confirm`，宿主会返回 409 `NEEDS_CONFIRM`
- * 与要展示给用户的文案；用户点了确认再带 `confirm: true` 重发。
+ * 「高危动作需要用户二次确认」的客户端错误。
+ *
+ * 宿主对危险操作采用**两段式确认**协议：第一次请求不带确认标志时，宿主返回
+ * 409 `NEEDS_CONFIRM` 并携带 `confirmText` 文案；界面收到本错误后把
+ * `confirmText` 展示给用户，用户点确认后再带 `confirm: true` 重发同一请求。
+ *
+ * 这是 HTTP 层 `ConfirmRequiredError` 在客户端的对应投影——`request` 捕获到
+ * `ApiError`（code 为 `NEEDS_CONFIRM`）后翻译成该语义明确的类型，
+ * 界面可用 `instanceof` 精准分支处理确认流程。
  */
 export class NeedsConfirmError extends Error {
   readonly code = 'NEEDS_CONFIRM'
@@ -524,6 +564,7 @@ export async function fetchSettings(signal?: AbortSignal): Promise<SettingsDto> 
 export async function updateSettings(patch: {
   ai?: Record<string, unknown>
   guard?: Record<string, unknown>
+  browser?: Record<string, unknown>
 }): Promise<SettingsDto> {
   const result = await request<{ ok: boolean; settings: SettingsDto }>('/settings', {
     method: 'PATCH',
@@ -692,6 +733,7 @@ export type {
   InterviewConflictDto,
   InterviewDto,
   InterviewPrepDto,
+  InterviewSuggestionDto,
   MessageDto,
   ResumeCompareDto,
   SalaryBandDto,
@@ -765,6 +807,18 @@ export async function fetchInbox(
   if (filter.unreadOnly === true) query.set('unread', '1')
   const suffix = query.toString() === '' ? '' : `?${query.toString()}`
   return await request<InboxDto>(`/inbox${suffix}`, signal === undefined ? {} : { signal })
+}
+
+/**
+ * 从消息里抽出面试安排（「一键进日程」前置）。**只识别、不写库**。
+ * 返回值里的字段都要用户确认后才真正创建面试。
+ */
+export async function extractInterview(id: number): Promise<InterviewSuggestionDto> {
+  const result = await request<{ ok: boolean; extraction: InterviewSuggestionDto }>(
+    `/messages/${String(id)}/extract-interview`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+  return result.extraction
 }
 
 export async function recordMessage(input: {

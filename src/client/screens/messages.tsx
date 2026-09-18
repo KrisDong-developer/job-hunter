@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { INTERVIEW_KIND_LABEL, INTERVIEW_STATE_LABEL } from '../../shared/enums.js'
+import { INTERVIEW_KIND_LABEL, INTERVIEW_KINDS, INTERVIEW_STATE_LABEL } from '../../shared/enums.js'
 import type { InterviewKind, InterviewState } from '../../shared/enums.js'
+import type { MessageDto } from '../../shared/dto.js'
 import {
   ApiError,
   createInterview,
   deleteInterview,
+  extractInterview,
   fetchInbox,
   fetchInterviewPrep,
   fetchInterviews,
@@ -36,6 +38,73 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  /** 「识别日程」面板：从消息抽出并让用户确认后再建面试（识别 ≠ 改状态）。 */
+  const [extracting, setExtracting] = useState<number | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [extractPanel, setExtractPanel] = useState<{
+    messageId: number
+    jobId: number | null
+    at: string
+    kind: InterviewKind
+    place: string
+    link: string
+    via: 'llm' | 'fallback'
+    notes: string[]
+  } | null>(null)
+
+  const patchExtract = (patch: Partial<NonNullable<typeof extractPanel>>): void => {
+    setExtractPanel((current) => (current === null ? null : { ...current, ...patch }))
+  }
+
+  const handleExtract = async (message: MessageDto): Promise<void> => {
+    setExtracting(message.id)
+    setError(null)
+    try {
+      const suggestion = await extractInterview(message.id)
+      setExtractPanel({
+        messageId: message.id,
+        jobId: message.jobId,
+        at: suggestion.at ?? '',
+        kind: suggestion.kind ?? 'video',
+        place: suggestion.place ?? '',
+        link: suggestion.link ?? '',
+        via: suggestion.via,
+        notes: suggestion.notes,
+      })
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError ? caught.display : caught instanceof Error ? caught.message : String(caught),
+      )
+    } finally {
+      setExtracting(null)
+    }
+  }
+
+  const confirmInterview = async (): Promise<void> => {
+    const panel = extractPanel
+    if (panel === null || panel.at === '') return
+    setCreating(true)
+    setError(null)
+    try {
+      await createInterview({
+        at: new Date(panel.at).toISOString(),
+        kind: panel.kind,
+        ...(panel.jobId === null ? {} : { jobId: panel.jobId }),
+        ...(panel.place.trim() === '' ? {} : { place: panel.place.trim() }),
+        ...(panel.link.trim() === '' ? {} : { link: panel.link.trim() }),
+      })
+      setNotice('已加入面试日程 —— 建议到「面试日程」里再核对一遍时间与形式。')
+      setExtractPanel(null)
+      props.onChanged()
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError ? caught.display : caught instanceof Error ? caught.message : String(caught),
+      )
+    } finally {
+      setCreating(false)
+    }
+  }
 
   const data = filtered.state.status === 'ok' ? filtered.state.data : inbox.state.status === 'ok' ? inbox.state.data : null
 
@@ -81,6 +150,9 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
         <textarea
           className="jh-textarea"
           rows={2}
+          /* 录入框必须有可访问名称：原来只有 placeholder，
+             输入一次之后 placeholder 就消失，读屏也拿不到标签。 */
+          aria-label="要录入的消息内容"
           placeholder="把 HR 发来的消息贴在这里…"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -137,6 +209,16 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
                   <button
                     type="button"
                     className="jh-btn jh-btn-inline"
+                    disabled={extracting !== null}
+                    onClick={() => void handleExtract(message)}
+                  >
+                    {extracting === message.id ? '识别中…' : '识别日程'}
+                  </button>
+                ) : null}
+                {message.direction === 'hr' ? (
+                  <button
+                    type="button"
+                    className="jh-btn jh-btn-inline"
                     onClick={() => {
                       setReplyTo(replyTo === message.id ? null : message.id)
                       setReplyText('')
@@ -152,6 +234,67 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
                   ⚠ 疑似面试邀约（命中：{message.inviteSignal.keywords.join('、')}）
                   —— 这只是提示，改状态请到「面试日程」里显式新建一场。
                 </p>
+              ) : null}
+              {extractPanel !== null && extractPanel.messageId === message.id ? (
+                <div className="jh-message-reply">
+                  <p className="jh-muted">
+                    识别结果（来源：{extractPanel.via === 'llm' ? '模型' : '规则'}）—— 核对后确认才进日程。
+                  </p>
+                  <div className="jh-inline">
+                    <input
+                      className="jh-input"
+                      type="datetime-local"
+                      aria-label="面试时间"
+                      value={extractPanel.at}
+                      onChange={(event) => patchExtract({ at: event.target.value })}
+                    />
+                    <select
+                      className="jh-select jh-input-sm"
+                      aria-label="面试形式"
+                      value={extractPanel.kind}
+                      onChange={(event) => patchExtract({ kind: event.target.value as InterviewKind })}
+                    >
+                      {INTERVIEW_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>{INTERVIEW_KIND_LABEL[kind]}</option>
+                      ))}
+                    </select>
+                    <input
+                      className="jh-input jh-input-sm"
+                      placeholder="地点"
+                      aria-label="地点"
+                      value={extractPanel.place}
+                      onChange={(event) => patchExtract({ place: event.target.value })}
+                    />
+                    <input
+                      className="jh-input"
+                      placeholder="会议链接"
+                      aria-label="会议链接"
+                      value={extractPanel.link}
+                      onChange={(event) => patchExtract({ link: event.target.value })}
+                    />
+                  </div>
+                  {extractPanel.notes.length === 0 ? null : (
+                    <p className="jh-muted">{extractPanel.notes.join('；')}</p>
+                  )}
+                  <div className="jh-detail-actions">
+                    <button
+                      type="button"
+                      className="jh-btn"
+                      disabled={creating || extractPanel.at === ''}
+                      onClick={() => void confirmInterview()}
+                    >
+                      加入面试日程
+                    </button>
+                    <button
+                      type="button"
+                      className="jh-btn jh-btn-inline jh-btn-quiet"
+                      disabled={creating}
+                      onClick={() => setExtractPanel(null)}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
               ) : null}
               {replyTo === message.id ? (
                 <div className="jh-message-reply">
@@ -238,13 +381,16 @@ export function InterviewsScreen(props: { revision: number; onChanged: () => voi
       <div className="jh-card">
         <h3 className="jh-card-title">新增一场面试</h3>
         <div className="jh-inline">
+          {/* 这三个控件原来都没有可访问名称（只有类型与 placeholder 可见），
+              而它们必须填对才能录入一场面试 —— 读屏用户不知道哪个框是什么。 */}
           <input
             className="jh-input"
             type="datetime-local"
+            aria-label="面试时间"
             value={at}
             onChange={(event) => setAt(event.target.value)}
           />
-          <select className="jh-select" value={kind} onChange={(event) => setKind(event.target.value as InterviewKind)}>
+          <select className="jh-select" aria-label="面试形式" value={kind} onChange={(event) => setKind(event.target.value as InterviewKind)}>
             {(['onsite', 'video', 'phone', 'other'] as const).map((item) => (
               <option key={item} value={item}>
                 {INTERVIEW_KIND_LABEL[item]}
@@ -254,6 +400,7 @@ export function InterviewsScreen(props: { revision: number; onChanged: () => voi
           <input
             className="jh-input jh-input-narrow"
             type="number"
+            aria-label="单程通勤分钟数"
             placeholder="通勤分钟"
             value={commute}
             onChange={(event) => setCommute(event.target.value)}

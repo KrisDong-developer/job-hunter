@@ -32,7 +32,11 @@ export interface TodoRepo {
    * @returns 新建的 id；已存在时返回 null
    */
   createOnce(input: CreateTodoInput, now: string): number | null
-  listOpen(limit?: number): TodoRecord[]
+  listOpen(
+    filters?: number | { kind?: TodoKind; level?: TodoLevel; limit?: number },
+  ): TodoRecord[]
+  /** 读单条待办（含 detail），供"待确认动作一键执行/恢复"用。 */
+  get(id: number): TodoRecord | undefined
   countOpen(): number
   /** 用户点「知道了／忽略」。 */
   close(id: number, now: string): boolean
@@ -49,6 +53,22 @@ export function createTodoRepo(db: DatabaseSync): TodoRepo {
   )
   const selectOpen = db.prepare(
     "SELECT id, kind, level, title, ref, detail_json, due_at, state, created_at FROM todo WHERE state = 'open' ORDER BY CASE level WHEN 'urgent' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END, id DESC LIMIT ?",
+  )
+  const selectById = db.prepare('SELECT * FROM todo WHERE id = ?')
+  const listOpenFiltered = db.prepare(
+    "SELECT id, kind, level, title, ref, detail_json, due_at, state, created_at FROM todo WHERE state = 'open'" +
+      ' AND kind = ? AND level = ?' +
+      " ORDER BY CASE level WHEN 'urgent' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END, id DESC LIMIT ?",
+  )
+  const listOpenKind = db.prepare(
+    "SELECT id, kind, level, title, ref, detail_json, due_at, state, created_at FROM todo WHERE state = 'open'" +
+      ' AND kind = ?' +
+      " ORDER BY CASE level WHEN 'urgent' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END, id DESC LIMIT ?",
+  )
+  const listOpenLevel = db.prepare(
+    "SELECT id, kind, level, title, ref, detail_json, due_at, state, created_at FROM todo WHERE state = 'open'" +
+      ' AND level = ?' +
+      " ORDER BY CASE level WHEN 'urgent' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END, id DESC LIMIT ?",
   )
   const countOpenStmt = db.prepare("SELECT count(*) AS n FROM todo WHERE state = 'open'")
   const closeByIdStmt = db.prepare("UPDATE todo SET state = 'closed', read_at = ? WHERE id = ? AND state = 'open'")
@@ -88,8 +108,26 @@ export function createTodoRepo(db: DatabaseSync): TodoRepo {
       if (existing !== undefined) return null
       return create(input, now)
     },
-    listOpen(limit = 50): TodoRecord[] {
+    listOpen(filters): TodoRecord[] {
+      if (typeof filters === 'number') {
+        return (selectOpen.all(filters) as Row[]).map(toRecord)
+      }
+      const options = filters ?? {}
+      const limit = options.limit ?? 50
+      if (options.kind !== undefined && options.level !== undefined) {
+        return (listOpenFiltered.all(options.kind, options.level, limit) as Row[]).map(toRecord)
+      }
+      if (options.kind !== undefined) {
+        return (listOpenKind.all(options.kind, limit) as Row[]).map(toRecord)
+      }
+      if (options.level !== undefined) {
+        return (listOpenLevel.all(options.level, limit) as Row[]).map(toRecord)
+      }
       return (selectOpen.all(limit) as Row[]).map(toRecord)
+    },
+    get(id): TodoRecord | undefined {
+      const row = selectById.get(id) as Row | undefined
+      return row === undefined ? undefined : toRecord(row)
     },
     countOpen(): number {
       const row = countOpenStmt.get() as Row | undefined

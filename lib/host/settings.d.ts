@@ -9,6 +9,7 @@
  * 中危 + 模型发起 → 走审批（模型扩大自身权限正是 D-14 要防的事）。
  */
 import type { AiConfig, AiConfigPatch, AiPurpose } from './ai/purposes.js';
+import type { BrowserConfig } from './browser-config.js';
 import type { SettingsWriteDeps } from './guard/actions/settings.js';
 import type { GuardToken } from './guard/token.js';
 import { type GuardConfig } from './guard/rules.js';
@@ -16,6 +17,8 @@ import type { Store } from './store/store.js';
 export interface SettingsSnapshot {
     ai: AiConfig;
     guard: GuardConfig;
+    /** 浏览器运行期设置（目前只有空闲自关）。**不是**闸门配置。 */
+    browser: BrowserConfig;
     /** 供界面展示"这些开关现在是什么状态"的派生信息。 */
     derived: {
         /** 每个用途是否真的可用（总开关 + 用途开关）。 */
@@ -32,6 +35,7 @@ export interface SettingsSnapshot {
 export interface SettingsPatch {
     ai?: AiConfigPatch;
     guard?: Partial<GuardConfig>;
+    browser?: Partial<BrowserConfig>;
 }
 export interface SettingsService {
     snapshot(): SettingsSnapshot;
@@ -43,12 +47,22 @@ export interface SettingsDeps extends SettingsWriteDeps {
         config(): AiConfig;
         setConfig(patch: AiConfigPatch): AiConfig;
     };
+    /**
+     * 浏览器运行期设置。
+     *
+     * `write` **必须**同时把新值作用到浏览器实例上（不只是落库）——
+     * 否则界面上显示"已改成 5 分钟"，实际还是旧值，这类"设置不生效"最难查。
+     */
+    browser: {
+        read(): BrowserConfig;
+        write(patch: Partial<BrowserConfig>): BrowserConfig;
+    };
     clock?: () => string;
 }
 /** 模型**不能**改的键（与 `guard/rules.ts` 的 `FORBIDDEN_FOR_MODEL` 同源）。 */
-export declare const MODEL_FORBIDDEN_KEYS: readonly ["requireApproval", "auditEnabled", "batchLimit", "dailyLimits", "cooldownMinutes"];
+export declare const MODEL_FORBIDDEN_KEYS: readonly ["requireApproval", "auditEnabled", "batchLimit", "dailyLimits", "cooldownMinutes", "sendWindow", "dayOffProbability"];
 /** 模型能改的键：只影响"读什么、用什么"，不影响闸门本身。 */
-export declare const MODEL_EDITABLE_KEYS: readonly ["ai", "levels"];
+export declare const MODEL_EDITABLE_KEYS: readonly ["ai", "levels", "browser"];
 export declare function createSettingsService(deps: SettingsDeps): SettingsService;
 /** 把用户能看懂的一行摘要给审批文案用。 */
 export declare function describeSettingsPatch(patch: SettingsPatch): string;

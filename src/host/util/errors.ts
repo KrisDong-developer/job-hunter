@@ -44,7 +44,19 @@ export interface DomainErrorInit {
   cause?: unknown
 }
 
-/** 领域层唯一的错误类型。 */
+/**
+ * 领域层唯一的类型化错误（§9 错误模型）。
+ *
+ * 领域层（domain / store / platform）抛出的所有失败都以本类型表达，
+ * 入口层（HTTP 路由 / 模型工具）负责捕获并把 `code` / `hint` 翻译成
+ * 对外状态码与可读提示。
+ *
+ * - `code`：机器可读错误码（`DomainErrorCode`），驱动状态码映射与逻辑分支。
+ * - `hint`：给用户看的一句话，必须**可操作**（例如“BOSS 未登录，请先在平台页登录”）。
+ * - `detail`：机器可读的补充信息（键值对）。
+ * - `status`：根据 `code` 映射出的 HTTP 状态码（getter）。
+ * - `toJson()`：序列化为统一的 `{ ok: false, ... }` 响应体。
+ */
 export class DomainError extends Error {
   readonly code: DomainErrorCode
   readonly hint: string | undefined

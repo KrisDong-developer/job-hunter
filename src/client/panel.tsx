@@ -112,12 +112,17 @@ export function JobHunterPanel() {
       <header className="jh-topbar">
         <h1 className="jh-title">求职找工作</h1>
         <span className="jh-badge">{PHASE}</span>
-        <nav className="jh-tabs">
+        {/* aria-label：读屏要先知道"这是什么导航"，否则只听到十个按钮。
+            （同文件的 .jh-pager 早就这么做了，这里之前漏了。） */}
+        <nav className="jh-tabs" aria-label="求职找工作分区">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
               className={`jh-tab${screen === tab.key ? ' jh-tab-active' : ''}`}
+              /* aria-current：当前分区**只由 CSS 类表达**，读屏听不出来。
+                 这里是"整屏替换"的分区导航，不是 tablist，所以用 aria-current 而不是 aria-selected。 */
+              aria-current={screen === tab.key ? 'page' : undefined}
               onClick={() => {
                 setScreen(tab.key)
                 // 换标签就丢掉选中的岗位：详情要么在岗位库里当右栏，要么当抽屉盖在上面，
@@ -130,8 +135,10 @@ export function JobHunterPanel() {
           ))}
         </nav>
         <span className="jh-spacer" />
-        <span className={`jh-live jh-live-${stream.status}`} title={PLUGIN_ID}>
-          <i className="jh-dot" />
+        {/* role="status"：SSE 断开是用户需要知道的状态变化，
+            之前只靠颜色和文字，读屏完全静默（全项目 aria-live 计数为 0）。 */}
+        <span className={`jh-live jh-live-${stream.status}`} title={PLUGIN_ID} role="status">
+          <i className="jh-dot" aria-hidden="true" />
           {STREAM_LABEL[stream.status] ?? stream.status}
         </span>
         <button type="button" className="jh-btn jh-btn-inline" onClick={backToConversation}>
@@ -139,7 +146,8 @@ export function JobHunterPanel() {
         </button>
       </header>
 
-      <div className="jh-body">
+      {/* role="main"：面板是这一屏的主内容，之前没有任何 main landmark（10 屏全部缺失）。 */}
+      <div className="jh-body" role="main">
         {screen === 'today' ? (
           <TodayScreen
             revision={revision}

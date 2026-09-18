@@ -5,6 +5,8 @@ import {
   createFiftyOneAdapter,
   DEFAULT_FIFTYONE_CONFIG,
   mergeFiftyOneConfig,
+  POSTED_WITHIN_OPTIONS,
+  SORT_OPTIONS,
   type FiftyOneConfig,
 } from '../../src/host/platform/adapters/fiftyone-job.js'
 import { JsdomPage } from '../support/jsdom-page.js'
@@ -33,6 +35,55 @@ test('字段 → URL 参数映射：城市码是人工维护的配置', () => {
 test('未知城市返回 null —— 不猜城市码', () => {
   const adapter = createFiftyOneAdapter()
   assert.equal(adapter.criteria.buildSearchUrl({ keyword: 'Java', city: '不存在的城市' }), null)
+})
+
+test('排序取值域与实测一致：最新=1 / 薪资=3 / 活跃=5，且无「距离优先」', () => {
+  // 探针 2026-09 实测：综合=0、最新优先=1、薪资优先=3、活跃职位优先=5；
+  // 「距离优先」平台未启用、无实值，故**不**提供。
+  assert.deepEqual(
+    SORT_OPTIONS.map((o) => o.value),
+    ['0', '1', '3', '5'],
+  )
+  const labels = SORT_OPTIONS.map((o) => o.label)
+  assert.equal(labels.includes('距离最近') || labels.includes('距离优先'), false)
+  // 最新优先确实是 1、薪资确实是 3 —— 修正的是旧版「薪资=1 / 最新=2」的错位。
+  assert.equal(SORT_OPTIONS.find((o) => o.label === '最新优先')?.value, '1')
+  assert.equal(SORT_OPTIONS.find((o) => o.label === '薪资优先')?.value, '3')
+})
+
+test('发布时间维度不提供取值 —— 探针实测搜索页无该控件（API 的 issueDate 恒为空）', () => {
+  assert.deepEqual(POSTED_WITHIN_OPTIONS, [])
+  const adapter = createFiftyOneAdapter()
+  const posted = adapter.criteriaDimensions.find((d) => d.key === 'postedWithinDays')
+  assert.ok(posted)
+  assert.deepEqual(posted.values, [])
+})
+
+test('排序映射进 URL：最新优先 → sortType=1', () => {
+  const adapter = createFiftyOneAdapter()
+  assert.equal(
+    adapter.criteria.buildSearchUrl({ keyword: 'Java', sort: '1' }),
+    'https://we.51job.com/pc/search?keyword=Java&sortType=1',
+  )
+})
+
+test('Element Plus 分页：末页「下一页」带原生 disabled 属性 → 判定没有下一页', async () => {
+  const adapter = createFiftyOneAdapter()
+  // 可用的下一页（Element Plus 真实形态：`.btn-next`，无 disabled）
+  const enabled = page(
+    '<html><body><div class="el-pagination is-background"><button class="btn-next"><i class="el-icon el-icon-arrow-right"></i></button></div></body></html>',
+  )
+  assert.equal(await adapter.crawl.hasNextPage(enabled), true)
+
+  // 末页：`.btn-next` 带原生 `disabled` 属性（探针实测 `<button class="btn-next" disabled="disabled">`）
+  const disabledPage = page(
+    '<html><body><div class="el-pagination is-background"><button class="btn-next" disabled="disabled"><i class="el-icon el-icon-arrow-right"></i></button></div></body></html>',
+  )
+  assert.equal(await adapter.crawl.hasNextPage(disabledPage), false)
+
+  // 没有分页区 → 判定没有下一页
+  const noPagination = page('<html><body><div class="joblist"></div></body></html>')
+  assert.equal(await adapter.crawl.hasNextPage(noPagination), false)
 })
 
 test('DB 覆盖能合并到默认配置上（ADR-19：配置以 DB 为权威）', () => {

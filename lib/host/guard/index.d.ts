@@ -6,10 +6,18 @@ import { type GuardConfig, type RuleVerdict } from './rules.js';
 import { type GuardAuthority, type GuardToken } from './token.js';
 import type { GuardInput } from './types.js';
 /**
- * 「这一步需要用户确认，但还没问」。
+ * 「这一步需要用户确认，但还没问」的安全闸门错误。
  *
- * **不是拒绝** —— 所以它不写 `denied` 审计、不建待办。
- * 界面收到它 → 把 `confirmText` 显示给用户 → 用户点确认 → 带 `guiConfirmed: true` 重发。
+ * 由 guard 在审批环节抛出的信号：危险动作（或模型发起的操作）按 §4.4 必须先
+ * 征求用户确认，本错误表示**确认尚未发生**，动作也未执行。
+ *
+ * **不是拒绝** —— 所以它不写 `denied` 审计、不建待办，与真正的拦截（`GUARD_DENIED`）
+ * 语义不同。界面收到它 → 用 `text()` 把确认文案显示给用户 → 用户点确认 →
+ * 带 `guiConfirmed: true` 重发同一请求，guard 才会放行并签发令牌。
+ *
+ * - `code`：固定为 `NEEDS_CONFIRM`，供上层按错误码分支。
+ * - `request`：待确认的审批请求（`ApprovalRequest`），包含发起者/平台/目标/内容全文/简历版本。
+ * - `text()`：渲染给人看的确认文案（§4.4.2 要求的内容）。
  */
 export declare class ConfirmRequiredError extends Error {
     readonly request: ApprovalRequest;

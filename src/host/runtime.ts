@@ -70,8 +70,18 @@ import { createGuard } from './guard/index.js'
 import type { Actor } from './guard/types.js'
 import { createEventBus, type EventBus } from './http/sse.js'
 import { createFiftyOneAdapter, mergeFiftyOneConfig } from './platform/adapters/fiftyone-job.js'
+import { createGuopinAdapter, mergeGuopinConfig } from './platform/adapters/guopin.js'
+import { createHiredChinaAdapter, mergeHiredChinaConfig } from './platform/adapters/hiredchina.js'
+import { createLagouAdapter, mergeLagouConfig } from './platform/adapters/lagou.js'
+import { createIndeedAdapter, mergeIndeedConfig } from './platform/adapters/indeed.js'
+import { createLiepinAdapter, mergeLiepinConfig } from './platform/adapters/liepin.js'
+import { createWaiqiAdapter, mergeWaiqiConfig } from './platform/adapters/waiqi-job.js'
+import { createZhaopinAdapter, mergeZhaopinConfig } from './platform/adapters/zhaopin.js'
+import { createZhipinAdapter, mergeZhipinConfig } from './platform/adapters/zhipin.js'
+import { createSinoJobsAdapter, mergeSinoJobsConfig } from './platform/adapters/sinojobs.js'
 import type { BrowserManager } from './platform/browser.js'
 import { browserPageSource, createBrowserManager } from './platform/browser.js'
+import { readBrowserConfig, writeBrowserConfig } from './browser-config.js'
 import { readAdapterHealth } from './platform/health.js'
 import type { LeaseManager } from './platform/lease.js'
 import { createLease } from './platform/lease.js'
@@ -307,6 +317,18 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
   const browser = createBrowserManager({
     profileDir: join(dataDir, 'browser-profile'),
     ...(logger === undefined ? {} : { logger }),
+    /* 空闲自关（NFR-7 / C12）。
+       idleCloseMs 由设置决定，但**设置存在 store 里，而 store 要等租约拿到才打开**
+       （见下面 `opened = openStore(...)`）—— 所以这里先不传时长，
+       等 store 就绪后立即 `browser.setIdleCloseMs(...)` 一次。
+       守卫用闭包读**调用时**的状态，因此不必关心初始化顺序。 */
+    shouldKeepAlive: (): boolean => {
+      // 登录引导轮询中：那是用户正在输密码的窗口，绝不能关
+      if (loginFlow?.isRunning() === true) return false
+      // 采集 / 补跑进行中：互斥锁被持有
+      if (mutex.isBusy()) return false
+      return true
+    },
   })
 
   let store: Store | undefined
@@ -518,6 +540,21 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
 
     store = opened
 
+    // 设置存在库里，而库要等租约拿到才打开 —— 所以空闲关闭时长在这里才装上。
+    // 用户改设置时 settings 服务会再调一次 setIdleCloseMs，无需重启。
+    try {
+      const browserRuntimeConfig = readBrowserConfig(opened)
+      browser.setIdleCloseMs(browserRuntimeConfig.idleCloseMinutes * 60_000)
+      // D-17a 环境一致性：引擎偏好与 stealth 注入开关（浏览器未启动时立即生效，
+      // 已启动则等空闲自关后的下一次启动生效）。
+      browser.applyRuntimeConfig({
+        engine: browserRuntimeConfig.engine,
+        stealthInit: browserRuntimeConfig.stealthInit,
+      })
+    } catch (error) {
+      logger?.warn(`[${PLUGIN_ID}] 读取浏览器设置失败：${messageOf(error)}`)
+    }
+
     // SR-15（A3）：**崩溃安全**。进程被强杀时 `finish()` 没机会执行，
     // 那条 crawl_run 会永远停在 `running`，于是界面上永远显示"正在跑"。
     // 启动时收敛超阈值的悬挂记录；没找到就什么都不做（正常启动的代价为零）。
@@ -559,6 +596,122 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     )
     logger?.info(
       `[${PLUGIN_ID}] 适配器 51job 已注册（配置来源：${override === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // 拉勾（lagou.com）：列表公开可爬，但被 WAF 滑块挡门（antiBot=high）——
+    // 关键词进路径段、城市用中文名；翻页读「下一页」真实 href，不自己拼拼音 slug。
+    // 详见适配器文件头。
+    const lagouOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'lagou')
+    registry.register(
+      createLagouAdapter({
+        config: mergeLagouConfig(lagouOverride),
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 lagou 已注册（配置来源：${lagouOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // 神仙外企（waiqi.com）：列表走接口、DOM 不承载岗位数据 —— 详见适配器文件头。
+    const waiqiOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'waiqi')
+    registry.register(
+      createWaiqiAdapter({
+        config: mergeWaiqiConfig(waiqiOverride),
+        // P5：请求之间要随机延时，别踩出规律性的节奏
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 waiqi 已注册（配置来源：${waiqiOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // 智联招聘（zhaopin.com）：搜索页是 /sou/jl<城市码>，**不是** /jobs?jl= 那条老路由 ——
+    // 两条路由的 DOM 完全不同，详见适配器文件头。
+    const zhaopinOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'zhaopin')
+    registry.register(
+      createZhaopinAdapter({
+        config: mergeZhaopinConfig(zhaopinOverride),
+        // P5：请求之间要随机延时，别踩出规律性的节奏
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 zhaopin 已注册（配置来源：${zhaopinOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // 猎聘（liepin.com）：风控最强（检测"CDP 控制页面"本身）—— 依赖 D-17a
+    // 环境一致性三件套（patchright 引擎 + stealth 注入 + 端口守卫，平台层已就位）。
+    // 适配器只做 URL 导航 + 语义锚点解析 + 判墙即停；锚点待 probe:liepin 夹具校准。
+    const liepinOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'liepin')
+    registry.register(
+      createLiepinAdapter({
+        config: mergeLiepinConfig(liepinOverride),
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 liepin 已注册（配置来源：${liepinOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // BOSS 直聘（zhipin.com）：与猎聘同路线（D-17a 三件套）。2026-09-18 夹具校准：
+    // 未登录可搜（薪资隐藏 → requiredFields 不含 salary_raw）；详情选择器来自
+    // BossHunter site-patterns（2026-05-26 验证）。
+    const zhipinOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'zhipin')
+    registry.register(
+      createZhipinAdapter({
+        config: mergeZhipinConfig(zhipinOverride),
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 zhipin 已注册（配置来源：${zhipinOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // Indeed（cn.indeed.com）：⚠️ 中国大陆站 2022 起停运，2026-09-18 实测搜索入口
+    // 302 重定向到 www.indeed.com 并被 Cloudflare 验证墙拦截。适配器按 Indeed JCS
+    // 稳定语义锚点实现，判墙即停（captcha/blank）；默认 host=cn.indeed.com 不可用，
+    // 需配 DB 覆盖换仍运营的域（如 sg/de.indeed.com）并校准夹具后才真实启用。
+    const indeedOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'indeed')
+    registry.register(
+      createIndeedAdapter({
+        config: mergeIndeedConfig(indeedOverride),
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 indeed 已注册（配置来源：${indeedOverride === undefined ? '代码默认' : 'DB 覆盖'}${
+        indeedOverride === undefined ? '；⚠️ 中国大陆站已停运，默认 host 不可用' : ''
+      }）`,
+    )
+
+    // 国聘网（iguopin.com）：「国聘行动」官方平台，央企/国企/事业单位为主。
+    // 2026-09-18 真实线上调研（列表页 /jobList?keyword=，详情 /job/detail?id=）。
+    // v1 语义锚点单页采集：分页参数与城市码未确证，**不编** —— 见适配器文件头。
+    const guopinOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'guopin')
+    registry.register(
+      createGuopinAdapter({
+        config: mergeGuopinConfig(guopinOverride),
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 guopin 已注册（配置来源：${guopinOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
+    )
+
+    // HiredChina（hiredchina.com）：面向在华外国人的招聘平台（eChinacities 同源）。
+    // 2026-09-18 真实调研 + 浏览器探针校准：列表 `/<lang>/jobs` 是 Next.js RSC 服务端渲染
+    // （可抓 DOM，无需页面内调接口）；卡片字段按 Tailwind 底色徽章区分；翻页 `?page=N` 已实测。
+    // 主站 www.hiredchina.com raw HTTP 会吃 Cloudflare managed challenge（真浏览器 + 登录态可过）；
+    // 探针/夹具走同源子域 hcweb.gicexpat.com（不拦截）。城市筛选参数未确证 → v1 不筛 —— 见适配器文件头。
+    const hiredchinaOverride = opened.setting.get<unknown>('adapter-config', 'platform', 'hiredchina')
+    registry.register(
+      createHiredChinaAdapter({
+        config: mergeHiredChinaConfig(hiredchinaOverride),
+        delayRangeMs: [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS],
+      }),
+    )
+    logger?.info(
+      `[${PLUGIN_ID}] 适配器 hiredchina 已注册（配置来源：${hiredchinaOverride === undefined ? '代码默认' : 'DB 覆盖'}）`,
     )
 
     // 平台实体随适配器注册一起登记：account_state 有指向 platform 的外键，
@@ -625,7 +778,21 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       },
     })
 
-    settings = createSettingsService({ store: opened, ai, clock })
+    settings = createSettingsService({
+      store: opened,
+      ai,
+      clock,
+      browser: {
+        read: () => readBrowserConfig(opened),
+        // 写完立刻作用到浏览器实例上：改设置不该要求重启插件
+        write: (patch) => {
+          const next = writeBrowserConfig(opened, patch, clock())
+          browser.setIdleCloseMs(next.idleCloseMinutes * 60_000)
+          browser.applyRuntimeConfig({ engine: next.engine, stealthInit: next.stealthInit })
+          return next
+        },
+      },
+    })
 
     // ── P7：跟进与看板 ──────────────────────────────────────────────
     // guardRun 把"走闸门"这件事以回调形式注进去，领域层因此不需要 import guard
@@ -665,6 +832,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       store: opened,
       clock,
       guardRun,
+      ai,
       ...(logger === undefined ? {} : { logger }),
     })
     interviews = createInterviewService({

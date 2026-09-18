@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { APPLICATION_CHANNEL_LABEL, APPLICATION_STAGE_LABEL } from '../../shared/enums.js'
+import {
+  APPLICATION_CHANNEL_LABEL,
+  APPLICATION_STAGE_LABEL,
+  NO_PROGRESS_DAYS,
+  TERMINAL_STAGES,
+  nextStageOf,
+} from '../../shared/enums.js'
 import type { ApplicationStage } from '../../shared/enums.js'
 import {
   SALARY_BASES,
@@ -64,12 +70,10 @@ export function PipelineScreen(props: { revision: number; onChanged: () => void;
   )
 
   const move = (card: BoardCardDto): void => {
-    // 简易推进：按阶段顺序走下一格。回退只在终态之间用（避免手滑）
-    const order: ApplicationStage[] = ['sent', 'viewed', 'interviewing', 'interviewed', 'offer']
-    const index = order.indexOf(card.stage)
-    if (index < 0 || index >= order.length - 1) return
-    const to = order[index + 1]
-    if (to === undefined) return
+    // 简易推进：按阶段顺序走下一格。终态没有下一格（nextStageOf 返回 null），
+    // 而那条路径现在**根本不会渲染按钮**，所以这里不必再静默吞掉点击。
+    const to = nextStageOf(card.stage)
+    if (to === null) return
     void run(card.applicationId, async () => await advanceApplication({ applicationId: card.applicationId, to }))
   }
 
@@ -91,72 +95,117 @@ export function PipelineScreen(props: { revision: number; onChanged: () => void;
           <p className="jh-muted">
             共 {board.state.data.total} 条投递
             {board.state.data.staleCount > 0 ? (
-              <i className="jh-warn"> · {board.state.data.staleCount} 条卡了 21 天以上</i>
+              <i className="jh-warn"> · {board.state.data.staleCount} 条卡了 {NO_PROGRESS_DAYS} 天以上</i>
             ) : null}
           </p>
-          <div className="jh-board">
-            {board.state.data.columns.map((column) => (
-              <section className="jh-board-col" key={column.stage}>
-                <header className="jh-board-head">
-                  {APPLICATION_STAGE_LABEL[column.stage]}
-                  <span className="jh-board-count">{column.cards.length}</span>
-                </header>
-                {column.cards.length === 0 ? (
-                  <p className="jh-muted jh-board-empty">—</p>
-                ) : (
-                  column.cards.map((card) => (
-                    <article className="jh-board-card" key={card.applicationId}>
-                      <button
-                        type="button"
-                        className="jh-board-title"
-                        onClick={() => props.onSelectJob(card.jobId)}
-                        title="打开岗位详情"
-                      >
-                        {card.jobTitle ?? `岗位 #${String(card.jobId)}`}
-                      </button>
-                      <span className="jh-muted jh-board-meta">
-                        {card.companyName ?? '未知公司'} · {APPLICATION_CHANNEL_LABEL[card.channel]}
-                        {card.resumeId === null ? '' : ` · 简历 #${String(card.resumeId)}`}
-                      </span>
-                      <span className={`jh-board-age${card.daysSinceStage >= 21 ? ' jh-warn' : ''}`}>
-                        卡了 {card.daysSinceStage} 天
-                      </span>
-                      <div className="jh-board-actions">
-                        <button
-                          type="button"
-                          className="jh-btn jh-btn-inline"
-                          disabled={busy !== null}
-                          onClick={() => move(card)}
-                        >
-                          推进
-                        </button>
-                        <button
-                          type="button"
-                          className="jh-btn jh-btn-inline"
-                          disabled={busy !== null}
-                          onClick={() => setOpenJobId(card.jobId)}
-                        >
-                          跟进记录
-                        </button>
-                        <button
-                          type="button"
-                          className="jh-btn jh-btn-inline"
-                          disabled={busy !== null}
-                          onClick={() =>
-                            void run(card.applicationId, async () =>
-                              await advanceApplication({ applicationId: card.applicationId, to: 'rejected' }),
-                            )
-                          }
-                        >
-                          已拒绝
-                        </button>
-                      </div>
-                    </article>
-                  ))
-                )}
-              </section>
+
+          {/* 整条流水线的形状 —— 七个阶段**全部**摆出来，一行读完。
+              为什么需要它：看板列多起来就要横向滚动（实测 1656px 对 1000px 容器），
+              而横向滚动恰恰把"我总共走到哪了"这个最该一眼看到的东西藏起来了。
+              这一行无论看板滚不滚都读得到，`data-active` 的小圆点标出有在途投递的阶段。 */}
+          <div className="jh-stage-strip">
+            <span className="jh-stage-strip-title">全流程</span>
+            {board.state.data.columns.map((column, index) => (
+              <span key={column.stage} className="jh-stage-strip-item"
+                data-zero={column.cards.length === 0 ? '1' : '0'}
+                data-active={column.stage === 'sent' ? '0' : column.cards.length > 0 ? '1' : '0'}>
+                {index === 0 ? null : <span className="jh-stage-strip-arrow" aria-hidden="true">→</span>}
+                <b className="jh-stage-strip-num">{column.cards.length}</b>
+                {APPLICATION_STAGE_LABEL[column.stage]}
+              </span>
             ))}
           </div>
+
+          {board.state.data.total === 0 ? (
+            <div className="jh-empty">
+              <p className="jh-muted">还没有投递记录。</p>
+              <p className="jh-muted">
+                去「岗位库」打开一个岗位，在详情里点「记一次投递」—— 这里就会开始记录它走到哪一步、
+                用的哪版简历、以及卡了多少天。
+              </p>
+            </div>
+          ) : (
+            <div className="jh-board">
+              {board.state.data.columns.map((column) => (
+                <section
+                  className={`jh-board-col${column.cards.length === 0 ? ' jh-board-col-empty' : ''}`}
+                  key={column.stage}
+                  aria-label={`${APPLICATION_STAGE_LABEL[column.stage]}：${String(column.cards.length)} 条`}
+                >
+                  {/* 这里是 <div> 而不是 <header>：<header> 落在 <section> 里会形成
+                      **作用域化的 banner landmark**，7 个看板列就是 7 个地标，
+                      读屏的地标列表被冲垮（实测这一屏 banner × 8）。视觉零变化。 */}
+                  <div className="jh-board-head">
+                    <span className="jh-board-head-label">{APPLICATION_STAGE_LABEL[column.stage]}</span>
+                    <span className="jh-board-count">{column.cards.length}</span>
+                  </div>
+                  {column.cards.length === 0 ? null : (
+                    column.cards.map((card) => (
+                      <article className="jh-board-card" key={card.applicationId}>
+                        <button
+                          type="button"
+                          className="jh-board-title"
+                          onClick={() => props.onSelectJob(card.jobId)}
+                          title="打开岗位详情"
+                        >
+                          {card.jobTitle ?? `岗位 #${String(card.jobId)}`}
+                        </button>
+                        <span className="jh-muted jh-board-meta">
+                          {card.companyName ?? '未知公司'} · {APPLICATION_CHANNEL_LABEL[card.channel]}
+                          {card.resumeId === null ? '' : ` · 简历 #${String(card.resumeId)}`}
+                        </span>
+                        <span className="jh-board-age">
+                          {card.daysSinceStage === 0
+                            ? '今天动的'
+                            : card.daysSinceStage >= NO_PROGRESS_DAYS
+                              ? `卡了 ${String(card.daysSinceStage)} 天 · 该催了`
+                              : `卡了 ${String(card.daysSinceStage)} 天`}
+                        </span>
+                        <div className="jh-board-actions">
+                          {nextStageOf(card.stage) === null ? null : (
+                            <button
+                              type="button"
+                              className="jh-btn jh-btn-inline"
+                              disabled={busy !== null}
+                              title={`把这条记录改到「${APPLICATION_STAGE_LABEL[nextStageOf(card.stage) as ApplicationStage]}」`}
+                              onClick={() => move(card)}
+                            >
+                              推进到{APPLICATION_STAGE_LABEL[nextStageOf(card.stage) as ApplicationStage]}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="jh-btn jh-btn-inline"
+                            disabled={busy !== null}
+                            onClick={() => setOpenJobId(card.jobId)}
+                          >
+                            投递记录
+                          </button>
+                          {/* 终态记录不再给动作按钮：原来「推进」在任何列都渲染着，
+                              到了 Offer/已拒绝/无回复就点了没反应（更像坏了）。
+                              这里按阶段决定，不给死按钮。 */}
+                          {TERMINAL_STAGES.includes(card.stage) ? null : (
+                            <button
+                              type="button"
+                              className="jh-btn jh-btn-inline jh-btn-danger-ghost"
+                              disabled={busy !== null}
+                              onClick={() =>
+                                void run(card.applicationId, async () =>
+                                  await advanceApplication({ applicationId: card.applicationId, to: 'rejected' }),
+                                )
+                              }
+                            >
+                              标记已拒绝
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </section>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -507,11 +556,11 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
                 <table className="jh-table">
                   <thead>
                     <tr>
-                      <th>分组</th>
-                      <th>样本</th>
-                      <th>P25</th>
-                      <th>中位</th>
-                      <th>P75</th>
+                      <th scope="col">分组</th>
+                      <th scope="col">样本</th>
+                      <th scope="col">P25</th>
+                      <th scope="col">中位</th>
+                      <th scope="col">P75</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -556,10 +605,10 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
             <table className="jh-table">
               <thead>
                 <tr>
-                  <th>简历版本</th>
-                  <th>投递数</th>
+                  <th scope="col">简历版本</th>
+                  <th scope="col">投递数</th>
                   {resumeCompare.state.data.stages.map((stage) => (
-                    <th key={stage.stage}>{stage.label}</th>
+                    <th scope="col" key={stage.stage}>{stage.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -664,12 +713,12 @@ function AttributionTable(props: { rows: Array<{ key: string; label: string; tot
     <table className="jh-table">
       <thead>
         <tr>
-          <th>分组</th>
-          <th>投递</th>
-          <th>已回复</th>
-          <th>面试</th>
-          <th>Offer</th>
-          <th>回复率</th>
+          <th scope="col">分组</th>
+          <th scope="col">投递</th>
+          <th scope="col">已回复</th>
+          <th scope="col">面试</th>
+          <th scope="col">Offer</th>
+          <th scope="col">回复率</th>
         </tr>
       </thead>
       <tbody>

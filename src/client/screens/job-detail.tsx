@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { JOB_FLAG_LABEL, type JobState } from '../../shared/enums.js'
 import { ApiError, fetchJobDetail, markJob } from '../api.js'
 import { JOB_ACTION_LABEL, JOB_STATE_LABEL, salaryDetail, splitJobTags } from '../labels.js'
 import { TailorPanel } from './tailor-panel.js'
 import { OverseasPanel } from './campus.js'
 import { InlineMd } from '../inline-md.js'
+import { useDialogA11y } from '../use-dialog-a11y.js'
 import { useAsync } from '../use-async.js'
 
 /** 详情里给得出的动作（不提供"标为新"——回退到未读没有意义）。 */
@@ -347,10 +348,24 @@ export function JobDetailDrawer(props: {
   onClose: () => void
   onChanged: () => void
 }) {
+  const dialogRef = useRef<HTMLElement>(null)
+  /* 抽屉是模态层（`role="dialog"`），所以它要具备对话框该有的行为：
+     aria-modal、Esc 关闭、焦点移入与陷阱、关闭后归还焦点。
+     之前只有 role —— 审核实测：Esc 无效、Tab 能跑到被遮住的列表上。 */
+  useDialogA11y(dialogRef, props.onClose, [props.id])
+
   return (
     <div className="jh-drawer-layer">
       <button type="button" className="jh-drawer-backdrop" aria-label="关闭详情" onClick={props.onClose} />
-      <aside className="jh-drawer" role="dialog" aria-label="岗位详情" data-job-hunter="job-drawer">
+      <aside
+        className="jh-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="岗位详情"
+        tabIndex={-1}
+        ref={dialogRef}
+        data-job-hunter="job-drawer"
+      >
         <header className="jh-drawer-head">
           <span className="jh-drawer-title">岗位详情</span>
           <button type="button" className="jh-icon-btn" aria-label="关闭" onClick={props.onClose}>×</button>

@@ -12,15 +12,12 @@
  *    免得手滑把"已 Offer"点回"已投递"而没人知道为什么。
  */
 import type { ApplicationChannel, ApplicationStage, ContactStage, StageSource } from '../../shared/enums.js';
+import { NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank } from '../../shared/enums.js';
 import type { ApplicationDto, BoardDto, StageEventDto } from '../../shared/dto.js';
 import type { Store } from '../store/store.js';
 import type { GreetingRecord } from '../store/repo/pipeline.js';
 import { type Clock } from '../util/time.js';
-/** 阶段的先后顺序。回退判断与漏斗排序都靠它，**顺序本身就是业务规则**。 */
-export declare const STAGE_ORDER: readonly ApplicationStage[];
-export declare function stageRank(stage: ApplicationStage): number;
-/** 终态：到了这里就不该再自动往前走。 */
-export declare const TERMINAL_STAGES: readonly ApplicationStage[];
+export { NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank };
 export interface PipelineService {
     /** 记一次投递。`actor` 决定审计归属（gui / model）。 */
     recordApplication(input: {
@@ -76,6 +73,13 @@ export interface PipelineService {
     contactStage(jobId: number): ContactStage;
     /** 未读超时 / 已读未回超时的**建议**（§12.2 的两条分支，§3.3 的核心洞察）。 */
     followUpSuggestions(): FollowUpSuggestion[];
+    /**
+     * 处置一条跟进建议（§12.2 收口）。
+     *
+     * 建议是**推导**出来的（没有持久化行），所以"解决"= 记住 `jobId:kind` 已被用户看过/处理过，
+     * `followUpSuggestions` 不再重复返回同一条，直到它下次重新达标。
+     */
+    resolveFollowUp(jobId: number, kind: string): void;
 }
 /**
  * 跟进建议。
@@ -98,8 +102,7 @@ export interface FollowUpSuggestion {
 export declare const UNREAD_TIMEOUT_HOURS = 72;
 /** 已读未回超时阈值（小时）——超过就建议改简历/话术，而不是继续加量（§3.3 / §3.2）。 */
 export declare const READ_TIMEOUT_HOURS: number;
-/** 投递后完全没进展的阈值（天）。 */
-export declare const NO_PROGRESS_DAYS = 21;
+/** 投递后完全没进展的阈值（天）现在也在 shared/enums.ts（客户端要用来判断"该催了"）。 */
 export interface PipelineDeps {
     store: Store;
     clock?: Clock;

@@ -4,6 +4,7 @@ import { createPlanService } from '../../src/host/domain/plans.js'
 import { DEFAULT_SCHEDULE, normalizeSchedule } from '../../src/host/store/repo/plans.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job.js'
+import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
@@ -128,12 +129,45 @@ test('ensureDefault 只在完全没有方案时建一条', () => {
 
 // ── SR-39/41/42/43/45：配置面校验（三条入口共用同一份）───────────────
 
-function withRegistry() {
+function withRegistry(options: { waiqi?: boolean } = {}) {
   const store = openTestStore()
   const registry = createAdapterRegistry()
   registry.register(createFiftyOneAdapter())
+  // 神仙外企：用来验证"平台特有维度"的完整链路（声明 → 校验 → 进 platform 命名空间 → 适配器读得到）。
+  if (options.waiqi === true) registry.register(createWaiqiAdapter())
   return { store, registry, plans: createPlanService(store, undefined, registry) }
 }
+
+test('SR-41/42：平台特有维度（工作经验/学历/职位范围）走 `platform` 命名空间，不污染 extra', () => {
+  const { store, plans } = withRegistry({ waiqi: true })
+  try {
+    // 神仙外企声明了这三个维度，域内取值必须通过。
+    const plan = plans.create({
+      name: '外企 · 本科 · 3-5 年',
+      platforms: ['waiqi'],
+      criteria: { keyword: 'Java', city: '深圳', workExp: '3', education: '2', type: '1' },
+    })
+    assert.equal(plan.criteria['workExp'], '3')
+    assert.equal(plan.criteria['education'], '2')
+    assert.equal(plan.criteria['type'], '1')
+
+    // 域外的值照旧被拒（声明了取值域就只接受域内的值）。
+    assert.throws(
+      () => plans.create({ name: '怪经验', platforms: ['waiqi'], criteria: { workExp: '99' } }),
+      (error: unknown) => error instanceof DomainError && error.code === 'INVALID_INPUT',
+    )
+
+    // 51job 没声明 `workExp` → 显式报错，而不是静默当成自由参数拼进 URL。
+    assert.throws(
+      () => plans.create({ name: '51job 塞外企条件', platforms: ['51job'], criteria: { workExp: '3' } }),
+      (error: unknown) => error instanceof DomainError && error.code === 'INVALID_INPUT',
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
 
 test('SR-39：选到未注册的平台要报可读错，不空跑', () => {
   const { store, plans } = withRegistry()
@@ -177,12 +211,13 @@ test('SR-41：取值域外的值被拒绝，域内的通过', () => {
       () => plans.create({ name: '怪排序', platforms: ['51job'], criteria: { sort: '9' } }),
       (error: unknown) => error instanceof DomainError && error.code === 'INVALID_INPUT',
     )
+    // 排序取值域实测（2026-09）：51job 无「2」这个取值，改用「3」= 薪资优先（合法值）。
     const ok = plans.create({
       name: '正常',
       platforms: ['51job'],
-      criteria: { keyword: 'Java', city: '深圳', sort: '2', postedWithinDays: '3', maxPages: '2' },
+      criteria: { keyword: 'Java', city: '深圳', sort: '3', postedWithinDays: '3', maxPages: '2' },
     })
-    assert.equal(ok.criteria['sort'], '2')
+    assert.equal(ok.criteria['sort'], '3')
     assert.equal(ok.criteria['maxPages'], '2')
 
     // SR-40/41：页数上限受适配器声明约束

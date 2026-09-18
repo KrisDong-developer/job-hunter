@@ -40,8 +40,14 @@ export declare function runReasonLabel(reason: string | null): string | null;
  */
 export declare const CORE_FIELDS: readonly ["title", "salary_raw", "company", "source_url"];
 export type CoreField = (typeof CORE_FIELDS)[number];
-/** 风控命中类型（§4.2.2 `detectBlock`）。 */
-export declare const BLOCK_KINDS: readonly ["captcha", "login-required", "rate-limited", "blank"];
+/**
+ * 风控命中类型（§4.2.2 `detectBlock`）。
+ *
+ * `quota-exhausted`（P1/D-17a 增强）：平台侧"今日额度用完"（如 51job「今日投递太多」、
+ * 智联「达到上限」）。与 `rate-limited` 的本质区别：退避重试**没用**（额度不随时间恢复），
+ * 正确动作是当天对该平台停手。
+ */
+export declare const BLOCK_KINDS: readonly ["captcha", "login-required", "rate-limited", "quota-exhausted", "blank"];
 export type BlockKind = (typeof BLOCK_KINDS)[number];
 /** 待办类型。降级告警必须主动产生待办（§4.2.4 降级语义 / B13）。 */
 export declare const TODO_KINDS: readonly ["adapter-degraded", "adapter-broken", "login-required", "blocked", "new-jobs", "catch-up", "confirm-action", "deadline"];
@@ -100,6 +106,28 @@ export declare const CONTACT_STAGE_LABEL: Record<ContactStage, string>;
 export declare const APPLICATION_STAGES: readonly ["sent", "viewed", "interviewing", "interviewed", "offer", "rejected", "no_reply"];
 export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
 export declare const APPLICATION_STAGE_LABEL: Record<ApplicationStage, string>;
+/**
+ * 阶段的先后顺序。回退判断、漏斗排序、看板列序都靠它，
+ * **顺序本身就是业务规则**（§12.1）。
+ */
+export declare const STAGE_ORDER: readonly ApplicationStage[];
+export declare function stageRank(stage: ApplicationStage): number;
+/**
+ * 终态：到了这里就不该再自动往前走，也没有"下一格"。
+ *
+ * 放在 shared 而不是 host：客户端也要用它决定**要不要渲染"推进"按钮**。
+ * 早先它只在 host，客户端因此只能"永远渲染、终态点了没反应"。
+ */
+export declare const TERMINAL_STAGES: readonly ApplicationStage[];
+/**
+ * 在途阶段里 stage 的下一格；终态没有下一格，返回 null。
+ *
+ * `advance` 的默认推进目标与看板按钮的目标都从这里取 —— 只有一份顺序，
+ * 不会出现"按钮说去 A、后端去 B"。
+ */
+export declare function nextStageOf(stage: ApplicationStage): ApplicationStage | null;
+/** 投递后完全没进展的阈值（天）——超过就该催了。 */
+export declare const NO_PROGRESS_DAYS = 21;
 /** 投递渠道（§11.3：归因分析必需）。 */
 export declare const APPLICATION_CHANNELS: readonly ["platform", "referral", "website", "headhunter"];
 export type ApplicationChannel = (typeof APPLICATION_CHANNELS)[number];

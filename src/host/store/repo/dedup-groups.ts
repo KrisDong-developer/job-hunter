@@ -28,6 +28,14 @@ export interface DedupGroupRepo {
   findByJob(jobId: number): DedupGroupRecord | undefined
   list(limit: number): DedupGroupRecord[]
   count(): number
+  /**
+   * 把一个岗位从分组里拆出去（§4.10.1 铁律 2：去重必须可逆）。
+   *
+   * 拆完后若组里只剩一个成员，整个分组失去意义 —— 会被删除并清掉剩余成员的关联。
+   */
+  removeMember(groupId: number, jobId: number): void
+  /** 删除整组，并清掉所有成员的分组关联（让它们各自独立）。 */
+  deleteGroup(groupId: number): void
 }
 
 function toRecord(row: Row): DedupGroupRecord {
@@ -51,6 +59,8 @@ export function createDedupGroupRepo(db: DatabaseSync): DedupGroupRepo {
   const selectAll = db.prepare('SELECT * FROM dedup_group ORDER BY id DESC LIMIT ?')
   const updateMembers = db.prepare('UPDATE dedup_group SET member_ids_json = ? WHERE id = ?')
   const setJobGroup = db.prepare('UPDATE job SET dedup_group_id = ? WHERE id = ?')
+  const setJobGroupNull = db.prepare('UPDATE job SET dedup_group_id = NULL WHERE id = ?')
+  const deleteById = db.prepare('DELETE FROM dedup_group WHERE id = ?')
   const countStmt = db.prepare('SELECT count(*) AS n FROM dedup_group')
 
   return {
@@ -93,6 +103,30 @@ export function createDedupGroupRepo(db: DatabaseSync): DedupGroupRepo {
     count(): number {
       const row = countStmt.get() as Row | undefined
       return asInt(row?.['n'])
+    },
+
+    removeMember(groupId, jobId): void {
+      const group = selectById.get(groupId) as Row | undefined
+      if (group === undefined) return
+      const record = toRecord(group)
+      if (!record.memberIds.includes(jobId)) return
+      const members = record.memberIds.filter((id) => id !== jobId)
+      // 被拆出的岗位先脱离分组
+      setJobGroupNull.run(jobId)
+      if (members.length <= 1) {
+        // 只剩一个成员的组没有合并意义：整组删除并清掉剩余成员的关联
+        for (const id of members) setJobGroupNull.run(id)
+        deleteById.run(groupId)
+        return
+      }
+      updateMembers.run(JSON.stringify(members), groupId)
+    },
+
+    deleteGroup(groupId): void {
+      const group = selectById.get(groupId) as Row | undefined
+      if (group === undefined) return
+      for (const id of toRecord(group).memberIds) setJobGroupNull.run(id)
+      deleteById.run(groupId)
     },
   }
 }

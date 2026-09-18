@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import type { RouteRequest, RouteResult } from '../../src/host/http/router.js'
 import { routeRequest } from '../../src/host/http/router.js'
 import { createHostRuntime, type HostRuntime } from '../../src/host/runtime.js'
+import { writeGuardConfig } from '../../src/host/guard/rules.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import { cleanup, tempDataDir } from '../support/store.js'
 
@@ -34,6 +35,10 @@ async function openRuntime(): Promise<{ runtime: HostRuntime; dir: string }> {
   const dir = tempDataDir()
   const runtime = createHostRuntime({ dataDir: dir })
   await runtime.ready()
+  // 发送窗口/休息日按**本地时钟**判定，会让用例随时段漂移 —— 这里统一关掉；
+  // 它们自己的行为在 guard 专项测试里用受控窗口测。
+  const store = runtime.store()
+  if (store !== undefined) writeGuardConfig(store, { sendWindow: '', dayOffProbability: 0 }, T)
   return { runtime, dir }
 }
 

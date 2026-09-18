@@ -5,12 +5,16 @@
 
 ## 0. 现状一览（别按文档假设）
 
-| 平台 | 适配器 | 状态 |
-|---|---|---|
-| 前程无忧 51job | `src/host/platform/adapters/fiftyone-job.ts` | ✅ 可用：列表页解析 + 字段级断言 + 降级告警 |
-| BOSS 直聘 / 猎聘 / 拉勾 | 无 | 实测有风控墙（R4），**未实现** |
-| 牛客 / 实习僧（校招） | 无 | 需求 §4.L 标注"⚠️ 待预研"，**未实现** |
-| Indeed / LinkedIn（海外） | 无 | 需求 §4.M 标注"⚠️ 待预研"，**未实现** |
+| 平台 | 适配器 | 配置来源 | 状态 |
+|---|---|---|---|
+| 前程无忧 51job | `adapters/fiftyone-job.ts` | `adapter-config/51job` | ✅ 可用：列表页 DOM 解析 + 字段级断言 + 降级告警 |
+| 神仙外企 waiqi.com | `adapters/waiqi-job.ts` | `adapter-config/waiqi` | ✅ 可用：**页面内调接口**取数（列表不在 DOM 里）；单页 ≤50 条、`maxPages=1` |
+| 智联招聘 zhaopin.com | `adapters/zhaopin.ts` | `adapter-config/zhaopin` | ✅ 可用：`/sou/` 列表页（DOM + 内嵌载荷），薪资明文、可翻页 |
+| 猎聘 liepin.com | `adapters/liepin.ts` | `adapter-config/liepin` | ✅ 可用（2026-09-18 v8 实测）：patchright 启动式 + stealth 通过风控（页面存活、`navigator.webdriver=false`）；夹具校准 42/42 卡片全字段命中（`data-nick` 结构锚点 + `【】`城市 + 公司盒三段）。风控命中（about:blank）即停。城市码待逐城实测补 DB |
+| BOSS 直聘 / 拉勾 | 无 | — | 实测有风控墙（R4），**未实现**（猎聘路线验证通过后照搬） |
+| 牛客 / 实习僧（校招） | 无 | — | 需求 §4.L 标注"⚠️ 待预研"，**未实现** |
+| HiredChina hiredchina.com | `adapters/hiredchina.ts` | `adapter-config/hiredchina` | ✅ 可用（2026-09-18 真实调研 + 浏览器探针校准）：`/<lang>/jobs` Next.js RSC 服务端渲染可抓 DOM；卡片字段按 Tailwind 底色徽章区分；翻页 `?page=N` 已实测；主站 www 会吃 Cloudflare 挑战（真浏览器可过），探针走同源子域 hcweb.gicexpat.com；城市筛选参数未确证 → v1 不筛 |
+| Indeed / LinkedIn（海外） | `adapters/indeed.ts` | `adapter-config/indeed` | ⚠️ **中国大陆站已停运**（2026-09-18 实测：`cn.indeed.com/jobs` 302 重定向到 `www.indeed.com` 并被 Cloudflare 验证墙拦截）。适配器按 Indeed JCS 稳定语义锚点实现 + 判墙即停（重定向→blank / Cloudflare→captcha），`fieldCompleteness=low`；默认 host 不可用，需 DB 覆盖换仍运营的域并校准夹具后才真实启用。LinkedIn 仍无适配器 |
 
 「未实现」= **没有代码**，不是"代码在但没测过"。别把它们当成可用的降级选项。
 
@@ -50,7 +54,26 @@
 一到真实页面立刻 `ReferenceError: MAX_CARDS is not defined`，**整页解析失败**。
 
 护栏在 `test/platform/fiftyone.test.ts`：用 `new Function('return (' + fn + ')')` **按源码重建函数**
-再调用，从源码层面切断闭包。新增真路径代码时必须让它落在这条测试的覆盖范围内。
+再调用，从源码层面切断闭包。新增真路径代码时必须让它落在这条测试的覆盖范围内
+（`test/platform/waiqi.test.ts` 与 `test/platform/zhaopin.test.ts` 各有一份同样的护栏）。
+
+### 2.1 神仙外企是这条规矩的极端情形
+
+它的列表**不在 DOM 里**（纯前端 SPA，数据由接口 JSON 渲染）。所以它的页面函数不仅要
+自包含，还要**在页面上下文里自己发请求**：`readListPage` = `page.evaluate(fetchListInPage)`
++ `page.evaluate(extractJobsInPage)`。
+
+由此多出一条硬约束：**只认页面上下文自己的 `fetch`**（真浏览器里就是 `window.fetch`），
+用 `globalThis.__WAIQI_FETCH__` 这个标记确认"这个 fetch 是页面上下文的"，
+**绝不回退到宿主 Node 的 fetch**。回退的后果有两层：
+
+- 真路径上：本该系统走浏览器登录态的采集，变成宿主直连接口；
+- 离线测试里：它**会真的打到线上**（§14 明令禁止）。这条不是推理出来的 ——
+  `test/platform/waiqi.test.ts` 的「页面上下文的 fetch 抛错」用例就是被它逼出来的：
+  当时测试没抛错，而是把真实接口的数据抓了回来。
+
+`test/support/jsdom-page.ts` 因此多了一个 `fetchStub`：**无论有没有 stub 都装一个 fetch**，
+并打上 `__WAIQI_FETCH__` 标记 —— 真浏览器里 `window.fetch` 一定存在，夹具要同形。
 
 ## 3. 失效是怎么被发现的（不是靠"抓不到"）
 
@@ -86,28 +109,85 @@ VALUES('adapter-config','platform','51job',?,datetime('now')) \
 ON CONFLICT(key,scope,scope_ref) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at\") \
 .run(JSON.stringify({selectors:{card:'.joblist-item',title:'.jname'}}))"
 
-# ④ 离线全绿（408 个测试，绝不访问真实招聘站）
+# ④ 离线全绿（绝不访问真实招聘站）
 npm test
 ```
+
+> 平台各自的实测记录（端点、参数、取值域、坑）写在 `docs/PLATFORM-WAIQI.md` 这类平台文档里，
+> 本手册只讲**通用机制**。改一个平台前先读它那一份。
 
 生效时机：**配置在装配时读取一次**，改完 DB 需要让插件重新加载（重启该 profile 最稳）。
 改稳之后，把最终值回写到 `DEFAULT_FIFTYONE_CONFIG`，让新用户不必手工写 DB。
 
 ## 5. 新增一个平台
 
-1. 实现 `SiteAdapter`（`platform/types.ts`）：`id` / `displayName` / `capabilities` / `list()` / `detail()`；
+1. 实现 `SiteAdapter`（`platform/types.ts`）：`id` / `displayName` / `capabilities` /
+   `criteria` / `crawl` / `guard`（`list()` / `detail()` 是协议里的旧形状，本仓库用 `crawl.*`）；
 2. 解析函数遵守 §2 的自包含约束；
-3. 在 `platform/registry.ts` 注册（**id 重复会直接抛错**，这是刻意的；注册返回 disposer，随 fiber 卸载）；
-4. 加**离线 fixture**（保存的页面）+ 字段级断言测试 + `--break-selectors` 降级测试；
-5. 若该平台有「打招呼 / 投递」动作，必须在 `guard/actions/` 里实现并配测试。
-   目前 **51job 的打招呼动作未实现**：`greeting_send` 对它一律返回 `ADAPTER_BROKEN`（HTTP 409），
-   文案是「前程无忧 的适配器还没实现打招呼动作」。这是**刻意的 fail-closed**，不是 bug。
+3. 在**装配处**注册（`runtime.ts` 的 `openDataLayer`；`platform/registry.ts` 的 id 重复会直接抛错，
+   这是刻意的）；同时按 ADR-19 读一次 DB 覆盖：
+   `setting(key='adapter-config', scope='platform', scope_ref='<id>')`；
+4. 加**离线 fixture**（保存的响应/页面）+ 字段级断言测试 + 判墙测试 + 「按源码重建」护栏；
+5. **平台特有筛选维度不要摊平成顶层键**：进 `SearchCriteria.platform` 命名空间
+   （在 `domain/plan-config.ts` 的 `PLATFORM_KEYS` 里登记键名）。
+   摊平会让"某平台才认识的键"被另一个平台的适配器当成自由参数拼进 URL —— 静默的语义污染。
+   适配器读取用 `platformCriterion(criteria, 'workExp')`（它同时兼容直接构造的 `SearchCriteria`）；
+6. 若该平台有「打招呼 / 投递」动作，必须在 `guard/actions/` 里实现并配测试。
+   目前 **51job / 神仙外企 / 智联招聘的打招呼动作都未实现**：`greeting_send` 对它们一律返回
+   `ADAPTER_BROKEN`（HTTP 409），文案是「<平台> 的适配器还没实现打招呼动作」。
+   这是**刻意的 fail-closed**，不是 bug。
 
 ## 6. 明确不要做的事
 
-- **不要引入反检测 / 指纹伪装**（D-17 / R18）。文档里提过预留 `fingerprint.ts` 扩展点，
-  但代码里**并没有这个文件** —— 不实现伪装是刻意的取舍，不是遗漏。
+- **不要引入指纹伪造 / UA 轮换 / 代理池**（D-17 / D-17a）。"环境一致性"已由平台层统一提供
+  （`platform/browser.ts` 的 patchright 引擎 + `platform/stealth.ts` 注入 + `platform/cdp-guard.ts` 端口守卫），
+  **适配器不需要、也不应该自己再做**任何反检测处理（不要在 `evaluate` 里改 `navigator`、不要动 UA）。
 - **不要在自动化测试里访问真实招聘站**（§14）。跑端到端脚本时用
   `DSH_JOB_HUNTER_NO_NETWORK=1` 强制拒绝 `crawl()`/登录引导。
   这条闸门是因为"只写在文档里的红线实测挡不住"才加的（见 README 坑 11）。
 - **不要为了"抓得多"调高频率或并发**。定时抖动、单实例租约、请求间隔随机、定向选择器都是刻意的保守设计。
+- **将来实现 `actions.sayHello` 时不要用 DOM click / `fill`**。输入必须走
+  `platform/humanize.ts`（CDP Input 级三段式点击 + 逐字符打字 + 发送前停留 15–30s）——
+  DOM 事件 `isTrusted=false`，是最廉价的自动化特征。
+
+## 7. 风控观测与站点规则（2026-09-18 沉淀）
+
+> 本节沉淀两条来源的实测结论：本仓库的探针（`test/tools/probe-liepin-*`、`probe-zhipin-cdp`），
+> 以及两个同类开源项目的实战经验（BossHunter：BOSS 直聘；get_jobs：BOSS/猎聘/智联/51job）。
+> **适配器实现必须遵守这里记录的站点规则**；新观测到规则往这里补，注明日期。
+
+### 7.1 CDP 检测强度分级（我们自己的探针结论）
+
+| 平台 | 检测层 | 结论 |
+|---|---|---|
+| 51job / 智联 / 神仙外企 | 基本不做 CDP 检测 | 原版 playwright-core 可正常出数 |
+| BOSS 直聘 | 检测 CDP 自动化痕迹 | 原版 playwright-core 会被识别（get_jobs 至今被"页面回退/反复刷新"的新检测困扰，未解决）；patchright 可过 |
+| 猎聘 | 检测"CDP 控制页面"本身 + 主动探测调试端口（`security.min.js`，字节系 SDK） | v6 只读 attach 实验证明：即使不开调试端口、只导航，页面也会被 `about:blank` 销毁 —— 端口守卫（`cdp-guard.ts`）**必要但不充分**，需 patchright。v8 探针（`npm run probe:liepin`）验证 patchright **启动式**（非 attach）+ stealth 注入的路线，并自动保存校准夹具 |
+
+### 7.2 站点规则（做适配器前必读）
+
+- **BOSS 直聘**：
+  - 岗位 URL **必须携带完整 `securityId` 参数**，缺失即被拦截/加载失败 —— 永远用搜索页
+    返回的原始 href 拼 `https://www.zhipin.com{job_url}`，**绝不重构 URL**（BossHunter site-patterns 实测）；
+  - **批量打开 >6 个 tab 要错开 1–2 秒**，同时开一批会触发风控；
+  - 打招呼平台侧日上限约 150（get_jobs README 经验值）。
+- **猎聘**（2026-09-18 深度调研，夹具 + 接口采样交叉验证）：
+  - 搜索接口 `POST api-c.liepin.com/api/com.liepin.searchfront4c.pc-search-job`，请求体
+    `mainSearchPcConditionForm` 含全部筛选参数（city/dq/pubTime/salaryCode/workYearCode/eduLevel/industry…），
+    但**只有 city 出现在搜索 URL 上**，其余是 JS 控件 → 适配器只声明 keyword/city/maxPages，不编；
+  - 无城市时接口默认 `city=410`（= 全国）；具体城市码逐城实测补 DB；
+  - 响应 `job.dq` 是**中文**（如 `北京-海淀区`）；`refreshTime` 是 `yyyymmddHHMMss`；
+    响应字段比 DOM 富（labels/recruiter.*/compId/advViewFlag/pcOuterLink）—— v2 接口化方向，
+    采样在 `test/fixtures/liepin-search-api*.json`；
+  - **URL 翻页有效**（`currentPage` 0 起）：第 1/2 页夹具各 42 个 jobId **零重叠**（回归测试固化）；
+  - 分页是 AntD 按钮组（`.list-pagination-box li.ant-pagination-next`，disabled 类名判尾页），
+    一次搜索约 21 页、40 条/页；广告卡没有 `data-nick='job-detail-job-info'` 链接，天然被跳过；
+  - 岗位链接两种形态并存：`/job/<id>.shtml`（普通岗）与 `/a/<id>.shtml`（Agent 类岗），都要收；
+  - 聊天按钮需要 **hover 后才出现**（get_jobs 实测）；点击前做鼠标像素微调可显著降低风控命中率。
+- **51job**：阿里云 WAF 滑块特征是 `.waf-nc-title` 元素 + `script[name^="aliyunwaf_"]` 脚本名
+  （已进判墙选择器）；投递上限 toast 文案"今日投递太多 / 休息一下明天再来"存活极短（<2s），
+  **点击后要 200ms 间隔轮询 10 次**才抓得到 —— 一次性 detectBlock 会漏（已进 `quota-exhausted` 判墙）。
+- **智联**：投递上限约 100（文案"达到上限"）；只第 1 页用 `?kw=`，第 2 页起用站点自己生成的
+  无 query path 链接（robots 合规取舍，见 `PLATFORM-ZHAOPIN.md` §5）。
+- **通用**：服务器 IP 会被招聘站直接拒绝返回数据（get_jobs 实测，本项目本机运行天然规避）；
+  开着代理（墙外节点）访问国内平台既慢又异常，README 明确要求关闭。

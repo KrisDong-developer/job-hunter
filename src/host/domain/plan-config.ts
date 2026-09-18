@@ -28,6 +28,15 @@ const PAGINATION_KEYS = new Set(['page'])
  */
 const NUMERIC_KEYS = new Set(['maxPages', 'postedWithinDays'])
 
+/**
+ * 平台特有维度的键（`SearchCriteria` 上的可选槽位）。
+ *
+ * **必须在这里列名**，否则 `criteriaToSearchCriteria` 会把它丢进 `extra`，
+ * 适配器读 `criteria.workExp` 就永远读到空 —— 界面上选好了、实际没筛，
+ * 正是 SR-42 要防的那种静默失败。
+ */
+const PLATFORM_KEYS = new Set(['workExp', 'education', 'type'])
+
 export interface PlanConfigInput {
   name?: string
   platforms?: string[]
@@ -72,6 +81,7 @@ function cleanValue(value: string): string {
 export function criteriaToSearchCriteria(criteria: Record<string, string>): SearchCriteria {
   const out: SearchCriteria = {}
   const extra: Record<string, string> = {}
+  const platform: Record<string, string> = {}
   for (const [key, raw] of Object.entries(criteria)) {
     const value = cleanValue(raw)
     if (value === '') continue
@@ -97,9 +107,16 @@ export function criteriaToSearchCriteria(criteria: Record<string, string>): Sear
       if (Number.isFinite(parsed) && parsed > 0) out.postedWithinDays = parsed
       continue
     }
+    // 平台特有维度：**进 `platform` 命名空间**，而不是摊平成顶层键。
+    // 摊平会让"某平台才认识的键"被另一个平台的适配器当成自由参数拼进 URL（静默语义污染）。
+    if (PLATFORM_KEYS.has(key)) {
+      platform[key] = value
+      continue
+    }
     extra[key] = value
   }
   if (Object.keys(extra).length > 0) out.extra = extra
+  if (Object.keys(platform).length > 0) out.platform = platform
   return out
 }
 
@@ -268,7 +285,25 @@ export interface CriteriaDimensionDto {
 }
 
 /** 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。 */
-export const ALL_DIMENSION_KEYS = ['keyword', 'city', 'sort', 'postedWithinDays', 'maxPages'] as const
+/**
+ * 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。
+ *
+ * ⚠️ 这是**固定槽位表**，不是"全部维度" —— 适配器自己声明的新维度由
+ * `criteriaDimensionsFor` 的 `supported.keys()` 自动并进来（见下方 `keys`）。
+ * 列在这里的键会**对每个平台都出现**（不支持的显示为禁用 + 原因），
+ * 所以只列"跨平台都说得通"的几个：关键词 / 城市 / 排序 / 时间 / 页数，
+ * 以及神仙外企引入的工作经验 / 学历 / 职位范围。
+ */
+export const ALL_DIMENSION_KEYS = [
+  'keyword',
+  'city',
+  'workExp',
+  'education',
+  'type',
+  'sort',
+  'postedWithinDays',
+  'maxPages',
+] as const
 
 export function criteriaDimensionsFor(
   registry: AdapterRegistry,

@@ -145,6 +145,9 @@ async function openGate(runtime: HostRuntime, options: { requireApproval?: boole
       guard: {
         levels: { l3Greeting: true, l4Application: true, l4Reply: true },
         cooldownMinutes: 0,
+        // 发送窗口/休息日按本地时钟判定，会让用例随时段漂移 —— 统一关掉。
+        sendWindow: '',
+        dayOffProbability: 0,
         ...(options.requireApproval === false ? { requireApproval: false } : {}),
       },
     },

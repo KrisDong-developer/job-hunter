@@ -66,6 +66,7 @@ function kindOf(errorCode: string | null, message: string): FailureKind {
       return 'login'
     case 'BLOCKED':
     case 'RATE_LIMITED':
+    case 'PLATFORM_QUOTA':
     case 'RISK':
       return 'risk'
     case 'NAVIGATION_FAILED':

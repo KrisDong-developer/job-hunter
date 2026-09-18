@@ -33,10 +33,24 @@ export interface GuardConfig {
     requireApproval: boolean;
     /** 审计开关。**模型不得关闭**（§22.4 禁止项）。 */
     auditEnabled: boolean;
+    /**
+     * 发送动作的本地时间窗口（P2/D-17a，`'HH:MM-HH:MM'`，如 `'09:00-16:00'`；
+     * 支持跨午夜如 `'22:00-06:00'`；空串 = 不限）。
+     *
+     * 凌晨/深夜发消息是最强的机器信号之一；真人求职者只在清醒时段操作。
+     * 默认 `'09:00-16:00'`（BossHunter 实战同款保守窗口）。
+     */
+    sendWindow: string;
+    /**
+     * 随机休息日概率（P2/D-17a，0–1，默认 0.05）。
+     * 按"当天日期"确定性命中（FNV-1a），同一天内所有动作结论一致 ——
+     * 不是每次调用重掷骰子（那会让"今天到底休不休"漂移）。
+     */
+    dayOffProbability: number;
 }
 export declare const DEFAULT_GUARD_CONFIG: GuardConfig;
 /** 模型的**禁止项**：这些键碰都不能碰（§22.4）。 */
-export declare const FORBIDDEN_FOR_MODEL: readonly ["requireApproval", "auditEnabled", "batchLimit", "dailyLimits", "cooldownMinutes"];
+export declare const FORBIDDEN_FOR_MODEL: readonly ["requireApproval", "auditEnabled", "batchLimit", "dailyLimits", "cooldownMinutes", "sendWindow", "dayOffProbability"];
 export interface RuleVerdict {
     ok: boolean;
     reason?: GuardDeniedReason;
@@ -52,6 +66,25 @@ export interface RuleContext {
 }
 /** 第 1 项：功能开关（D-3 发送分层）。 */
 export declare function checkSwitch(store: Store, input: GuardInput): RuleVerdict;
+/** 发送窗口（`'HH:MM-HH:MM'`，本地时间，支持跨午夜）。 */
+export interface SendWindow {
+    startMin: number;
+    endMin: number;
+}
+/** 解析窗口串。非法返回 `null`（调用方决定 fail-closed 还是修配置）。 */
+export declare function parseSendWindow(raw: string): SendWindow | null;
+/** `minuteOfDay`（0–1439）是否落在窗口内。跨午夜窗口（`start > end`）按两侧并集算。 */
+export declare function inSendWindow(window: SendWindow, minuteOfDay: number): boolean;
+/** 第 1.5 项（P2/D-17a）：发送时间窗口。只约束发送类动作（ACTION_QUOTA 有映射的那些）。 */
+export declare function checkSendWindow(ctx: RuleContext, input: GuardInput): RuleVerdict;
+/**
+ * 今天是不是随机休息日（P2/D-17a）。
+ * 用日期做 FNV-1a（与调度器的 `stableRatio` 同款），**确定性**命中：
+ * 同一天里问多少次结论都一样；跨天自然换结论。纯函数，离线可测。
+ */
+export declare function isDayOff(dateKey: string, probability: number): boolean;
+/** 第 1.6 项（P2/D-17a）：随机休息日。5% 的日子整体不发送，模拟"人不会天天投"。 */
+export declare function checkDayOff(ctx: RuleContext, input: GuardInput): RuleVerdict;
 /** 第 2 项：隐身检查（D4）。高危动作前**强制**校验。 */
 export declare function checkStealth(ctx: RuleContext, input: GuardInput): RuleVerdict;
 /** 第 3 项：批量上限（§22.4）。 */

@@ -35,6 +35,8 @@ export interface JobService {
     /** 与 `query` 同一套筛选条件的计数（分页 total）。 */
     countMatching(filters?: JobQuery): number;
     countByState(): Record<string, number>;
+    /** 出去重后的城市列表（界面多选城市用）。 */
+    listCities(): string[];
     /** 供采集层写入；重复跑按 `(platform, platformJobId)` 幂等。 */
     upsert(input: JobUpsertInput, now: string): {
         id: number;

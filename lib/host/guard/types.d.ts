@@ -4,7 +4,7 @@ export type Actor = 'gui' | 'model' | 'schedule' | 'user';
 /** 危险级。`high` 或 `actor==='model'` 必过审批（§4.4 检查链第 5 项）。 */
 export type Danger = 'low' | 'mid' | 'high';
 /** 被拒绝的原因分类（对应 §9 的 `GUARD_DENIED.reason`）。 */
-export type GuardDeniedReason = 'switch' | 'stealth' | 'quota' | 'cooldown' | 'approval' | 'batch' | 'forbidden' | 'bypassed';
+export type GuardDeniedReason = 'switch' | 'window' | 'day-off' | 'stealth' | 'quota' | 'cooldown' | 'approval' | 'batch' | 'forbidden' | 'bypassed';
 export interface GuardTarget {
     jobId?: number;
     platformId?: string;

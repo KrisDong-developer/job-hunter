@@ -85,6 +85,15 @@ export interface CriteriaDimensionDto {
     numeric: boolean;
 }
 /** 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。 */
-export declare const ALL_DIMENSION_KEYS: readonly ["keyword", "city", "sort", "postedWithinDays", "maxPages"];
+/**
+ * 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。
+ *
+ * ⚠️ 这是**固定槽位表**，不是"全部维度" —— 适配器自己声明的新维度由
+ * `criteriaDimensionsFor` 的 `supported.keys()` 自动并进来（见下方 `keys`）。
+ * 列在这里的键会**对每个平台都出现**（不支持的显示为禁用 + 原因），
+ * 所以只列"跨平台都说得通"的几个：关键词 / 城市 / 排序 / 时间 / 页数，
+ * 以及神仙外企引入的工作经验 / 学历 / 职位范围。
+ */
+export declare const ALL_DIMENSION_KEYS: readonly ["keyword", "city", "workExp", "education", "type", "sort", "postedWithinDays", "maxPages"];
 export declare function criteriaDimensionsFor(registry: AdapterRegistry, platforms: string[]): CriteriaDimensionDto[];
 //# sourceMappingURL=plan-config.d.ts.map

@@ -214,6 +214,24 @@ test('撞上滑块：本轮记 failed、不写库、按阈值置为失效并告�
   }
 })
 
+test('平台配额耗尽（quota-exhausted）：报 PLATFORM_QUOTA 而不是 BLOCKED，且文案说明今天停手', async () => {
+  const quota = inlinePageSource({
+    html: '<html><body><div class="toast">您今日投递太多，休息一下明天再来</div></body></html>',
+    url: SEARCH_URL,
+  })
+  const h = harness({ pageSource: quota })
+  try {
+    const summary = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+
+    assert.equal(summary.run.state, 'failed')
+    assert.equal(summary.run.errorCode, 'PLATFORM_QUOTA', '配额耗尽是与频控不同的信号（调度器据此直接风控暂停）')
+    assert.ok(summary.run.errorMsg?.includes('额度'), '错误文案要说明是平台侧额度，而不是含糊的"命中风控"')
+    assert.equal(h.deps.store.job.count(), 0)
+  } finally {
+    h.close()
+  }
+})
+
 test('并发抓取被全局互斥挡住（同一 tick 的第二次也必须被拒）', async () => {
   const h = harness()
   try {

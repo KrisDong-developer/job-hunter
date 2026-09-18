@@ -1,24 +1,28 @@
 import { useState, type FormEvent } from 'react'
-import { JOB_FLAG_LABEL, JOB_STATES } from '../../shared/enums.js'
-import { fetchJobs } from '../api.js'
+import { JOB_FLAG_LABEL, JOB_FLAG_TYPES, JOB_STATES, type JobFlagType, type JobState } from '../../shared/enums.js'
+import { fetchJobCities, fetchJobs, markJob } from '../api.js'
 import { JOB_STATE_LABEL } from '../labels.js'
 import { useAsync } from '../use-async.js'
 import { JobDetailPane } from './job-detail.js'
 
 interface Filters {
   q: string
-  city: string
+  /** 多城市：命中任意一个即可；空 = 不限。 */
+  cities: string[]
   state: string
   minSalary: string
+  /** 屏蔽这些标注类型的岗位（命中任意一个就不显示）。 */
+  excludeFlags: JobFlagType[]
   orderBy: string
   descending: boolean
 }
 
 const EMPTY_FILTERS: Filters = {
   q: '',
-  city: '',
+  cities: [],
   state: '',
   minSalary: '',
+  excludeFlags: [],
   orderBy: 'crawled_at',
   descending: true,
 }
@@ -120,9 +124,10 @@ export function JobsScreen(props: {
       fetchJobs(
         {
           q: applied.q,
-          city: applied.city,
+          cities: applied.cities,
           state: applied.state,
           minSalary: applied.minSalary === '' ? null : Number(applied.minSalary),
+          excludeFlags: applied.excludeFlags,
           orderBy: applied.orderBy,
           descending: applied.descending,
           page,
@@ -132,6 +137,28 @@ export function JobsScreen(props: {
       ),
     [props.revision, applied, page],
   )
+
+  // 多选城市需要"有哪些城市"这个选项集；一次性拉取，失败不阻塞筛选。
+  const knownCities = useAsync((signal) => fetchJobCities(signal), [])
+  const citiesAll: string[] = knownCities.state.status === 'ok' ? knownCities.state.data : []
+
+  const toggleCity = (city: string): void => {
+    setDraft((current) => ({
+      ...current,
+      cities: current.cities.includes(city)
+        ? current.cities.filter((item) => item !== city)
+        : [...current.cities, city],
+    }))
+  }
+
+  const toggleExclude = (type: JobFlagType): void => {
+    setDraft((current) => ({
+      ...current,
+      excludeFlags: current.excludeFlags.includes(type)
+        ? current.excludeFlags.filter((item) => item !== type)
+        : [...current.excludeFlags, type],
+    }))
+  }
 
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -143,6 +170,22 @@ export function JobsScreen(props: {
     setDraft(EMPTY_FILTERS)
     setApplied(EMPTY_FILTERS)
     setPage(1)
+  }
+
+  /** 正在被快捷标记的岗位 id（列表很密，单张卡片内闪烁即可，不必弹整条错误）。 */
+  const [marking, setMarking] = useState<number | null>(null)
+  const quickMark = async (id: number, state: JobState): Promise<void> => {
+    setMarking(id)
+    try {
+      await markJob(id, state)
+      props.onChanged()
+    } catch {
+      // 标记失败时列表状态不真实 —— 但整列不该为此闪出一条错误横幅。
+      // 让 onChanged 触发的重载把真实状态画回去即可。
+      props.onChanged()
+    } finally {
+      setMarking(null)
+    }
   }
 
   const total = state.status === 'ok' ? state.data.total : 0
@@ -157,13 +200,6 @@ export function JobsScreen(props: {
           aria-label="关键词"
           value={draft.q}
           onChange={(event) => setDraft({ ...draft, q: event.target.value })}
-        />
-        <input
-          className="jh-input jh-input-sm"
-          placeholder="城市"
-          aria-label="城市"
-          value={draft.city}
-          onChange={(event) => setDraft({ ...draft, city: event.target.value })}
         />
         <select
           className="jh-select jh-input-sm"
@@ -201,6 +237,39 @@ export function JobsScreen(props: {
         {/* 主次分明：筛选是主操作（实心），重置是三级动作（无边框） */}
         <button type="submit" className="jh-btn jh-btn-inline jh-btn-primary">筛选</button>
         <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={reset}>重置</button>
+
+        {/* 城市多选（从已有岗位库去重而来）+ 屏蔽标注：都是点的补充条件，点完直接筛选 */}
+        {citiesAll.length === 0 ? null : (
+          <span className="jh-filter-row" role="group" aria-label="城市（可多选）">
+            <span className="jh-filter-label">城市</span>
+            {citiesAll.map((city) => (
+              <button
+                key={city}
+                type="button"
+                className={`jh-chip${draft.cities.includes(city) ? ' jh-chip-on' : ''}`}
+                aria-pressed={draft.cities.includes(city)}
+                onClick={() => toggleCity(city)}
+              >
+                {city}
+              </button>
+            ))}
+          </span>
+        )}
+        <span className="jh-filter-row" role="group" aria-label="屏蔽标注">
+          <span className="jh-filter-label">屏蔽</span>
+          {JOB_FLAG_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={`jh-chip${draft.excludeFlags.includes(type) ? ' jh-chip-on' : ''}`}
+              aria-pressed={draft.excludeFlags.includes(type)}
+              title={`不显示标注为「${JOB_FLAG_LABEL[type]}」的岗位`}
+              onClick={() => toggleExclude(type)}
+            >
+              {JOB_FLAG_LABEL[type]}
+            </button>
+          ))}
+        </span>
       </form>
 
       <div className="jh-jobs-cols">
@@ -239,43 +308,72 @@ export function JobsScreen(props: {
                   const active = job.id === props.selected
                   return (
                     <li key={job.id}>
-                      <button
-                        type="button"
-                        className={`jh-job${active ? ' jh-job-active' : ''}`}
-                        data-job-id={job.id}
-                        aria-current={active ? 'true' : undefined}
-                        onClick={() => props.onSelect(job.id)}
-                      >
-                        <span className="jh-job-main">
-                          <span className="jh-job-title">{job.title}</span>
-                          <span className="jh-job-meta">
-                            <b className="jh-salary">{job.salaryRaw}</b>
-                            <span>{job.city}{job.district === '' ? '' : `·${job.district}`}</span>
-                            <span className="jh-job-company">{job.companyName ?? '—'}</span>
+                      <div className="jh-job-row">
+                        <button
+                          type="button"
+                          className={`jh-job${active ? ' jh-job-active' : ''}`}
+                          data-job-id={job.id}
+                          aria-current={active ? 'true' : undefined}
+                          /* 卡片里塞着标题/薪资/城市/公司/标签/分数/状态，读屏会把这一长串
+                             当成按钮名念完（实测约 60 字）。给一个**短而完整**的名称，
+                             卡内文本对读屏隐藏 —— 视觉完全不变。 */
+                          aria-label={`岗位：${job.title}，${job.salaryRaw}，${job.city}${job.district === '' ? '' : `·${job.district}`}，${JOB_STATE_LABEL[job.state]}`}
+                          onClick={() => props.onSelect(job.id)}
+                        >
+                          <span className="jh-job-main" aria-hidden="true">
+                            <span className="jh-job-title">{job.title}</span>
+                            <span className="jh-job-meta">
+                              <b className="jh-salary">{job.salaryRaw}</b>
+                              <span>{job.city}{job.district === '' ? '' : `·${job.district}`}</span>
+                              <span className="jh-job-company">{job.companyName ?? '—'}</span>
+                            </span>
+                            {job.tags.length === 0 ? null : (
+                              <span className="jh-tags">
+                                {job.tags.slice(0, 8).map((tag) => (
+                                  <span key={tag} className="jh-tag">{tag}</span>
+                                ))}
+                              </span>
+                            )}
+                            {(job.flagTypes.length > 0 || job.matchScore !== null) && (
+                              <span className="jh-job-signals">
+                                {job.matchScore === null ? null : (
+                                  // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
+                                  <span className="jh-score">粗筛 {job.matchScore}</span>
+                                )}
+                                {job.flagTypes.map((type) => (
+                                  <span key={type} className={`jh-flag jh-flag-${type}`}>
+                                    {JOB_FLAG_LABEL[type]}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
                           </span>
-                          {job.tags.length === 0 ? null : (
-                            <span className="jh-tags">
-                              {job.tags.slice(0, 8).map((tag) => (
-                                <span key={tag} className="jh-tag">{tag}</span>
-                              ))}
-                            </span>
-                          )}
-                          {(job.flagTypes.length > 0 || job.matchScore !== null) && (
-                            <span className="jh-job-signals">
-                              {job.matchScore === null ? null : (
-                                // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
-                                <span className="jh-score">粗筛 {job.matchScore}</span>
-                              )}
-                              {job.flagTypes.map((type) => (
-                                <span key={type} className={`jh-flag jh-flag-${type}`}>
-                                  {JOB_FLAG_LABEL[type]}
-                                </span>
-                              ))}
-                            </span>
-                          )}
+                          <span className={`jh-state jh-state-${job.state}`} aria-hidden="true">{JOB_STATE_LABEL[job.state]}</span>
+                        </button>
+                        {/* 卡片右侧的快捷标记：处理单个岗位不用每次先进详情。
+                            划掉 = ignored，收藏 = saved；再点一次回到中性的 seen。
+                            与详情里的动作条看同一份状态，改完整列重载。 */}
+                        <span className="jh-job-quick" role="group" aria-label="快捷标记">
+                          <button
+                            type="button"
+                            className={`jh-job-qk${job.state === 'saved' ? ' jh-job-qk-on' : ''}`}
+                            aria-label={job.state === 'saved' ? '取消收藏' : '收藏'}
+                            aria-pressed={job.state === 'saved'}
+                            title={job.state === 'saved' ? '取消收藏（回到已读）' : '收藏'}
+                            disabled={marking === job.id}
+                            onClick={() => void quickMark(job.id, job.state === 'saved' ? 'seen' : 'saved')}
+                          >★</button>
+                          <button
+                            type="button"
+                            className={`jh-job-qk${job.state === 'ignored' ? ' jh-job-qk-ign' : ''}`}
+                            aria-label={job.state === 'ignored' ? '恢复' : '划掉'}
+                            aria-pressed={job.state === 'ignored'}
+                            title={job.state === 'ignored' ? '取消划掉（回到已读）' : '划掉（忽略）'}
+                            disabled={marking === job.id}
+                            onClick={() => void quickMark(job.id, job.state === 'ignored' ? 'seen' : 'ignored')}
+                          >✕</button>
                         </span>
-                        <span className={`jh-state jh-state-${job.state}`}>{JOB_STATE_LABEL[job.state]}</span>
-                      </button>
+                      </div>
                     </li>
                   )
                 })}

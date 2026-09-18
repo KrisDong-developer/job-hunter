@@ -1,7 +1,7 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/constants.js'
 import type { JobDto } from '../../../shared/dto.js'
-import { JOB_STATES, type JobState } from '../../../shared/enums.js'
+import { JOB_STATES, type JobFlagType, type JobState } from '../../../shared/enums.js'
 import { asId, asInt, asIntOrNull, asJson, asRealOrNull, asText, asTextOrNull, type Row } from '../row.js'
 
 /** 岗位写入/筛选所需的标量字段（活对象已被适配器剥掉，§4.3 P7）。 */
@@ -37,6 +37,9 @@ export interface MatchStamp {
 
 export interface JobQuery {  state?: JobState
   platformId?: string
+  /** 多城市：命中任意一个即可（`IN` 查询）。 */
+  cities?: string[]
+  /** 兼容的单城市旧字段（有 `cities` 时以 `cities` 为准）。 */
   city?: string
   companyId?: number
   /** 标题模糊匹配（走 LIKE，仅作粗筛）。 */
@@ -45,6 +48,11 @@ export interface JobQuery {  state?: JobState
   minSalaryAtLeast?: number
   orderBy?: 'crawled_at' | 'salary_min' | 'title' | 'last_seen_at'
   descending?: boolean
+  /**
+   * 屏蔽这些标注类型的岗位：命中任意一个标注的岗位一律不显示（`NOT EXISTS`）。
+   * 「一键屏蔽疑似外包/高风险」落在这里 —— 风险标签是已算好的事实，屏蔽是查询层的事。
+   */
+  excludeFlagTypes?: JobFlagType[]
 }
 
 export interface JobRepo {
@@ -66,6 +74,8 @@ export interface JobRepo {
   countSince(iso: string): number
   countByState(): Record<string, number>
   latest(limit?: number): JobDto[]
+  /** 出去重后的城市列表（界面多选城市用；空城市不返回）。 */
+  listCities(): string[]
 }
 
 const SELECT_BASE = `
@@ -170,6 +180,18 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
     if (filters.city !== undefined && filters.city !== '') {
       where.push('j.city = ?')
       params.push(filters.city)
+    }
+    if (filters.cities !== undefined && filters.cities.length > 0) {
+      where.push(`j.city IN (${filters.cities.map(() => '?').join(',')})`)
+      params.push(...filters.cities)
+    }
+    if (filters.excludeFlagTypes !== undefined && filters.excludeFlagTypes.length > 0) {
+      // 标注存在独立表：屏蔽 = 该岗位**不存在**命中所选标注类型的记录。
+      // NOT EXISTS 比 LEFT JOIN + NULL 判断更直白，也不会因重复标注把行翻倍。
+      where.push(
+        `NOT EXISTS (SELECT 1 FROM job_flag f WHERE f.job_id = j.id AND f.flag_type IN (${filters.excludeFlagTypes.map(() => '?').join(',')}))`,
+      )
+      params.push(...filters.excludeFlagTypes)
     }
     if (filters.companyId !== undefined) {
       where.push('j.company_id = ?')
@@ -335,6 +357,14 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
 
     latest(limit = PAGE_SIZE_DEFAULT): JobDto[] {
       return query({}, limit, 0)
+    },
+
+    listCities(): string[] {
+      // COLLATE NOCASE 去重大小写（深圳/深圳 之类），并按常用城市字面排序看起来才像列表
+      const rows = db
+        .prepare(`SELECT DISTINCT city FROM job WHERE city <> '' ORDER BY city COLLATE NOCASE`)
+        .all() as Row[]
+      return rows.map((row) => asText(row['city']))
     },
   }
 }

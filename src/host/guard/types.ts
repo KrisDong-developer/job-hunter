@@ -9,6 +9,8 @@ export type Danger = 'low' | 'mid' | 'high'
 /** 被拒绝的原因分类（对应 §9 的 `GUARD_DENIED.reason`）。 */
 export type GuardDeniedReason =
   | 'switch'
+  | 'window'
+  | 'day-off'
   | 'stealth'
   | 'quota'
   | 'cooldown'

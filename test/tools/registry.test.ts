@@ -4,6 +4,7 @@ import type { Disposer, PluginContext, ToolDefinition, ToolsService } from '../.
 import { TOOL_BATCH_MAX, registerJobHunterTools, type ToolRegistrationReport } from '../../src/host/tools/index.js'
 import { toolExec } from '../../src/host/tools/exec-context.js'
 import { createHostRuntime, type HostRuntime } from '../../src/host/runtime.js'
+import { writeGuardConfig } from '../../src/host/guard/rules.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import { cleanup, tempDataDir } from '../support/store.js'
 
@@ -71,6 +72,9 @@ async function harness(approval?: unknown): Promise<Harness> {
     ...(approval === undefined ? {} : { approval }),
   })
   await runtime.ready()
+  // 发送窗口/休息日按本地时钟判定，会让用例随时段漂移 —— 统一关掉。
+  const store = runtime.store()
+  if (store !== undefined) writeGuardConfig(store, { sendWindow: '', dayOffProbability: 0 }, T)
   const { ctx, definitions } = fakeContext()
   const registration = registerJobHunterTools(ctx, runtime)
   return {
