@@ -65,6 +65,7 @@ import { ConfirmRequiredError } from '../guard/index.js'
 import type { SettingsPatch } from '../settings.js'
 import { dataNotReady, type HostRuntime } from '../runtime.js'
 import { DomainError, messageOf } from '../util/errors.js'
+import { revealDataFile } from '../util/reveal.js'
 
 export type RouteResult =
   | { kind: 'json'; status: number; body: unknown }
@@ -301,6 +302,8 @@ function settingsPatchOf(body: Record<string, unknown>): SettingsPatch {
     const source = browser as Record<string, unknown>
     patch.browser = {
       ...(typeof source['idleCloseMinutes'] === 'number' ? { idleCloseMinutes: source['idleCloseMinutes'] } : {}),
+      // "每轮采集结束后就关"（用户要求）：布尔白名单；与分钟那一格的优先级在 idleCloseMsOf
+      ...(typeof source['closeAfterRun'] === 'boolean' ? { closeAfterRun: source['closeAfterRun'] } : {}),
       // D-17a：引擎偏好与 stealth 注入开关（类型白名单；取值由 normalizeBrowserConfig 收敛）
       ...(typeof source['engine'] === 'string' ? { engine: source['engine'] as never } : {}),
       ...(typeof source['stealthInit'] === 'boolean' ? { stealthInit: source['stealthInit'] } : {}),
@@ -494,6 +497,27 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
   // ── GET /health ────────────────────────────────────────────────────
   if (method === 'GET' && segments.length === 1 && segments[0] === 'health') {
     return json(200, runtime.health())
+  }
+
+  // ── POST /system/reveal ────────────────────────────────────────────
+  // 「设置 → 诊断与调用日志 → 数据文件」那一行的「打开所在文件夹」。
+  // **不接受任何路径参数**：只能打开数据文件自己的目录（见 util/reveal.ts），
+  // 所以界面拼不出"打开任意目录"的请求。POST 因此也自动过同源校验。
+  //
+  // 200 里带 ok 而不是直接 200=成功：打开失败（系统没有文件管理器）是**业务结果**
+  // 不是协议错误，界面要如实转述，所以不用状态码表达。
+  if (method === 'POST' && segments.length === 2 && segments[0] === 'system' && segments[1] === 'reveal') {
+    requireData(runtime)
+    const dataPath = runtime.health().dataPath
+    if (dataPath === null || dataPath === '') {
+      throw new DomainError('DATA_UNAVAILABLE', '还没有数据文件，没有可打开的目录')
+    }
+    const result = await revealDataFile(dataPath)
+    return json(200, {
+      ok: result.ok,
+      dir: result.dir,
+      ...(result.reason === null ? {} : { reason: result.reason }),
+    })
   }
 
   // ── GET /today ─────────────────────────────────────────────────────

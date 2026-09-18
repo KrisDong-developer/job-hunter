@@ -530,6 +530,8 @@ export function createGuopinAdapter(options: GuopinAdapterOptions = {}): SiteAda
     requiredFields: ['title', 'company', 'source_url'] as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: GUOPIN_MAX_PAGES,
+    // 分页契约未确证（hasNextPage 恒 false）—— 默认就 1 页。
+    defaultMaxPages: 1,
 
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {

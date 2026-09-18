@@ -34,6 +34,16 @@ export declare function formatRelative(target: Date, now: Date): string;
 export declare function formatLocalMoment(iso: string | null, now: Date, options?: {
     withRelative?: boolean;
 }): string | null;
+/**
+ * 把一段**时长**写成 `12 秒` / `3 分 20 秒` / `1 小时 5 分`。
+ *
+ * 与 `formatRelative` 分开：那个回答"距离现在多久"（带 还有/前），
+ * 这个回答"这一轮花了多久" —— 两者都是时间，但在界面上是两件事。
+ *
+ * 负值或非有限数返回 `null`（不是 `-3 秒`）：`endedAt < startedAt` 只可能来自
+ * 系统时钟被往回拨，那时显示一个负数比显示 `—` 更让人困惑。
+ */
+export declare function formatDuration(ms: number): string | null;
 /** 抖动的说明文案；没有抖动时返回 `null`（不给一句"含 0 分钟抖动"的废话）。 */
 export declare function formatJitter(jitterMs: number): string | null;
 /** 按索引取星期标签（越界返回 `?` 而不是 undefined）。 */

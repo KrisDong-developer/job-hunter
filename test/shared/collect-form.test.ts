@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   WEEKDAY_PRESETS,
   clockValueOf,
+  formatDuration,
   formatWindow,
   parseClockValue,
 } from '../../src/shared/time-format.js'
@@ -76,4 +77,24 @@ test('运行日预设：四组都是合法且互不相同的组合', () => {
   assert.deepEqual(WEEKDAY_PRESETS[1]?.days, [0, 6], '周末 = 周日与周六')
   assert.equal(WEEKDAY_PRESETS[2]?.days.length, 7, '每天 = 全选')
   assert.deepEqual(WEEKDAY_PRESETS[3]?.days, [], '清空 = 空（空数组在宿主那边等于每天）')
+})
+
+/* ── 时长（采集页「最近运行」的耗时列）─────────────────────────────────
+   与上面的时间选择器同属共享的时间显示模块，所以放在一起断言。
+   它是纯函数，边界必须在这里钉住：负数与非法值宁可返回 null（界面显示 —），
+   也不能吐出一个 `-3 秒` —— 那只可能来自系统时钟被往回拨。 */
+
+test('时长：分档到 秒 / 分 / 小时，末位为 0 时不写出来', () => {
+  assert.equal(formatDuration(0), '0 秒')
+  assert.equal(formatDuration(12_400), '12 秒')
+  assert.equal(formatDuration(60_000), '1 分')
+  assert.equal(formatDuration(200_000), '3 分 20 秒')
+  assert.equal(formatDuration(3_600_000), '1 小时')
+  assert.equal(formatDuration(3_900_000), '1 小时 5 分')
+})
+
+test('时长：负数与非有限数返回 null（时钟回拨时宁可不显示）', () => {
+  assert.equal(formatDuration(-1), null)
+  assert.equal(formatDuration(Number.NaN), null)
+  assert.equal(formatDuration(Number.POSITIVE_INFINITY), null)
 })

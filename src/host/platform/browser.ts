@@ -47,6 +47,82 @@ export interface BrowserPage extends PageLike {
   isClosed(): boolean
 }
 
+/* ── 页面池（跨平台并发的地基）────────────────────────────────────────
+   旧实现两行代码（"复用第一个没关的页" / "多于一页就关掉多余的那页"）在
+   串行世界里没问题，在并发世界里是两个 bug：
+     * 并发 acquire 会拿到**同一页**，互相把对方正在解析的页面导航走；
+     * 并发 release 会把**别人正在用的页**当成"多出来的那页"关掉。
+   池的规则：
+     * 借出中的页（checkedOut）绝不再借、绝不被 release 关掉；
+     * 归还的页进空闲表，空闲表**最多留 1 页**（多了就地关闭）——
+       串行行为与旧实现一致（一页反复复用），并发时 tab 数收敛在
+       「并发数 + 1」附近，不会越积越多；
+     * 空闲表里已死的页（被用户手关）直接跳过。
+   抽成纯逻辑（注入 newPage / 初始空闲页）是为了离线单测 ——
+   这类"谁拿到了哪一页、谁关了谁的页"恰恰是最需要钉住的行为。 */
+
+/** 池对页面的最小要求（测试可以注入假页）。 */
+export interface PoolPage {
+  isClosed(): boolean
+  close(): Promise<unknown>
+}
+
+export interface PagePool {
+  /** 拿一页：优先复用空闲页，没有再开新页。借出中的页绝不算空闲。 */
+  acquire(): Promise<PoolPage>
+  /**
+   * 还一页。返回这页最终的归宿：`kept`（进空闲表，下次复用）或 `closed`（就地关闭）。
+   * 不是本池借出的页 → `foreign`（不动它，由调用方处理）。
+   */
+  release(page: PoolPage): Promise<'kept' | 'closed' | 'foreign'>
+  /** 当前借出中的页数（诊断；空闲自关的守卫语义与它无关，别拿来当忙闲判据）。 */
+  inFlight(): number
+}
+
+export function createPagePool(options: {
+  newPage: () => Promise<PoolPage>
+  /** context 自带的首页（about:blank）—— 没有它，串行场景会多开一个 tab。 */
+  seed?: readonly PoolPage[]
+  /** 空闲表容量。默认 1（与旧实现"只剩一页时留着"一致）。 */
+  maxIdle?: number
+}): PagePool {
+  const maxIdle = options.maxIdle ?? 1
+  const idle: PoolPage[] = [...(options.seed ?? [])]
+  const checkedOut = new Set<PoolPage>()
+
+  return {
+    async acquire(): Promise<PoolPage> {
+      while (idle.length > 0) {
+        const candidate = idle.shift()
+        if (candidate !== undefined && !candidate.isClosed()) {
+          checkedOut.add(candidate)
+          return candidate
+        }
+        // 死页（被用户手关）直接丢弃，试下一张
+      }
+      const fresh = await options.newPage()
+      checkedOut.add(fresh)
+      return fresh
+    },
+
+    async release(page: PoolPage): Promise<'kept' | 'closed' | 'foreign'> {
+      if (!checkedOut.has(page)) return 'foreign'
+      checkedOut.delete(page)
+      if (page.isClosed()) return 'closed'
+      if (idle.length < maxIdle) {
+        idle.push(page)
+        return 'kept'
+      }
+      await page.close().catch(() => undefined)
+      return 'closed'
+    },
+
+    inFlight(): number {
+      return checkedOut.size
+    },
+  }
+}
+
 interface PersistentContextLike {
   pages(): BrowserPage[]
   newPage(): Promise<BrowserPage>
@@ -61,7 +137,7 @@ interface PersistentContextLike {
 export interface BrowserManager {
   /** 懒启动 + 单例 + 崩溃后重建。并发调用只会启动一个实例。 */
   ensure(): Promise<void>
-  /** 串行取页（调用方自己保证不与其它抓取并发，互斥在 mutex.ts）。 */
+  /** 取页。跨平台并发时各拿各的页（页面池）；同平台串行由 locks.ts 保证。 */
   page(): Promise<BrowserPage>
   release(page: BrowserPage): Promise<void>
   /** 插件卸载时调用；可重复调用。 */
@@ -187,7 +263,7 @@ export interface BrowserManagerOptions {
    *
    * 三个**必须**拦住的场景（否则会把用户正在用的浏览器关掉）：
    *   * 登录引导轮询中 —— 用户正在那个窗口里登录；
-   *   * 采集/补跑正在进行 —— 互斥锁被持有（mutex.isBusy()）；
+   *   * 采集/补跑正在进行 —— 有平台锁被持有（locks.busy()）；
    *   * PDF 渲染中（它有自己的实例，与本实例无关）。
    * 返回 false = 这次不关，并**重新计时**（不是放弃：下一次空闲还会再试）。
    */
@@ -221,9 +297,17 @@ export function createBrowserManager(options: BrowserManagerOptions): BrowserMan
 
   const isRunning = (): boolean => context !== undefined
 
+  /**
+   * 页面池随 context 生死：旧 context 的页在 closeContext 里整批消失，
+   * 池里再留着它们的引用只会让下一次 acquire 拿到死页。
+   * 所以 context 重建时池也重建（seed 是新 context 的首页）。
+   */
+  let pool: PagePool | undefined
+
   const closeContext = async (): Promise<void> => {
     const active = context
     context = undefined
+    pool = undefined
     if (active === undefined) return
     await active.close().catch(() => undefined) // 不留孤儿进程
   }
@@ -377,9 +461,17 @@ export function createBrowserManager(options: BrowserManagerOptions): BrowserMan
 
     created.on('close', () => {
       // 用户手动关掉浏览器 = 停止，不是错误（C12）
-      if (context === created) context = undefined
+      if (context === created) {
+        context = undefined
+        pool = undefined
+      }
     })
     context = created
+    // 新 context 的池：把自带的首页 seed 进去，串行场景仍然一页反复复用。
+    pool = createPagePool({
+      newPage: async () => await created.newPage(),
+      seed: created.pages().filter((page) => !page.isClosed()),
+    })
   }
 
   /** 懒启动 + 单例；并发调用只会真正启动一次。 */
@@ -405,22 +497,24 @@ export function createBrowserManager(options: BrowserManagerOptions): BrowserMan
     async page(): Promise<BrowserPage> {
       await ensure()
       const active = context
-      if (active === undefined) throw new Error('browser: 上下文不可用')
-      const pages = active.pages()
-      const reusable = pages.find((candidate) => !candidate.isClosed())
-      const chosen = reusable ?? (await active.newPage())
+      const activePool = pool
+      if (active === undefined || activePool === undefined) throw new Error('browser: 上下文不可用')
+      // 并发调用各拿各的页（空闲页优先，没有再开新 tab）——
+      // 这是跨平台并发能成立的地基，见 createPagePool 的注释。
+      const chosen = (await activePool.acquire()) as BrowserPage
       // 每页加固（D-17a）：必须在首次 goto 之前（调用方拿到页面的第一件事就是导航）。
+      // 复用的空闲页已加固过（guardedPages 记着），不会重复装。
       await hardenPage(active, chosen)
       return chosen
     },
 
     async release(page: BrowserPage): Promise<void> {
-      // 只关我们自己多开出来的页面；只剩一页时留着，别把用户的窗口关掉。
-      if (context === undefined) return
-      if (context.pages().length > 1 && !page.isClosed()) {
-        // 要关的页面顺手把守卫 session 拆了；留下的页面守卫保持活跃，下次直接复用。
+      const activePool = pool
+      if (activePool === undefined) return
+      const verdict = await activePool.release(page)
+      if (verdict === 'closed') {
+        // 关掉的页面顺手把守卫 session 拆了；留下的页面守卫保持活跃，下次直接复用。
         guardDisposers.get(page)?.()
-        await page.close().catch(() => undefined)
       }
       // 「用完了」的时刻就是空闲计时的起点。放在这里而不是每个调用点：
       // pageSource 的 acquire/release 是所有采集与登录路径的**唯一**入口。

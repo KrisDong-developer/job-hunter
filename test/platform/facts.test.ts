@@ -87,6 +87,7 @@ test('implementation 由实现派生，不手写', () => {
     requiredFields: ['title'],
     criteriaDimensions: [],
     maxPages: 1,
+    defaultMaxPages: 1,
     criteria: { buildSearchUrl: () => null },
     crawl: {
       gotoSearch: async () => undefined,

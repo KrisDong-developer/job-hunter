@@ -1,16 +1,30 @@
 import { useState, type FormEvent } from 'react'
 import { JOB_FLAG_LABEL, JOB_FLAG_TYPES, JOB_STATES, type JobFlagType, type JobState } from '../../shared/enums.js'
+import { buildExpChips, sortEduValues, type ExpChip } from '../../shared/facets.js'
 import { fetchDedupGroup, fetchJobFacets, fetchJobs, markJob } from '../api.js'
+import { FieldHint } from '../field-hint.js'
 import { JOB_STATE_LABEL, relativeTime } from '../labels.js'
 import { useAsync } from '../use-async.js'
 import { JobDetailPane } from './job-detail.js'
 
 interface Filters {
   q: string
-  /** 多城市：命中任意一个即可；空 = 不限。 */
+  /**
+   * 城市：命中任意一个即可；空 = 不限。
+   *
+   * 界面上是**单选下拉**（2026-09-18：从一排 chips 改成下拉，与关键词 / 月薪 同排），
+   * 但底层仍按数组传 —— 查询层的多城市是一条已经验证过的路径，不为了一个下拉把它拆掉，
+   * 以后要恢复多选也只是换个控件的事。
+   */
   cities: string[]
-  /** 经验 / 学历要求多选：取值来自 facet（平台原始串）。 */
-  expReqs: string[]
+  /**
+   * 经验：存的是**标准梯队的 chip id**，不是平台原始串。
+   *
+   * 原始串在库里就有十几二十种写法（`1-3年` / `1年～3年` / `2-3年` / `2年及以上`…），
+   * 全铺出来用户没法选。选中一个梯队，查询时再展开成它名下的原始取值（见 `facets.ts`）。
+   */
+  expBuckets: string[]
+  /** 学历要求多选：取值来自 facet（平台原始串，界面按学历梯度排过序）。 */
   eduReqs: string[]
   state: string
   minSalary: string
@@ -27,7 +41,7 @@ interface Filters {
 const EMPTY_FILTERS: Filters = {
   q: '',
   cities: [],
-  expReqs: [],
+  expBuckets: [],
   eduReqs: [],
   state: '',
   minSalary: '',
@@ -41,6 +55,17 @@ const EMPTY_FILTERS: Filters = {
 /** 多选 chips 的通用取反：选中就移除，未选中就追加。 */
 function toggleValue(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
+}
+
+/**
+ * 已选梯队 → 传给查询的原始取值。
+ *
+ * 这一步是"标准梯队"能成立的关键：界面按梯队选，查询按库里的原始串查，
+ * 所以归并既没有丢岗位，也没有把用户锁在某个平台的写法里。
+ */
+export function expandExpBuckets(ids: string[], chips: ExpChip[]): string[] {
+  const wanted = new Set(ids)
+  return chips.filter((chip) => wanted.has(chip.id)).flatMap((chip) => chip.values)
 }
 
 const ORDER_OPTIONS: Array<{ value: string; label: string }> = [
@@ -221,6 +246,27 @@ export function JobsScreen(props: {
   const [page, setPage] = useState(1)
   /** 展开着的那一行的去重组 id（同时只开一个：列表本来就密，多开就没法比了）。 */
   const [openGroup, setOpenGroup] = useState<number | null>(null)
+  /**
+   * 高级筛选默认收起。
+   *
+   * 全铺开时筛选条比列表本身还高，而经验 / 学历 / 屏蔽这些是**偶尔**才动的；
+   * 常规那几个（关键词 / 城市 / 月薪 / 状态）才是每次筛选都要看的。
+   */
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  // 筛选器的选项集：一次性拉取，失败不阻塞筛选。
+  // **必须排在 jobs 查询之前** —— 经验筛选存的是梯队 id，要先用它把 id 展开成原始取值，
+  // 查询才知道该带哪些值下去。
+  const facets = useAsync((signal) => fetchJobFacets(signal), [])
+  const facetData = facets.state.status === 'ok' ? facets.state.data : null
+  const citiesAll: string[] = facetData?.cities ?? []
+  /** 学历 chips：按学历梯度正向排列（原来跟着 SQL 的字母序走，顺序是乱的）。 */
+  const eduAll: string[] = sortEduValues(facetData?.eduReqs ?? [])
+  /** 经验 chips：十几个重叠的原始写法归并成最多 6 个标准梯队。 */
+  const expChips: ExpChip[] = buildExpChips(facetData?.expReqs ?? [])
+
+  /** 已选梯队展开成的原始取值 —— 它才是传给查询的东西。 */
+  const appliedExpReqs = expandExpBuckets(applied.expBuckets, expChips)
 
   const { state, reload } = useAsync(
     (signal) =>
@@ -228,7 +274,7 @@ export function JobsScreen(props: {
         {
           q: applied.q,
           cities: applied.cities,
-          expReqs: applied.expReqs,
+          expReqs: appliedExpReqs,
           eduReqs: applied.eduReqs,
           state: applied.state,
           minSalary: applied.minSalary === '' ? null : Number(applied.minSalary),
@@ -243,22 +289,18 @@ export function JobsScreen(props: {
         },
         signal,
       ),
-    [props.revision, applied, page],
+    // `appliedExpReqs` 是 facet 的函数，而 facet 比首屏查询晚到 ——
+    // 不把展开结果算进依赖，梯队就会"选了没反应"（第一次查询根本没带上它）。
+    [props.revision, applied, page, appliedExpReqs.join(',')],
   )
 
-  // 多选 chips 需要"有哪些取值"这个选项集；一次性拉取，失败不阻塞筛选。
-  const facets = useAsync((signal) => fetchJobFacets(signal), [])
-  const facetData = facets.state.status === 'ok' ? facets.state.data : null
-  const citiesAll: string[] = facetData?.cities ?? []
-  const expAll: string[] = facetData?.expReqs ?? []
-  const eduAll: string[] = facetData?.eduReqs ?? []
-
-  const toggleCity = (city: string): void => {
-    setDraft((current) => ({ ...current, cities: toggleValue(current.cities, city) }))
+  /** 城市：下拉单选。底层仍传数组（见 `Filters.cities` 的注释）。 */
+  const setCity = (city: string): void => {
+    setDraft((current) => ({ ...current, cities: city === '' ? [] : [city] }))
   }
 
-  const toggleExp = (value: string): void => {
-    setDraft((current) => ({ ...current, expReqs: toggleValue(current.expReqs, value) }))
+  const toggleExpBucket = (id: string): void => {
+    setDraft((current) => ({ ...current, expBuckets: toggleValue(current.expBuckets, id) }))
   }
 
   const toggleEdu = (value: string): void => {
@@ -286,6 +328,19 @@ export function JobsScreen(props: {
     setPage(1)
   }
 
+  /**
+   * 排序：**立即生效**，不等「筛选」。
+   *
+   * 它本来长在筛选条里，但排序改的是"结果怎么排"，不是"结果有哪些" ——
+   * 改完之后还要再点一次「筛选」才生效，是把这个控件放在了错误的语义位置上。
+   * 现在它在列表头栏（用户正看着的那个列表），点完当场重排。
+   */
+  const changeOrder = (orderBy: string): void => {
+    setDraft((current) => ({ ...current, orderBy }))
+    setApplied((current) => ({ ...current, orderBy }))
+    setPage(1)
+  }
+
   /** 正在被快捷标记的岗位 id（列表很密，单张卡片内闪烁即可，不必弹整条错误）。 */
   const [marking, setMarking] = useState<number | null>(null)
   const quickMark = async (id: number, state: JobState): Promise<void> => {
@@ -307,159 +362,215 @@ export function JobsScreen(props: {
   /** 已生效的「只看新增」窗口名（用于列表头说明，避免用户困惑"怎么这么少"）。 */
   const appliedWindowLabel =
     NEW_JOB_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null
+  /**
+   * 高级筛选里选中的条件条数。
+   *
+   * 收起之后，被折叠的那些 chips 在界面上就没有任何痕迹了 —— 用户会以为"我什么都没选"
+   * 而列表却是筛过的。所以把条数写在折叠开关上：条件没白设，一眼看得见。
+   * 只统计折叠面板里的（经验 / 学历 / 新增时间 / 屏蔽 / 跨平台折叠）：
+   * 常驻的那几个控件一直看得见，不用它替自己说话。
+   *
+   * 经验按**梯队个数**算（不是展开后的原始取值个数）：用户选的是 1 个 chip，
+   * 就该显示"已选 1 项"，而不是它背后压着 3 个平台写法。
+   */
+  const advancedCount =
+    draft.expBuckets.length +
+    draft.eduReqs.length +
+    draft.excludeFlags.length +
+    (draft.newWindow === '' ? 0 : 1) +
+    (draft.groupDuplicates ? 1 : 0)
 
   return (
     <div className="jh-jobs-split">
-      <form className="jh-filters" onSubmit={submit}>
-        <input
-          className="jh-input jh-input-grow"
-          placeholder="关键词（岗位名）"
-          aria-label="关键词"
-          value={draft.q}
-          onChange={(event) => setDraft({ ...draft, q: event.target.value })}
-        />
-        <select
-          className="jh-select jh-input-sm"
-          aria-label="状态"
-          value={draft.state}
-          onChange={(event) => setDraft({ ...draft, state: event.target.value })}
-        >
-          <option value="">全部状态</option>
-          {JOB_STATES.map((value) => (
-            <option key={value} value={value}>
-              {JOB_STATE_LABEL[value]}
-            </option>
-          ))}
-        </select>
-        <input
-          className="jh-input jh-input-sm"
-          placeholder="最低月薪"
-          aria-label="最低月薪"
-          inputMode="numeric"
-          value={draft.minSalary}
-          onChange={(event) => setDraft({ ...draft, minSalary: event.target.value.replace(/[^0-9]/g, '') })}
-        />
-        <select
-          className="jh-select jh-input-sm"
-          aria-label="排序"
-          value={draft.orderBy}
-          onChange={(event) => setDraft({ ...draft, orderBy: event.target.value })}
-        >
-          {ORDER_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        {/* 主次分明：筛选是主操作（实心），重置是三级动作（无边框） */}
-        <button type="submit" className="jh-btn jh-btn-inline jh-btn-primary">筛选</button>
-        <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={reset}>重置</button>
-
-        {/* 城市多选（从已有岗位库去重而来）+ 屏蔽标注：都是点的补充条件，点完直接筛选 */}
-        {citiesAll.length === 0 ? null : (
-          <span className="jh-filter-row" role="group" aria-label="城市（可多选）">
-            <span className="jh-filter-label">城市</span>
-            {citiesAll.map((city) => (
-              <button
-                key={city}
-                type="button"
-                className={`jh-chip${draft.cities.includes(city) ? ' jh-chip-on' : ''}`}
-                aria-pressed={draft.cities.includes(city)}
-                onClick={() => toggleCity(city)}
-              >
-                {city}
-              </button>
-            ))}
-          </span>
-        )}
-        {/* 经验 / 学历：与城市同一套多选 chips。取值来自库里的真实数据，
-            所以不会出现"点了得到 0 条"的选项。 */}
-        {expAll.length === 0 ? null : (
-          <span className="jh-filter-row" role="group" aria-label="经验要求（可多选）">
-            <span className="jh-filter-label">经验</span>
-            {expAll.map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`jh-chip${draft.expReqs.includes(value) ? ' jh-chip-on' : ''}`}
-                aria-pressed={draft.expReqs.includes(value)}
-                onClick={() => toggleExp(value)}
-              >
-                {value}
-              </button>
-            ))}
-          </span>
-        )}
-        {eduAll.length === 0 ? null : (
-          <span className="jh-filter-row" role="group" aria-label="学历要求（可多选）">
-            <span className="jh-filter-label">学历</span>
-            {eduAll.map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`jh-chip${draft.eduReqs.includes(value) ? ' jh-chip-on' : ''}`}
-                aria-pressed={draft.eduReqs.includes(value)}
-                onClick={() => toggleEdu(value)}
-              >
-                {value}
-              </button>
-            ))}
-          </span>
-        )}
-        <span className="jh-filter-row" role="group" aria-label="屏蔽标注">
-          <span className="jh-filter-label">屏蔽</span>
-          {JOB_FLAG_TYPES.map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={`jh-chip${draft.excludeFlags.includes(type) ? ' jh-chip-on' : ''}`}
-              aria-pressed={draft.excludeFlags.includes(type)}
-              title={`不显示标注为「${JOB_FLAG_LABEL[type]}」的岗位`}
-              onClick={() => toggleExclude(type)}
-            >
-              {JOB_FLAG_LABEL[type]}
-            </button>
-          ))}
-        </span>
-
-        {/* 「新增」时间窗：存量与增量的分界线。按**首次见到**时间（`first_seen_at`）算，
-            与首屏「今日新增」同口径；再抓一次不会让老岗位混进来（那是 `last_seen_at`）。
-            单选，点已选中的那个即回到「全部」。 */}
-        <span className="jh-filter-row" role="group" aria-label="只看新增">
-          <span className="jh-filter-label">新增</span>
-          {NEW_JOB_WINDOWS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`jh-chip${draft.newWindow === option.value ? ' jh-chip-on' : ''}`}
-              aria-pressed={draft.newWindow === option.value}
-              title={`只看${option.label}第一次出现的岗位（按首次见到时间算，与首屏「今日新增」同口径）`}
-              onClick={() =>
-                setDraft((current) => ({
-                  ...current,
-                  newWindow: current.newWindow === option.value ? '' : option.value,
-                }))
-              }
-            >
-              {option.label}
-            </button>
-          ))}
-        </span>
-
-        {/* 批次 4：跨平台折叠。同一条岗位在多个平台各抓一条时，列表里只留一行 ——
-            点开那一行的「跨平台对照」能看到它在别的平台都是什么样的。
-            默认关闭：折叠会少显示行，"默认少显示"是替用户做决定。 */}
-        <span className="jh-filter-row" role="group" aria-label="跨平台折叠">
-          <button
-            type="button"
-            className={`jh-chip${draft.groupDuplicates ? ' jh-chip-on' : ''}`}
-            aria-pressed={draft.groupDuplicates}
-            title="同一条岗位在多个平台各抓一条时只显示一行（展开可看各平台对照）。条数与分页也跟着按折叠后算。"
-            onClick={() => setDraft((current) => ({ ...current, groupDuplicates: !current.groupDuplicates }))}
+      {/* 筛选区：**一条朴素的常规工具条 + 一个「高级筛选」折叠**（2026-09-18 重做）。
+          上一版拆成两个带标题、竖条、分隔线的"块"，还上了对齐网格 —— 在一屏本来就不宽的
+          界面里堆了整套表单装饰，按钮被 margin-left:auto 推到屏幕另一头，离它要提交的控件老远。
+          这一版做减法：常规条件就是一条工具条，按钮紧跟在最后一个控件后面；
+          高级条件收进折叠面板，面板里只用"标签 + 控件"两列排布，没有边框、没有底色、没有标题。
+          另外：一屏里同时出现胶囊 / 分段控件 / 拨杆三种形状本身就是噪音，
+          所以新增时间回到原生单选下拉（原生 select 天然不可多选），
+          跨平台折叠用项目里既有的复选框（.jh-check），形状只在**颜色**上做区分。 */}
+      <form className="jh-jobs-filters" onSubmit={submit}>
+        <div className="jh-jobs-filter-line">
+          <input
+            className="jh-input jh-input-grow"
+            placeholder="关键词（岗位名）"
+            aria-label="关键词"
+            value={draft.q}
+            onChange={(event) => setDraft({ ...draft, q: event.target.value })}
+          />
+          <select
+            className="jh-select jh-input-md"
+            aria-label="城市"
+            value={draft.cities[0] ?? ''}
+            onChange={(event) => setCity(event.target.value)}
           >
-            跨平台折叠
-          </button>
-        </span>
+            <option value="">全部城市</option>
+            {citiesAll.map((city) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </select>
+          <select
+            className="jh-select jh-input-md"
+            aria-label="状态"
+            value={draft.state}
+            onChange={(event) => setDraft({ ...draft, state: event.target.value })}
+          >
+            <option value="">全部状态</option>
+            {JOB_STATES.map((value) => (
+              <option key={value} value={value}>
+                {JOB_STATE_LABEL[value]}
+              </option>
+            ))}
+          </select>
+          <input
+            className="jh-input jh-input-sm"
+            placeholder="最低月薪"
+            aria-label="最低月薪"
+            inputMode="numeric"
+            value={draft.minSalary}
+            onChange={(event) => setDraft({ ...draft, minSalary: event.target.value.replace(/[^0-9]/g, '') })}
+          />
+          {/* 主次分明：筛选是主操作（实心），重置是三级动作（无边框）。
+              贴在最后一个控件后面 —— 筛选条是一句话，按钮是这句话的句号，
+              不该飘到屏幕另一头（那是上一版最刺眼的毛病）。 */}
+          <button type="submit" className="jh-btn jh-btn-inline jh-btn-primary">筛选</button>
+          <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={reset}>重置</button>
+        </div>
+
+        {/* 折叠开关：一整行只有一行小字，不抢视线 */}
+        <button
+          type="button"
+          className="jh-jobs-filter-toggle"
+          aria-expanded={advancedOpen}
+          aria-controls="jh-jobs-advanced"
+          onClick={() => setAdvancedOpen((open) => !open)}
+        >
+          <span className="jh-jobs-filter-caret" aria-hidden="true">{advancedOpen ? '▾' : '▸'}</span>
+          <span className="jh-jobs-filter-toggle-text">高级筛选</span>
+          <span className={`jh-filter-note${advancedCount > 0 ? ' jh-filter-note-on' : ''}`}>
+            {advancedCount > 0 ? `已选 ${String(advancedCount)} 项` : '经验 / 学历 / 新增时间 / 屏蔽 / 跨平台折叠'}
+          </span>
+        </button>
+        {/* 收起用 hidden 而不是不渲染：DOM 留着，aria-controls 才有指向，展开时也不重建控件。
+            ⚠️ 必须配 `.jh-jobs-filter-panel[hidden]{display:none}` —— 类选择器的 display 会盖掉
+            UA 样式表里的 [hidden]，不写这条就收不起来。
+            类名一律带 `jh-jobs-` 前缀：同一个仓库里有别的会话在并行改界面，
+            `jh-filter-panel` 这种通用名已经撞过一次（流水线屏在用），所以按屏前缀区分。 */}
+        <div className="jh-jobs-filter-panel" id="jh-jobs-advanced" hidden={!advancedOpen}>
+          {expChips.length === 0 ? null : (
+            <div className="jh-jobs-filter-row">
+              <span className="jh-jobs-filter-label">
+                经验
+                <FieldHint text="各平台的经验写法不统一（1-3年 / 1年～3年 / 2-3年 / 2年及以上…），这里归成 6 个标准梯队。选中一档，会把库里属于它的写法一起查出来，所以不会被梯队的名字漏掉。" />
+              </span>
+              <span className="jh-jobs-filter-body" role="group" aria-label="经验要求（可多选）">
+                {expChips.map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    className={`jh-chip${draft.expBuckets.includes(chip.id) ? ' jh-chip-on' : ''}`}
+                    aria-pressed={draft.expBuckets.includes(chip.id)}
+                    title={`库里属于这一档的写法：${chip.values.join(' / ')}`}
+                    onClick={() => toggleExpBucket(chip.id)}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </span>
+            </div>
+          )}
+
+          {eduAll.length === 0 ? null : (
+            <div className="jh-jobs-filter-row">
+              <span className="jh-jobs-filter-label">学历</span>
+              <span className="jh-jobs-filter-body" role="group" aria-label="学历要求（可多选）">
+                {eduAll.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`jh-chip${draft.eduReqs.includes(value) ? ' jh-chip-on' : ''}`}
+                    aria-pressed={draft.eduReqs.includes(value)}
+                    onClick={() => toggleEdu(value)}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </span>
+            </div>
+          )}
+
+          <div className="jh-jobs-filter-row">
+            <span className="jh-jobs-filter-label">
+              新增时间
+              <FieldHint text="按「首次见到」时间算，与首屏「今日新增」同口径 —— 再抓一次不会让老岗位混进来（那是「最近见到」）。单选，不选 = 不限。" />
+            </span>
+            <span className="jh-jobs-filter-body">
+              {/* 原生单选下拉：它天然不可多选，"能同时选近24小时和近7天吗"这个疑问不存在。
+                  也比分段控件少一种形状 —— 与上面的城市 / 状态下拉是同一套控件。 */}
+              <select
+                className="jh-select jh-input-md"
+                aria-label="只看新增"
+                value={draft.newWindow}
+                onChange={(event) => setDraft({ ...draft, newWindow: event.target.value })}
+              >
+                <option value="">不限</option>
+                {NEW_JOB_WINDOWS.map((option) => (
+                  <option key={option.value} value={option.value} title={option.label}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </div>
+
+          <div className="jh-jobs-filter-row">
+            <span className="jh-jobs-filter-label">
+              屏蔽
+              <FieldHint text="命中标注的岗位一律不显示。标注是本地规则算出来的（外包/高风险/僵尸岗/黑话等），不需要你逐条判断；每一项都可以单独关掉。" />
+            </span>
+            {/* 负向过滤只靠**颜色**与正向 chips 区分（浅红底 + 红字 + ✕），形状保持同一种胶囊：
+                多造一种形状换来的辨识度，抵不过一屏四种控件的杂乱。 */}
+            <span className="jh-jobs-filter-body" role="group" aria-label="屏蔽标注">
+              {JOB_FLAG_TYPES.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  className={`jh-chip jh-chip-neg${draft.excludeFlags.includes(type) ? ' jh-chip-neg-on' : ''}`}
+                  aria-pressed={draft.excludeFlags.includes(type)}
+                  title={`不显示标注为「${JOB_FLAG_LABEL[type]}」的岗位`}
+                  onClick={() => toggleExclude(type)}
+                >
+                  {JOB_FLAG_LABEL[type]}
+                </button>
+              ))}
+            </span>
+          </div>
+
+          <div className="jh-jobs-filter-row">
+            <span className="jh-jobs-filter-label">
+              折叠
+              <FieldHint text="同一条岗位在多个平台各抓一条时只显示一行（展开可看各平台对照）。条数与分页也跟着按折叠后算。默认关闭：折叠会少显示行，「默认少显示」是替你做决定。" />
+            </span>
+            {/* 复选框而不是拨杆：它和旁边的条件一样**点「筛选」才生效**。
+                拨杆的形态承诺"现在就开着了"，放在要提交的表单里反而会误导
+                （这也是上一版看起来别扭的原因之一）。 */}
+            <span className="jh-jobs-filter-body">
+              <label className="jh-check">
+                <input
+                  type="checkbox"
+                  checked={draft.groupDuplicates}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, groupDuplicates: event.target.checked }))
+                  }
+                />
+                跨平台折叠（同一条岗位只显示一行）
+              </label>
+            </span>
+          </div>
+        </div>
       </form>
 
       <div className="jh-jobs-cols">
@@ -493,14 +604,39 @@ export function JobsScreen(props: {
                   {appliedWindowLabel === null ? '' : `（只看${appliedWindowLabel}的新增）`} · 第{' '}
                   {state.data.page} / {pages} 页
                 </span>
-                <Pager page={state.data.page} pages={pages} hasMore={state.data.hasMore} onGo={setPage} />
+                {/* 排序在列表头栏（2026-09-18）：它决定"结果**怎么排**"，不是"结果有哪些"。
+                    留在筛选条里，用户改完还得再点一次「筛选」才生效 —— 那是把它放在了错误的语义位置上。
+                    这里改完当场重排（跨平台折叠不在这儿：它改的是"结果有哪些"，属于筛选条件，
+                    已经放回上面的折叠面板）。 */}
+                <span className="jh-listbar-right">
+                  <label className="jh-sort">
+                    <span className="jh-sort-label">排序</span>
+                    <select
+                      className="jh-select jh-sort-select"
+                      value={applied.orderBy}
+                      onChange={(event) => changeOrder(event.target.value)}
+                    >
+                      {ORDER_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Pager page={state.data.page} pages={pages} hasMore={state.data.hasMore} onGo={setPage} />
+                </span>
               </div>
 
               <ul className="jh-jobs">
                 {state.data.items.map((job) => {
                   const active = job.id === props.selected
                   const requirements = [job.expReq, job.eduReq].filter((item) => item !== '').join('·')
-                  const seen = relativeTime(job.lastSeenAt)
+                  // 两个时间回答的是两个不同的问题，都要露在卡片上：
+                  //   抓取 = 这份记录是什么时候拿到手的（数据来路，也是列表默认排序用的那一列）
+                  //   最近见到 = 最近一次在平台上又看到它（新鲜度，"这岗还在招吗"）
+                  // 解析不出来就印原始串（与详情页一致），不硬凑一个"未知时间"。
+                  const crawled = relativeTime(job.crawledAt) ?? job.crawledAt
+                  const seen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt
                   return (
                     <li key={job.id}>
                       <div className="jh-job-row">
@@ -525,12 +661,15 @@ export function JobsScreen(props: {
                               {requirements === '' ? null : <span>{requirements}</span>}
                               <span className="jh-job-company">{job.companyName ?? '—'}</span>
                             </span>
-                            {/* 来源与新鲜度：一条岗位从哪来、最近一次见到是什么时候。
-                                后者比「首次见到」更能回答"这岗还在招吗"——它一直用于排序，
-                                却从来没在界面上露过面。 */}
+                            {/* 来源平台 + 两个时间：一条岗位从哪来、这份记录什么时候拿到的、
+                                最近一次见到它是什么时候。抓取时间正是列表默认排序用的那一列
+                                （`crawled_at`），可它在界面上从来没露过面 —— 用户按"抓取时间"
+                                排完了，却指不出哪一列是它。两个都写 `title` 给出精确时刻：
+                                相对时间好读，绝对时间才是事实。 */}
                             <span className="jh-job-origin">
                               <span>{job.platformName ?? job.platformId}</span>
-                              {seen === null ? null : <span>最近见到 {seen}</span>}
+                              <span title={job.crawledAt}>抓取 {crawled}</span>
+                              <span title={job.lastSeenAt}>最近见到 {seen}</span>
                               {/* 批次 4：这条岗位在别的平台也在招（同一组）。
                                   徽章只是**读数**，"展开对照"在右侧那个按钮上。 */}
                               {job.dedupGroupId === null ? null : (

@@ -9,7 +9,7 @@ import {
   DEFAULT_FIFTYONE_CONFIG,
   type FiftyOneConfig,
 } from '../../src/host/platform/adapters/fiftyone-job.js'
-import { createMutex } from '../../src/host/platform/mutex.js'
+import { createPlatformLocks } from '../../src/host/platform/locks.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { readYieldSnapshot } from '../../src/host/platform/yield-baseline.js'
 import type { PageSource } from '../../src/host/platform/types.js'
@@ -50,7 +50,7 @@ function harness(
   const deps: CrawlDeps = {
     store,
     registry,
-    mutex: createMutex(),
+    locks: createPlatformLocks(),
     pageSource:
       options.pageSource ??
       fixturePageSource({ htmlPath: fixtureHtmlPath(), url: SEARCH_URL }),
@@ -236,7 +236,7 @@ test('平台配额耗尽（quota-exhausted）：报 PLATFORM_QUOTA 而不是 BLO
   }
 })
 
-test('并发抓取被全局互斥挡住（同一 tick 的第二次也必须被拒）', async () => {
+test('同平台的并发抓取被挡住（同一 tick 的第二次也必须被拒）；不同平台不受影响（见 locks.test）', async () => {
   const h = harness()
   try {
     const first = runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })

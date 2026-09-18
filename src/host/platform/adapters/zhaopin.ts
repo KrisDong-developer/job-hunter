@@ -1004,6 +1004,7 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
     requiredFields: CORE_FIELDS as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: ZHAOPIN_MAX_PAGES,
+    defaultMaxPages: ZHAOPIN_DEFAULT_MAX_PAGES,
 
     auth: {
       loginUrl: 'https://passport.zhaopin.com/login',

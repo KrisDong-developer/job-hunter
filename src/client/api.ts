@@ -566,13 +566,38 @@ export interface SettingsDto {
     batchLimit: number
     requireApproval: boolean
     auditEnabled: boolean
+    /** 发送时间窗口，`'HH:MM-HH:MM'`（本地时间，支持跨午夜）；空串 = 不限。 */
+    sendWindow: string
+    /** 随机休息日概率（0–1）。 */
+    dayOffProbability: number
   }
-  /** 浏览器运行期设置（目前只有空闲自关）。不是闸门配置，模型也可改。 */
-  browser: { idleCloseMinutes: number }
+  /**
+   * 浏览器运行期设置（资源设置，不是闸门配置，模型也可改）。
+   * 宿主那边还有 `engine` / `stealthInit` 两个键，界面目前不用，所以不在这里声明。
+   */
+  browser: {
+    idleCloseMinutes: number
+    /** 每轮采集结束后就关掉采集浏览器（打开时 `idleCloseMinutes` 被它接管）。 */
+    closeAfterRun: boolean
+  }
   derived: {
     purposes: Array<{ purpose: string; label: string; enabled: boolean }>
     modelEditable: string[]
     modelForbidden: string[]
+    /**
+     * 出厂默认值（由宿主下发，客户端不另写一份）。
+     * 界面用它填问号说明里的"默认多少"，以及发送时段为空（不限）时输入框显示什么。
+     */
+    defaults: {
+      purposes: Record<string, boolean>
+      guard: {
+        dailyLimits: { greeting: number; application: number; reply: number }
+        cooldownMinutes: number
+        batchLimit: number
+        sendWindow: string
+        dayOffProbability: number
+      }
+    }
   }
 }
 
@@ -631,6 +656,23 @@ export async function sendGreeting(input: {
 
 export async function fetchSettings(signal?: AbortSignal): Promise<SettingsDto> {
   return await request<SettingsDto>('/settings', signal === undefined ? {} : { signal })
+}
+
+/**
+ * 在系统文件管理器里打开数据文件所在目录。
+ *
+ * 浏览器没有打开本机文件夹的能力，所以这件事由宿主半执行 ——
+ * 而且它**只认数据文件自己的目录**，界面传不了路径（见 `host/util/reveal.ts`）。
+ *
+ * 返回 `ok: false` 是**业务结果**（宿主里没有文件管理器），不是协议错误：
+ * 界面要如实转述，不能一律说"已打开"。
+ */
+export async function revealDataDir(): Promise<{ dir: string; ok: boolean; reason: string | null }> {
+  const result = await request<{ ok: boolean; dir: string; reason?: string }>('/system/reveal', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+  return { dir: result.dir, ok: result.ok, reason: result.reason ?? null }
 }
 
 export async function updateSettings(patch: {

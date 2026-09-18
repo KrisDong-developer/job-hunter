@@ -477,6 +477,8 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     requiredFields: ['title', 'company', 'source_url'] as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: ZHIPIN_MAX_PAGES,
+    // 没有可寻址的页码（滚动加载走 scrollRounds 维度）—— 页数恒 1。
+    defaultMaxPages: 1,
 
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {

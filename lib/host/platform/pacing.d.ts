@@ -56,7 +56,14 @@ export interface BurstGuardOptions {
     /** 规则集（默认 `BURST_RULES`）。 */
     rules?: readonly BurstRule[];
 }
-/** 滑动窗口突发惩罚。非线程安全（采集是单线程串行的，见 mutex）。 */
+/**
+ * 滑动窗口突发惩罚。
+ *
+ * 访问模式假设：**同一把守卫只被一个平台、且串行地使用** —— 生产侧由
+ * runtime 按 platformId 记忆实例（跨平台并发下各平台各一份，互不污染窗口），
+ * 同平台串行由 platform/locks.ts 保证。跨轮次共享是刻意的：突发规则的
+ * 本意就是"这个站点最近是不是被连续快请求打过"，换个轮次就清零等于没防。
+ */
 export declare class BurstGuard implements BurstGuardLike {
     private readonly marks;
     private readonly now;

@@ -601,6 +601,8 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
     requiredFields: [...CORE_FIELDS] as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: config.maxPages,
+    // 未声明默认深度（hint 只说了上限的取舍理由）—— 1 页。
+    defaultMaxPages: 1,
 
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {

@@ -245,7 +245,7 @@ dsh-job-hunter/
 >
 > **实现注（P1 落地时）**，另有两处目录差异，都是为了「产物自包含」：
 > - `store/schema.sql` → **`store/schema.ts`** 导出 DDL 字符串。`tsc` 逐文件输出与 esbuild 打包都不会自动带上同目录的 `.sql`，一旦没带上就是运行期才报「文件找不到」；放进模块里天然自包含，且仍然只有一份权威来源。
-> - 新增 **`host/runtime.ts`**（composition root）。需要一个装配点把 store / 适配器注册表 / 全局互斥 / 浏览器管理器 / 领域服务接起来，`http/` 与 `tools/` 只跟它打交道；数据层在其中**异步就绪**，以保证 `apply()` 立即返回（§4.9）。
+> - 新增 **`host/runtime.ts`**（composition root）。需要一个装配点把 store / 适配器注册表 / 平台锁（按平台互斥）/ 浏览器管理器 / 领域服务接起来，`http/` 与 `tools/` 只跟它打交道；数据层在其中**异步就绪**，以保证 `apply()` 立即返回（§4.9）。
 
 ---
 
@@ -306,7 +306,7 @@ interface BrowserManager {
 | 浏览器发现顺序 | 配置指定 → 系统 Chrome → 系统 Edge → `%LOCALAPPDATA%\ms-playwright` 缓存 | 多级兜底；实测缓存 revision 匹配脆，只作末选 |
 | 上下文 | `launchPersistentContext(profileDir, { headless:false, locale:'zh-CN', timezoneId:'Asia/Shanghai', args:['--disable-blink-features=AutomationControlled'] })` | 复用用户手动登录一次后的登录态；沿用已验证可行的参数组合 |
 | 运行位置 | **宿主进程内**（Chromium 本身是独立 OS 进程） | 省掉 IPC 与状态同步；playwright 客户端很轻 |
-| 并发 | **全局互斥**，串行执行 | 防触发风控（P5、C12） |
+| 并发 | **按平台互斥**（同平台串行；跨平台并发，上限 `MAX_CONCURRENT_PLATFORMS=3` 泳道），页面按池分配 | 风控按站点看，跨平台并发不提高任何单站速率；同平台串行 + 按平台共享的突发惩罚仍是防风控的底线（P5、C12；2026-09-18 由全局互斥收窄而来） |
 | 崩溃恢复 | `disconnected` 事件 → 标记不可用 → 下次调用重建；用户手动关闭浏览器视为停止，不弹错误 | C12 |
 | 卸载清理 | `ctx.effect` 注册关闭 | 不留孤儿进程 |
 | **热重载幂等**（v3） | 清理走 `ctx.effect()`（首选，fiber 自动回收），`ctx.on('dispose')` 作兜底。dispose → apply 反复发生时，第二次 apply 必须能重建而不与残留冲突 | profile 是 `patchReload: live`，热重载会频繁触发。清理不彻底会导致**两个浏览器抢同一 profile 目录**（Chromium 单例锁），直接报错 |

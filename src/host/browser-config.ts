@@ -11,6 +11,7 @@
  * 所以单独一个键 + 单独一个读写器，走 setting 表的 `scope='global'`。
  */
 import {
+  BROWSER_CLOSE_AFTER_RUN_MS,
   BROWSER_IDLE_DEFAULT_MIN,
   BROWSER_IDLE_KEY,
   BROWSER_IDLE_MAX_MIN,
@@ -26,6 +27,14 @@ export interface BrowserConfig {
    */
   idleCloseMinutes: number
   /**
+   * **每轮采集结束后就关掉采集浏览器**（用户要求：跑完那扇窗口就该消失）。
+   *
+   * 默认开。打开时 `idleCloseMinutes` 那一格被接管（实际时长见 `idleCloseMsOf`）——
+   * 代价是"连着点两次立即采集"时第二次会多花几秒冷启动浏览器；
+   * 想要"留一会儿、连着跑几次"就把它关掉，改由分钟那一格决定。
+   */
+  closeAfterRun: boolean
+  /**
    * 引擎偏好（D-17a）。`auto` = 优先 patchright，装不上退 playwright-core。
    */
   engine: BrowserEngine
@@ -37,6 +46,7 @@ export interface BrowserConfig {
 
 export const BROWSER_IDLE_FALLBACK: BrowserConfig = {
   idleCloseMinutes: BROWSER_IDLE_DEFAULT_MIN,
+  closeAfterRun: true,
   engine: 'auto',
   stealthInit: true,
 }
@@ -53,7 +63,12 @@ const ENGINES: readonly BrowserEngine[] = ['auto', 'patchright', 'playwright-cor
  * 小数按四舍五入取整分钟。
  */
 export function normalizeBrowserConfig(input: unknown): BrowserConfig {
-  const raw = (input as { idleCloseMinutes?: unknown; engine?: unknown; stealthInit?: unknown } | null | undefined)
+  const raw = (input as {
+    idleCloseMinutes?: unknown
+    closeAfterRun?: unknown
+    engine?: unknown
+    stealthInit?: unknown
+  } | null | undefined)
   const fallback = { ...BROWSER_IDLE_FALLBACK }
   if (raw === null || typeof raw !== 'object') return fallback
 
@@ -66,13 +81,30 @@ export function normalizeBrowserConfig(input: unknown): BrowserConfig {
     )
   }
 
+  // 老版本存下来的 JSON 里没有这个键 → 用默认值（默认是开，所以升级后行为立即符合预期）。
+  const closeAfterRun =
+    typeof raw.closeAfterRun === 'boolean' ? raw.closeAfterRun : fallback.closeAfterRun
+
   const engine = typeof raw.engine === 'string' && (ENGINES as readonly string[]).includes(raw.engine)
     ? (raw.engine as BrowserEngine)
     : fallback.engine
 
   const stealthInit = typeof raw.stealthInit === 'boolean' ? raw.stealthInit : fallback.stealthInit
 
-  return { idleCloseMinutes, engine, stealthInit }
+  return { idleCloseMinutes, closeAfterRun, engine, stealthInit }
+}
+
+/**
+ * 实际生效的空闲关闭时长（毫秒）。`<= 0` = 不自动关闭。
+ *
+ * **唯一的裁决点**：启动后读一次、设置写入时再作用一次，两处都走它 ——
+ * 各写一遍 `closeAfterRun ? 短 : 分钟 * 60000` 迟早会漂移，
+ * 而漂移的表现是"设置里写着 10 分钟，实际 3 秒就关了"这种最难查的错。
+ */
+export function idleCloseMsOf(config: BrowserConfig): number {
+  // 开关打开时由它接管：短时长**优先**，分钟那一格不再起作用（设置页里会说明并置灰）。
+  if (config.closeAfterRun) return BROWSER_CLOSE_AFTER_RUN_MS
+  return config.idleCloseMinutes * 60_000
 }
 
 export function readBrowserConfig(store: Store): BrowserConfig {

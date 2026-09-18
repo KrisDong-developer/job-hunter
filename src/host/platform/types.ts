@@ -248,6 +248,16 @@ export interface SiteAdapter {
   criteriaDimensions: readonly CriteriaDimension[]
   /** 抓取深度的上限（页数）。超出即拒绝，而不是默默截断。 */
   maxPages: number
+  /**
+   * 抓取深度的**默认**页数：方案没配 `maxPages` 时用它（`crawl.ts` 的取用链是
+   * `criteria.maxPages ?? options.maxPages ?? defaultMaxPages`）。
+   *
+   * 为什么必须是适配器声明而不是全局一个数：风控强度是**平台事实** ——
+   * 猎聘/拉勾（antiBot=high）默认 3 页、智联默认 5 页，都有站点侧依据；
+   * 没有依据的平台就老老实实 1 页。曾经这里只有 hint 文案里的"默认 N 页"
+   * 而执行链永远是 1 页 —— 文案说了三年假话，本字段让它们变成事实。
+   */
+  defaultMaxPages: number
 
   criteria: {
     /** URL 编码路径 —— 首选，比 DOM 回填稳健得多，也少触发风控（ADR-9）。 */

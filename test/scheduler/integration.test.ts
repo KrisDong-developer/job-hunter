@@ -6,7 +6,7 @@ import { createJobService } from '../../src/host/domain/jobs.js'
 import { createPlanService } from '../../src/host/domain/plans.js'
 import { createEventBus } from '../../src/host/http/sse.js'
 import { createFiftyOneAdapter, DEFAULT_FIFTYONE_CONFIG } from '../../src/host/platform/adapters/fiftyone-job.js'
-import { createMutex } from '../../src/host/platform/mutex.js'
+import { createPlatformLocks } from '../../src/host/platform/locks.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { createScheduler } from '../../src/host/scheduler/index.js'
 import { createManualTimer } from '../../src/host/scheduler/timer-port.js'
@@ -25,7 +25,7 @@ test('到点自动跑并入库：定时器 → 调度器 → runCrawl → 岗位
   const store = openTestStore()
   const registry = createAdapterRegistry()
   registry.register(createFiftyOneAdapter({ config: DEFAULT_FIFTYONE_CONFIG }))
-  const mutex = createMutex()
+  const locks = createPlatformLocks()
   const events = createEventBus()
   const timer = createManualTimer()
 
@@ -53,7 +53,7 @@ test('到点自动跑并入库：定时器 → 调度器 → runCrawl → 岗位
         {
           store,
           registry,
-          mutex,
+          locks,
           pageSource: fixturePageSource({ htmlPath: fixtureHtmlPath(), url: SEARCH_URL }),
           jobs,
           companies,
@@ -122,7 +122,7 @@ test('错过一轮：只生成补跑待办；用户点补跑后同样入库（C9
   const store = openTestStore()
   const registry = createAdapterRegistry()
   registry.register(createFiftyOneAdapter({ config: DEFAULT_FIFTYONE_CONFIG }))
-  const mutex = createMutex()
+  const locks = createPlatformLocks()
   const timer = createManualTimer()
 
   // 现在是 16 日 8:00，方案本该 15 日 7:00 跑
@@ -149,7 +149,7 @@ test('错过一轮：只生成补跑待办；用户点补跑后同样入库（C9
         {
           store,
           registry,
-          mutex,
+          locks,
           pageSource: fixturePageSource({ htmlPath: fixtureHtmlPath(), url: SEARCH_URL }),
           jobs,
           companies,

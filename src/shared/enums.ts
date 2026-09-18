@@ -100,6 +100,20 @@ export const MATURITY_LEVEL_LABEL: Record<MaturityLevel, string> = {
   disabled: '停用（平台侧不可用，需改配置才启用）',
 }
 
+/**
+ * 同上，**密集表格里用的短档**（能力矩阵一列 10 行，长标签会把表格撑到必须横向滚动）。
+ *
+ * 为什么放在这个文件、紧挨着长标签：界面层自己再写一份 `{stable:'可用'}` 就是
+ * **第二份文案**，迟早与 `MATURITY_LEVEL_LABEL` 漂移（本项目已经为这类漂移
+ * 吃过亏，见 `styles.ts` 里 `.jh-clip` 那段注释）。放在一起，改一处就够。
+ */
+export const MATURITY_LEVEL_SHORT: Record<MaturityLevel, string> = {
+  stable: '可用',
+  calibrated: '已校准',
+  experimental: '实验',
+  disabled: '停用',
+}
+
 export const MATURITY_LEVEL_TONE: Record<MaturityLevel, 'ok' | 'warn' | 'error' | 'muted'> = {
   stable: 'ok',
   calibrated: 'warn',

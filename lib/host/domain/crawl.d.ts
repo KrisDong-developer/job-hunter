@@ -1,6 +1,6 @@
 import type { CrawlSummaryDto } from '../../shared/dto.js';
 import { type Clock } from '../util/time.js';
-import type { Mutex } from '../platform/mutex.js';
+import type { PlatformLocks } from '../platform/locks.js';
 import { type BurstGuardLike } from '../platform/pacing.js';
 import type { AdapterRegistry } from '../platform/registry.js';
 import type { PageSource, SearchCriteria } from '../platform/types.js';
@@ -10,7 +10,8 @@ import type { JobService } from './jobs.js';
 export interface CrawlDeps {
     store: Store;
     registry: AdapterRegistry;
-    mutex: Mutex;
+    /** 按平台互斥：同一平台串行（忙则立刻失败），不同平台并发。见 platform/locks.ts。 */
+    locks: PlatformLocks;
     /** 页面来源：真路径是浏览器，离线路径是 jsdom 夹具。 */
     pageSource: PageSource;
     jobs: JobService;
@@ -19,10 +20,15 @@ export interface CrawlDeps {
      * 可选：突发惩罚守卫的工厂（P5/D-17a）。
      *
      * 适配器内部的高斯页间延时防的是"节奏规律"，这里防的是"连续快请求" ——
-     * 15s 内 ≥3 页 / 45s 内 ≥6 页时加罚延迟。注入工厂是为了离线测试
-     * 能用零惩罚桩替换，不必真等惩罚时长。
+     * 15s 内 ≥3 页 / 45s 内 ≥6 页时加罚延迟。
+     *
+     * **按平台注入**（跨平台并发之后这是必须的）：突发规则的窗口是站点维度的，
+     * 各平台各算各的等于规则形同失效。生产侧由 runtime 提供一个**按平台记忆**
+     * 的工厂（同一平台共享同一份滑动窗口，跨轮次也连续）；
+     * 这同时修掉一个旧缺口 —— 以前每次 runCrawl 各自 new 一份，同平台
+     * 背靠背的两轮各自从零计数，窗口规则在轮与轮之间根本没生效。
      */
-    createBurstGuard?: () => BurstGuardLike;
+    createBurstGuard?: (platformId: string) => BurstGuardLike;
     /**
      * 可选：采集之后跑情报引擎（P4）。
      * 用窄接口而不是直接依赖 `IntelService`，避免 domain 层互相缠绕，也方便测试关掉它。
@@ -73,8 +79,9 @@ export interface RunCrawlOptions {
     deadlineAt?: string | null;
 }
 /**
- * 跑一次抓取。已有抓取在进行时**立刻失败**（不排队）——
- * 排队会让调用方以为“点一下就好”，而实际上会连跑两遍触发风控。
+ * 跑一次抓取。**同一个平台**已有抓取在进行时立刻失败（不排队）——
+ * 排队会让调用方以为"点一下就好"，而实际上会连跑两遍触发风控。
+ * 不同平台不受影响（跨平台并发，见 platform/locks.ts）。
  */
 export declare function runCrawl(deps: CrawlDeps, options: RunCrawlOptions): Promise<CrawlSummaryDto>;
 //# sourceMappingURL=crawl.d.ts.map

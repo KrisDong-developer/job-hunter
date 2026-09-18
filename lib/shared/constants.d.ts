@@ -71,6 +71,22 @@ export declare const DAILY_CRAWL_LIMIT = 8;
  */
 export declare const ROUND_BUDGET_MS: number;
 /**
+ * 一轮里**同时**在跑的平台数上限（跨平台并发 / 同平台串行）。
+ *
+ * 为什么是 3 而不是"全部一起"：
+ *   * 风控是**按站点**看的 —— 不同平台互不相干，并发不增加任何一个站点的请求速率；
+ *     但 10 个 tab 同时开页对**本机**是实打实的内存与解析压力（headful Chromium）；
+ *   * 3 条泳道已把"等页间延时"的时间重叠掉大半（延时是高斯的，本来就不密集），
+ *     再加泳道的边际收益递减；
+ *   * 留出余量给登录引导（它也从这个页面池拿页，不占平台锁）。
+ *
+ * 同一平台绝不并发：`platform/locks.ts` 保证（两个方案打同一个站点仍串行）。
+ * 这是把原 §4.2.1「全局互斥」收窄成「按平台互斥」—— 收窄的依据是
+ * 互斥真正要保护的共享资源只有两类：**同一站点的请求节奏**与**页面**，
+ * 而这两类都可以按平台切分（页面池见 browser.ts 的 createPagePool）。
+ */
+export declare const MAX_CONCURRENT_PLATFORMS = 3;
+/**
  * 设置表里"浏览器空闲多少分钟后关闭"的键（`scope='global'`、`scope_ref=''`）。
  * 放在 shared：界面要显示它、HTTP 路由要校验它、宿主半要读它。
  */
@@ -87,4 +103,19 @@ export declare const BROWSER_IDLE_DEFAULT_MIN = 10;
 /** 允许范围：0 = 不自动关（保持旧行为）；上限 240 分钟。 */
 export declare const BROWSER_IDLE_MIN_MIN = 0;
 export declare const BROWSER_IDLE_MAX_MIN = 240;
+/**
+ * 「每轮采集结束后就关」时实际用的空闲时长（毫秒）。
+ *
+ * 为什么不直接"跑完立刻关"：`release()` 是在**互斥锁还握着**的时候被调用的，
+ * 而"正在采集"恰恰是必须拦住的场景（`browser.ts` 的 `shouldKeepAlive`）——
+ * 立刻关等于永远关不掉。所以给一个**几秒**的短时长，交给既有的
+ * 「到点复问 + 重新计时」逻辑去等这一轮真正结束：
+ *   * 一轮里多个方案串行跑时，前一个 `release()` 之后锁仍被下一个握着 → 复问被拦 → 改期，
+ *     于是窗口**不会在方案之间被关掉又打开**（那比一直开着更难看）；
+ *   * 等全部跑完，那一次复问没人再拦 → 关掉。
+ *
+ * 3 秒是"跑完就走"与"别在方案之间闪窗"之间的取舍值。登录引导轮询中同样会被拦住
+ * （用户正在那个窗口里输密码），所以不用担心把登录页关掉。
+ */
+export declare const BROWSER_CLOSE_AFTER_RUN_MS = 3000;
 //# sourceMappingURL=constants.d.ts.map

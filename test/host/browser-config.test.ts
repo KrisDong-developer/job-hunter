@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  BROWSER_CLOSE_AFTER_RUN_MS,
   BROWSER_IDLE_DEFAULT_MIN,
   BROWSER_IDLE_MAX_MIN,
   BROWSER_IDLE_KEY,
 } from '../../src/shared/constants.js'
 import {
   BROWSER_IDLE_FALLBACK,
+  idleCloseMsOf,
   normalizeBrowserConfig,
   readBrowserConfig,
   writeBrowserConfig,
@@ -103,6 +105,7 @@ test('引擎/stealth 设置能落库读回，且改一个不重置另一个', ()
     writeBrowserConfig(store, { engine: 'playwright-core' }, fixedClock()())
     assert.deepEqual(readBrowserConfig(store), {
       idleCloseMinutes: BROWSER_IDLE_DEFAULT_MIN,
+      closeAfterRun: true,
       engine: 'playwright-core',
       stealthInit: true,
     })
@@ -114,4 +117,45 @@ test('引擎/stealth 设置能落库读回，且改一个不重置另一个', ()
     store.close()
     cleanup(dir)
   }
+})
+
+// ── 「每轮采集结束后就关」（用户要求：跑完那扇窗口就该消失）───────────
+
+test('closeAfterRun：默认开；老版本存的 JSON 里没有这个键也拿到默认', () => {
+  assert.equal(BROWSER_IDLE_FALLBACK.closeAfterRun, true)
+  assert.equal(normalizeBrowserConfig(undefined).closeAfterRun, true)
+  // 升级路径：库里存的是老形状（只有分钟 + 引擎）
+  assert.equal(normalizeBrowserConfig({ idleCloseMinutes: 10, engine: 'auto' }).closeAfterRun, true)
+})
+
+test('closeAfterRun：只认布尔，其余退回默认（不能因为一个坏值把开关变成关）', () => {
+  assert.equal(normalizeBrowserConfig({ closeAfterRun: false }).closeAfterRun, false)
+  for (const bad of ['true', 1, 0, null, {}, []]) {
+    assert.equal(normalizeBrowserConfig({ closeAfterRun: bad }).closeAfterRun, true, `${String(bad)} 应退回默认`)
+  }
+})
+
+test('closeAfterRun：能落库读回，且不会把其它键带回默认', () => {
+  const dir = tempDataDir()
+  const store = openTestStore(dir)
+  try {
+    writeBrowserConfig(store, { idleCloseMinutes: 25, closeAfterRun: false }, fixedClock()())
+    assert.equal(readBrowserConfig(store).closeAfterRun, false)
+    assert.equal(readBrowserConfig(store).idleCloseMinutes, 25, '关掉开关不该把空闲时长也重置掉')
+  } finally {
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('生效时长：开关打开时由它接管（分钟那一格不再起作用）', () => {
+  const base = { ...BROWSER_IDLE_FALLBACK }
+  assert.equal(idleCloseMsOf({ ...base, closeAfterRun: true, idleCloseMinutes: 240 }), BROWSER_CLOSE_AFTER_RUN_MS)
+  assert.equal(idleCloseMsOf({ ...base, closeAfterRun: true, idleCloseMinutes: 0 }), BROWSER_CLOSE_AFTER_RUN_MS)
+})
+
+test('生效时长：关掉开关后回到分钟语义，0 仍然是"不自动关闭"', () => {
+  const base = { ...BROWSER_IDLE_FALLBACK, closeAfterRun: false }
+  assert.equal(idleCloseMsOf({ ...base, idleCloseMinutes: 25 }), 25 * 60_000)
+  assert.equal(idleCloseMsOf({ ...base, idleCloseMinutes: 0 }), 0, '0 = 不关（<=0 的约定不能变）')
 })

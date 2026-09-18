@@ -780,6 +780,7 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
     requiredFields: CORE_FIELDS as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: LAGOU_MAX_PAGES,
+    defaultMaxPages: LAGOU_DEFAULT_MAX_PAGES,
 
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {

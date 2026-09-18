@@ -41,6 +41,11 @@ export interface PlatformGateOptions {
      * 就又去打风控了，"风控暂停"就成了一句空话。
      */
     ignoreRiskPause?: boolean;
+    /**
+     * 方案配的城市（SR-16 的城市档）：调度器把**本方案**的 city 传进来，
+     * 门据此判"这个平台认不认识它"。不传或空串 = 方案没配城市，不判。
+     */
+    city?: string;
 }
 export interface SchedulerDeps {
     store: Store;

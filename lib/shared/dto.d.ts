@@ -33,6 +33,18 @@ export interface JobDto {
     publishedAt: string | null;
     firstSeenAt: string;
     lastSeenAt: string;
+    /**
+     * **这条记录被抓取入库的时间**。
+     *
+     * 与 `lastSeenAt` 是两个不同的问题：后者回答"这岗还在招吗"（新鲜度），
+     * 前者回答"我这份库里的这条是什么时候拿到的"（数据来路）。
+     * 界面上的用途是把来源与时间放在一起 —— 用户看到"某平台 · 抓取于 3 小时前"，
+     * 才知道这条信息的时效边界在哪。
+     *
+     * 列表默认排序（`orderBy: 'crawled_at'`）用的就是这一列，但它在界面上从来没露过面：
+     * 用户看到的是"按抓取时间"排出来的顺序，却指不出哪一列是抓取时间。
+     */
+    crawledAt: string;
     state: JobState;
     /** L1 粗筛分（0-100）。**不是**完整评估，界面上必须标清楚（§4.5.1）。 */
     matchScore: number | null;
@@ -404,7 +416,7 @@ export interface FreshnessDto {
  * 枚举而不是自由文本：自由文本最后一定会退化成"已武装"这种什么都没说的话，
  * 而"为什么没跑"恰恰是用户最需要知道的。
  */
-export declare const SKIP_REASONS: readonly ["not_logged_in", "adapter_broken", "risk_paused", "lease_lost", "offline_gate", "outside_window", "quota_reached", "another_run_active", "backoff", "global_pause", "plan_disabled", "round_budget"];
+export declare const SKIP_REASONS: readonly ["not_logged_in", "adapter_broken", "risk_paused", "lease_lost", "offline_gate", "outside_window", "quota_reached", "another_run_active", "backoff", "global_pause", "plan_disabled", "round_budget", "city_unsupported"];
 export type SkipReason = (typeof SKIP_REASONS)[number];
 /**
  * 一次触发尝试的结论（SR-16/17/18/26）。
@@ -830,6 +842,14 @@ export interface FunnelDto {
     steps: FunnelStepDto[];
     /** 样本量太小时必须显式说出来，否则百分比会骗人。 */
     sampleSize: number;
+    /**
+     * 样本是否够谈比率（`MIN_SAMPLE`）。
+     *
+     * 由 host 判定、界面直接渲染，**不让前端再算一遍** —— 阈值只留一份
+     * （与 `SalaryBoxDto.withinBox`、`ResumeCompareCellDto.thin` 同一个理由：
+     * 两边各算一次必然漂移）。
+     */
+    enoughSample: boolean;
     note: string;
 }
 /** 一组归因对比（按渠道 / 按简历版本 / 按平台）。 */
@@ -840,6 +860,8 @@ export interface AttributionRowDto {
     replied: number;
     interviewed: number;
     offered: number;
+    /** 这一行自己的样本是否够（`MIN_SAMPLE`）—— 界面据此决定要不要高亮它。 */
+    enoughSample: boolean;
     /** 回复率 / 面试率 / Offer 率（0-1；分母是 total）。 */
     replyRate: number;
     interviewRate: number;
@@ -849,6 +871,8 @@ export interface AttributionDto {
     byChannel: AttributionRowDto[];
     byResume: AttributionRowDto[];
     sampleSize: number;
+    /** 整体样本是否够（`MIN_SAMPLE`）。 */
+    enoughSample: boolean;
     note: string;
 }
 /** 薪资分位（`job_report` 用）。 */
@@ -897,6 +921,8 @@ export interface SalaryBoxChartDto {
     box: SalaryBoxDto;
     /** 供界面画刻度的可选口径（同一个方案在另一种口径下的箱体），`null` = 该口径无样本。 */
     alternate: SalaryBoxDto | null;
+    /** 箱体样本是否够（`MIN_SAMPLE`）—— 不够时界面只给分布、不给结论。 */
+    enoughSample: boolean;
     note: string;
 }
 /**
@@ -1142,6 +1168,15 @@ export interface PlatformOverviewDto {
     implementation: AdapterImplementationDto;
     /** 成熟度（平台事实）—— 用户勾平台前就该看到"这个还只是实验性的"。 */
     maturity: AdapterMaturityDto;
+    /**
+     * 适配器能翻的最大页数（平台事实）。
+     *
+     * 为什么它必须在概览里：方案里给某个平台填的页数上限，**是按这个平台的
+     * `maxPages` 校验的**（见 `validatePlanConfig`）。界面拿不到这个数，就只能在
+     * 用户填完并保存时用一个报错告诉他"最多 N 页" —— 而它本来可以**填之前**就写在
+     * 「限制」列里（`guopin`/`waiqi`/`zhipin` 都只有 1 页，不是小概率）。
+     */
+    maxPages: number;
     /** 各环节要不要登录（平台事实）。 */
     authRequirement: AuthRequirementDto;
     /** 量级快照（批次 5）：字段都健康、条目数却掉了一个数量级是**另一类**故障。 */

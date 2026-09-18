@@ -1,7 +1,7 @@
 /**
  * 一次抓取（§6.1 关键时序）。
  *
- *   mutex → 前置检查 → adapter.gotoSearch → detectBlock → readListPage
+ *   平台锁（同平台串行）→ 前置检查 → adapter.gotoSearch → detectBlock → readListPage
  *     → **字段级断言**（不合格的进 pending_repair，不写主表）
  *     → 归一化（薪资）→ 公司画像 → 幂等 upsert → crawl_run 汇总 → 健康计数/降级告警
  *
@@ -15,7 +15,7 @@ import type { BlockKind, CoreField, CrawlState } from '../../shared/enums.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import { parseSalary } from '../util/salary.js'
 import { systemClock, type Clock } from '../util/time.js'
-import type { Mutex } from '../platform/mutex.js'
+import type { PlatformLocks } from '../platform/locks.js'
 import { BurstGuard, type BurstGuardLike } from '../platform/pacing.js'
 import { applyFieldPresence, recordRunFailure, recordRunSuccess } from '../platform/health.js'
 import { applyYieldBaseline } from '../platform/yield-baseline.js'
@@ -31,7 +31,8 @@ import type { JobService } from './jobs.js'
 export interface CrawlDeps {
   store: Store
   registry: AdapterRegistry
-  mutex: Mutex
+  /** 按平台互斥：同一平台串行（忙则立刻失败），不同平台并发。见 platform/locks.ts。 */
+  locks: PlatformLocks
   /** 页面来源：真路径是浏览器，离线路径是 jsdom 夹具。 */
   pageSource: PageSource
   jobs: JobService
@@ -40,10 +41,15 @@ export interface CrawlDeps {
    * 可选：突发惩罚守卫的工厂（P5/D-17a）。
    *
    * 适配器内部的高斯页间延时防的是"节奏规律"，这里防的是"连续快请求" ——
-   * 15s 内 ≥3 页 / 45s 内 ≥6 页时加罚延迟。注入工厂是为了离线测试
-   * 能用零惩罚桩替换，不必真等惩罚时长。
+   * 15s 内 ≥3 页 / 45s 内 ≥6 页时加罚延迟。
+   *
+   * **按平台注入**（跨平台并发之后这是必须的）：突发规则的窗口是站点维度的，
+   * 各平台各算各的等于规则形同失效。生产侧由 runtime 提供一个**按平台记忆**
+   * 的工厂（同一平台共享同一份滑动窗口，跨轮次也连续）；
+   * 这同时修掉一个旧缺口 —— 以前每次 runCrawl 各自 new 一份，同平台
+   * 背靠背的两轮各自从零计数，窗口规则在轮与轮之间根本没生效。
    */
-  createBurstGuard?: () => BurstGuardLike
+  createBurstGuard?: (platformId: string) => BurstGuardLike
   /**
    * 可选：采集之后跑情报引擎（P4）。
    * 用窄接口而不是直接依赖 `IntelService`，避免 domain 层互相缠绕，也方便测试关掉它。
@@ -122,8 +128,9 @@ function toDeadlineMs(value: string | null | undefined): number | null {
 }
 
 /**
- * 跑一次抓取。已有抓取在进行时**立刻失败**（不排队）——
- * 排队会让调用方以为“点一下就好”，而实际上会连跑两遍触发风控。
+ * 跑一次抓取。**同一个平台**已有抓取在进行时立刻失败（不排队）——
+ * 排队会让调用方以为"点一下就好"，而实际上会连跑两遍触发风控。
+ * 不同平台不受影响（跨平台并发，见 platform/locks.ts）。
  */
 export async function runCrawl(deps: CrawlDeps, options: RunCrawlOptions): Promise<CrawlSummaryDto> {
   const adapter = deps.registry.get(options.platformId)
@@ -133,12 +140,13 @@ export async function runCrawl(deps: CrawlDeps, options: RunCrawlOptions): Promi
     })
   }
 
-  const result = await deps.mutex.tryRun(async () =>
-    executeCrawl(deps, adapter, options, deps.clock ?? systemClock),
+  const result = await deps.locks.tryRun(
+    options.platformId,
+    async () => executeCrawl(deps, adapter, options, deps.clock ?? systemClock),
   )
   if (result === null) {
-    throw new DomainError('CONFLICT', '已有抓取任务在进行中', {
-      hint: '等这一轮结束再试；同一时刻只允许一个抓取（全局互斥，§4.2.1）。',
+    throw new DomainError('CONFLICT', `平台 ${adapter.displayName} 已有抓取在进行中`, {
+      hint: '同一平台的抓取是串行的（防连跑两遍触发风控）；等这一轮结束再试。其它平台不受影响。',
     })
   }
   return result
@@ -177,14 +185,19 @@ async function executeCrawl(
    * 也不进量级基线（半截的条数不代表这个平台给多少）。
    */
   let stoppedAtDeadline = false
-  const burst: BurstGuardLike = deps.createBurstGuard?.() ?? new BurstGuard()
+  // 按平台取守卫（生产侧是共享的滑动窗口；没注入时退回本次运行私有的一份 ——
+  // 离线测试与旧调用方的行为不变）。
+  const burst: BurstGuardLike =
+    deps.createBurstGuard?.(adapter.id) ?? new BurstGuard()
 
   const page = await deps.pageSource.acquire()
   try {
     // SR-40：抓取深度由方案配置（`criteria.maxPages`）决定，并受适配器声明上限约束。
+    // 没配时用**平台自己的默认**（defaultMaxPages，风控强度是平台事实），
+    // 再兜 1 —— 以前这里永远是 1 页，把 hint 里"默认 N 页"变成了三年假话。
     // 上限外的值在这里**截断**而不是报错：入口层的校验（SR-45）已经拦过一次，
     // 这里再抛一次错只会让一次已经批准的抓取白跑。
-    const requested = options.criteria.maxPages ?? options.maxPages ?? 1
+    const requested = options.criteria.maxPages ?? options.maxPages ?? adapter.defaultMaxPages ?? 1
     const maxPages = Math.max(1, Math.min(Math.trunc(requested), adapter.maxPages))
     for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
       // SR-46：到点就在**开新页之前**停手。放在最前面（连第一页也拦）是有意的：

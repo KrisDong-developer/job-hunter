@@ -9,12 +9,12 @@
  * 中危 + 模型发起 → 走审批（模型扩大自身权限正是 D-14 要防的事）。
  */
 import type { AiConfig, AiConfigPatch, AiPurpose } from './ai/purposes.js'
-import { AI_PURPOSE_LABEL, normalizeAiConfig } from './ai/purposes.js'
+import { AI_PURPOSE_DEFAULT_ENABLED, AI_PURPOSE_LABEL, normalizeAiConfig } from './ai/purposes.js'
 import type { BrowserConfig } from './browser-config.js'
 import type { SettingsWriteDeps } from './guard/actions/settings.js'
 import { writeGuardSettings } from './guard/actions/settings.js'
 import type { GuardToken } from './guard/token.js'
-import { readGuardConfig, type GuardConfig } from './guard/rules.js'
+import { DEFAULT_GUARD_CONFIG, readGuardConfig, type GuardConfig } from './guard/rules.js'
 import type { Store } from './store/store.js'
 
 export interface SettingsSnapshot {
@@ -29,6 +29,25 @@ export interface SettingsSnapshot {
     /** 模型能改哪些、不能改哪些，直接告诉用户。 */
     modelEditable: string[]
     modelForbidden: string[]
+    /**
+     * 出厂默认值。
+     *
+     * 为什么由宿主下发而不是客户端写死：默认值的事实来源是
+     * `DEFAULT_GUARD_CONFIG` 与 `AI_PURPOSE_DEFAULT_ENABLED`，客户端再抄一份迟早会漂移
+     * （本项目已经在"同名规则各写一份"上吃过亏）。界面只拿它做两件事：
+     * 问号说明里的"默认是多少"，以及发送时段被清空（不限）后输入框该显示什么。
+     */
+    defaults: {
+      /** 每个用途的出厂默认开关。 */
+      purposes: Record<string, boolean>
+      guard: {
+        dailyLimits: { greeting: number; application: number; reply: number }
+        cooldownMinutes: number
+        batchLimit: number
+        sendWindow: string
+        dayOffProbability: number
+      }
+    }
   }
 }
 
@@ -92,6 +111,16 @@ export function createSettingsService(deps: SettingsDeps): SettingsService {
         })),
         modelEditable: [...MODEL_EDITABLE_KEYS],
         modelForbidden: [...MODEL_FORBIDDEN_KEYS],
+        defaults: {
+          purposes: { ...AI_PURPOSE_DEFAULT_ENABLED },
+          guard: {
+            dailyLimits: { ...DEFAULT_GUARD_CONFIG.dailyLimits },
+            cooldownMinutes: DEFAULT_GUARD_CONFIG.cooldownMinutes,
+            batchLimit: DEFAULT_GUARD_CONFIG.batchLimit,
+            sendWindow: DEFAULT_GUARD_CONFIG.sendWindow,
+            dayOffProbability: DEFAULT_GUARD_CONFIG.dayOffProbability,
+          },
+        },
       },
     }
   }
@@ -140,6 +169,13 @@ export function describeSettingsPatch(patch: SettingsPatch): string {
   if (patch.browser?.idleCloseMinutes !== undefined) {
     const minutes = patch.browser.idleCloseMinutes
     parts.push(minutes <= 0 ? '浏览器空闲后不自动关闭' : `浏览器空闲 ${String(minutes)} 分钟后关闭`)
+  }
+  if (patch.browser?.closeAfterRun !== undefined) {
+    parts.push(
+      patch.browser.closeAfterRun
+        ? '每轮采集结束后关闭采集浏览器'
+        : '每轮采集结束后不关闭采集浏览器（改由空闲时长决定）',
+    )
   }
   return parts.length === 0 ? '（没有实际改动）' : parts.join('；')
 }

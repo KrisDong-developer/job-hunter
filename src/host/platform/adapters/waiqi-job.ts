@@ -925,6 +925,8 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
     requiredFields: CORE_FIELDS as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: WAIQI_MAX_PAGES,
+    // 服务端翻页是坏的（page≥2 恒 0 条）—— 永远只有 1 页。
+    defaultMaxPages: 1,
 
     auth: {
       loginUrl: `${config.webBase}/login`,

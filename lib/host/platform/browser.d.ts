@@ -21,10 +21,33 @@ export interface BrowserPage extends PageLike {
     close(): Promise<void>;
     isClosed(): boolean;
 }
+/** 池对页面的最小要求（测试可以注入假页）。 */
+export interface PoolPage {
+    isClosed(): boolean;
+    close(): Promise<unknown>;
+}
+export interface PagePool {
+    /** 拿一页：优先复用空闲页，没有再开新页。借出中的页绝不算空闲。 */
+    acquire(): Promise<PoolPage>;
+    /**
+     * 还一页。返回这页最终的归宿：`kept`（进空闲表，下次复用）或 `closed`（就地关闭）。
+     * 不是本池借出的页 → `foreign`（不动它，由调用方处理）。
+     */
+    release(page: PoolPage): Promise<'kept' | 'closed' | 'foreign'>;
+    /** 当前借出中的页数（诊断；空闲自关的守卫语义与它无关，别拿来当忙闲判据）。 */
+    inFlight(): number;
+}
+export declare function createPagePool(options: {
+    newPage: () => Promise<PoolPage>;
+    /** context 自带的首页（about:blank）—— 没有它，串行场景会多开一个 tab。 */
+    seed?: readonly PoolPage[];
+    /** 空闲表容量。默认 1（与旧实现"只剩一页时留着"一致）。 */
+    maxIdle?: number;
+}): PagePool;
 export interface BrowserManager {
     /** 懒启动 + 单例 + 崩溃后重建。并发调用只会启动一个实例。 */
     ensure(): Promise<void>;
-    /** 串行取页（调用方自己保证不与其它抓取并发，互斥在 mutex.ts）。 */
+    /** 取页。跨平台并发时各拿各的页（页面池）；同平台串行由 locks.ts 保证。 */
     page(): Promise<BrowserPage>;
     release(page: BrowserPage): Promise<void>;
     /** 插件卸载时调用；可重复调用。 */
@@ -97,7 +120,7 @@ export interface BrowserManagerOptions {
      *
      * 三个**必须**拦住的场景（否则会把用户正在用的浏览器关掉）：
      *   * 登录引导轮询中 —— 用户正在那个窗口里登录；
-     *   * 采集/补跑正在进行 —— 互斥锁被持有（mutex.isBusy()）；
+     *   * 采集/补跑正在进行 —— 有平台锁被持有（locks.busy()）；
      *   * PDF 渲染中（它有自己的实例，与本实例无关）。
      * 返回 false = 这次不关，并**重新计时**（不是放弃：下一次空闲还会再试）。
      */

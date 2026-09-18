@@ -26,6 +26,7 @@ function fakeAdapter(options: { loggedIn: () => boolean; withAuth?: boolean }): 
     requiredFields: ['title'],
     criteriaDimensions: [],
     maxPages: 1,
+    defaultMaxPages: 1,
     criteria: { buildSearchUrl: () => 'https://example.com/search' },
     crawl: {
       gotoSearch: async () => undefined,

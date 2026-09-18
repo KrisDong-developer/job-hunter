@@ -368,6 +368,8 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
     // SR-41/42：声明支持的筛选维度（界面与校验的唯一来源）
     criteriaDimensions: dimensions,
     maxPages: FIFTYONE_MAX_PAGES,
+    // 没有站点侧依据的"默认多抓几页"不编：留 1（hint 也只说了上限 5 页）。
+    defaultMaxPages: 1,
 
     // P3 登录态：只回答「当前页会不会被登录墙挡住」。
     // 51job 的搜索本身不需要登录（capabilities.searchWithoutLogin），

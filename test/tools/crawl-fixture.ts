@@ -19,7 +19,7 @@ import {
   DEFAULT_FIFTYONE_CONFIG,
   type FiftyOneConfig,
 } from '../../src/host/platform/adapters/fiftyone-job.js'
-import { createMutex } from '../../src/host/platform/mutex.js'
+import { createPlatformLocks } from '../../src/host/platform/locks.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { openStore } from '../../src/host/store/store.js'
 import { fixturePageSource } from '../support/jsdom-page.js'
@@ -63,7 +63,7 @@ registry.register(createFiftyOneAdapter({ config }))
 const deps: CrawlDeps = {
   store,
   registry,
-  mutex: createMutex(),
+  locks: createPlatformLocks(),
   pageSource: fixturePageSource({ htmlPath: fixtureHtmlPath(), url: SEARCH_URL }),
   jobs: createJobService(store),
   companies: createCompanyService(store),

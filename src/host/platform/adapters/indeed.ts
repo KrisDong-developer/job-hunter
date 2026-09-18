@@ -353,6 +353,7 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
     requiredFields: [...CORE_FIELDS] as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: INDEED_MAX_PAGES,
+    defaultMaxPages: INDEED_DEFAULT_MAX_PAGES,
 
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {

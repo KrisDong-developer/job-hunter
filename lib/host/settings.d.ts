@@ -30,6 +30,29 @@ export interface SettingsSnapshot {
         /** 模型能改哪些、不能改哪些，直接告诉用户。 */
         modelEditable: string[];
         modelForbidden: string[];
+        /**
+         * 出厂默认值。
+         *
+         * 为什么由宿主下发而不是客户端写死：默认值的事实来源是
+         * `DEFAULT_GUARD_CONFIG` 与 `AI_PURPOSE_DEFAULT_ENABLED`，客户端再抄一份迟早会漂移
+         * （本项目已经在"同名规则各写一份"上吃过亏）。界面只拿它做两件事：
+         * 问号说明里的"默认是多少"，以及发送时段被清空（不限）后输入框该显示什么。
+         */
+        defaults: {
+            /** 每个用途的出厂默认开关。 */
+            purposes: Record<string, boolean>;
+            guard: {
+                dailyLimits: {
+                    greeting: number;
+                    application: number;
+                    reply: number;
+                };
+                cooldownMinutes: number;
+                batchLimit: number;
+                sendWindow: string;
+                dayOffProbability: number;
+            };
+        };
     };
 }
 export interface SettingsPatch {

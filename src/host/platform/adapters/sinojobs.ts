@@ -827,6 +827,8 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
     requiredFields: CORE_FIELDS as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: SINOJOBS_MAX_PAGES,
+    // hint 说了"4 页可抓完"是**实测覆盖**，不是声明的默认深度 —— 默认仍 1 页。
+    defaultMaxPages: 1,
 
     auth: {
       loginUrl: `${config.webBase}/Ucenter/login.html`,

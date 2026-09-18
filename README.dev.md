@@ -249,7 +249,7 @@ cordis.patch.yml       # 纯 insert、零 config 的 bundle patch
 一次抓取的时序（§6.1）：
 
 ```
-mutex（全局互斥，忙就立刻失败，不排队）
+locks（按平台互斥：同平台忙就立刻失败、不排队；不同平台并发）
   → adapter.criteria.buildSearchUrl（URL 优先，少触发风控）
   → adapter.crawl.gotoSearch → guard.detectBlock（命中即停、不硬重试）
   → adapter.crawl.readListPage
@@ -393,7 +393,7 @@ L1 粗筛分做成环形仪表 + ✓/✗ 逐条理由；长解释收进 `?`；�
 | 自重新武装 | 每次触发后立刻把 `next_run_at` 推到未来再重新挂表 —— 否则定时器会自旋 |
 | 抖动 | `jitterMs` 默认 10 分钟，避免每天同一秒打同一个接口 |
 | **错过不猛跑** | 启动时若发现错过一轮 → **只生成一条 `catch-up` 待办**，等用户点「立即补跑」（C9） |
-| 互斥 | 与手动触发共用 `crawl` 的全局互斥，不会并行 |
+| 互斥 | 与手动触发共用 `crawl` 的**平台锁**：同一平台不会并行；不同平台并发（`MAX_CONCURRENT_PLATFORMS` 条泳道） |
 | 前置条件 | 未登录 / 适配器失效 / 被风控暂停 → 该平台跳过并记原因 |
 
 ### 单实例租约（R20）

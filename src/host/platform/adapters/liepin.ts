@@ -581,6 +581,7 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
     requiredFields: [...CORE_FIELDS] as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: LIEPIN_MAX_PAGES,
+    defaultMaxPages: LIEPIN_DEFAULT_MAX_PAGES,
 
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {

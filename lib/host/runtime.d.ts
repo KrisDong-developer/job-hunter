@@ -18,7 +18,7 @@ import type { Guard } from './guard/index.js';
 import type { Actor } from './guard/types.js';
 import { type EventBus } from './http/sse.js';
 import type { BrowserManager } from './platform/browser.js';
-import type { Mutex } from './platform/mutex.js';
+import type { PlatformLocks } from './platform/locks.js';
 import type { AdapterRegistry } from './platform/registry.js';
 import type { SearchCriteria } from './platform/types.js';
 import { type RunReason } from './scheduler/index.js';
@@ -184,7 +184,8 @@ export interface HostRuntime {
      */
     sweepDedup(): DedupSweepResult;
     registry(): AdapterRegistry;
-    mutex(): Mutex;
+    /** 按平台互斥（同平台串行 / 跨平台并发）。见 platform/locks.ts。 */
+    locks(): PlatformLocks;
     browser(): BrowserManager;
     /** 同步收尾：停调度、关库、放租约、发起关闭浏览器（不阻塞调用方）。 */
     close(): void;

@@ -211,6 +211,7 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
       return {
         steps,
         sampleSize,
+        enoughSample: sampleSize >= MIN_SAMPLE,
         note:
           sampleSize === 0
             ? '还没有任何接触记录 —— 先去岗位库打招呼或投递，这里才有东西可看。'
@@ -262,6 +263,7 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
               replied,
               interviewed,
               offered,
+              enoughSample: total >= MIN_SAMPLE,
               replyRate: total === 0 ? 0 : replied / total,
               interviewRate: total === 0 ? 0 : interviewed / total,
               offerRate: total === 0 ? 0 : offered / total,
@@ -297,6 +299,7 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
         byChannel,
         byResume,
         sampleSize: applications.length,
+        enoughSample: applications.length >= MIN_SAMPLE,
         note:
           applications.length === 0
             ? '还没有投递记录 —— 投递时系统会记下"用了哪版简历"，之后这里才能比较。'
@@ -324,6 +327,7 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
       return {
         box,
         alternate: alternate.count === 0 ? null : alternate,
+        enoughSample: box.count >= MIN_SAMPLE,
         note:
           `口径：${SALARY_BASIS_LABEL[basis]}。P25–P75 是高亮的箱体，` +
           '两端的须是极值（不是离群点剔除后的结果）—— 本工具不做离群点剔除，' +
