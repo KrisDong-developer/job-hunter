@@ -299,10 +299,37 @@ export interface PlanSchedule {
   missedGraceMs: number
 }
 
+/**
+ * 方案里**单个平台的覆盖项**（批次 3 数据模型侧）。
+ *
+ * 只解决两件方案级表达不了的事：
+ *   * **临时停掉一个平台**：以前只能把它从 `platforms` 里删掉 —— 于是丢了
+ *     "这个方案本来就包含它"的意图，重复方案的判定也跟着变；
+ *   * **每平台各自的抓取深度**：`maxPages` 是方案级单值，而平台真实上限差得很远
+ *     （waiqi 服务端翻页坏 → 1 页，zhaopin → 10 页）。以前"设 5 页"在 waiqi 上
+ *     被**静默截断**成 1 页。
+ *
+ * ⚠️ **稀疏存储**：只有用户真的改过的平台才有条目。默认值（启用 / 用方案级页数）
+ * 不落库 —— 于是"什么都没配"的方案在库里的形状与升级前完全一致。
+ */
+export interface PlanPlatformOverrideDto {
+  /** 在这个方案里是否抓这个平台。默认 `true`。 */
+  enabled: boolean
+  /** 该平台的抓取页数上限（覆盖方案级 `maxPages`）。`null` = 用方案级。 */
+  maxPages: number | null
+}
+
 export interface PlanDto {
   id: number
   name: string
   platforms: string[]
+  /**
+   * 每平台的覆盖项（**稀疏**：只含用户改过的平台，且只会出现 `platforms` 里的 id）。
+   *
+   * 为什么不把 `platforms` 直接变成对象数组：它是**集合与顺序**（多处按它遍历），
+   * 而覆盖项是**按 id 查的稀疏表**。两者访问方式不同，混在一起只会让每处遍历多一层解包。
+   */
+  platformOverrides: Record<string, PlanPlatformOverrideDto>
   /** 平台无关的搜索条件，交给适配器的 `buildSearchUrl`。 */
   criteria: Record<string, string>
   schedule: PlanSchedule
@@ -1121,6 +1148,22 @@ export interface AuthRequirementDto {
   actions: AuthRequirementValue
 }
 
+/**
+ * 量级快照（批次 5）。
+ *
+ * 回答的是逐字段健康**回答不了**的问题：字段都好、`state='ok'`，
+ * 但条目数比这个平台的常态低了一个数量级。
+ */
+export interface YieldSnapshotDto {
+  /** 历史中位数（只取 `state='ok'` 的轮次）。`null` = 样本不足，不猜。 */
+  baseline: number | null
+  /** 用于算基线的样本轮数。 */
+  samples: number
+  /** 最近一轮的 `found`。 */
+  lastFound: number | null
+  level: 'insufficient' | 'ok' | 'dropped'
+}
+
 /** `GET /platforms`：U0/U9 需要的平台概览（健康 + 登录态 + 能力）。 */
 export interface PlatformOverviewDto {
   id: string
@@ -1134,6 +1177,8 @@ export interface PlatformOverviewDto {
   maturity: AdapterMaturityDto
   /** 各环节要不要登录（平台事实）。 */
   authRequirement: AuthRequirementDto
+  /** 量级快照（批次 5）：字段都健康、条目数却掉了一个数量级是**另一类**故障。 */
+  yield: YieldSnapshotDto
   health: HealthState
   healthReason: string | null
   failStreak: number

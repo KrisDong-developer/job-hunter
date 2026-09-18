@@ -47,6 +47,7 @@ import {
   takeoverLease,
   updatePlan,
   validatePlan,
+  validatePlanDraft,
   type CriteriaDimensionDto,
   type PlanDuplicateDto,
   type PlanWriteInput,
@@ -71,6 +72,11 @@ const IDLE: Feedback = { running: false, tone: 'ok', message: null }
 interface PlanForm {
   name: string
   platforms: string[]
+  /**
+   * 每平台的覆盖项（批次 3）。表单里 `maxPages` 用**字符串**：
+   * 空串表示"用方案级页数"，与"0 页"必须区分得开。
+   */
+  overrides: Record<string, { enabled: boolean; maxPages: string }>
   criteria: Record<string, string>
   /** `HH:MM`（原生时间选择器的值）。空串 = 用户清空了，**不是** 00:00。 */
   windowStart: string
@@ -82,11 +88,48 @@ interface PlanForm {
   dedup: boolean
 }
 
+/** 方案 → 表单的覆盖项：**每个平台都补一条**（缺省即"启用 + 用方案级页数"）。 */
+function overridesOf(
+  platforms: string[],
+  source: Record<string, { enabled: boolean; maxPages: number | null }>,
+): Record<string, { enabled: boolean; maxPages: string }> {
+  const out: Record<string, { enabled: boolean; maxPages: string }> = {}
+  for (const id of platforms) {
+    const entry = source[id]
+    out[id] = {
+      enabled: entry?.enabled !== false,
+      maxPages: entry?.maxPages === undefined || entry.maxPages === null ? '' : String(entry.maxPages),
+    }
+  }
+  return out
+}
+
+/**
+ * 表单 → 写入体的覆盖项。
+ *
+ * 空串或解析不出数字 → `null`（= 用方案级），**绝不发 0** ——
+ * 0 会被下游当成"0 页"，那是"永远抓不到东西"。
+ */
+function buildOverrides(
+  overrides: Record<string, { enabled: boolean; maxPages: string }>,
+): Record<string, { enabled: boolean; maxPages: number | null }> {
+  const out: Record<string, { enabled: boolean; maxPages: number | null }> = {}
+  for (const [id, entry] of Object.entries(overrides)) {
+    const parsed = Number.parseInt(entry.maxPages, 10)
+    out[id] = {
+      enabled: entry.enabled,
+      maxPages: entry.maxPages.trim() === '' || !Number.isFinite(parsed) ? null : parsed,
+    }
+  }
+  return out
+}
+
 function formOf(plan: PlanDto): PlanForm {
   const schedule: PlanSchedule = plan.schedule
   return {
     name: plan.name,
     platforms: [...plan.platforms],
+    overrides: overridesOf(plan.platforms, plan.platformOverrides),
     criteria: { ...plan.criteria },
     windowStart: clockValueOf(schedule.windowStartHour, schedule.windowStartMinute),
     windowEnd: clockValueOf(schedule.windowEndHour, schedule.windowEndMinute),
@@ -102,6 +145,7 @@ function emptyForm(platforms: string[]): PlanForm {
   return {
     name: '新方案',
     platforms,
+    overrides: overridesOf(platforms, {}),
     criteria: {},
     windowStart: '09:00',
     windowEnd: '11:00',
@@ -125,6 +169,7 @@ function writeOf(form: PlanForm): PlanWriteInput {
   return {
     name: form.name,
     platforms: form.platforms,
+    platformOverrides: buildOverrides(form.overrides),
     criteria: form.criteria,
     schedule: {
       enabled: form.scheduleEnabled,
@@ -745,6 +790,18 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                     </div>
                   ) : null}
 
+                  {/* 量级（批次 5）：逐字段健康可能全绿，坏的只是**条数**。
+                      这是从数据里查不出来的一类故障 —— 必须跟该平台自己的历史比。 */}
+                  {item.yield.baseline === null ? null : (
+                    <div className={item.yield.level === 'dropped' ? 'jh-warn' : 'jh-muted'}>
+                      <Term term="量级">产量</Term>：近 {item.yield.samples} 轮的常态约{' '}
+                      {item.yield.baseline} 条，最近一轮 {item.yield.lastFound ?? '—'} 条
+                      {item.yield.level === 'dropped'
+                        ? ' —— 明显偏低。字段健康可能是全绿的，先查翻页与懒加载。'
+                        : ''}
+                    </div>
+                  )}
+
                   {/* 平台能做什么 vs 我们实现了什么 —— 两者不一致时要说清，
                       否则用户会以为"这个平台坏了"。 */}
                   <div className="jh-muted">
@@ -791,6 +848,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           }
           available={platformList.map((item) => ({ id: item.id, displayName: item.displayName }))}
           duplicates={duplicates}
+          notices={notices}
           running={feedback.running}
           onCancel={() => setEditing(null)}
           onSubmit={async (form) => {
@@ -799,27 +857,35 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
               const input = writeOf(form)
               const result = editing === 'new' ? await createPlan(input) : await updatePlan(editing, input)
               setDuplicates(result.duplicates)
+              setNotices(result.notices)
               const verb = editing === 'new' ? '已创建' : '已保存'
+              const tail: string[] = []
+              if (result.duplicates.length > 0) {
+                tail.push(
+                  `与 ${result.duplicates
+                    .map((item) => `#${String(item.planId)}「${item.name}」`)
+                    .join('、')} 条件重复（**只提示，不会自动合并**）`,
+                )
+              }
+              if (result.notices.length > 0) tail.push(`另有 ${String(result.notices.length)} 条提示`)
               setFeedback({
                 running: false,
                 tone: 'ok',
-                message:
-                  result.duplicates.length === 0
-                    ? `${verb}方案「${result.plan.name}」。`
-                    : `${verb}方案「${result.plan.name}」。注意：与 ${result.duplicates
-                        .map((item) => `#${String(item.planId)}「${item.name}」`)
-                        .join('、')} 条件重复（**只提示，不会自动合并**）。`,
+                message: `${verb}方案「${result.plan.name}」。${tail.length === 0 ? '' : `注意：${tail.join('；')}。`}`,
               })
-              if (result.duplicates.length === 0) setEditing(null)
+              // 有重复或提示时**不自动关窗** —— 关掉就等于把提示一起关掉了
+              if (result.duplicates.length === 0 && result.notices.length === 0) setEditing(null)
               reload()
             } catch (error) {
               report(error)
             }
           }}
           onValidate={async (form) => {
-            if (editing === 'new') return []
-            const result = await validatePlan(editing, writeOf(form))
-            return result.duplicates
+            const input = writeOf(form)
+            // 新建方案也要能查重/看提示 —— 那正是最需要提示的时刻
+            const result =
+              editing === 'new' ? await validatePlanDraft(input) : await validatePlan(editing, input)
+            return { duplicates: result.duplicates, notices: result.notices }
           }}
         />
       )}
@@ -1211,13 +1277,10 @@ function PlanEditorModal(props: {
    * 只对**真正影响查重**的输入（平台 + 条件）做键，避免每次敲字都触发；
    * 新建时没有旧方案可比，直接清空。
    */
-  const validationKey = `${form.platforms.join(',')}\u0000${JSON.stringify(form.criteria)}`
+  // 覆盖项也进键：改"停用某个平台"或"它的页数"时，提示（如"深度被截断"）要跟着重算
+  const validationKey = `${form.platforms.join(',')}\u0000${JSON.stringify(form.overrides)}\u0000${JSON.stringify(form.criteria)}`
   useEffect(() => {
-    if (props.planId === null) {
-      setLocalDuplicates([])
-      setLocalNotices([])
-      return
-    }
+    // 新建方案也走这条（`POST /plans/validate`）—— "选了国聘 + 成都"要能在保存前就看见。
     const timer = window.setTimeout(() => {
       void props
         .onValidate(form)
@@ -1242,10 +1305,19 @@ function PlanEditorModal(props: {
   const items: CriteriaDimensionDto[] = dimensions.state.status === 'ok' ? dimensions.state.data.items : []
 
   const togglePlatform = (id: string): void => {
-    const next = form.platforms.includes(id)
-      ? form.platforms.filter((item) => item !== id)
-      : [...form.platforms, id]
-    patch({ platforms: next })
+    const has = form.platforms.includes(id)
+    const nextPlatforms = has ? form.platforms.filter((item) => item !== id) : [...form.platforms, id]
+    // 覆盖项跟着平台集合走：加入时补一条默认（否则那一行没有初值），
+    // 移除时**同时删掉**它的覆盖项（留着它会在重新加入时静默生效）。
+    const nextOverrides = { ...form.overrides }
+    if (has) delete nextOverrides[id]
+    else nextOverrides[id] = { enabled: true, maxPages: '' }
+    patch({ platforms: nextPlatforms, overrides: nextOverrides })
+  }
+
+  const setOverride = (id: string, next: Partial<{ enabled: boolean; maxPages: string }>): void => {
+    const current = form.overrides[id] ?? { enabled: true, maxPages: '' }
+    patch({ overrides: { ...form.overrides, [id]: { ...current, ...next } } })
   }
 
   const setCriteria = (key: string, value: string): void => {
@@ -1293,12 +1365,18 @@ function PlanEditorModal(props: {
             type="button"
             className="jh-btn jh-btn-inline jh-btn-tiny"
             disabled={props.running}
-            title="检查这份配置（平台 + 筛选条件）是否与现有方案重复；只提示，不会写入任何东西。"
+            title="检查这份配置（平台 + 筛选条件）是否与现有方案重复、以及哪些平台会返回空。只提示，不会写入任何东西。"
             onClick={() => {
               void props
                 .onValidate(form)
-                .then((result) => setLocalDuplicates(result))
-                .catch(() => setLocalDuplicates([]))
+                .then((result) => {
+                  setLocalDuplicates(result.duplicates)
+                  setLocalNotices(result.notices)
+                })
+                .catch(() => {
+                  setLocalDuplicates([])
+                  setLocalNotices([])
+                })
             }}
           >
             检查是否重复
@@ -1327,6 +1405,46 @@ function PlanEditorModal(props: {
             ))
           )}
         </div>
+
+        {/* 每平台的覆盖项。方案级表达不了这两件事：
+            * 临时停用一个平台（以前只能把它从方案里删掉 —— 丢掉意图，还改变查重结果）；
+            * 每平台各自的抓取深度（以前"设 5 页"会在只支持 1 页的平台上被**静默截断**）。 */}
+        {form.platforms.length === 0 ? null : (
+          <div className="jh-field">
+            <span className="jh-field-label">
+              每个平台
+              <FieldHint text="取消勾选 = 这个方案里暂时不抓它（不必把它从平台列表里删掉）。页数留空 = 用上面的方案级页数；填了就只用在这个平台上。" />
+            </span>
+            {form.platforms.map((id) => {
+              const entry = form.overrides[id] ?? { enabled: true, maxPages: '' }
+              const name = props.available.find((item) => item.id === id)?.displayName ?? id
+              return (
+                <div key={id} className="jh-check">
+                  <label className="jh-check">
+                    <input
+                      type="checkbox"
+                      checked={entry.enabled}
+                      onChange={() => setOverride(id, { enabled: !entry.enabled })}
+                    />
+                    {entry.enabled ? '抓' : '不抓'} {name}（<code>{id}</code>）
+                  </label>
+                  <label className="jh-field">
+                    <span className="jh-field-label">页数上限</span>
+                    <input
+                      className="jh-input"
+                      type="number"
+                      min={1}
+                      value={entry.maxPages}
+                      placeholder="用方案级"
+                      disabled={!entry.enabled}
+                      onChange={(event) => setOverride(id, { maxPages: event.target.value })}
+                    />
+                  </label>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="jh-section-title">筛选条件与抓取深度</div>
@@ -1526,6 +1644,17 @@ function PlanEditorModal(props: {
           <InlineMd text="**只提示，不会自动合并**" />
           —— 合并会替你把两个意图抹成一个。
         </p>
+      )}
+
+      {/* 非致命提示：它们对应的都是「平台安静地返回 0 条」这类**从数据里查不出来**的问题
+          （0 条和 0 条长得一样），所以必须在保存之前摊在用户面前。只提示，仍可保存。 */}
+      {notices.length === 0 ? null : (
+        <div className="jh-warn">
+          <div>注意 —— 这些平台可能不会按你想的那样工作（只提示，仍可保存）：</div>
+          {notices.map((notice) => (
+            <div key={notice}>· {notice}</div>
+          ))}
+        </div>
       )}
     </Modal>
   )

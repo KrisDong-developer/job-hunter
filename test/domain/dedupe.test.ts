@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyDedup, dedupCandidateOf, shouldMerge, type DedupCandidate } from '../../src/host/domain/dedupe.js'
+import {
+  applyDedup,
+  dedupCandidateOf,
+  shouldMerge,
+  type DedupCandidate,
+  type DedupDeps,
+} from '../../src/host/domain/dedupe.js'
 import type { JobDto } from '../../src/shared/dto.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
@@ -71,6 +77,60 @@ test('公司名归一化后一致即可（「北京字节跳动科技有限公�
 test('公司名为空的岗位不参与去重（判不出来就不判）', () => {
   const job = { id: 1, companyName: null, platformId: '51job', title: 'X', salaryMin: null, salaryMax: null, city: '深圳' } as JobDto
   assert.equal(dedupCandidateOf(job), undefined)
+})
+
+/** 去重组仓储的替身：默认"从不命中"，需要时用 overrides 断言它被怎么调用。 */
+function stubGroup(overrides: Record<string, unknown> = {}): DedupDeps['dedupGroup'] {
+  return {
+    findByJob: () => undefined,
+    create: () => 1,
+    addMember: () => undefined,
+    ...overrides,
+  } as unknown as DedupDeps['dedupGroup']
+}
+
+// ── R25 的出口：拿不准的必须被看见（批次 4）────────────────────────────
+
+test('applyDedup：没有可合并的、但有"疑似" → 不合并，但如实报出 candidate 与对象', () => {
+  const doubtful = candidate({ id: 2, platformId: 'liepin', title: 'Java开发工程师岗位' })
+  const outcome = applyDedup(
+    {
+      dedupGroup: stubGroup({
+        create: () => {
+          throw new Error('拿不准时不该建组')
+        },
+      }),
+      candidatesFor: () => [doubtful],
+    },
+    candidate({ id: 1, platformId: '51job', title: 'Java开发工程师' }),
+    '2026-09-16T01:00:00.000Z',
+  )
+  assert.equal(outcome.groupId, null, '拿不准就不合并（宁可漏、不可错）')
+  assert.equal(outcome.candidate, true, '但"没合并"这件事本身必须能被看见')
+  assert.equal(outcome.withJobId, 2, '要指出它**疑似**与谁重复，否则用户没法确认')
+  assert.ok(outcome.basis.includes('人工确认'))
+})
+
+test('applyDedup：既能合并又有疑似时 → **合并优先**（疑似只是兜底出口）', () => {
+  const doubtful = candidate({ id: 3, platformId: 'zhipin', title: 'Java开发工程师岗位' })
+  const mergeable = candidate({ id: 2, platformId: 'liepin', title: 'Java 开发工程师' })
+  const created: { memberIds: number[] }[] = []
+  const outcome = applyDedup(
+    {
+      dedupGroup: stubGroup({
+        create: (input: { memberIds: number[] }) => {
+          created.push(input)
+          return 7
+        },
+      }),
+      candidatesFor: () => [doubtful, mergeable],
+    },
+    candidate({ id: 1, platformId: '51job', title: 'Java开发工程师' }),
+    '2026-09-16T01:00:00.000Z',
+  )
+  assert.equal(outcome.candidate, false, '能合上就不是"疑似"')
+  assert.equal(outcome.groupId, 7)
+  assert.deepEqual(created[0]?.memberIds, [2, 1])
 })
 
 test('applyDedup：命中就建组，并把两个岗位都挂上组', () => {

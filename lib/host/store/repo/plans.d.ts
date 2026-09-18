@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../../shared/dto.js';
+import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../../shared/dto.js';
 import { detectTimezone } from '../../util/time.js';
 /**
  * 默认排程（D-19 / SR-1）：**工作日 09:00–11:00 之间随机选点**。
@@ -39,9 +39,39 @@ export interface LegacyScheduleFields {
 export declare function normalizeSchedule(patch: (Partial<PlanSchedule> & LegacyScheduleFields) | undefined, base?: PlanSchedule): PlanSchedule;
 /** 后处理开关收敛（SR-44）：默认全开，只有显式 `false` 才关。 */
 export declare function normalizePostProcess(patch: Partial<PlanPostProcess> | undefined): PlanPostProcess;
+/** 平台覆盖项的默认值（`enabled` + 用方案级页数）。 */
+export declare const DEFAULT_PLATFORM_OVERRIDE: PlanPlatformOverrideDto;
+/**
+ * 收敛平台覆盖项（批次 3）。两条规则都是"防将来出事"的：
+ *
+ * 1. **只保留 `platforms` 里有的 id**。覆盖一个不在方案里的平台多半是笔误；
+ *    留着它最坏的后果是"某天把那个平台重新加回方案，覆盖突然生效" ——
+ *    而那时用户早已忘了自己配过它。这是最难查的一类 bug。
+ * 2. **等于默认值的条目不落库**，于是"什么都没配"的方案在库里与升级前**形状一致**，
+ *    升级与回滚都安全（也让"稀疏"这件事在数据上真的成立）。
+ */
+export declare function normalizePlatformOverrides(patch: Record<string, Partial<PlanPlatformOverrideDto>> | undefined, platforms: readonly string[]): Record<string, PlanPlatformOverrideDto>;
+/** 读某个平台的覆盖项（缺省即默认）。**所有读覆盖项的地方都该走它**，别自己 `?? {}`。 */
+export declare function platformOverrideOf(plan: Pick<PlanDto, 'platformOverrides'>, platformId: string): PlanPlatformOverrideDto;
+/**
+ * 这个方案**实际会抓**的平台（去掉被停用的）。
+ *
+ * 单独一个函数而不是各处 `filter`：调度器的判定 / 执行 / 状态、以及"全部平台都被暂停"
+ * 的派生判断都要用它，四处各写一遍迟早有一处忘记过滤。
+ */
+export declare function activePlatformsOf(plan: Pick<PlanDto, 'platforms' | 'platformOverrides'>): string[];
+/**
+ * 某个平台在该方案里**实际使用的条件**（方案级 + 该平台覆盖的页数）。
+ *
+ * 目前只有 `maxPages` 会被覆盖 —— 条件本身（关键词/城市/…）仍是全方案共享，
+ * 见 README.dev.md 的 P13：跨平台条件覆盖**明确未做**。
+ */
+export declare function criteriaForPlatform(plan: Pick<PlanDto, 'criteria' | 'platformOverrides'>, platformId: string): Record<string, string>;
 export interface PlanUpsertInput {
     name: string;
     platforms: string[];
+    /** 每平台的覆盖项（稀疏：等于默认的条目不落库）。 */
+    platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>;
     criteria?: Record<string, string>;
     schedule?: Partial<PlanSchedule>;
     enabled?: boolean;

@@ -570,6 +570,61 @@ test('parseSendWindow / inSendWindow：解析与判定（含跨午夜）', () =>
   assert.equal(inSendWindow(night, 720), false)
 })
 
+// ── 批次 5：两层额度（用户预算 vs 平台侧上限）────────────────────────
+
+test('每日额度：平台侧上限兜住用户额度，并说清是**平台**限住的（批次 5）', async () => {
+  await withStore(async (store) => {
+    // 用户把打招呼额度调到 1000；但 BOSS 的平台侧日上限约 150（平台事实）
+    writeGuardConfig(store, { dailyLimits: { greeting: 1000, application: 10, reply: 30 } }, T)
+    const guard = makeGuard(store)
+    const input: GuardInput = {
+      action: 'greeting.send',
+      actor: 'gui',
+      danger: 'low',
+      target: { platformId: 'zhipin' },
+      guiConfirmed: true,
+    }
+    for (let index = 0; index < 150; index += 1) await guard.run(input, async () => 'ok')
+
+    await assert.rejects(
+      () => guard.run(input, async () => 'x'),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.ok(
+          error.message.includes('平台侧上限 150'),
+          `必须说清是平台侧限住的 —— 否则用户会去改自己的额度，白改一场：${error.message}`,
+        )
+        assert.ok((error.hint ?? '').includes('改自己的额度没有用'))
+        return true
+      },
+    )
+  })
+})
+
+test('每日额度：用户额度更小时，理由指向用户自己（别把自家限制说成平台的）', async () => {
+  await withStore(async (store) => {
+    writeGuardConfig(store, { dailyLimits: { greeting: 2, application: 10, reply: 30 } }, T)
+    const guard = makeGuard(store)
+    const input: GuardInput = {
+      action: 'greeting.send',
+      actor: 'gui',
+      danger: 'low',
+      target: { platformId: 'zhipin' },
+      guiConfirmed: true,
+    }
+    await guard.run(input, async () => 'ok')
+    await guard.run(input, async () => 'ok')
+    await assert.rejects(
+      () => guard.run(input, async () => 'x'),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.ok(error.message.includes('你设的每日额度 2'))
+        return true
+      },
+    )
+  })
+})
+
 test('发送窗口：窗口外的发送被拒，窗口内放行（时钟受控）', async () => {
   await withStore(async (store) => {
     // 与实现同款换算：把固定时钟换成本地分钟，窗口按它构造 → 任何时区的机器上结论一致

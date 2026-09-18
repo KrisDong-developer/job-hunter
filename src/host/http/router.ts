@@ -17,6 +17,7 @@ import type {
   JobDetailDto,
   JobPageDto,
   JobDto,
+  PlanPlatformOverrideDto,
   PlanSchedule,
 } from '../../shared/dto.js'
 import { SALARY_BASES, type SalaryBasis } from '../../shared/dto.js'
@@ -145,6 +146,32 @@ function planPatchOf(body: Record<string, unknown>): PlanConfigInput {
     }
     patch.criteria = criteria
   }
+  if (typeof body['platformOverrides'] === 'object' &&
+    body['platformOverrides'] !== null &&
+    !Array.isArray(body['platformOverrides'])) {
+    // 批次 3：每平台的覆盖项（`enabled` / `maxPages`）。
+    // `maxPages` 同时接受数字与字符串 —— 界面上的数字输入框两种都可能发。
+    // 语义是**整份替换**（与 criteria 一致），不是逐键合并：稀疏存储下
+    // "把某平台的覆盖删掉"必须能表达得出来，逐键合并做不到这件事。
+    const overrides: Record<string, Partial<PlanPlatformOverrideDto>> = {}
+    for (const [id, raw] of Object.entries(body['platformOverrides'] as Record<string, unknown>)) {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
+      const entry = raw as Record<string, unknown>
+      const parsed: Partial<PlanPlatformOverrideDto> = {}
+      if (typeof entry['enabled'] === 'boolean') parsed.enabled = entry['enabled']
+      const maxPages = entry['maxPages']
+      if (maxPages === null) {
+        parsed.maxPages = null
+      } else if (typeof maxPages === 'number' && Number.isFinite(maxPages)) {
+        parsed.maxPages = Math.trunc(maxPages)
+      } else if (typeof maxPages === 'string' && maxPages.trim() !== '') {
+        const value = Number.parseInt(maxPages, 10)
+        parsed.maxPages = Number.isFinite(value) ? value : null
+      }
+      overrides[id] = parsed
+    }
+    patch.platformOverrides = overrides
+  }
   if (typeof body['schedule'] === 'object' && body['schedule'] !== null) {
     patch.schedule = scheduleOf(body['schedule'] as Record<string, unknown>)
   }
@@ -216,6 +243,7 @@ function planCreateOf(body: Record<string, unknown>): PlanConfigInput {
   return {
     name: patch.name ?? '未命名方案',
     ...(patch.platforms === undefined ? {} : { platforms: patch.platforms }),
+    ...(patch.platformOverrides === undefined ? {} : { platformOverrides: patch.platformOverrides }),
     ...(patch.criteria === undefined ? {} : { criteria: patch.criteria }),
     ...(patch.schedule === undefined ? {} : { schedule: patch.schedule }),
     ...(patch.postProcess === undefined ? {} : { postProcess: patch.postProcess }),

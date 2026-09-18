@@ -72,7 +72,7 @@ export declare const AUTH_REQUIREMENT_LABEL: Record<AuthRequirementValue, string
 export declare const BLOCK_KINDS: readonly ["captcha", "login-required", "rate-limited", "quota-exhausted", "blank"];
 export type BlockKind = (typeof BLOCK_KINDS)[number];
 /** 待办类型。降级告警必须主动产生待办（§4.2.4 降级语义 / B13）。 */
-export declare const TODO_KINDS: readonly ["adapter-degraded", "adapter-broken", "login-required", "blocked", "new-jobs", "catch-up", "confirm-action", "deadline"];
+export declare const TODO_KINDS: readonly ["adapter-degraded", "adapter-broken", "yield-drop", "login-required", "blocked", "new-jobs", "catch-up", "confirm-action", "deadline"];
 export type TodoKind = (typeof TODO_KINDS)[number];
 /** 待办级别。 */
 export declare const TODO_LEVELS: readonly ["info", "warn", "urgent"];

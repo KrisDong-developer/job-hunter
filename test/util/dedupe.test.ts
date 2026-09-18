@@ -7,7 +7,9 @@ import {
   compareJobs,
   jobDedupeKey,
   levenshteinSimilarity,
+  normalizeCityForDedupe,
   salaryBucketOf,
+  UNKNOWN_SALARY_BUCKET,
 } from '../../src/host/util/dedupe.js'
 
 // ── 第 1 级：归一化 ─────────────────────────────────────────────────
@@ -103,7 +105,12 @@ test('标题清洗：去括号补充与常见修饰词', () => {
 test('薪资分桶把相邻区间归到一起', () => {
   assert.equal(salaryBucketOf(13000, 18000), salaryBucketOf(15000, 18000))
   assert.notEqual(salaryBucketOf(13000, 18000), salaryBucketOf(50000, 60000))
-  assert.equal(salaryBucketOf(null, null), 'unknown')
+  assert.equal(salaryBucketOf(null, null), UNKNOWN_SALARY_BUCKET)
+  assert.notEqual(
+    UNKNOWN_SALARY_BUCKET,
+    salaryBucketOf(20000, 30000),
+    '哨兵值绝不能等于任何一个真实档位 —— 否则"未知"会被当成"不同"',
+  )
 })
 
 test('岗位去重：同公司 + 同城 + 同薪资档 + 标题相似 → 合并', () => {
@@ -151,4 +158,85 @@ test('岗位去重：任一键不同就不合并（宁可留两个）', () => {
   const otherTitle = compareJobs(baseKey, jobDedupeKey({ ...base, title: '产品经理' }))
   assert.equal(otherTitle.merge, false)
   assert.ok(otherTitle.basis.includes('标题相似度'))
+})
+
+// ── R25：门槛会被"缺值"击穿（批次 4 修的两个静默 bug）─────────────────
+//
+// 这两个 bug 此前**完全没有测试覆盖** —— 改完代码后 700 条用例全绿，
+// 一个都没红。那说明"少合并"这件事在测试里根本不可见，正是它们静默的原因。
+
+test('R25①：城市**归一到市级**再比较（「深圳」与「深圳·福田区」是同一个城市）', () => {
+  assert.equal(normalizeCityForDedupe('深圳'), '深圳')
+  assert.equal(normalizeCityForDedupe('深圳市'), '深圳')
+  assert.equal(normalizeCityForDedupe('深圳·福田区'), '深圳')
+  assert.equal(normalizeCityForDedupe('深圳-福田'), '深圳')
+  assert.equal(normalizeCityForDedupe(' 北京 '), '北京')
+  assert.equal(normalizeCityForDedupe(''), '')
+
+  const base = { companyName: '字节跳动', title: 'Java开发工程师', salaryMin: 20000, salaryMax: 30000 }
+  const verdict = compareJobs(
+    jobDedupeKey({ ...base, city: '深圳' }),
+    jobDedupeKey({ ...base, city: '深圳·福田区' }),
+  )
+  assert.equal(
+    verdict.merge,
+    true,
+    '不归一的话这两个会被判成"城市不同" —— 于是同一岗位在跨平台时静默地少合并',
+  )
+})
+
+test('R25②：薪资**只在两边都锚定时**才当门槛（未知 ≠ 不同）', () => {
+  const base = { companyName: '字节跳动', title: 'Java开发工程师', city: '深圳' }
+
+  // 一侧没薪资（BOSS 未登录时的空薪资），另一侧 20-30K → 必须仍然能合并
+  const oneSide = compareJobs(
+    jobDedupeKey({ ...base, salaryMin: null, salaryMax: null }),
+    jobDedupeKey({ ...base, salaryMin: 20000, salaryMax: 30000 }),
+  )
+  assert.equal(
+    oneSide.merge,
+    true,
+    '旧行为把"未知"当成一个普通档位去比 —— 等于要求"有薪资的那边必须是空"',
+  )
+  assert.ok(
+    oneSide.basis.includes('未锚定'),
+    '依据里要写清薪资这次没参与判断，否则事后复盘会以为它比过了',
+  )
+  assert.equal(oneSide.candidate, false, '合并成功就不是"疑似"')
+
+  // 放宽不能伤到原规则：两边都锚定且档位差得远 → 仍然不合并
+  const both = compareJobs(
+    jobDedupeKey({ ...base, salaryMin: 20000, salaryMax: 30000 }),
+    jobDedupeKey({ ...base, salaryMin: 60000, salaryMax: 80000 }),
+  )
+  assert.equal(both.merge, false)
+  assert.ok(both.basis.includes('薪资档不同'))
+})
+
+test('疑似重复：硬门槛全过、只有标题差一点 → 不合并，但**报成 candidate**', () => {
+  const base = { companyName: '字节跳动', salaryMin: 20000, salaryMax: 30000, city: '深圳' }
+
+  // bigram 相似度约 0.8，落在 [0.75, 0.9) 之间
+  const near = compareJobs(
+    jobDedupeKey({ ...base, title: 'Java开发工程师' }),
+    jobDedupeKey({ ...base, title: 'Java开发工程师岗位' }),
+  )
+  assert.equal(near.merge, false, '没到门槛就不合并（宁可漏、不可错）')
+  assert.equal(near.candidate, true, '但"没合并"这件事本身必须能被看见')
+  assert.ok(near.basis.includes('人工确认'))
+
+  // 差得太远就不该说"疑似" —— 否则这个出口会变成噪音，用户会学会忽略它
+  const far = compareJobs(
+    jobDedupeKey({ ...base, title: 'Java开发工程师' }),
+    jobDedupeKey({ ...base, title: '前端开发工程师' }),
+  )
+  assert.equal(far.candidate, false)
+
+  // 已经合并的当然不是"疑似"
+  const merged = compareJobs(
+    jobDedupeKey({ ...base, title: 'Java开发工程师' }),
+    jobDedupeKey({ ...base, title: 'Java 开发工程师' }),
+  )
+  assert.equal(merged.merge, true)
+  assert.equal(merged.candidate, false)
 })

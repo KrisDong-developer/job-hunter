@@ -84,6 +84,7 @@ import { browserPageSource, createBrowserManager } from './platform/browser.js'
 import { readBrowserConfig, writeBrowserConfig } from './browser-config.js'
 import { readAdapterHealth } from './platform/health.js'
 import { readPlatformRiskPause } from './platform/risk-pause.js'
+import { readYieldSnapshot } from './platform/yield-baseline.js'
 import type { LeaseManager } from './platform/lease.js'
 import { createLease } from './platform/lease.js'
 import type { Mutex } from './platform/mutex.js'
@@ -1469,6 +1470,11 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           implementation: adapterImplementationOf(adapter),
           maturity: adapter.maturity,
           authRequirement: adapter.authRequirement,
+          // 量级快照（批次 5）：查的是"字段都好、条目数却掉了"，与逐字段健康互补
+          yield:
+            opened === undefined
+              ? { baseline: null, samples: 0, lastFound: null, level: 'insufficient' as const }
+              : readYieldSnapshot(opened, adapter.id),
           health: snapshot.health,
           healthReason: snapshot.reason,
           failStreak: snapshot.failStreak,

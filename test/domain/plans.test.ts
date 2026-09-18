@@ -4,7 +4,10 @@ import { createPlanService } from '../../src/host/domain/plans.js'
 import { DEFAULT_SCHEDULE, normalizeSchedule } from '../../src/host/store/repo/plans.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job.js'
+import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed.js'
+import { createLagouAdapter } from '../../src/host/platform/adapters/lagou.js'
 import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job.js'
+import type { SiteAdapter } from '../../src/host/platform/types.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
@@ -264,6 +267,242 @@ test('SR-41：不支持声明的维度返回 supported=false 并说明原因（�
     const none = plans.dimensions([])
     assert.equal(none.every((item) => !item.supported), true)
     assert.equal(none[0]?.disabledReason !== null, true)
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+// ── 多平台提示（notice）：只提示、不阻断 ────────────────────────────────
+//
+// 它们针对的是同一类失败：**平台安静地返回 0 条**。从数据里查不出来
+// （0 条与 0 条长得一样），报错又太严（用户没法同时选能力不同的平台），
+// 所以只能"提示但不阻断"——而提示必须真的出现，否则等于没有。
+
+/** 注册一批**真实**适配器（用工厂，不用假对象）。 */
+function withPlatforms(...factories: Array<() => SiteAdapter>) {
+  const store = openTestStore()
+  const registry = createAdapterRegistry()
+  for (const factory of factories) registry.register(factory())
+  return { store, registry, plans: createPlanService(store, undefined, registry) }
+}
+
+function citiesOf(adapter: SiteAdapter): string[] {
+  const dimension = adapter.criteriaDimensions.find((item) => item.key === 'city')
+  return dimension?.values.map((item) => item.value) ?? []
+}
+
+test('提示：选到还没校准/已停用的平台时要说清楚，而不是让你白跑一轮', () => {
+  const platforms = ['51job', 'lagou', 'indeed']
+  const { store, plans } = withPlatforms(createFiftyOneAdapter, createLagouAdapter, createIndeedAdapter)
+  try {
+    const checked = plans.validate({
+      name: '多平台',
+      platforms,
+      criteria: { keyword: 'Java', city: '深圳' },
+    })
+    assert.ok(
+      checked.notices.some((note) => note.includes('lagou') && note.includes('实验')),
+      `应当提示 lagou 是实验性平台：${checked.notices.join(' | ')}`,
+    )
+    assert.ok(
+      checked.notices.some((note) => note.includes('indeed') && note.includes('停用')),
+      `应当提示 indeed 已停用：${checked.notices.join(' | ')}`,
+    )
+    // **提示 ≠ 拒绝**：方案照样建得出来
+    assert.ok(plans.create({ name: '多平台', platforms, criteria: { keyword: 'Java', city: '深圳' } }).id > 0)
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('提示：城市不被某个选中平台支持时要说清楚', () => {
+  const oneCities = citiesOf(createFiftyOneAdapter())
+  const waiqiCities = citiesOf(createWaiqiAdapter())
+  // 找"一边支持、另一边不支持"的城市 —— 这正是不一致会伤人的场景。
+  // 两个方向都试，免得把用例绑死在某一版城市表上。
+  const cityInOneOnly = oneCities.find((city) => !waiqiCities.includes(city))
+  const cityInWaiqiOnly = waiqiCities.find((city) => !oneCities.includes(city))
+  const city = cityInOneOnly ?? cityInWaiqiOnly
+  assert.ok(city !== undefined, '两个平台的城市表完全互相覆盖 —— 这条用例失去了测试对象，请换一对平台')
+  const platforms = cityInOneOnly === undefined ? ['waiqi', '51job'] : ['51job', 'waiqi']
+  const missingId = cityInOneOnly === undefined ? '51job' : 'waiqi'
+
+  const { store, plans } = withPlatforms(createFiftyOneAdapter, createWaiqiAdapter)
+  try {
+    const checked = plans.validate({ name: '城市不一致', platforms, criteria: { keyword: 'Java', city } })
+    assert.ok(
+      checked.notices.some((note) => note.includes(city) && note.includes(missingId)),
+      `应当提示「${missingId} 不认识 ${city}」：${checked.notices.join(' | ')}`,
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('提示：抓取页数被平台上限截断时要说清楚（不能让你以为抓了 5 页）', () => {
+  // 51job 排在前 → 校验按它的上限放行；而 waiqi 只有 1 页（服务端翻页坏，是平台事实）
+  const { store, plans } = withPlatforms(createFiftyOneAdapter, createWaiqiAdapter)
+  try {
+    const checked = plans.validate({
+      name: '深度不一致',
+      platforms: ['51job', 'waiqi'],
+      criteria: { keyword: 'Java', city: '深圳', maxPages: '5' },
+    })
+    assert.ok(
+      checked.notices.some((note) => note.includes('waiqi') && note.includes('页')),
+      `应当提示 waiqi 的深度被截断：${checked.notices.join(' | ')}`,
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('提示不是噪音：单平台、城市支持、深度在限内的方案不该有任何提示', () => {
+  const { store, plans } = withRegistry()
+  try {
+    const checked = plans.validate({
+      name: '正常',
+      platforms: ['51job'],
+      criteria: { keyword: 'Java', city: '深圳', maxPages: '2' },
+    })
+    assert.deepEqual(checked.notices, [], '正常配置不该产生提示 —— 否则用户会学会忽略它们')
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+// ── 每平台覆盖项（批次 3 数据模型侧）────────────────────────────────────
+
+test('每平台覆盖项：停用一个平台能存下来、读回来还在，且**稀疏**（默认值不落库）', () => {
+  const { store, plans } = withRegistry({ waiqi: true })
+  try {
+    const plan = plans.create({
+      name: '多平台',
+      platforms: ['51job', 'waiqi'],
+      // 显式给一个"等于默认"的条目 + 一个真的改动
+      platformOverrides: { '51job': { enabled: true, maxPages: null }, waiqi: { enabled: false } },
+      criteria: { keyword: 'Java', city: '深圳' },
+    })
+    assert.deepEqual(
+      plan.platformOverrides,
+      { waiqi: { enabled: false, maxPages: null } },
+      '等于默认值的条目不落库 —— 这样"什么都没配"的方案与升级前形状一致',
+    )
+
+    const reloaded = plans.get(plan.id)
+    assert.equal(reloaded.platformOverrides['waiqi']?.enabled, false, '读回来还在')
+    assert.equal(reloaded.platformOverrides['51job'], undefined, '默认条目不该被凭空造出来')
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('每平台覆盖项：覆盖一个不在方案里的平台 → 显式报错（否则它会在重新加入时静默生效）', () => {
+  const { store, plans } = withRegistry({ waiqi: true })
+  try {
+    assert.throws(
+      () =>
+        plans.create({
+          name: '越界覆盖',
+          platforms: ['51job'],
+          platformOverrides: { waiqi: { enabled: false } },
+          criteria: { keyword: 'Java' },
+        }),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'INVALID_INPUT' &&
+        error.message.includes('waiqi'),
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('每平台覆盖项：所有平台都停用 → 报错（那种方案永远不会抓任何东西）', () => {
+  const { store, plans } = withRegistry({ waiqi: true })
+  try {
+    assert.throws(
+      () =>
+        plans.create({
+          name: '全停',
+          platforms: ['51job', 'waiqi'],
+          platformOverrides: { '51job': { enabled: false }, waiqi: { enabled: false } },
+          criteria: { keyword: 'Java' },
+        }),
+      (error: unknown) => error instanceof DomainError && error.code === 'INVALID_INPUT',
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('每平台覆盖项：页数上限按**该平台自己的**上限校验，不再静默截断', () => {
+  const { store, plans } = withRegistry({ waiqi: true })
+  try {
+    // waiqi 的服务端翻页是坏的 → 它自己的上限是 1 页（平台事实，不是我方取舍）
+    assert.throws(
+      () =>
+        plans.create({
+          name: '深度越界',
+          platforms: ['51job', 'waiqi'],
+          platformOverrides: { waiqi: { maxPages: 2 } },
+          criteria: { keyword: 'Java', maxPages: '5' },
+        }),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'INVALID_INPUT' &&
+        error.message.includes('waiqi'),
+      '以前"方案设 5 页"会在 waiqi 上被静默截断成 1 页 —— 现在同类越界必须显式报错',
+    )
+
+    // 在限内则通过，并且能读回来
+    const ok = plans.create({
+      name: '深度合规',
+      platforms: ['51job', 'waiqi'],
+      platformOverrides: { waiqi: { maxPages: 1 } },
+      criteria: { keyword: 'Java', maxPages: '5' },
+    })
+    assert.equal(ok.platformOverrides['waiqi']?.maxPages, 1)
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('每平台覆盖项：平台被移出方案时，它的覆盖项一起消失', () => {
+  const { store, plans } = withRegistry({ waiqi: true })
+  try {
+    const plan = plans.create({
+      name: '先要两个平台',
+      platforms: ['51job', 'waiqi'],
+      platformOverrides: { waiqi: { enabled: false } },
+      criteria: { keyword: 'Java', city: '深圳' },
+    })
+    assert.equal(plan.platformOverrides['waiqi']?.enabled, false)
+
+    const updated = plans.update(plan.id, { platforms: ['51job'] })
+    assert.deepEqual(
+      updated.platformOverrides,
+      {},
+      '留着它，下次把 waiqi 加回来时会**静默生效** —— 而用户早忘了自己配过它',
+    )
   } finally {
     const dir = store.dataDir
     store.close()

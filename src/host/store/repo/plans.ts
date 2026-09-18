@@ -1,5 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../../shared/dto.js'
+import type {
+  PlanDto,
+  PlanPlatformOverrideDto,
+  PlanPostProcess,
+  PlanSchedule,
+} from '../../../shared/dto.js'
 import { detectTimezone } from '../../util/time.js'
 import { asBool, asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
@@ -129,9 +134,75 @@ export function normalizePostProcess(patch: Partial<PlanPostProcess> | undefined
   }
 }
 
+/** 平台覆盖项的默认值（`enabled` + 用方案级页数）。 */
+export const DEFAULT_PLATFORM_OVERRIDE: PlanPlatformOverrideDto = { enabled: true, maxPages: null }
+
+/**
+ * 收敛平台覆盖项（批次 3）。两条规则都是"防将来出事"的：
+ *
+ * 1. **只保留 `platforms` 里有的 id**。覆盖一个不在方案里的平台多半是笔误；
+ *    留着它最坏的后果是"某天把那个平台重新加回方案，覆盖突然生效" ——
+ *    而那时用户早已忘了自己配过它。这是最难查的一类 bug。
+ * 2. **等于默认值的条目不落库**，于是"什么都没配"的方案在库里与升级前**形状一致**，
+ *    升级与回滚都安全（也让"稀疏"这件事在数据上真的成立）。
+ */
+export function normalizePlatformOverrides(
+  patch: Record<string, Partial<PlanPlatformOverrideDto>> | undefined,
+  platforms: readonly string[],
+): Record<string, PlanPlatformOverrideDto> {
+  const known = new Set(platforms)
+  const out: Record<string, PlanPlatformOverrideDto> = {}
+  for (const [id, raw] of Object.entries(patch ?? {})) {
+    if (!known.has(id)) continue
+    const enabled = raw.enabled !== false
+    const maxPages =
+      typeof raw.maxPages === 'number' && Number.isInteger(raw.maxPages) && raw.maxPages > 0
+        ? raw.maxPages
+        : null
+    if (enabled && maxPages === null) continue
+    out[id] = { enabled, maxPages }
+  }
+  return out
+}
+
+/** 读某个平台的覆盖项（缺省即默认）。**所有读覆盖项的地方都该走它**，别自己 `?? {}`。 */
+export function platformOverrideOf(
+  plan: Pick<PlanDto, 'platformOverrides'>,
+  platformId: string,
+): PlanPlatformOverrideDto {
+  return plan.platformOverrides[platformId] ?? DEFAULT_PLATFORM_OVERRIDE
+}
+
+/**
+ * 这个方案**实际会抓**的平台（去掉被停用的）。
+ *
+ * 单独一个函数而不是各处 `filter`：调度器的判定 / 执行 / 状态、以及"全部平台都被暂停"
+ * 的派生判断都要用它，四处各写一遍迟早有一处忘记过滤。
+ */
+export function activePlatformsOf(plan: Pick<PlanDto, 'platforms' | 'platformOverrides'>): string[] {
+  return plan.platforms.filter((id) => platformOverrideOf(plan, id).enabled)
+}
+
+/**
+ * 某个平台在该方案里**实际使用的条件**（方案级 + 该平台覆盖的页数）。
+ *
+ * 目前只有 `maxPages` 会被覆盖 —— 条件本身（关键词/城市/…）仍是全方案共享，
+ * 见 README.dev.md 的 P13：跨平台条件覆盖**明确未做**。
+ */
+export function criteriaForPlatform(
+  plan: Pick<PlanDto, 'criteria' | 'platformOverrides'>,
+  platformId: string,
+): Record<string, string> {
+  const override = platformOverrideOf(plan, platformId)
+  if (override.maxPages === null) return plan.criteria
+  return { ...plan.criteria, maxPages: String(override.maxPages) }
+}
+
 export interface PlanUpsertInput {
   name: string
   platforms: string[]
+  /** 每平台的覆盖项（稀疏：等于默认的条目不落库）。 */
+  platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>
   criteria?: Record<string, string>
   schedule?: Partial<PlanSchedule>
   enabled?: boolean
@@ -178,10 +249,17 @@ function toDto(row: Row): PlanDto {
   // 这样"升级后第一次打开"不会显示成"从来没成功过"。
   const lastSuccessAt = asTextOrNull(row['last_success_at']) ?? lastRunAt
   const lastAttemptAt = asTextOrNull(row['last_attempt_at']) ?? lastRunAt
+  const platforms = asJson<string[]>(row['platforms_json'], [])
   return {
     id: asInt(row['id']),
     name: asText(row['name']),
-    platforms: asJson<string[]>(row['platforms_json'], []),
+    platforms,
+    // 读的时候**再收敛一次**：手工改过库、或平台集合变过之后，
+    // 库里仍可能残留"不在 platforms 里的覆盖项"。读取侧兜住比事后修数据可靠。
+    platformOverrides: normalizePlatformOverrides(
+      asJson<Record<string, Partial<PlanPlatformOverrideDto>>>(row['platform_overrides_json'], {}),
+      platforms,
+    ),
     criteria: asJson<Record<string, string>>(row['criteria_json'], {}),
     schedule: normalizeSchedule(asJson<Partial<PlanSchedule>>(row['schedule_json'], {})),
     enabled: asBool(row['enabled'], true),
@@ -200,15 +278,15 @@ function toDto(row: Row): PlanDto {
 export function createPlanRepo(db: DatabaseSync): PlanRepo {
   const insert = db.prepare(
     `INSERT INTO plan (
-       name, platforms_json, criteria_json, keywords_json, exclude_json, schedule_json,
-       enabled, timezone, post_process_json, created_at
-     ) VALUES (?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?)`,
+       name, platforms_json, platform_overrides_json, criteria_json, keywords_json, exclude_json,
+       schedule_json, enabled, timezone, post_process_json, created_at
+     ) VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?)`,
   )
   const selectById = db.prepare('SELECT * FROM plan WHERE id = ?')
   const selectAll = db.prepare('SELECT * FROM plan ORDER BY id')
   const updateStmt = db.prepare(
-    `UPDATE plan SET name = ?, platforms_json = ?, criteria_json = ?, schedule_json = ?,
-       enabled = ?, timezone = ?, post_process_json = ? WHERE id = ?`,
+    `UPDATE plan SET name = ?, platforms_json = ?, platform_overrides_json = ?, criteria_json = ?,
+       schedule_json = ?, enabled = ?, timezone = ?, post_process_json = ? WHERE id = ?`,
   )
   const deleteStmt = db.prepare('DELETE FROM plan WHERE id = ?')
   // last_run_at 与 last_success_at **一起**推进：last_run_at 只是兼容字段，
@@ -250,6 +328,7 @@ export function createPlanRepo(db: DatabaseSync): PlanRepo {
       const result = insert.run(
         input.name,
         JSON.stringify(input.platforms),
+        JSON.stringify(normalizePlatformOverrides(input.platformOverrides, input.platforms)),
         JSON.stringify(input.criteria ?? {}),
         JSON.stringify(schedule),
         input.enabled === false ? 0 : 1,
@@ -264,9 +343,17 @@ export function createPlanRepo(db: DatabaseSync): PlanRepo {
       const current = require(id)
       const schedule = normalizeSchedule(patch.schedule, current.schedule)
       const postProcess = normalizePostProcess({ ...current.postProcess, ...(patch.postProcess ?? {}) })
+      // 平台集合变了就把覆盖项**重新收敛**一次：被移出方案的平台，其覆盖项必须一起丢掉，
+      // 否则它会在"某天重新加回这个平台"时静默生效（见 normalizePlatformOverrides 的注释）。
+      const platforms = patch.platforms ?? current.platforms
+      const overrides = normalizePlatformOverrides(
+        patch.platformOverrides ?? current.platformOverrides,
+        platforms,
+      )
       updateStmt.run(
         patch.name ?? current.name,
-        JSON.stringify(patch.platforms ?? current.platforms),
+        JSON.stringify(platforms),
+        JSON.stringify(overrides),
         JSON.stringify(patch.criteria ?? current.criteria),
         JSON.stringify(schedule),
         (patch.enabled ?? current.enabled) ? 1 : 0,

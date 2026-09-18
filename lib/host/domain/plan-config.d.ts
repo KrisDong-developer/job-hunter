@@ -13,12 +13,14 @@
  *
  * 还有一件**不报错但要说出来**的事：重复方案（SR-43）只提示、不合并。
  */
-import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js';
+import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js';
 import type { AdapterRegistry } from '../platform/registry.js';
 import type { SearchCriteria } from '../platform/types.js';
 export interface PlanConfigInput {
     name?: string;
     platforms?: string[];
+    /** 每平台的覆盖项（稀疏）。 */
+    platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>;
     criteria?: Record<string, string>;
     schedule?: Partial<PlanSchedule>;
     enabled?: boolean;
@@ -34,6 +36,8 @@ export interface PlanValidationContext {
 export interface ValidatedPlanConfig {
     name: string;
     platforms: string[];
+    /** 收敛后的每平台覆盖项（稀疏：等于默认的条目不在里面）。 */
+    platformOverrides: Record<string, PlanPlatformOverrideDto>;
     criteria: Record<string, string>;
     schedule: PlanSchedule;
     enabled: boolean;
@@ -46,6 +50,14 @@ export interface ValidatedPlanConfig {
         name: string;
         reason: string;
     }>;
+    /**
+     * **非致命**但用户必须知道的事（多平台相关）。
+     *
+     * 为什么值得一个专门的通道：它们对应的失败形态都是"平台安静地返回 0 条"，
+     * 从数据里根本查不出来（0 条与 0 条长得一样）。报错太严（用户没法同时选
+     * 能力不同的平台），不报又必然有人踩 —— 所以走"提示但不阻断"。
+     */
+    notices: string[];
 }
 /**
  * 把 `Record<string,string>` 归一成适配器认识的 `SearchCriteria`。

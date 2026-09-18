@@ -665,3 +665,28 @@ CREATE INDEX idx_dictionary_active ON dictionary(kind, term) WHERE enabled = 1;
 CREATE INDEX idx_interview_application ON interview(application_id);
 CREATE INDEX idx_tripartite_campus ON tripartite(campus_application_id);
 `
+
+/**
+ * v9 · 方案级平台的**覆盖项**（批次 3 数据模型侧）。
+ *
+ * ## 为什么需要这一列
+ *
+ * 方案级只有一份 `criteria` 与一个 `maxPages`，而平台的真实上限差得很远
+ * （waiqi 的服务端翻页是坏的 → 1 页；zhaopin → 10 页）。于是"方案设 5 页"在 waiqi 上
+ * 被**静默截断**成 1 页；想临时把一个平台停掉，只能把它从 `platforms` 里删掉 ——
+ * 而删掉就丢了"这个方案包含它"的意图，重复方案的判定也跟着变。
+ *
+ * ## 为什么是 `{}` 默认 + **稀疏**存储
+ *
+ * 只存用户**真的改过**的平台。默认（启用 + 用方案级页数）不落库，
+ * 于是"什么都没配"的方案在库里的形状与升级前**完全一致** —— 升级与回滚都安全。
+ *
+ * ## 为什么不塞进 `platforms_json` 变成对象数组
+ *
+ * `platforms` 是**集合与顺序**（6 处调用方按它遍历），覆盖项是**按 id 查的稀疏表**。
+ * 两者访问方式不同；混成一个对象数组会让每处遍历都多一层解包，
+ * 而收益只是"少一列"。分开存，各自表达各自的东西。
+ */
+export const SCHEMA_V9 = `
+ALTER TABLE plan ADD COLUMN platform_overrides_json TEXT NOT NULL DEFAULT '{}';
+`

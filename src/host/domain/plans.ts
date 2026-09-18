@@ -11,6 +11,7 @@
  * 2. **重复方案只提示，不合并**（SR-43）—— 合并会替用户抹掉他的两个意图。
  */
 import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js'
+import { activePlatformsOf, normalizePlatformOverrides } from '../store/repo/plans.js'
 import type { PlanRepo, PlanUpsertInput } from '../store/repo/plans.js'
 import type { Store } from '../store/store.js'
 import type { AdapterRegistry } from '../platform/registry.js'
@@ -82,7 +83,11 @@ export function createPlanService(
       ...(selfId === undefined ? {} : { selfId }),
       existing: store.plan.list(),
     })
-    return { ...validated, dimensions: criteriaDimensionsFor(adapters, validated.platforms) }
+    return {
+      ...validated,
+      // 维度快照按**启用的**平台算：被停用的平台不该再往界面上塞它的筛选维度。
+      dimensions: criteriaDimensionsFor(adapters, activePlatformsOf(validated)),
+    }
   }
 
   const get = (id: number): PlanDto => {
@@ -97,6 +102,7 @@ export function createPlanService(
   const toUpsert = (validated: ValidatedPlanConfig): PlanUpsertInput => ({
     name: validated.name,
     platforms: validated.platforms,
+    platformOverrides: validated.platformOverrides,
     criteria: validated.criteria,
     schedule: validated.schedule,
     enabled: validated.enabled,
@@ -132,9 +138,18 @@ export function createPlanService(
     update(id, patch): PlanDto {
       const current = get(id) // 不存在直接 404，先于任何校验
       // 补丁是**部分**的：缺的键沿用现值，这样"只改名字"不需要把条件一起传回来
+      const platforms = patch.platforms ?? current.platforms
+      // ⚠️ 覆盖项必须在**校验之前**按新的平台集合收敛一次。
+      // 否则"把某个平台移出方案"会被校验的"覆盖项越界"拦住 ——
+      // 而那不是用户的错：他只是移走了一个平台，覆盖项是系统自己带过来的。
+      // 收敛掉"不在方案里的平台"，正是"移出即清理"这条语义的落点。
       const merged: PlanConfigInput = {
         name: patch.name ?? current.name,
-        platforms: patch.platforms ?? current.platforms,
+        platforms,
+        platformOverrides: normalizePlatformOverrides(
+          patch.platformOverrides ?? current.platformOverrides,
+          platforms,
+        ),
         criteria: patch.criteria ?? current.criteria,
         schedule: { ...current.schedule, ...(patch.schedule ?? {}) },
         enabled: patch.enabled ?? current.enabled,

@@ -29,6 +29,7 @@ import type {
 import type { PlanService } from '../domain/plans.js'
 import type { EventBus } from '../http/sse.js'
 import type { Store } from '../store/store.js'
+import { activePlatformsOf, criteriaForPlatform } from '../store/repo/plans.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import {
   allPlatformsRiskPaused,
@@ -319,6 +320,26 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
    * 全局暂停先说全局；风控暂停说风控；租约说租约；然后才是"到没到点"。
    * 顺序反了会出现"还没到点"盖住了"你已被风控暂停"这种把用户带沟里的提示。
    */
+  /**
+   * 平台的**执行顺序**：最久没成功过的先跑（`last_ok_at` 升序，从没成功过的最优先）。
+   *
+   * 为什么需要它（批次 5）：窗口与每日预算是有限的，而固定按方案里的数组顺序跑，
+   * 会让**前几个平台永远跑得完、最后几个系统性跑不到**。用户看不出这是 bug ——
+   * 他只会觉得"拉勾怎么老没数据"，而数据里那几次 `crawl_run` 也确实"没跑过"。
+   *
+   * 并列时保持方案里的原顺序（`sort` 稳定）：用户改了平台顺序仍能预期第一轮怎么跑，
+   * 只有"上次成功时间"真的不同时才重排。
+   */
+  const executionOrderOf = (platformIds: readonly string[]): string[] =>
+    [...platformIds].sort((left, right) => {
+      const a = deps.store.platform.get(left)?.lastOkAt ?? ''
+      const b = deps.store.platform.get(right)?.lastOkAt ?? ''
+      if (a === b) return 0
+      if (a === '') return -1
+      if (b === '') return 1
+      return a < b ? -1 : 1
+    })
+
   const decide = (plan: PlanDto, at: Date, exceptReason?: RunReason): Decision => {
     const planLevel = (reason: SkipReason): Decision => ({ kind: 'skip', reason, platforms: [] })
 
@@ -347,8 +368,17 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     // 只有"一个都跑不了"才跳过，并把代表原因（第一个被挡住的平台）报上去。
     // 之前这里是「循环里任一 gate 非空即 return skip」，于是猎聘未登录会
     // 让健康的 51job / 智联一起停摆（而 ARCHITECTURE 把 SR-18 标为已达成）。
+    //
+    // 批次 3：只对**启用的**平台判定 —— 用户在一个方案里停掉的平台，不该再参与
+    // "这条方案能不能跑"的判断（否则停掉一个未登录的平台仍然会挡住整条方案）。
+    // 批次 5：顺序按**新鲜度**（最久没成功过的先跑），而不是方案里的数组顺序。
+    const active = executionOrderOf(activePlatformsOf(plan))
+    // 防御性：校验不允许"所有平台都停用"，但手工改过库的旧数据可能如此。
+    // 那种方案永远不会抓任何东西，如实说成"已停用"比每天安静地什么都不做强。
+    if (active.length === 0) return planLevel('plan_disabled')
+
     const ignoreRiskPause = exceptReason === 'catch-up'
-    const platforms: PlatformDecision[] = plan.platforms.map((platformId) => {
+    const platforms: PlatformDecision[] = active.map((platformId) => {
       const reason = deps.platformGate?.(platformId, { ignoreRiskPause }) ?? null
       return {
         platformId,
@@ -718,7 +748,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
             const summary = await deps.run({
               planId: plan.id,
               platformId,
-              criteria: plan.criteria,
+              // 批次 3：这个平台**实际使用的**条件（方案级 + 该平台的页数覆盖）
+              criteria: criteriaForPlatform(plan, platformId),
               reason: 'schedule',
             })
             outcomes.push({ platformId, summary, error: null })
@@ -773,8 +804,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     const engine = deps.store.plan.engineState(plan.id)
     // SR-21：风控暂停是**平台级**的；方案级只做**派生**（该方案下所有平台都被暂停）。
     // 独立存一份必然与平台级真值漂移 —— 一个方案有 5 个平台就有 5 份状态。
-    const riskPaused = allPlatformsRiskPaused(deps.store, plan.platforms)
-    const pausedPlatforms = plan.platforms.filter(
+    const riskPaused = allPlatformsRiskPaused(deps.store, activePlatformsOf(plan))
+    const pausedPlatforms = activePlatformsOf(plan).filter(
       (platformId) => readPlatformRiskPause(deps.store, platformId).paused,
     )
     return {
@@ -786,7 +817,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       lastSuccessAt: plan.lastSuccessAt,
       nextRunAt: plan.nextRunAt,
       lastDecision: lastDecision.get(plan.id) ?? null,
-      platformDecisions: plan.platforms.map((platformId) => ({
+      // 只回**启用中**的平台：停用的平台没有"为什么没跑"可言（是用户让它别跑的）
+      platformDecisions: activePlatformsOf(plan).map((platformId) => ({
         platformId,
         decision: lastPlatformDecision.get(platformDecisionKey(plan.id, platformId)) ?? null,
       })),
@@ -830,7 +862,8 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       // SR-21：风控暂停是**平台级**的，恢复也必须**按平台**清 ——
       // 并且要把该平台自己的失败计数与健康态一起复位：否则残留的
       // `adapter_broken` / 冷却会立刻再把门关上，"确认恢复"看起来像没生效。
-      for (const platformId of plan?.platforms ?? []) {
+      // 只清**启用中**的平台的暂停：用户停用的平台不需要被"恢复"，它本来就不跑。
+      for (const platformId of plan === undefined ? [] : activePlatformsOf(plan)) {
         clearPlatformRiskPause(deps.store, platformId)
         clearPlatformCooldown(platformId)
         deps.store.platform.recordSuccess(platformId, at)
@@ -942,24 +975,33 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       // 多平台下暂停是**平台级**的：全被暂停才整体拒绝；只暂停了一部分，
       // 就只跑没被暂停的那些（SR-18），不再连坐。
       const ignoreRiskPause = reason === 'catch-up'
-      const pausedIds = plan.platforms.filter(
+      // 批次 3：只跑**启用的**平台。被用户停用的平台不该在这里偷偷跑起来 ——
+      // "停用"必须是真的停用，而不是"定时不跑、手动照跑"。
+      // 批次 5：同一套新鲜度排序（最久没成功过的先跑）。
+      const active = executionOrderOf(activePlatformsOf(plan))
+      if (active.length === 0) {
+        throw new DomainError('INVALID_INPUT', `方案「${plan.name}」的平台都被停用了`, {
+          hint: '至少启用一个平台，或把它加回方案的平台列表。',
+        })
+      }
+      const pausedIds = active.filter(
         (platformId) => readPlatformRiskPause(deps.store, platformId).paused,
       )
-      if (!ignoreRiskPause && pausedIds.length === plan.platforms.length) {
-        throw new DomainError('CONFLICT', `方案「${plan.name}」下的平台都处于风控暂停`, {
+      if (!ignoreRiskPause && pausedIds.length === active.length) {
+        throw new DomainError('CONFLICT', `方案「${plan.name}」下启用的平台都处于风控暂停`, {
           hint: '先确认环境正常，再点「确认恢复」；系统不会自动恢复（SR-21）。',
         })
       }
       const targets = ignoreRiskPause
-        ? plan.platforms
-        : plan.platforms.filter((platformId) => !pausedIds.includes(platformId))
+        ? active
+        : active.filter((platformId) => !pausedIds.includes(platformId))
 
       record(
         planId,
         {
           kind: 'run',
           reason: null,
-          platforms: plan.platforms.map((platformId) => ({
+          platforms: active.map((platformId) => ({
             platformId,
             reason: pausedIds.includes(platformId) && !ignoreRiskPause ? 'risk_paused' : null,
             message:
@@ -976,7 +1018,12 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       let firstFailure: unknown = null
       for (const platformId of targets) {
         try {
-          const summary = await deps.run({ planId, platformId, criteria: plan.criteria, reason })
+          const summary = await deps.run({
+            planId,
+            platformId,
+            criteria: criteriaForPlatform(plan, platformId),
+            reason,
+          })
           last = summary
           outcomes.push({ platformId, summary, error: null })
         } catch (error) {

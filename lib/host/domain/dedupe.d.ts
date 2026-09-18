@@ -31,10 +31,17 @@ export interface DedupOutcome {
     jobId: number;
     /** 与之合并的组 id；没合并时为 null。 */
     groupId: number | null;
-    /** 与之合并的那个岗位；没合并时为 null。 */
+    /** 与之合并（或疑似重复）的那个岗位；都没有时为 null。 */
     withJobId: number | null;
     /** 判断依据（人话），无论合没合都给 —— 没合也要能解释"为什么没合"。 */
     basis: string;
+    /**
+     * **疑似重复但未自动合并**（硬门槛全过、只有标题差一点）。
+     *
+     * 与 `merge: false` 的区别：后者是"确认不是同一个"，这里是"我拿不准，请你看一眼"。
+     * 两者都**不合并**，但只有前者可以安心忽略。
+     */
+    candidate: boolean;
 }
 /** 从 `JobDto` 取去重需要的字段（缺公司名就返回 undefined，表示不参与判断）。 */
 export declare function dedupCandidateOf(job: JobDto): DedupCandidate | undefined;

@@ -271,6 +271,8 @@ export async function runCrawl(input: {
 export interface PlanWriteInput {
   name?: string
   platforms?: string[]
+  /** 每平台的覆盖项（批次 3，稀疏）。`maxPages: null` = 用方案级页数。 */
+  platformOverrides?: Record<string, { enabled?: boolean; maxPages?: number | null }>
   criteria?: Record<string, string>
   schedule?: Partial<PlanSchedule>
   enabled?: boolean

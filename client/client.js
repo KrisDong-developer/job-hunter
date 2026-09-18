@@ -454,10 +454,13 @@ window.__ModuleLoader__.load({
 		  return await request("/plans", signal === void 0 ? {} : { signal });
 		}
 		async function createPlan(input) {
-		  return await request("/plans", {
-		    method: "POST",
-		    body: JSON.stringify(input)
-		  });
+		  return await request(
+		    "/plans",
+		    {
+		      method: "POST",
+		      body: JSON.stringify(input)
+		    }
+		  );
 		}
 		async function updatePlan(id, input) {
 		  return await request(
@@ -473,6 +476,13 @@ window.__ModuleLoader__.load({
 		    `/plans/${String(id)}/validate`,
 		    { method: "POST", body: JSON.stringify(input) }
 		  );
+		  return result.validation;
+		}
+		async function validatePlanDraft(input) {
+		  const result = await request("/plans/validate", {
+		    method: "POST",
+		    body: JSON.stringify(input)
+		  });
 		  return result.validation;
 		}
 		async function fetchCriteriaDimensions(platforms = [], signal) {
@@ -3720,11 +3730,34 @@ window.__ModuleLoader__.load({
 		// src/client/screens/collect.tsx
 		var import_jsx_runtime14 = require("react/jsx-runtime");
 		var IDLE = { running: false, tone: "ok", message: null };
+		function overridesOf(platforms, source) {
+		  const out = {};
+		  for (const id of platforms) {
+		    const entry = source[id];
+		    out[id] = {
+		      enabled: entry?.enabled !== false,
+		      maxPages: entry?.maxPages === void 0 || entry.maxPages === null ? "" : String(entry.maxPages)
+		    };
+		  }
+		  return out;
+		}
+		function buildOverrides(overrides) {
+		  const out = {};
+		  for (const [id, entry] of Object.entries(overrides)) {
+		    const parsed = Number.parseInt(entry.maxPages, 10);
+		    out[id] = {
+		      enabled: entry.enabled,
+		      maxPages: entry.maxPages.trim() === "" || !Number.isFinite(parsed) ? null : parsed
+		    };
+		  }
+		  return out;
+		}
 		function formOf(plan) {
 		  const schedule = plan.schedule;
 		  return {
 		    name: plan.name,
 		    platforms: [...plan.platforms],
+		    overrides: overridesOf(plan.platforms, plan.platformOverrides),
 		    criteria: { ...plan.criteria },
 		    windowStart: clockValueOf(schedule.windowStartHour, schedule.windowStartMinute),
 		    windowEnd: clockValueOf(schedule.windowEndHour, schedule.windowEndMinute),
@@ -3739,6 +3772,7 @@ window.__ModuleLoader__.load({
 		  return {
 		    name: "\u65B0\u65B9\u6848",
 		    platforms,
+		    overrides: overridesOf(platforms, {}),
 		    criteria: {},
 		    windowStart: "09:00",
 		    windowEnd: "11:00",
@@ -3755,6 +3789,7 @@ window.__ModuleLoader__.load({
 		  return {
 		    name: form.name,
 		    platforms: form.platforms,
+		    platformOverrides: buildOverrides(form.overrides),
 		    criteria: form.criteria,
 		    schedule: {
 		      enabled: form.scheduleEnabled,
@@ -3813,6 +3848,7 @@ window.__ModuleLoader__.load({
 		  const [feedback, setFeedback] = (0, import_react11.useState)(IDLE);
 		  const [editing, setEditing] = (0, import_react11.useState)(null);
 		  const [duplicates, setDuplicates] = (0, import_react11.useState)([]);
+		  const [notices, setNotices] = (0, import_react11.useState)([]);
 		  const [errorDetail, setErrorDetail] = (0, import_react11.useState)(null);
 		  const [pendingDelete, setPendingDelete] = (0, import_react11.useState)(null);
 		  const report = (error) => {
@@ -4164,6 +4200,18 @@ window.__ModuleLoader__.load({
 		            item.maturity.notes === void 0 || item.maturity.notes === "" ? null : `\uFF1A${item.maturity.notes}`
 		          ] }) : null,
 		          !item.implementation.loginCheck && Object.values(item.authRequirement).includes("required") ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-warn", children: "\u8BE5\u5E73\u53F0\u9700\u8981\u767B\u5F55\uFF0C\u4F46\u672C\u673A\u8FD8\u6CA1\u6709\u767B\u5F55\u6001\u68C0\u6D4B \u2014\u2014 \u672A\u767B\u5F55\u65F6\u53EF\u80FD\u9759\u9ED8\u6293\u5230\u7A7A\u7ED3\u679C\u3002" }) : null,
+		          item.yield.baseline === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: item.yield.level === "dropped" ? "jh-warn" : "jh-muted", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u91CF\u7EA7", children: "\u4EA7\u91CF" }),
+		            "\uFF1A\u8FD1 ",
+		            item.yield.samples,
+		            " \u8F6E\u7684\u5E38\u6001\u7EA6",
+		            " ",
+		            item.yield.baseline,
+		            " \u6761\uFF0C\u6700\u8FD1\u4E00\u8F6E ",
+		            item.yield.lastFound ?? "\u2014",
+		            " \u6761",
+		            item.yield.level === "dropped" ? " \u2014\u2014 \u660E\u663E\u504F\u4F4E\u3002\u5B57\u6BB5\u5065\u5EB7\u53EF\u80FD\u662F\u5168\u7EFF\u7684\uFF0C\u5148\u67E5\u7FFB\u9875\u4E0E\u61D2\u52A0\u8F7D\u3002" : ""
+		          ] }),
 		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-muted", children: [
 		            "\u5DF2\u5B9E\u73B0\uFF1A",
 		            implemented.join(" \xB7 "),
@@ -4196,6 +4244,7 @@ window.__ModuleLoader__.load({
 		        initial: editing === "new" ? emptyForm(platformList.map((item) => item.id)) : formOf(planList.find((plan) => plan.id === editing)),
 		        available: platformList.map((item) => ({ id: item.id, displayName: item.displayName })),
 		        duplicates,
+		        notices,
 		        running: feedback.running,
 		        onCancel: () => setEditing(null),
 		        onSubmit: async (form) => {
@@ -4204,22 +4253,30 @@ window.__ModuleLoader__.load({
 		            const input = writeOf(form);
 		            const result = editing === "new" ? await createPlan(input) : await updatePlan(editing, input);
 		            setDuplicates(result.duplicates);
+		            setNotices(result.notices);
 		            const verb = editing === "new" ? "\u5DF2\u521B\u5EFA" : "\u5DF2\u4FDD\u5B58";
+		            const tail = [];
+		            if (result.duplicates.length > 0) {
+		              tail.push(
+		                `\u4E0E ${result.duplicates.map((item) => `#${String(item.planId)}\u300C${item.name}\u300D`).join("\u3001")} \u6761\u4EF6\u91CD\u590D\uFF08**\u53EA\u63D0\u793A\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u5408\u5E76**\uFF09`
+		              );
+		            }
+		            if (result.notices.length > 0) tail.push(`\u53E6\u6709 ${String(result.notices.length)} \u6761\u63D0\u793A`);
 		            setFeedback({
 		              running: false,
 		              tone: "ok",
-		              message: result.duplicates.length === 0 ? `${verb}\u65B9\u6848\u300C${result.plan.name}\u300D\u3002` : `${verb}\u65B9\u6848\u300C${result.plan.name}\u300D\u3002\u6CE8\u610F\uFF1A\u4E0E ${result.duplicates.map((item) => `#${String(item.planId)}\u300C${item.name}\u300D`).join("\u3001")} \u6761\u4EF6\u91CD\u590D\uFF08**\u53EA\u63D0\u793A\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u5408\u5E76**\uFF09\u3002`
+		              message: `${verb}\u65B9\u6848\u300C${result.plan.name}\u300D\u3002${tail.length === 0 ? "" : `\u6CE8\u610F\uFF1A${tail.join("\uFF1B")}\u3002`}`
 		            });
-		            if (result.duplicates.length === 0) setEditing(null);
+		            if (result.duplicates.length === 0 && result.notices.length === 0) setEditing(null);
 		            reload();
 		          } catch (error) {
 		            report(error);
 		          }
 		        },
 		        onValidate: async (form) => {
-		          if (editing === "new") return [];
-		          const result = await validatePlan(editing, writeOf(form));
-		          return result.duplicates;
+		          const input = writeOf(form);
+		          const result = editing === "new" ? await validatePlanDraft(input) : await validatePlan(editing, input);
+		          return { duplicates: result.duplicates, notices: result.notices };
 		        }
 		      },
 		      String(editing)
@@ -4481,18 +4538,22 @@ window.__ModuleLoader__.load({
 		function PlanEditorModal(props) {
 		  const [form, setForm] = (0, import_react11.useState)(props.initial);
 		  const [localDuplicates, setLocalDuplicates] = (0, import_react11.useState)([]);
+		  const [localNotices, setLocalNotices] = (0, import_react11.useState)([]);
 		  const patch = (next) => setForm((current) => ({ ...current, ...next }));
 		  const duplicates = [...props.duplicates, ...localDuplicates];
+		  const notices = [.../* @__PURE__ */ new Set([...props.notices, ...localNotices])];
 		  const startMissing = parseClockValue(form.windowStart) === null;
 		  const endMissing = parseClockValue(form.windowEnd) === null;
-		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.criteria)}`;
+		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.overrides)}\0${JSON.stringify(form.criteria)}`;
 		  (0, import_react11.useEffect)(() => {
-		    if (props.planId === null) {
-		      setLocalDuplicates([]);
-		      return;
-		    }
 		    const timer = window.setTimeout(() => {
-		      void props.onValidate(form).then(setLocalDuplicates).catch(() => setLocalDuplicates([]));
+		      void props.onValidate(form).then((result) => {
+		        setLocalDuplicates(result.duplicates);
+		        setLocalNotices(result.notices);
+		      }).catch(() => {
+		        setLocalDuplicates([]);
+		        setLocalNotices([]);
+		      });
 		    }, 600);
 		    return () => window.clearTimeout(timer);
 		  }, [validationKey, props.planId]);
@@ -4502,8 +4563,16 @@ window.__ModuleLoader__.load({
 		  );
 		  const items = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
 		  const togglePlatform = (id) => {
-		    const next = form.platforms.includes(id) ? form.platforms.filter((item) => item !== id) : [...form.platforms, id];
-		    patch({ platforms: next });
+		    const has = form.platforms.includes(id);
+		    const nextPlatforms = has ? form.platforms.filter((item) => item !== id) : [...form.platforms, id];
+		    const nextOverrides = { ...form.overrides };
+		    if (has) delete nextOverrides[id];
+		    else nextOverrides[id] = { enabled: true, maxPages: "" };
+		    patch({ platforms: nextPlatforms, overrides: nextOverrides });
+		  };
+		  const setOverride = (id, next) => {
+		    const current = form.overrides[id] ?? { enabled: true, maxPages: "" };
+		    patch({ overrides: { ...form.overrides, [id]: { ...current, ...next } } });
 		  };
 		  const setCriteria = (key, value) => {
 		    const next = { ...form.criteria };
@@ -4552,9 +4621,15 @@ window.__ModuleLoader__.load({
 		                type: "button",
 		                className: "jh-btn jh-btn-inline jh-btn-tiny",
 		                disabled: props.running,
-		                title: "\u68C0\u67E5\u8FD9\u4EFD\u914D\u7F6E\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6\uFF09\u662F\u5426\u4E0E\u73B0\u6709\u65B9\u6848\u91CD\u590D\uFF1B\u53EA\u63D0\u793A\uFF0C\u4E0D\u4F1A\u5199\u5165\u4EFB\u4F55\u4E1C\u897F\u3002",
+		                title: "\u68C0\u67E5\u8FD9\u4EFD\u914D\u7F6E\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6\uFF09\u662F\u5426\u4E0E\u73B0\u6709\u65B9\u6848\u91CD\u590D\u3001\u4EE5\u53CA\u54EA\u4E9B\u5E73\u53F0\u4F1A\u8FD4\u56DE\u7A7A\u3002\u53EA\u63D0\u793A\uFF0C\u4E0D\u4F1A\u5199\u5165\u4EFB\u4F55\u4E1C\u897F\u3002",
 		                onClick: () => {
-		                  void props.onValidate(form).then((result) => setLocalDuplicates(result)).catch(() => setLocalDuplicates([]));
+		                  void props.onValidate(form).then((result) => {
+		                    setLocalDuplicates(result.duplicates);
+		                    setLocalNotices(result.notices);
+		                  }).catch(() => {
+		                    setLocalDuplicates([]);
+		                    setLocalNotices([]);
+		                  });
 		                },
 		                children: "\u68C0\u67E5\u662F\u5426\u91CD\u590D"
 		              }
@@ -4579,7 +4654,50 @@ window.__ModuleLoader__.load({
 		            "\uFF08",
 		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: item.id }),
 		            "\uFF09"
-		          ] }, item.id)) })
+		          ] }, item.id)) }),
+		          form.platforms.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-field-label", children: [
+		              "\u6BCF\u4E2A\u5E73\u53F0",
+		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u53D6\u6D88\u52FE\u9009 = \u8FD9\u4E2A\u65B9\u6848\u91CC\u6682\u65F6\u4E0D\u6293\u5B83\uFF08\u4E0D\u5FC5\u628A\u5B83\u4ECE\u5E73\u53F0\u5217\u8868\u91CC\u5220\u6389\uFF09\u3002\u9875\u6570\u7559\u7A7A = \u7528\u4E0A\u9762\u7684\u65B9\u6848\u7EA7\u9875\u6570\uFF1B\u586B\u4E86\u5C31\u53EA\u7528\u5728\u8FD9\u4E2A\u5E73\u53F0\u4E0A\u3002" })
+		            ] }),
+		            form.platforms.map((id) => {
+		              const entry = form.overrides[id] ?? { enabled: true, maxPages: "" };
+		              const name2 = props.available.find((item) => item.id === id)?.displayName ?? id;
+		              return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-check", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "jh-check", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                    "input",
+		                    {
+		                      type: "checkbox",
+		                      checked: entry.enabled,
+		                      onChange: () => setOverride(id, { enabled: !entry.enabled })
+		                    }
+		                  ),
+		                  entry.enabled ? "\u6293" : "\u4E0D\u6293",
+		                  " ",
+		                  name2,
+		                  "\uFF08",
+		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: id }),
+		                  "\uFF09"
+		                ] }),
+		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-field-label", children: "\u9875\u6570\u4E0A\u9650" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                    "input",
+		                    {
+		                      className: "jh-input",
+		                      type: "number",
+		                      min: 1,
+		                      value: entry.maxPages,
+		                      placeholder: "\u7528\u65B9\u6848\u7EA7",
+		                      disabled: !entry.enabled,
+		                      onChange: (event) => setOverride(id, { maxPages: event.target.value })
+		                    }
+		                  )
+		                ] })
+		              ] }, id);
+		            })
+		          ] })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-section-title", children: "\u7B5B\u9009\u6761\u4EF6\u4E0E\u6293\u53D6\u6DF1\u5EA6" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-grid2", children: items.map((dimension) => {
@@ -4793,6 +4911,13 @@ window.__ModuleLoader__.load({
 		          "\uFF09\u3002",
 		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(InlineMd, { text: "**\u53EA\u63D0\u793A\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u5408\u5E76**" }),
 		          "\u2014\u2014 \u5408\u5E76\u4F1A\u66FF\u4F60\u628A\u4E24\u4E2A\u610F\u56FE\u62B9\u6210\u4E00\u4E2A\u3002"
+		        ] }),
+		        notices.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-warn", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { children: "\u6CE8\u610F \u2014\u2014 \u8FD9\u4E9B\u5E73\u53F0\u53EF\u80FD\u4E0D\u4F1A\u6309\u4F60\u60F3\u7684\u90A3\u6837\u5DE5\u4F5C\uFF08\u53EA\u63D0\u793A\uFF0C\u4ECD\u53EF\u4FDD\u5B58\uFF09\uFF1A" }),
+		          notices.map((notice) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { children: [
+		            "\xB7 ",
+		            notice
+		          ] }, notice))
 		        ] })
 		      ]
 		    }

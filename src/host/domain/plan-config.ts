@@ -13,12 +13,17 @@
  *
  * 还有一件**不报错但要说出来**的事：重复方案（SR-43）只提示、不合并。
  */
-import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js'
+import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js'
 import { MATURITY_LEVEL_LABEL, maturityNeedsWarning } from '../../shared/enums.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import type { SearchCriteria } from '../platform/types.js'
 import { DomainError } from '../util/errors.js'
-import { normalizePostProcess, normalizeSchedule } from '../store/repo/plans.js'
+import {
+  normalizePlatformOverrides,
+  normalizePostProcess,
+  normalizeSchedule,
+  platformOverrideOf,
+} from '../store/repo/plans.js'
 
 /** 会被原样交给适配器的键（不属于"筛选维度"，但适配器认识）。 */
 const PAGINATION_KEYS = new Set(['page'])
@@ -54,6 +59,8 @@ const PLATFORM_KEYS = new Set([
 export interface PlanConfigInput {
   name?: string
   platforms?: string[]
+  /** 每平台的覆盖项（稀疏）。 */
+  platformOverrides?: Record<string, Partial<PlanPlatformOverrideDto>>
   criteria?: Record<string, string>
   schedule?: Partial<PlanSchedule>
   enabled?: boolean
@@ -71,6 +78,8 @@ export interface PlanValidationContext {
 export interface ValidatedPlanConfig {
   name: string
   platforms: string[]
+  /** 收敛后的每平台覆盖项（稀疏：等于默认的条目不在里面）。 */
+  platformOverrides: Record<string, PlanPlatformOverrideDto>
   criteria: Record<string, string>
   schedule: PlanSchedule
   enabled: boolean
@@ -168,6 +177,38 @@ export function validatePlanConfig(
           `可选平台：${context.registry.list().map((adapter) => adapter.id).join(' / ') || '（一个都没有）'}。` +
           '多平台是工程量问题（每个平台一个适配器），不是配置问题。',
       })
+    }
+  }
+
+  // ── 每平台覆盖项（批次 3）────────────────────────────────────────────
+  const overrides = normalizePlatformOverrides(input.platformOverrides, platforms)
+  for (const id of Object.keys(input.platformOverrides ?? {})) {
+    if (!platforms.includes(id)) {
+      throw new DomainError('INVALID_INPUT', `覆盖项里的平台「${id}」不在这个方案的平台里`, {
+        hint: `方案的平台是：${platforms.join(' / ')}。覆盖项只能针对已经在方案里的平台 —— 否则它会在某天被重新加回方案时突然生效。`,
+      })
+    }
+  }
+  if (!platforms.some((id) => platformOverrideOf({ platformOverrides: overrides }, id).enabled)) {
+    throw new DomainError('INVALID_INPUT', '这个方案的所有平台都被停用了，它永远不会抓任何东西', {
+      hint: '至少留一个启用的平台。如果只是不想抓某个平台，把它从方案的平台列表里移除也可以。',
+    })
+  }
+  // 每平台的页数上限按**它自己的**适配器上限校验。
+  // 方案级校验只看"并集里的第一个平台"的声明，于是"方案设 5 页"在 waiqi（1 页）上
+  // 会被静默截断成 1 页，而用户以为自己抓了 5 页 —— 这类静默必须变成显式报错。
+  for (const [id, override] of Object.entries(overrides)) {
+    if (override.maxPages === null) continue
+    const adapter = context.registry.get(id)
+    if (adapter === undefined) continue
+    if (override.maxPages > adapter.maxPages) {
+      throw new DomainError(
+        'INVALID_INPUT',
+        `${adapter.displayName}（${id}）最多 ${String(adapter.maxPages)} 页，收到 ${String(override.maxPages)}`,
+        {
+          hint: `把「${id}」的页数上限改成 ${String(adapter.maxPages)} 或更小，或者留空使用方案级页数。`,
+        },
+      )
     }
   }
 
@@ -272,7 +313,10 @@ export function validatePlanConfig(
   const notices: string[] = []
   const plannedPages = criteria['maxPages'] === undefined ? null : Number.parseInt(criteria['maxPages'], 10)
   const city = criteria['city']
-  for (const platformId of platforms) {
+  // ⚠️ 只对**启用的**平台提示 —— 用户刚把某个平台关掉，还继续提示它就是纯噪音。
+  for (const platformId of platforms.filter(
+    (id) => platformOverrideOf({ platformOverrides: overrides }, id).enabled,
+  )) {
     const adapter = context.registry.get(platformId)
     if (adapter === undefined) continue
     const name = `${adapter.displayName}（${platformId}）`
@@ -299,11 +343,13 @@ export function validatePlanConfig(
     }
 
     // ③ 抓取深度：方案级 maxPages 被平台上限截断。静态截断是**安全**的（不会打平台），
-    //    但用户以为抓了 5 页，实际只抓了 1 页 —— 这件事必须说出来。
+    //    但用户以为抓了 5 页、实际只抓 1 页 —— 这件事必须说出来，并给出修法
+    //    （现在可以给单个平台单独设页数上限了）。
     if (plannedPages !== null && Number.isFinite(plannedPages) && plannedPages > adapter.maxPages) {
       notices.push(
         `${name}最多 ${String(adapter.maxPages)} 页，本方案设的 ${String(plannedPages)} 页对它无效` +
-          `（实际只抓 ${String(adapter.maxPages)} 页）`,
+          `（它只抓 ${String(adapter.maxPages)} 页）—— 给这个平台单独设页数上限，` +
+          `或把方案页数降到 ${String(adapter.maxPages)}`,
       )
     }
 
@@ -323,6 +369,7 @@ export function validatePlanConfig(
   return {
     name,
     platforms,
+    platformOverrides: overrides,
     criteria,
     schedule: normalizeSchedule(input.schedule),
     enabled: input.enabled !== false,

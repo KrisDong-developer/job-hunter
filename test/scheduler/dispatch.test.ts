@@ -72,6 +72,8 @@ interface Options {
   lastAttemptAt?: string
   lastSuccessAt?: string
   platforms?: string[]
+  /** 每平台覆盖项（批次 3）：用来验证"停用的平台真的不跑"。 */
+  platformOverrides?: Record<string, { enabled?: boolean; maxPages?: number | null }>
 }
 
 /**
@@ -101,6 +103,9 @@ function harness(options: Options = {}) {
   const plan = plans.create({
     name: '语义测试',
     platforms: options.platforms ?? ['51job'],
+    ...(options.platformOverrides === undefined
+      ? {}
+      : { platformOverrides: options.platformOverrides }),
     criteria: { keyword: 'Java', city: '深圳' },
     schedule: {
       windowStartHour: 9,
@@ -313,6 +318,82 @@ test('SR-18：一个平台被挡住时其它平台照常跑（判定是**每平�
     )
     assert.equal(byPlatform.get('51job')?.reason, 'not_logged_in', '被挡住的平台要如实说明原因')
     assert.equal(byPlatform.get('other')?.decision, 'ran')
+  } finally {
+    h.close()
+  }
+})
+
+test('批次 3：被停用的平台**真的不跑**（不是"定时不跑、手动照跑"）', async () => {
+  const h = harness({
+    platforms: ['51job', 'other'],
+    platformOverrides: { other: { enabled: false } },
+  })
+  try {
+    h.scheduler.start()
+    await fireDue(h)
+    assert.deepEqual(h.runs.map((run) => run.platformId), ['51job'], '停用的平台不该被跑')
+
+    const planStatus = h.scheduler.status().planStatus[0]
+    assert.deepEqual(
+      planStatus?.platformDecisions.map((item) => item.platformId),
+      ['51job'],
+      '停用的平台连"判定"都不该出现 —— 它没有"为什么没跑"可言（是用户让它别跑的）',
+    )
+
+    // 手动跑同样不跑它：否则"停用"就成了一句空话
+    h.runs.length = 0
+    await h.scheduler.runPlan(h.planId, 'manual')
+    assert.deepEqual(h.runs.map((run) => run.platformId), ['51job'], '手动也不能把它偷偷跑起来')
+  } finally {
+    h.close()
+  }
+})
+
+test('批次 3：每平台的页数覆盖进到**该平台**的抓取条件里，不污染别的平台', async () => {
+  const h = harness({
+    platforms: ['51job', 'other'],
+    platformOverrides: { other: { maxPages: 2 } },
+  })
+  try {
+    h.scheduler.start()
+    await fireDue(h)
+    const byPlatform = new Map(h.runs.map((run) => [run.platformId, run.criteria]))
+    assert.equal(byPlatform.get('other')?.['maxPages'], '2', '该平台的覆盖要生效')
+    assert.equal(
+      byPlatform.get('51job')?.['maxPages'],
+      undefined,
+      '另一个平台不该被带上别人的覆盖 —— 这正是"每平台覆盖"与"方案级"的区别',
+    )
+  } finally {
+    h.close()
+  }
+})
+
+test('批次 5：最久没成功过的平台先跑（否则窗口有限时尾部平台永远轮不到）', async () => {
+  const h = harness({ platforms: ['51job', 'other'] })
+  try {
+    // 让 51job"刚刚成功过"，而 'other' 从没成功过 → 'other' 应当排到前面。
+    // 固定按数组顺序跑的话，数组靠后的平台在窗口/预算有限时会**系统性**跑不到，
+    // 而用户在数据里只会看到"这个平台没跑过"，看不出是顺序造成的。
+    h.store.platform.recordSuccess('51job', '2026-09-16T00:00:00.000Z')
+    h.scheduler.start()
+    await fireDue(h)
+    assert.deepEqual(h.runs.map((run) => run.platformId), ['other', '51job'])
+  } finally {
+    h.close()
+  }
+})
+
+test('批次 5：都没成功过时保持方案里的原顺序（排序不改变可预期的行为）', async () => {
+  const h = harness({ platforms: ['51job', 'other'] })
+  try {
+    h.scheduler.start()
+    await fireDue(h)
+    assert.deepEqual(
+      h.runs.map((run) => run.platformId),
+      ['51job', 'other'],
+      '并列时 `sort` 稳定 —— 用户改了平台顺序仍能预期第一轮怎么跑',
+    )
   } finally {
     h.close()
   }

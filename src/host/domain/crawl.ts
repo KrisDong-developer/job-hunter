@@ -18,6 +18,7 @@ import { systemClock, type Clock } from '../util/time.js'
 import type { Mutex } from '../platform/mutex.js'
 import { BurstGuard, type BurstGuardLike } from '../platform/pacing.js'
 import { applyFieldPresence, recordRunFailure, recordRunSuccess } from '../platform/health.js'
+import { applyYieldBaseline } from '../platform/yield-baseline.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import type { PageSource, RawJob, SearchCriteria, SiteAdapter } from '../platform/types.js'
 import { partitionByRequiredFields, type FieldPresence } from '../platform/validate.js'
@@ -332,10 +333,19 @@ async function executeCrawl(
 
   // ── SR-44：跨平台去重（可关）───────────────────────────────────────
   //
-  // 只在**不同平台**之间做，且键必须完全一致 —— 见 `domain/dedupe.ts` 的保守规则。
-  // 目前只有 51job 一个适配器，所以这里实际上是空转；它存在的意义是
-  // **第二个适配器落地那天不需要再改抓取主链**。
+  // 只在**不同平台**之间做。候选按 `companyId` 取（跨方案、跨时间都在候选里），
+  // 所以两个方案各自抓到的同一家公司的岗位会被比到。
+  // 门槛见 `util/dedupe.ts`：公司归一化名 + 城市（**归一到市级**）硬相等，
+  // 薪资**只在两边都锚定时**才比（"未知"不等于"不同"，R25），
+  // 标题相似度 ≥0.9 才合并；0.75–0.9 之间算"疑似"，**不合并但要说出来**。
   let dedupGroups = 0
+  /**
+   * 疑似重复但**未自动合并**的数量（批 4）。
+   *
+   * 不合并是对的（宁可漏、不可错），但"没合并"本身也得能被看见 ——
+   * 否则用户永远不知道自己少了几个合并，也无从纠正。
+   */
+  let dedupCandidates = 0
   if (postProcess.dedup) {
     for (const jobId of writtenJobIds) {
       try {
@@ -358,7 +368,12 @@ async function executeCrawl(
           candidate,
           now(),
         )
-        if (outcome.groupId !== null) dedupGroups += 1
+        if (outcome.groupId !== null) {
+          dedupGroups += 1
+        } else if (outcome.candidate) {
+          dedupCandidates += 1
+          deps.logger?.info(`[crawl] 疑似跨平台重复（未自动合并）：${outcome.basis}`)
+        }
       } catch (error) {
         // 去重失败不能让整轮抓取显示成失败：岗位已经在库里了
         deps.logger?.warn(`[crawl] 去重判定失败（job ${String(jobId)}）：${messageOf(error)}`)
@@ -396,12 +411,29 @@ async function executeCrawl(
     now(),
   )
 
+  // ── 量级基线告警（批次 5）────────────────────────────────────────────
+  //
+  // 逐字段健康只能发现"某个字段整页缺失"，`suspicious` 只覆盖"整轮 0 条"。
+  // 两者都盖不住**更隐蔽的一种坏法**：选择器仍然匹配、每个字段都解析得出、
+  // `quarantined=0`、`state='ok'` —— 但条目数掉了一个数量级。
+  // 那种轮次在数据里**和正常轮次长得一模一样**，只是 found 从 20 变成 2。
+  // 必须跟这个平台自己的历史比才有意义，所以要放在 `finish()` 之后（本轮已落库，
+  // 而 `applyYieldBaseline` 会把它从基线里排除掉）。
+  const yieldSnapshot = applyYieldBaseline(store, adapter.id, collected.length, now(), runId)
+  if (yieldSnapshot.level === 'dropped') {
+    deps.logger?.warn(
+      `[crawl] ${adapter.id} 量级骤降：本轮 ${String(collected.length)} 条，` +
+        `常态约 ${String(yieldSnapshot.baseline)} 条（${String(yieldSnapshot.samples)} 轮样本）`,
+    )
+  }
+
   const run = requireRun(store.crawlRun.get(runId), runId)
   deps.logger?.info(
     `[crawl] ${adapter.id} 第 ${String(runId)} 轮：${state} · 页面 ${String(pages)} · ` +
       `命中 ${String(collected.length)} · 新增 ${String(inserted)} · 更新 ${String(updated)} · ` +
       `隔离 ${String(quarantined)}` +
-      (dedupGroups > 0 ? ` · 跨平台合并 ${String(dedupGroups)} 组` : ''),
+      (dedupGroups > 0 ? ` · 跨平台合并 ${String(dedupGroups)} 组` : '') +
+      (dedupCandidates > 0 ? ` · 疑似重复待确认 ${String(dedupCandidates)} 条` : ''),
   )
 
   return {

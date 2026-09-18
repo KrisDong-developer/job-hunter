@@ -432,6 +432,13 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
           sort: str('排序方式（取值域见 dimensions）'),
           postedWithinDays: int('只要多少天内发布的岗位'),
           maxPages: int('抓取页数上限（受适配器声明的上限约束）'),
+          platformOverrides: {
+            type: 'object',
+            description:
+              '每平台的覆盖项（批次 3）。形状：`{ "<平台id>": { "enabled": true|false, "maxPages": 数字|null } }`。' +
+              '`enabled:false` = 这个方案里暂时不抓它（不必把它从 platforms 里删掉）；' +
+              '`maxPages:null` = 用上面方案级的页数。键必须是 platforms 里有的平台，否则会被明确拒绝。',
+          },
           weekdays: {
             type: 'array',
             items: { type: 'integer' },
@@ -506,6 +513,17 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
             ? args['platforms'].filter((item): item is string => typeof item === 'string')
             : undefined
           if (platforms !== undefined) patch['platforms'] = platforms
+
+          // 每平台覆盖项（批次 3）：原样透传，收敛与校验都在 `planService.validate` 里
+          // —— 三条入口共用同一份校验（SR-45），这里不做第二套判断。
+          const rawOverrides = args['platformOverrides']
+          if (
+            typeof rawOverrides === 'object' &&
+            rawOverrides !== null &&
+            !Array.isArray(rawOverrides)
+          ) {
+            patch['platformOverrides'] = rawOverrides
+          }
 
           const schedule: Record<string, unknown> = {}
           if (Array.isArray(args['weekdays'])) {
@@ -582,8 +600,14 @@ function buildTools(runtime: HostRuntime): ToolDefinition[] {
               checked.duplicates.length === 0
                 ? ''
                 : `\n注意：与 ${checked.duplicates.map((item) => `#${String(item.planId)}「${item.name}」`).join('、')} 条件重复（${checked.duplicates[0]?.reason ?? ''}）。只提示，不会自动合并（SR-43）。`
+            // 非致命提示（多平台：城市不支持 / 平台未校准 / 深度被截断）也要转述给模型 ——
+            // 它对应的都是"平台安静地返回 0 条"，不转述的话用户永远不知道
+            const noticeNote =
+              checked.notices.length === 0
+                ? ''
+                : `\n提示（只提示，方案仍已保存）：\n${checked.notices.map((item) => `- ${item}`).join('\n')}`
             return {
-              text: `已创建方案 #${String(plan.id)}「${plan.name}」。${duplicateNote}\n${describe()}`,
+              text: `已创建方案 #${String(plan.id)}「${plan.name}」。${duplicateNote}${noticeNote}\n${describe()}`,
               planId: plan.id,
             }
           }

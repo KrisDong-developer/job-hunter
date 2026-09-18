@@ -2,6 +2,20 @@ import type { AdapterMaturityFact, AuthRequirementFact } from './types.js';
 export interface PlatformFacts {
     maturity: AdapterMaturityFact;
     authRequirement: AuthRequirementFact;
+    /**
+     * 平台的**每日动作安全上限**（平台事实）。
+     *
+     * 与用户的 `dailyLimits` 是**两层**：用户设的是"我今天想投多少"，
+     * 这里是"这个平台允许多少"（超出会被限流、甚至标记账号）。取两者**较小的**。
+     *
+     * `undefined` = **不知道** —— 那时只有用户自己的额度在管。
+     * 不知道就不编一个保守值：编出来的数字会平白拦掉合法使用，
+     * 而"少投了几个"和"被平台盯上"都由用户承担，不该由我们瞎猜。
+     */
+    dailyCaps?: {
+        greeting?: number;
+        application?: number;
+    };
 }
 /**
  * 已注册平台的认知表。键 = `SiteAdapter.id`。

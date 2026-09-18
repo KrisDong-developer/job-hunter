@@ -261,10 +261,8 @@ test('未注册的平台 → NOT_FOUND', async () => {
   }
 })
 
-test('页面正常但一条都没解析出来 → partial + NO_RECORDS（不静默降级成“没有新岗位”）', async () => {
-  // 注意：这页有完整的筛选器文案、只是结果为空 —— 不能被误判成 blank
-  const empty = inlinePageSource({
-    html: `<html><body>
+/** 页面正常、筛选器文案齐全，只是结果为空 —— 不能被误判成 blank。 */
+const EMPTY_RESULT_HTML = `<html><body>
       <div class="search-containter"><div class="j_result"><div class="j_tlc"><div class="tleft">
         <span class="ss on">综合排序</span><span class="ss">活跃职位优先</span><span class="ss">最新优先</span>
         <span class="ss">薪资优先</span><span class="ss">距离优先</span>
@@ -276,15 +274,60 @@ test('页面正常但一条都没解析出来 → partial + NO_RECORDS（不静�
       <div class="filter">工作地点 北京 上海 广州 深圳 武汉 西安 杭州 南京 成都 重庆 东莞 其他城市</div>
       <div class="filter">工作职能 行业领域 月薪范围 工作类型 工作年限 学历要求 公司性质 公司规模 清空</div>
       </div></div>
-    </body></html>`,
-    url: SEARCH_URL,
-  })
+    </body></html>`
+
+test('页面正常但一条都没解析出来 → partial + NO_RECORDS（不静默降级成“没有新岗位”）', async () => {
+  const empty = inlinePageSource({ html: EMPTY_RESULT_HTML, url: SEARCH_URL })
   const h = harness({ pageSource: empty })
   try {
     const summary = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
     assert.equal(summary.run.state, 'partial')
     assert.equal(summary.run.errorCode, 'NO_RECORDS')
     assert.equal(summary.run.found, 0)
+  } finally {
+    h.close()
+  }
+})
+
+test('批次 5：量级骤降 → yield-drop 待办；回到常态 → 自动关闭（走真实 runCrawl 主链）', async () => {
+  // 同一个 harness 里切换页面源：先 5 轮常态（真实夹具 20 条），再一轮"空结果"。
+  const normal = fixturePageSource({ htmlPath: fixtureHtmlPath(), url: SEARCH_URL })
+  const empty = inlinePageSource({ html: EMPTY_RESULT_HTML, url: SEARCH_URL })
+  let mode: 'normal' | 'empty' = 'normal'
+  const h = harness({
+    pageSource: {
+      acquire: () => (mode === 'normal' ? normal.acquire() : empty.acquire()),
+      release: (page) => (mode === 'normal' ? normal.release(page) : empty.release(page)),
+    },
+  })
+  try {
+    for (let round = 0; round < 5; round += 1) {
+      const summary = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+      assert.equal(summary.run.state, 'ok')
+      assert.ok(summary.run.found > 0, '常态轮次应当抓到东西 —— 否则基线立不起来')
+    }
+
+    // 第 6 轮：页面正常但一条都没有 —— 字段健康全绿、quarantined=0，
+    // 只有跟这个平台自己的历史比才知道"这不正常"。
+    mode = 'empty'
+    const dropped = await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+    assert.equal(dropped.run.found, 0)
+
+    const todo = h.deps.store.todo.listOpen().find((item) => item.kind === 'yield-drop')
+    assert.ok(
+      todo !== undefined,
+      '5 轮常态之后来一轮 0 条 —— 必须产生量级告警（否则用户只看到"今天没岗位"）',
+    )
+    assert.equal(todo.level, 'warn')
+
+    // 恢复：回到常态就该关掉 —— 挂着不清的告警会被用户学会无视
+    mode = 'normal'
+    await runCrawl(h.deps, { platformId: '51job', criteria: CRITERIA })
+    assert.equal(
+      h.deps.store.todo.listOpen().some((item) => item.kind === 'yield-drop'),
+      false,
+      '恢复即关闭',
+    )
   } finally {
     h.close()
   }

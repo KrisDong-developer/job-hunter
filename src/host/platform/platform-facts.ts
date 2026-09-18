@@ -24,6 +24,17 @@ import type { AdapterMaturityFact, AuthRequirementFact } from './types.js'
 export interface PlatformFacts {
   maturity: AdapterMaturityFact
   authRequirement: AuthRequirementFact
+  /**
+   * 平台的**每日动作安全上限**（平台事实）。
+   *
+   * 与用户的 `dailyLimits` 是**两层**：用户设的是"我今天想投多少"，
+   * 这里是"这个平台允许多少"（超出会被限流、甚至标记账号）。取两者**较小的**。
+   *
+   * `undefined` = **不知道** —— 那时只有用户自己的额度在管。
+   * 不知道就不编一个保守值：编出来的数字会平白拦掉合法使用，
+   * 而"少投了几个"和"被平台盯上"都由用户承担，不该由我们瞎猜。
+   */
+  dailyCaps?: { greeting?: number; application?: number }
 }
 
 /** 不知道就说不。没验证过的环节一律 `unknown`。 */
@@ -53,6 +64,8 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
       verifiedAt: '2026-09-18',
       notes: '列表与详情夹具取自真实 dump（合成结构）。投递上限约 100；第 2 页起用无 query path；详情页有 AB 分流兜底。',
     },
+    // 平台侧硬事实：投递上限约 100（ADAPTERS §7.2 实测）
+    dailyCaps: { application: 100 },
     authRequirement: { crawl: 'none', detail: 'required', actions: 'required' },
   },
   liepin: {
@@ -69,6 +82,8 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
       verifiedAt: '2026-09-18',
       notes: '只有**未登录**夹具：单页 15 条、无分页区、薪资元素在但为空。详情页要带完整 securityId（登录后才有），登录夹具补齐后再升档。',
     },
+    // 平台侧硬事实：打招呼日上限约 150（ADAPTERS §7.2 实测）
+    dailyCaps: { greeting: 150 },
     authRequirement: { crawl: 'none', detail: 'required', actions: 'required' },
   },
   lagou: {
