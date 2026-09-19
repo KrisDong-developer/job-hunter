@@ -16,6 +16,16 @@ export interface PlatformFacts {
         greeting?: number;
         application?: number;
     };
+    /**
+     * 投递时**平台自己还会做**的额外动作（平台事实，进审批文案）。
+     *
+     * 为什么要有这一格：智联的「立即投递」一次点击 = 投简历 **+ 平台自动发一句招呼语**
+     * （实测结果弹窗：「已向对方发送简历和打招呼语」）。这是用户在按下"确认"之前就必须知道的事 ——
+     * 只写"用哪版简历"是不够的，他同时还在替自己说了一句话。
+     *
+     * `undefined` = 该平台没有这类副作用（实测如此，不是"没查"）。
+     */
+    applicationSideEffect?: string;
 }
 /**
  * 已注册平台的认知表。键 = `SiteAdapter.id`。

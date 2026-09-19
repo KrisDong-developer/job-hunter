@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react'
 import type { CompanyProfileDto } from '../../shared/dto.js'
-import { JOB_FLAG_LABEL, type JobState } from '../../shared/enums.js'
-import { ApiError, fetchCompanyDetail, fetchJobDetail, markJob, updateCompanyReview } from '../api.js'
+import { JOB_FLAG_LABEL, CONTACT_STAGE_LABEL, type ContactStage, type JobState } from '../../shared/enums.js'
+import { ApiError, fetchCompanyDetail, fetchJobDetail, markJob, probeContactStage, updateCompanyReview } from '../api.js'
 import { JOB_ACTION_LABEL, JOB_STATE_LABEL, relativeTime, salaryDetail, splitJobTags } from '../labels.js'
 import { TailorPanel } from './tailor-panel.js'
 import { OverseasPanel } from './campus.js'
@@ -226,6 +226,23 @@ export function JobDetailBody(props: {
   const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision])
   const [busy, setBusy] = useState<JobState | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  /** 平台侧接触阶段的探测结果（**只读**：不改本地状态、不发任何消息）。 */
+  const [probing, setProbing] = useState(false)
+  const [probe, setProbe] = useState<{ stage: ContactStage | null; note: string } | null>(null)
+  const [probeError, setProbeError] = useState<string | null>(null)
+
+  const probeStage = async (): Promise<void> => {
+    setProbing(true)
+    setProbeError(null)
+    try {
+      const result = await probeContactStage(props.id)
+      setProbe({ stage: result.stage, note: result.note })
+    } catch (error) {
+      setProbeError(error instanceof ApiError ? error.display : String(error))
+    } finally {
+      setProbing(false)
+    }
+  }
 
   const mark = async (next: JobState): Promise<void> => {
     setBusy(next)
@@ -301,6 +318,37 @@ export function JobDetailBody(props: {
         <li><span>最近见到</span><span>{lastSeen}</span></li>
         <li><span>当前状态</span><span>{JOB_STATE_LABEL[job.state]}</span></li>
       </ul>
+
+      {/* 平台上的接触阶段：**只探测、不改状态**（识别 ≠ 改状态）。
+          本地那条接触态由状态事件推进，这里给的是"平台上现在是什么样"的事实 ——
+          所以结论下面永远跟着 probe.note（它明说"没有改动任何本地状态"）。 */}
+      <div className="jh-card jh-card-tight">
+        <div className="jh-row-head">
+          <span className="jh-tag-group-name">平台上的接触阶段</span>
+          <span className="jh-spacer" />
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline"
+            disabled={probing}
+            onClick={() => void probeStage()}
+          >
+            {probing ? '探测中…' : '探测'}
+          </button>
+        </div>
+        {probeError === null ? null : <p className="jh-error">{probeError}</p>}
+        {probe === null ? (
+          <p className="jh-muted">
+            还没探测过。探测只**读**平台上的状态（不发消息、不投递），也不会改动本地状态。
+          </p>
+        ) : (
+          <>
+            <p>
+              <b>{probe.stage === null ? '判不出来' : CONTACT_STAGE_LABEL[probe.stage]}</b>
+            </p>
+            <p className="jh-muted">{probe.note}</p>
+          </>
+        )}
+      </div>
 
       {/* 标签按"技能要求 / 公司福利"分组：一锅端地平铺，读者分不清哪些是硬要求、哪些是待遇 */}
       {job.tags.length === 0 ? null : (

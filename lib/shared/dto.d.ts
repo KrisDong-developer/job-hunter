@@ -1134,6 +1134,8 @@ export interface AdapterImplementationDto {
     actions: {
         sayHello: boolean;
         sendResume: boolean;
+        /** 在已有会话里回消息（对方先说话之后）。 */
+        reply: boolean;
         readInbox: boolean;
         detectStage: boolean;
     };

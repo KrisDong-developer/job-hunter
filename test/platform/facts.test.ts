@@ -105,6 +105,7 @@ test('implementation 由实现派生，不手写', () => {
   assert.deepEqual(bareImpl.actions, {
     sayHello: false,
     sendResume: false,
+    reply: false,
     readInbox: false,
     detectStage: false,
   })
@@ -150,6 +151,27 @@ test('平台支持 ≠ 我们实现了：capabilities 与 implementation 都暴�
     assert.ok(
       items.some((item) => item.implementation.actions.sayHello),
       '至少应有一个平台实现了 sayHello（zhipin）—— 若全部未实现，请检查是否被回退',
+    )
+    // 同一条理由用在 reply 上（zhipin 2026-09-18 实现的"在已有会话里真回消息"）：
+    // 全部未实现时这条会红 —— 那正是"回复"退回成"只在本地写一条记录"的样子。
+    assert.ok(
+      items.some((item) => item.implementation.actions.reply),
+      '至少应有一个平台实现了 reply（zhipin）—— 若全部未实现，回复就又变成只写本地记录',
+    )
+    // 收件箱：**实现了 readInbox 就必须承认平台有收件箱**（反向不自洽会让界面用
+    // capabilities 去渲染一个"平台没有"的功能）。2026-09-18 起 zhipin / zhaopin 都实现了。
+    for (const item of items) {
+      if (item.implementation.actions.readInbox) {
+        assert.equal(
+          item.capabilities.supportsInbox,
+          true,
+          `「${item.id}」实现了 readInbox，却把 supportsInbox 标成 false —— 两处不自洽`,
+        )
+      }
+    }
+    assert.ok(
+      items.some((item) => item.implementation.actions.detectStage),
+      '至少应有一个平台实现了 detectStage（zhipin / zhaopin）—— 若全部未实现，阶段探测就是空架子',
     )
   })
 })

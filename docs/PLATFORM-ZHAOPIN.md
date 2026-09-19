@@ -192,31 +192,126 @@ query 形式。这样合规面最大，同时保留关键词搜索。
 
 ---
 
-## 8. 详情页已实现；打招呼/投递仍未实现（刻意 fail-closed）
+## 8. 详情页与登录态动作（2026-09-18 登录态实测）
 
-**详情页（`detail.extract`）已实现**（2026-09-18）：未登录即可访问 `/jobdetail/{id}.htm`
-拿 JD 全文。要点：
+### 8.1 详情页：**已实现**（登录态 / 游客态各不相同 —— 2026-09-18 实测订正）
+
+**⚠️ 先纠正一句曾经写错的话**：本文档早先写"未登录即可访问 `/jobdetail/{id}.htm` 拿 JD 全文
+（载荷里薪资是真实值）"—— **那是登录态的现象**。用全新 profile 跑 `npm run probe:zhaopin-anon`
+（从不登录）实测后订正如下：
+
+| 环节 | 未登录（游客） | 登录 |
+|---|---|---|
+| 列表页 `/sou/jl765/p1` | 正常渲染（标题即"热门职位"） | 正常渲染 |
+| 详情页 | **能打开、不跳登录**；但**没有 `__INITIAL_STATE__`**（载荷 JD 0 字）→ 只能读 DOM：正文可见（实测 199 字，游客版）、**薪资 `**-**元`（掩码）**、公司标签可能缺 | 载荷 `jobDetail.detailedPosition.description` 有完整正文 + 真实薪资 |
+| 会话页 `i.zhaopin.com/im` | **302 → `passport.zhaopin.com/login`** | 正常 |
+
+于是 `authRequirement` 三格的定谳：`crawl: 'none'`、`actions: 'required'`（都是实测），
+`detail: 'required'` —— **含义是"要拿到完整准确的详情必须登录"**：未登录虽然能开出页面，
+但载荷缺失 + 薪资掩码 + 正文可能是游客版，靠 DOM 只能拿到降级结果。
+（适配器对此的处理是对的：载荷优先、载荷缺失才退 DOM，且**掩码绝不回流**成薪资。）
+
+其它实测要点（登录态，未登录即可访问 `/jobdetail/{id}.htm` 的路径同样适用）：
 - JD 全文取自 `__INITIAL_STATE__.jobDetail.detailedPosition.description`（纯文本），DOM
   `.describtion-card__detail-content` 的 `textContent` 兜底（游客 clamp 只是视觉截断，不删 DOM 文本）。
-- ⚠️ 未登录时 **DOM 层薪资/地址会掩码**（`**-**元` / `深圳**********`），但载荷里是真实值
-  （`salary`）。所以薪资/正文**以载荷为准**，绝不把 DOM 掩码当薪资回流。
+- ⚠️ 未登录时 **DOM 层薪资/地址会掩码**（`**-**元` / `深圳**********`）—— 掩码**绝不回流**，
+  识别到就记 `salary:masked-by-login` 并留空（由 `platform/validate.ts` 隔离）。
 - ⚠️ 自动化访问时站点可能加载后重定向到地区页（反爬）。采集侧需在窗口期取值或带合法 UA/Cookie。
 - 公司标签 `.company-summary__list > li` 顺序固定为 `[融资状态, 规模, 行业]`。
+- 未登录时详情页**照样渲染「立即投递」按钮**，点它只会被弹到登录页 —— 所以 `sendResume`
+  会先认登录页、点了之后落在登录页也按 `missing`（"没投出去"）报，而不是 `pending`。
 
-**打招呼/投递仍未实现**：`capabilities.supportsGreeting = false`，**没有**
-`actions.sayHello` / `actions.sendResume`。
+### 8.2 收件箱 / 阶段探测（2026-09-18 登录态实测后落地）
 
-原因：智联的沟通与投递都要求登录态，而实测未登录 DOM 里**连"在线沟通"按钮都没有**
-（卡片上只有"立即投递"）。在拿到**已登录**页面的真实按钮契约之前，按"不编选择器"的
-原则，宁可让 `guard` 以 `ADAPTER_BROKEN` 明确拒绝，也不上线一个会乱点的实现 ——
-投递与发消息都是**不可逆**的对外动作。
+数据源是 **`GET https://cgate.zhaopin.com/imapi/imV2/getTalkList`**（会话页 `i.zhaopin.com/im`）。
 
-要做这一块，需要：用已登录 profile 抓一份详情页/沟通面板的真实 DOM，
-据此写选择器并补测试，再打开 `supportsGreeting`。
+**调用形式（探针逐个变体实测过）**：`pageNo=1&PageSize=20&pageSize=20&sessionType=1&imMessageListType=1&communicateStatusType=0`
+——**只要 Cookie**（页面上下文 `fetch` + `credentials:'include'`）。真实页面请求还带着
+`at`/`rt`(query)、`x-zp-client-id`、`x-zp-page-request-id`，但四个变体（仅 cookie / +client-id /
++at,rt / 全都带）返回**完全一样**（200 / code 200 / 11 条），所以适配器只发最简形式。
+
+**为什么走接口而不是 DOM**：DOM 侧有 `.im-session-item` 那一套（`__name` / `__company-name` /
+`__job` / `__preview-text` / `__time` / `__badge`，第一屏 11 条），但**只有接口有方向与已读/已回标记** ——
+猜方向会让"我发的话"变成"HR 说的"。会话行实测字段（节选）：
+`sessionid` / `peerPartnerId` / `staffName` / `staffJob` / `companyName` / `jobTitle` / `jobNumber` /
+`salary` / `text` / `lastSentenceType` / `unreadCount` / `sendTime` / `userId` / `senderId` /
+`oppositeRead` / `oppositeReply` / `selfRead` / `selfReply`。
+
+**方向判据只有一条**：`senderId === userId` ⇒ 最后一条是我发的（实测那条
+`text:"已发送附件简历"` 两者相等，且确实是我这边发出的）。两个字段缺任何一个 → **抛错**，不猜。
+
+**阶段判据**（`stageOfTalkRow`）——只用**有真实样本**的两个字段：
+`unreadCount>0` → `replied`；`selfReply>0` → `delivered`；其余 → `null`。
+
+⚠️ **`oppositeRead` / `oppositeReply` 实测被否决，不要用**：它们按命名像"对方已读/已回"，
+第一版就拿它们判 `read`/`replied`。探针把**每行的值**dump 出来之后否掉了这个假设 ——
+第 1 页 11 条会话里这两个字段**全是 0**，**包括那几条有 2 条 / 1 条未读的会话**
+（未读 = HR 刚发来消息，按命名 `oppositeReply` 本该是 1）。语义与命名不符 ⇒ 用它判阶段
+会把"HR 已回复"说成"没回复"。**没有样本支撑的字段一律不用。**
+代价说清楚：**`read`（HR 已读）这一档在智联判不出来**，如实返回 `null`。
+
+**翻页**：实测**有效** —— 页长 5 时第 2 页给出**另外 5 条**、与第 1 页重叠 0。
+⚠️ 这里有个反例值得记：用默认页长 20 测时"第 2 页 0 条"，**单看那次会得出"翻页无效"的错误结论**
+（该账号只有 11 条会话，本来就该空）。所以适配器按 `talkListPageSize`（默认 20）+
+`talkListMaxPages`（默认 3 页 / 60 条）翻页，跨页按会话 id 去重。
+
+「0 条必须可信」：接口调不通 / `code≠200`（含**翻页中某一页**失败）/ 结构变了 → **一律抛错**；
+只有某页真的返回 0 条（不满一页）才算读完，那才是可信的结束。
+
+### 8.2.1 投递：**已实现（页面驱动）**，走 `application.send` 两段式确认
+
+⚠️ 一次点击 = 投简历 **+ 平台自动发一句招呼语**，**不可逆**（实测弹窗
+`deliver-greeting-modal`：「已向对方发送简历和打招呼语」）。
+
+**为什么不是接口化**（接口链已抓全：`application/preparation` → `bdp/interceptService/intercept`
+→ `jobs/application` → `imapi/imV2/getUserPrologueNew`，但**没有采用**）：
+* `preparation` 要 `rootOrgId`(公司 id) 与 `staffId`(HR id) —— 详情页载荷里这两个键
+  **出现 0 次**（实测 grep），从 `{title, company, sourceUrl}` 推不出来；
+* `application` 还要 `cityIds`/`pageCode`/`jobSource`/`attachmentDefaultFileId`/`businessSystem`/
+  `stSourceCode` … 十来个上下文字段，**哪些必需没人知道**。
+在**不可逆**的动作上编这些字段是不能接受的（编错 = 投错岗 / 投错简历）。
+页面驱动让平台自己拼请求，我们只负责"点"和"看结果"。
+
+**实现要点**（选择器都来自实测 markup）：
+* 入口容器 `.summary-planes__action`（里面那个 `button.a-button`），**判能不能投靠文案**：
+  「立即投递」= 可投；「继续沟通」= 已投过/已沟通 ⇒ **一个字都不点**（避免重复投递）；
+* 真鼠标点击（CDP）→ 等 `.deliver-greeting-modal` 出现，并确认文案含「已向对方发送简历」
+  （弹窗模板常驻 DOM，所以**可见性 + 文案**两个条件都要）；
+* 送达语义：看到成功弹窗 → `delivered`；点了但没确认到 → `pending` +「去『我的投递』核对，
+  **别立刻重试**」；本地文件 → fail-closed（智联只用平台内简历）。
+* **审批文案会明写这句副作用**（`platform-facts.ts` 的 `applicationSideEffect` →
+  `renderApproval` 的「同时会发生：…」）—— 用户按下"确认"之前必须知道这一下也在替他说话。
+
+### 8.3 打招呼：**做不了**（如实标 `supportsGreeting = false`）
+
+三条实测结论把这条路封死了：
+1. 智联**没有独立的"打招呼"动作** —— 详情页上的沟通入口叫「先聊聊」
+   （`button.summary-planes__prechat`，投递后变「继续沟通」），点它进的是 IM 会话；
+2. IM 的发送走**网易云信**（`wss://weblink-bgp.netease.im/websocket` + `imapi/imV2/getToken`
+   换 `partnertoken`），是私有 WS 协议，**没有可直接调的 HTTP 发消息接口**；
+3. 平台自己那条"招呼语"是**投递时自动发**的（`imapi/imV2/getUserPrologueNew` 生成文案）。
+
+### 8.4 投递：见 §8.2.1（**已实现 · 页面驱动**）
+
+保留一条**实测教训**在这里（它是探针护栏的由来）：
+
+⚠️ 详情页的「立即投递」**没有二级确认** —— 点一下就把简历投出去，**并自动发一条招呼语**，
+弹 `deliver-greeting-modal`「已向对方发送简历和打招呼语」。
+（探针第一版以为它会先弹"选简历"的窗，于是**真投了一份简历出去**。此后护栏按**语义**挡：
+`RISKY_CLICK_TEXT` 里"投递/申请"类入口默认一律不点，只有 `ZHAOPIN_ALLOW_APPLY=1` 才放行。）
+
+一次投递的完整接口链（都带 `at`/`rt`，**仅作证据留档；适配器没有采用接口路径**，理由见 §8.2.1）：
+
+| 顺序 | 接口 | 作用 |
+|---|---|---|
+| 1 | `POST fe-api.zhaopin.com/c/pc/alan/jobs/application/preparation` | 取可选简历（`resumes[]`/`resumeNumber`）、`isShowAttachmentSelect` |
+| 2 | `POST cgate.zhaopin.com/bdp/interceptService/intercept` | 风控拦截检查（`{"alert":{}}` = 放行） |
+| 3 | `POST fe-api.zhaopin.com/c/pc/alan/jobs/application` | **真投递**（`jobNumbers`/`cityIds`/`resumeNumber`/`deliveryChannelType:1`） |
+| 4 | `POST cgate.zhaopin.com/imapi/imV2/getUserPrologueNew` | 平台生成那条自动招呼语 |
 
 ---
 
-## 8.1 无关键词的坑（2026-09-18 实测补记）
+## 8.5 无关键词的坑（搜索侧，2026-09-18 实测补记）
 
 **不加关键词**的 `/sou/` 无城市码也同理 —— `/sou/jl<码>` 在**无 `?kw` 时**会被 302 到
 `/jobs?jl=<码>`（热门职位 feed 页，无分页、卡片是 `.job-card`）。本适配器的 AB 分流兜底已能
@@ -242,3 +337,25 @@ query 形式。这样合规面最大，同时保留关键词搜索。
 
 调研期间用过的一次性探针（构造夹具、比对路由、抓城市码）**没有进仓库**：
 它们的价值已经固化成本文档的结论、代码注释与测试。需要复现时按 §2 / §3 / §9 的步骤重跑即可。
+
+**但登录态走查探针进仓库了**：`npm run probe:zhaopin-login`
+（`test/tools/probe-zhaopin-login.ts`）—— 它是 §8 全部结论的唯一来源，改选择器/接口前先跑它。
+
+- **自动走查（默认）**：自己导航到真实岗位详情页 → 点页头消息入口进 IM 页 → 探测会话列表接口
+  （**四个调用变体**逐个试，报告里 `tries[]` 会说清哪个拿到了数据）→ 探**翻页语义**与**每行阶段字段的值**
+  （`pages[]` / `smallPage[]` / `flags[]`；后者就是"`oppositeRead`/`oppositeReply` 到底表示什么"的证据来源）
+  → 投递入口只取证不点。
+- **危险护栏（按语义分组，默认全关）**：`ZHAOPIN_ALLOW_CHAT=1` 才允许点「先聊聊」，
+  `ZHAOPIN_ALLOW_APPLY=1` 才允许点「立即投递」（**会真的投出一份简历**）。
+  这套护栏是被 §8.4 那次真实误投逼出来的 —— 之前按词面挡"提交/确认/发送"，
+  而智联的提交按钮叫「立即投递」。
+- **产物落 `.probe-zhaopin-capture/`**（`.gitignore` 的 `.probe*` 覆盖），**刻意不写 `test/fixtures/`** ——
+  那里是被用例硬编码钉住的夹具。报告里的 `talkListProbe.tries[]` 会说清"哪个调用变体真的拿到了数据"。
+- `ZHAOPIN_AUTO_WALK=0` 回到"只录制、你自己走"的手动模式；`ZHAOPIN_PROFILE` 指持久化 profile
+  （默认 `.probe-zhaopin-profile`，**注意它与插件运行时那份 `browser-profile` 不共享登录态**）。
+
+**还有一个匿名探针**：`npm run probe:zhaopin-anon`（`test/tools/probe-zhaopin-anon.ts`）——
+用**全新 profile、从不登录**跑一遍列表页 / 详情页 / 会话页，逐项记录
+"载荷在不在、JD 有多长、薪资是不是掩码、入口在不在、最终 URL 落到哪"。
+§8.1 那张未登录 vs 登录的对照表就是它的产物。**凡是"要不要登录"的问题，先跑它，别靠推断。**
+产物落 `.probe-zhaopin-anon-capture/`。

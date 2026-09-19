@@ -107,36 +107,64 @@ test('滚动加载：静态夹具上不挂死，返回当前卡片数即收手',
   assert.ok(after.length > 0, 'gotoSearch 不能把已有的列表弄没')
 })
 
-test('详情页解析：标题/薪资/经验学历/公司/规模行业/JD（BossHunter JS_EXTRACT_DETAIL 对齐）', async () => {
+test('详情页解析：真实结构 2026-09-18（标题/薪资/经验学历/技能标签/公司三行事实/JD）', async () => {
   const adapter = createZhipinAdapter()
+  // 结构照真实登录态快照（`.probe-zhipin-capture/detail-*.html`）还原。
+  // ⚠️ 刻意把**公司介绍区块放在 JD 区块之前**：真实页面里它在后面（文档顺序刚好安全），
+  //    但页面上有**两个** `.job-sec-text`，顺序一变就会把公司简介当 JD —— 这条用来钉住排除逻辑。
   const html = `
-  <html><head><title>Java工程师_某某科技有限公司招聘</title></head><body>
-    <div class="job-detail">
-      <div class="info-primary">
-        <div class="name"><h1>Java工程师</h1></div>
-        <span class="salary">20-35K</span>
-        <ul class="tag-list"><span>3-5年</span><span>本科</span></ul>
+  <html><head><title>Java工程师_睿服科技招聘</title></head><body>
+    <div class="job-detail-section job-detail-company">
+      <div class="detail-section-item company-info-box">
+        <h3>公司介绍</h3>
+        <div class="job-sec-text fold-text">深圳市睿服科技有限公司成立于2017年，是一家为客户提供软件技术服务的高新技术企业。</div>
       </div>
-      <div class="job-sec-text">负责后端服务的设计与开发，熟悉 Spring Boot 与 MySQL。</div>
+    </div>
+    <div class="job-primary detail-box">
+      <div class="info-primary">
+        <div class="name"><h1 title="Java  多名线上1面定结果">Java  多名线上1面定结果</h1><span class="salary">14-15K</span></div>
+        <p>
+          <a class="text-desc text-city" href="/shenzhen/">深圳</a>
+          <span class="text-desc text-experiece">3-5年</span>
+          <span class="text-desc text-degree">本科</span>
+        </p>
+      </div>
+    </div>
+    <div class="job-detail-section job-detail-info">
+      <div class="detail-content-header"><h3>职位描述</h3></div>
+      <ul class="job-keyword-list"><li>Java</li><li>SpringCloud</li><li>MySQL</li></ul>
+      <div class="job-sec-text">1、熟练掌握 SpringBoot 技术栈<br>2、熟练掌握关系型数据库、redis</div>
     </div>
     <div class="sider-company">
-      <div class="company-info"><a href="/gongsi/xxx.html">某某科技有限公司</a></div>
-      <div class="res-industry-item">互联网</div>
-      <div class="res-industry-item">500-999人</div>
+      <p class="title">公司基本信息</p>
+      <div class="company-info">
+        <a ka="job-detail-company-logo_custompage" href="/gongsi/x.html" title="睿服科技"><img src="logo.png" alt=""></a>
+        <a ka="job-detail-company_custompage" href="/gongsi/x.html" title="睿服科技">睿服科技</a>
+      </div>
+      <p><i class="icon-stage"></i>不需要融资</p>
+      <p><i class="icon-scale"></i>1000-9999人</p>
+      <p><i class="icon-industry"></i><a href="/i100021/">计算机软件</a></p>
     </div>
   </body></html>`
-  const page = browserLikePage(html, 'https://www.zhipin.com/job_detail/abc123.html?securityId=xyz')
+  const page = browserLikePage(html, 'https://www.zhipin.com/job_detail/359917ab761105ae0nN_39-9EFZX.html')
 
   const detail = await adapter.detail?.extract(page)
 
-  assert.equal(detail?.title, 'Java工程师')
-  assert.equal(detail?.salaryRaw, '20-35K')
-  assert.equal(detail?.expReq, '3-5年', 'tag-list 顺序固定：先经验')
-  assert.equal(detail?.eduReq, '本科', 'tag-list 顺序固定：后学历')
-  assert.equal(detail?.company, '某某科技有限公司', '公司名取 sider-company 的第一个非链接文本')
-  assert.equal(detail?.industry, '互联网')
-  assert.equal(detail?.companySize, '500-999人', '含「人」的标签是规模')
-  assert.equal(detail?.jdText, '负责后端服务的设计与开发，熟悉 Spring Boot 与 MySQL。')
+  // 真实标题里是两个空格（快照原文），`clean()` 会把连续空白折成一个
+  assert.equal(detail?.title, 'Java 多名线上1面定结果')
+  assert.equal(detail?.salaryRaw, '14-15K')
+  assert.equal(detail?.expReq, '3-5年', '经验走 .text-experiece（注意官方就是这个拼写）')
+  assert.equal(detail?.eduReq, '本科', '学历走 .text-degree')
+  assert.deepEqual(detail?.tags, ['Java', 'SpringCloud', 'MySQL'], '技能标签走 .job-keyword-list li')
+  assert.equal(
+    detail?.jdText,
+    '1、熟练掌握 SpringBoot 技术栈2、熟练掌握关系型数据库、redis',
+    'JD 必须是职位描述，**不能**是公司介绍（页面上有两个 .job-sec-text）',
+  )
+  assert.equal(detail?.company, '睿服科技', '公司名跳过 logo 链接（文本为空）取第二个')
+  assert.equal(detail?.companySize, '1000-9999人', '规模走 .icon-scale 那一行')
+  assert.equal(detail?.industry, '计算机软件', '行业走 .icon-industry 那一行')
+  assert.equal(detail?.companyNature, '不需要融资', '融资阶段走 .icon-stage 那一行')
 })
 
 test('判墙：BOSS 滑块页 URL → captcha；频控/配额文案', async () => {
@@ -205,7 +233,9 @@ test('登录态夹具：薪资可见、滚动加载后一页装 100+ 条', async
   const jobs = await adapter.crawl.readListPage(page)
   assert.ok(jobs.length >= 10, `第一屏应解析出 ≥10 条（实测 15），实际 ${String(jobs.length)}`)
 
-  // 登录态与未登录态的分界就在这里：薪资**有文本**（未登录时元素在、文本空）
+  // 登录态与未登录态的分界就在这里：薪资**有文本**（未登录时元素在、文本空）。
+  // ⚠️ 它只能证明"登录了" —— **不能**证明薪资数值可用：平台的薪资数字不在 `textContent` 里
+  //    （实测卡片是 `-K·薪`），所以下面还会单独量一次"带数字的比率"。
   const withSalary = jobs.filter((job) => job.salaryRaw !== '')
   assert.ok(
     withSalary.length >= Math.ceil(jobs.length * 0.9),
@@ -223,12 +253,20 @@ test('登录态夹具：薪资可见、滚动加载后一页装 100+ 条', async
     assert.ok(many.length >= 100, `滚动后应解析出 ≥100 条（实测 105），实际 ${String(many.length)}`)
     const ids = new Set(many.map((job) => job.platformJobId))
     assert.equal(ids.size, many.length, '同一页内岗位 id 不该重复')
-    const salaryRatio =
-      many.filter((job) => job.salaryRaw !== '').length / Math.max(1, many.length)
-    assert.ok(salaryRatio >= 0.95, `滚动加载的 100+ 条里薪资可见率应 ≥95%，实际 ${salaryRatio.toFixed(2)}`)
+
+    // ⚠️ 这里刻意分两层量，因为"非空"曾经被当成"薪资可见"写在断言里 —— 那是个**假的绿灯**：
+    //    薪资数字**不在 textContent 里**（实测卡片是 `-K·薪`，数字由站点自己的渲染层补上），
+    //    于是 `salaryRaw !== ''` 只说明"节点在"，完全不说明这份薪资能不能用。
+    //    带数字的比率才是能拿去用的那一档，所以两个都量、都打出来。
+    const textRatio = many.filter((job) => job.salaryRaw !== '').length / Math.max(1, many.length)
+    const numericRatio = many.filter((job) => /\d/.test(job.salaryRaw)).length / Math.max(1, many.length)
+    assert.ok(textRatio >= 0.95, `滚动加载的 100+ 条里薪资节点可见率应 ≥95%，实际 ${textRatio.toFixed(2)}`)
     console.log(
       `[zhipin-logged-fixture] 第一屏 ${String(jobs.length)} 条 · 滚动后 ${String(many.length)} 条 · ` +
-        `薪资可见率 ${(salaryRatio * 100).toFixed(0)}%`,
+        `薪资文本可见 ${(textRatio * 100).toFixed(0)}% · 其中带数字 ${(numericRatio * 100).toFixed(0)}%` +
+        (numericRatio < 0.95
+          ? '（⚠️ 数字不在 textContent 里 —— 薪资数值目前拿不到，属已知未解问题，不是本次回归失败）'
+          : ''),
     )
   }
 })

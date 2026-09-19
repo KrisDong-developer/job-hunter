@@ -144,6 +144,8 @@ const ALL_TOOL_NAMES = [
   'inbox_list',
   // 2026-09-18 补：把平台会话列表读进本地消息表（走适配器；低危、无需审批）。
   'inbox_sync',
+  // 2026-09-18 补：探测某岗位在平台上的接触阶段（低危、只报事实不改状态、无需审批）。
+  'contact_stage',
   'message_reply',
   'interview_manage',
   'interview_prep',

@@ -168,6 +168,14 @@ export interface PipelineRepo {
         direction: MessageDirection;
         content: string;
     }): MessageRecord | undefined;
+    /**
+     * 按 id 取一条消息。
+     *
+     * 存在的理由：回复流程需要在**群量**消息里精确定位那一条。原先用
+     * `listMessages({ limit: 500 }).find(...)`，一旦收件箱超过 500 条，老消息就"找不到"了 ——
+     * 那种失败会被误报成"消息不存在"。
+     */
+    getMessage(id: number): MessageRecord | undefined;
     markMessageRead(id: number, now: string): boolean;
     countUnread(): number;
     createApplication(input: {

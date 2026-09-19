@@ -119,6 +119,44 @@ test('界面发起的高危动作：第一次抛 NEEDS_CONFIRM（不是拒绝，
   })
 })
 
+test('审批文案会把平台自己的副作用写出来（智联投递会顺带替你发一句招呼语）', async () => {
+  await withStore(async (store) => {
+    const guard = makeGuard(store)
+    // 投递分层**默认是关的**（`l4Application: false`）—— 这里要测的是审批**文案**，
+    // 所以先把分层打开，否则会在"开关"那一关就被拒、根本走不到审批。
+    writeGuardConfig(
+      store,
+      { sendWindow: '', dayOffProbability: 0, levels: { l3Greeting: true, l4Application: true, l4Reply: true } },
+      T,
+    )
+    await assert.rejects(
+      () =>
+        guard.run(
+          {
+            action: 'application.send',
+            actor: 'gui',
+            danger: 'high',
+            target: { platformId: 'zhaopin', jobId: 9 },
+            payload: {
+              resumeVersion: '平台内简历（未指定本地版本）',
+              // 这一格来自平台事实表（`platformFacts(...).applicationSideEffect`），
+              // 由 runtime 装进 payload —— 用户确认之前必须知道"还会替你发一句话"。
+              sideEffect: '智联会在投递的同时**替你发一句招呼语**（内容由平台生成）。',
+            },
+          },
+          async () => '不该执行',
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ConfirmRequiredError)
+        const text = error.text()
+        assert.ok(text.includes('同时会发生'), text)
+        assert.ok(text.includes('替你发一句招呼语'), text)
+        return true
+      },
+    )
+  })
+})
+
 test('界面二次确认后才执行，且审计里记下了确认来源', async () => {
   await withStore(async (store) => {
     const guard = makeGuard(store)

@@ -45,6 +45,9 @@ class RecordingMouse implements HumanMouse {
   downs = 0
   ups = 0
 
+  /** 点击（抬起）之后的动作：用来模拟"平台对这次点击的响应"。 */
+  constructor(private readonly afterClick?: () => Promise<void>) {}
+
   async move(x: number, y: number): Promise<void> {
     this.moves.push([x, y])
   }
@@ -55,6 +58,7 @@ class RecordingMouse implements HumanMouse {
 
   async up(): Promise<void> {
     this.ups += 1
+    await this.afterClick?.()
   }
 }
 
@@ -80,6 +84,13 @@ interface ActionPageOptions {
   loader?: (url: string) => string | undefined
   /** 记录 `setInputFiles` 的调用。 */
   uploads?: Array<{ selector: string; files: readonly string[] }>
+  /**
+   * 点击之后在页面里执行的**自包含**函数（模拟平台对点击的响应）。
+   *
+   * 为什么需要：夹具给每个元素的是**同一个矩形**，所以"点到了哪个元素"没法靠坐标断言。
+   * 让点击真的改变 DOM（例如切 tab 后列表重渲染），"点对了"才变成可观察的事实。
+   */
+  afterClick?: () => void
 }
 
 /**
@@ -99,7 +110,13 @@ function actionPage(options: ActionPageOptions): {
     layout: true,
     ...(options.loader === undefined ? {} : { loader: options.loader }),
   })
-  const mouse = new RecordingMouse()
+  const mouse = new RecordingMouse(
+    options.afterClick === undefined
+      ? undefined
+      : async () => {
+          await inner.evaluate(asSerialized(options.afterClick as () => void), undefined as never)
+        },
+  )
   const uploads = options.uploads ?? []
   const typed: string[] = []
   let buffer = ''
@@ -169,13 +186,20 @@ const CHAT_PAGE_HTML = `
     <div class="last-msg-text">你好，方便发一份简历吗？</div>
     <span class="unread-count">2</span>
   </li>
-  <div class="operate-icon-item"><span class="operate-btn">发送简历</span></div>
+  <div class="toolbar-controls">
+    <div class="toolbar-btn-content"><div aria-label="表情" class="icon btn-emotion"></div></div>
+    <div class="toolbar-btn-content"><div aria-label="发送图片" class="icon btn-sendimg"><input type="file" accept="image/gif,image/jpeg,image/png"></div></div>
+    <div class="toolbar-btn-content"><div aria-label="求简历" class="toolbar-btn tooltip"> 发简历 </div></div>
+  </div>
   <div class="choose-resume-dialog">
     <div class="list-item">我的在线简历</div>
     <div class="btn-confirm">确定</div>
   </div>
   <div class="resume-card">在线简历</div>
-  <div id="chat-input" contenteditable="true"></div>
+  <div class="editor-container">
+    <div id="chat-input" contenteditable="true" class="chat-input"></div>
+    <div class="chat-op"><span class="tip">按Enter键发送，按Ctrl+Enter键换行</span><button type="send" class="btn-v2 btn-sure-v2 btn-send disabled">发送</button></div>
+  </div>
   <div class="chat-record"></div>
 </body></html>`
 
@@ -268,22 +292,43 @@ test('sayHello：点了发送但会话里没有该消息 → missing（绝不假
 
 test('readInbox：解析会话列表（HR 名 / 公司 / 未读 / 方向）', async () => {
   const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  // 结构照 2026-09-18 真实会话行（`.user-list > .user-list-content > ul[role=group] > li`），
+  // 行内类名与 `.time` 全是实测值。
   const html = `
   <html><body>
-    <ul>
-      <li role="listitem" id="c1">
-        <div class="name-box"><span>张女士</span><span>某某科技</span><span>招聘主管</span></div>
-        <div class="name-text">张女士</div>
-        <div class="last-msg-text">你好，方便发一份简历吗？</div>
-        <span class="unread-count">2</span>
-      </li>
-      <li role="listitem" id="c2">
-        <div class="name-box"><span>李先生</span><span>另一家公司</span></div>
-        <div class="name-text">李先生</div>
-        <div class="last-msg-text">好的，期待您的消息</div>
-        <div class="message-status status-read"></div>
-      </li>
-    </ul>
+    <div class="chat-wrap">
+      <div class="chat-user v2">
+        <div class="label-list"><ul><li class="selected"><span class="label-name">全部</span></li></ul></div>
+        <div class="chat-content">
+          <div class="user-list"><div class="user-list-content">
+            <ul role="thead"><!----></ul>
+            <ul role="group">
+              <li id="c1" role="listitem">
+                <div class="friend-content">
+                  <span class="time">00:53</span>
+                  <span class="name-box"><span class="name-text">张女士</span><span>某某科技</span><i class="vline"></i><span>招聘主管</span></span>
+                  <div class="gray last-msg">
+                    <span class="last-msg-text">你好，方便发一份简历吗？</span>
+                    <span class="unread-count">2</span>
+                  </div>
+                </div>
+              </li>
+              <li id="c2" role="listitem">
+                <div class="friend-content">
+                  <span class="time">昨天</span>
+                  <span class="name-box"><span class="name-text">李先生</span><span>另一家公司</span></span>
+                  <div class="gray last-msg">
+                    <i class="message-status status-delivery"> [送达] </i>
+                    <span class="last-msg-text">好的，期待您的消息</span>
+                  </div>
+                </div>
+              </li>
+            </ul>
+            <div role="tfoot"></div>
+          </div></div>
+        </div>
+      </div>
+    </div>
   </body></html>`
   const { page } = actionPage({ html, url: 'https://www.zhipin.com/web/geek/chat', interaction: 'none' })
 
@@ -297,13 +342,49 @@ test('readInbox：解析会话列表（HR 名 / 公司 / 未读 / 方向）', as
   assert.equal(first?.lastMessage, '你好，方便发一份简历吗？')
   assert.equal(first?.unread, true)
   assert.equal(first?.direction, 'hr', 'HR 发来的消息方向为 hr')
+  assert.equal(first?.at, '00:53', '时间来自实测的 .time 节点')
 
   const second = inbox[1]
   assert.equal(second?.unread, false)
-  assert.equal(second?.direction, 'me', 'status-read 说明最后一条是我发的')
+  assert.equal(second?.direction, 'me', 'status-delivery 说明最后一条是我发的')
+  assert.equal(second?.at, '昨天')
 })
 
-test('sendResume：本地 PDF 在 BOSS 求职者网页端传不进去 → 如实报 missing', async () => {
+test('readInbox：**空列表**（容器在、列表空）→ 可信的 0 条，不报错', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  // 2026-09-18 实测的真空态结构：容器 `.user-list` 里只有一个 `.no-data`
+  const html = `
+  <html><body>
+    <div class="chat-content"><div class="user-list">
+      <div class="no-data"><p class="no-setting-text">30天内暂无联系人</p></div>
+    </div></div>
+    <div class="chat-conversation"><div class="chat-no-data"><div class="no-data-text">当前暂无消息</div></div></div>
+  </body></html>`
+  const { page } = actionPage({ html, url: 'https://www.zhipin.com/web/geek/chat', interaction: 'none' })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  assert.deepEqual(inbox, [], '容器在 + 页面自报「暂无联系人」= 真的空，返回 [] 是正确的')
+})
+
+test('readInbox：**容器都找不到** → 抛错，绝不谎报 0 条', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  // 选择器腐烂 / 不是会话页时的形态：没有 `.chat-content .user-list`
+  const html = '<html><body><div class="some-other-page">首页</div></body></html>'
+  const { page } = actionPage({ html, url: 'https://www.zhipin.com/web/geek/chat', interaction: 'none' })
+
+  await assert.rejects(
+    async () => await adapter.actions?.readInbox?.(page),
+    (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.ok(error.message.includes('会话列表容器未找到'), error.message)
+      return true
+    },
+    '容器缺失必须抛错 —— 把"读不到"变成"没人回我"是这条链路上最贵的谎',
+  )
+})
+
+test('sendResume：本地文件 → 如实说明"没有把本地文件发给 HR 的入口"，不假装投递', async () => {
   const adapter = createZhipinAdapter({ config: FAST_CONFIG })
   const { page } = actionPage({ html: CHAT_PAGE_HTML, url: JOB_URL })
 
@@ -314,8 +395,9 @@ test('sendResume：本地 PDF 在 BOSS 求职者网页端传不进去 → 如实
   )
 
   assert.equal(result?.ok, false)
-  assert.equal(result?.delivery, 'missing', '平台没有上传入口时不能假装把本地文件发出去了')
-  assert.ok((result?.message ?? '').includes('本地文件'))
+  assert.equal(result?.delivery, 'missing', '平台没有这个入口时不能假装把本地文件发出去了')
+  // 页面上那两个 file input 分别是「上传附件简历到我的简历」与「发送图片」——必须讲清楚
+  assert.ok((result?.message ?? '').includes('把本地简历文件发给 HR'), result?.message)
 })
 
 test('sendResume：filePath=null 走平台简历弹窗 → 出现简历卡片才算送达', async () => {
@@ -332,6 +414,26 @@ test('sendResume：filePath=null 走平台简历弹窗 → 出现简历卡片才
   assert.equal(result?.delivery, 'delivered')
 })
 
+test('sendResume：「发简历」不可用（双方未回复）→ 如实转述平台门槛，不点那个点不动的按钮', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  // 2026-09-18 实测形态：未回复时按钮带 `unable`，aria-label 明写「双方回复后可用」
+  const html = CHAT_PAGE_HTML.replace(
+    '<div aria-label="求简历" class="toolbar-btn tooltip"> 发简历 </div>',
+    '<div aria-label="求简历：双方回复后可用" class="toolbar-btn tooltip unable"> 发简历 </div>',
+  )
+  const { page } = actionPage({ html, url: JOB_URL })
+
+  const result = await adapter.actions?.sendResume?.(
+    page,
+    { title: 'Java工程师', company: '某某科技', sourceUrl: JOB_URL },
+    null,
+  )
+
+  assert.equal(result?.ok, false, JSON.stringify(result))
+  assert.equal(result?.delivery, 'missing')
+  assert.ok((result?.message ?? '').includes('双方回复'), result?.message)
+})
+
 test('sendResume：会话列表里没有这家公司 → 不投递', async () => {
   const adapter = createZhipinAdapter({ config: FAST_CONFIG })
   const { page } = actionPage({ html: CHAT_PAGE_HTML, url: JOB_URL })
@@ -345,4 +447,269 @@ test('sendResume：会话列表里没有这家公司 → 不投递', async () =>
   assert.equal(result?.ok, false)
   assert.equal(result?.delivery, 'missing')
   assert.ok((result?.message ?? '').includes('查无此司'))
+})
+
+// ── reply：在已有会话里真回消息（2026-09-18 补的 actions.reply）──────────
+
+const CHAT_URL = 'https://www.zhipin.com/web/geek/chat'
+const REPLY_TEXT = '可以，明天下午两点以后我都有空。'
+
+/** 把一条"我发出的"同文本消息预先放进会话（幂等用例用）。 */
+function chatHtmlWithOwnMessage(text: string): string {
+  return CHAT_PAGE_HTML.replace(
+    '<div class="chat-record"></div>',
+    `<div class="chat-record"><div class="message-item item-myself"><div class="message-content">${text}</div></div></div>`,
+  )
+}
+
+test('reply：会话里已有同文本 → 幂等命中，不重复发送', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page, typed } = actionPage({
+    html: chatHtmlWithOwnMessage(REPLY_TEXT),
+    url: CHAT_URL,
+    interaction: 'full',
+  })
+
+  const result = await adapter.actions?.reply?.(
+    page,
+    { title: 'Java工程师', company: '某某科技', sourceUrl: JOB_URL },
+    REPLY_TEXT,
+  )
+
+  assert.equal(result?.ok, true, JSON.stringify(result))
+  assert.equal(result?.delivery, 'delivered')
+  assert.equal(result?.idempotentHit, true, '同文本已存在时必须标记幂等命中')
+  assert.equal(typed.length, 0, '幂等命中时一个字都不该输入（重发 = 对方收到两条一样的话）')
+})
+
+test('reply：正常路径 → 进会话 → 逐字符输入 → 回车 → 送达校验通过', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page, mouse, typed } = actionPage({ html: CHAT_PAGE_HTML, url: CHAT_URL, interaction: 'full' })
+
+  const result = await adapter.actions?.reply?.(
+    page,
+    { title: 'Java工程师', company: '某某科技', sourceUrl: JOB_URL },
+    REPLY_TEXT,
+  )
+
+  assert.equal(result?.ok, true, JSON.stringify(result))
+  assert.equal(result?.delivery, 'delivered', `实际：${JSON.stringify(result)}`)
+  assert.equal(result?.evidence, 'dom')
+  assert.equal(typed.join(''), REPLY_TEXT, '必须逐字符输入（humanType），不是一次性 fill')
+  assert.ok(mouse.downs > 0 && mouse.ups > 0, '点击必须走 CDP 鼠标（三段式），而不是 DOM click')
+})
+
+test('reply：没有 CDP 输入面 → fail-closed，按未发送处理', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page } = actionPage({ html: CHAT_PAGE_HTML, url: CHAT_URL, interaction: 'none' })
+
+  const result = await adapter.actions?.reply?.(
+    page,
+    { title: 'Java工程师', company: '某某科技', sourceUrl: JOB_URL },
+    REPLY_TEXT,
+  )
+
+  assert.equal(result?.ok, false)
+  assert.equal(result?.delivery, 'missing')
+  assert.equal(result?.evidence, 'none')
+  assert.ok((result?.message ?? '').includes('CDP'))
+})
+
+test('reply：会话列表里找不到这个岗位的会话 → missing，不猜一个会话把话发出去', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page, typed } = actionPage({ html: CHAT_PAGE_HTML, url: CHAT_URL, interaction: 'full' })
+
+  const result = await adapter.actions?.reply?.(
+    page,
+    { title: 'Java工程师', company: '查无此司', sourceUrl: JOB_URL },
+    REPLY_TEXT,
+  )
+
+  assert.equal(result?.ok, false)
+  assert.equal(result?.delivery, 'missing')
+  assert.ok((result?.message ?? '').includes('查无此司'), result?.message)
+  assert.equal(typed.length, 0, '没找到会话就一个字都不该输入')
+})
+
+// ── detectStage：接触阶段探测（2026-09-18 用实测选择器实现）──────────────
+
+/** 会话列表夹具：一行会话，可按需带未读徽章 / `.message-status` 状态类名。 */
+function inboxHtml(options: { company: string; status?: string; unread?: boolean }): string {
+  const status =
+    options.status === undefined
+      ? ''
+      : `<i class="message-status ${options.status}"> [送达] </i>`
+  return `
+  <html><body>
+    <div class="chat-content"><div class="user-list"><div class="user-list-content">
+      <ul role="group">
+        <li id="c1" role="listitem">
+          <div class="friend-content">
+            <span class="time">00:53</span>
+            <span class="name-box"><span class="name-text">张女士</span><span>${options.company}</span></span>
+            <div class="gray last-msg">
+              ${status}
+              <span class="last-msg-text">你好，方便发一份简历吗？</span>
+              ${options.unread === true ? '<span class="unread-count">2</span>' : ''}
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div></div></div>
+  </body></html>`
+}
+
+async function stageOf(html: string, job: { title: string; company: string }): Promise<string | null> {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page } = actionPage({ html, url: CHAT_URL, interaction: 'none' })
+  const stage = await adapter.actions?.detectStage?.(page, { ...job, sourceUrl: JOB_URL })
+  return stage ?? null
+}
+
+test('detectStage：会话里有未读 → replied', async () => {
+  const stage = await stageOf(inboxHtml({ company: '某某科技', unread: true }), {
+    title: 'Java工程师',
+    company: '某某科技',
+  })
+  assert.equal(stage, 'replied')
+})
+
+test('detectStage：最后一条是我发的且 status-delivery → delivered', async () => {
+  const stage = await stageOf(inboxHtml({ company: '某某科技', status: 'status-delivery' }), {
+    title: 'Java工程师',
+    company: '某某科技',
+  })
+  assert.equal(stage, 'delivered')
+})
+
+test('detectStage：status-read → read（这一档代码支持；⚠️ 真实站点尚未见到样本）', async () => {
+  const stage = await stageOf(inboxHtml({ company: '某某科技', status: 'status-read' }), {
+    title: 'Java工程师',
+    company: '某某科技',
+  })
+  assert.equal(stage, 'read')
+})
+
+test('detectStage：列表里没有这个岗位的会话 → null（**不是** none）', async () => {
+  const stage = await stageOf(inboxHtml({ company: '另一家公司' }), {
+    title: 'Java工程师',
+    company: '某某科技',
+  })
+  // 「从没打过招呼」与「会话被移出平台保留窗口」在这里分不清 —— 写成 none 会记错账
+  assert.equal(stage, null)
+})
+
+test('detectStage：状态类名认不出来 → null（不猜）', async () => {
+  const stage = await stageOf(inboxHtml({ company: '某某科技', status: 'status-something-new' }), {
+    title: 'Java工程师',
+    company: '某某科技',
+  })
+  assert.equal(stage, null)
+})
+
+test('detectStage：不是会话页（容器都没有）→ null，而不是抛错', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page } = actionPage({
+    html: '<html><body><div class="home">首页</div></body></html>',
+    url: CHAT_URL,
+    interaction: 'none',
+  })
+  const stage = await adapter.actions?.detectStage?.(page, {
+    title: 'Java工程师',
+    company: '某某科技',
+    sourceUrl: JOB_URL,
+  })
+  // 契约允许判不出来返回 null（上层保留原值）；这里如实返回，不猜成 none
+  assert.equal(stage ?? null, null)
+})
+
+// ── readInbox：按 tab 读（`inboxTab`）─────────────────────────────────
+
+/** 模拟"切到未读 tab"：平台重渲染后只剩带未读徽章的会话行。⚠️ 必须自包含。 */
+function keepOnlyUnreadRowsInPage(): void {
+  document.querySelectorAll('li[role="listitem"]').forEach((row) => {
+    if (row.querySelector('.unread-count') === null) row.remove()
+  })
+}
+
+const TABBED_INBOX_HTML = `
+<html><body>
+  <div class="chat-content">
+    <div class="label-list"><ul>
+      <li class="selected"><span class="label-name">全部</span></li>
+      <li><span class="label-name">未读</span></li>
+    </ul></div>
+    <div class="user-list"><div class="user-list-content">
+      <ul role="group">
+        <li id="c1" role="listitem">
+          <div class="friend-content">
+            <span class="name-box"><span class="name-text">张女士</span><span>某某科技</span></span>
+            <div class="gray last-msg"><span class="last-msg-text">你好，方便发一份简历吗？</span><span class="unread-count">2</span></div>
+          </div>
+        </li>
+        <li id="c2" role="listitem">
+          <div class="friend-content">
+            <span class="name-box"><span class="name-text">李先生</span><span>另一家公司</span></span>
+            <div class="gray last-msg"><i class="message-status status-delivery"> [送达] </i><span class="last-msg-text">好的，期待您的消息</span></div>
+          </div>
+        </li>
+      </ul>
+    </div></div>
+  </div>
+</body></html>`
+
+test('readInbox：inboxTab=all（默认）不点 tab，读到全量', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page, mouse } = actionPage({ html: TABBED_INBOX_HTML, url: CHAT_URL, interaction: 'full' })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  assert.equal(inbox?.length, 2)
+  assert.equal(mouse.ups, 0, '默认 all 不该点任何 tab')
+})
+
+test('readInbox：inboxTab=unread → 真的点到「未读」这个 tab（点完读到的是该 tab 的内容）', async () => {
+  const adapter = createZhipinAdapter({
+    config: { ...FAST_CONFIG, inboxTab: 'unread' },
+  })
+  const { page, mouse } = actionPage({
+    html: TABBED_INBOX_HTML,
+    url: CHAT_URL,
+    interaction: 'full',
+    // 平台对这次点击的响应：切到未读后只剩带未读徽章的那一行
+    afterClick: keepOnlyUnreadRowsInPage,
+  })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  assert.ok(mouse.ups > 0, '配置了非 all 的 tab，就必须真的点一下')
+  assert.equal(inbox?.length, 1, '读到的是切 tab 之后的内容 —— 这证明点到的确实是那个 tab')
+  assert.equal(inbox?.[0]?.conversationId, 'c1')
+})
+
+test('readInbox：没有 CDP 鼠标时切不动 tab → 退回读全量（超集，不漏）', async () => {
+  const adapter = createZhipinAdapter({
+    config: { ...FAST_CONFIG, inboxTab: 'unread' },
+  })
+  const { page } = actionPage({ html: TABBED_INBOX_HTML, url: CHAT_URL, interaction: 'none' })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  // 点不上不算失败：读到的是"当前展示的全量"，是**超集** —— 精度变差，但不会漏消息
+  assert.equal(inbox?.length, 2)
+})
+
+test('readInbox：状态类名没认出来，但 `.message-status` 节点在 → 方向仍判为"我发的"', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const { page } = actionPage({
+    html: inboxHtml({ company: '某某科技', status: 'status-brand-new-name' }),
+    url: CHAT_URL,
+    interaction: 'none',
+  })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  // 送达/已读标记只出现在我们发出的消息上 —— 平台改类名不该让方向整体读反
+  // （读反了本地会多出一条"HR 说的话"，而且和 detectStage 的结论互相矛盾）
+  assert.equal(inbox?.[0]?.direction, 'me')
 })

@@ -912,6 +912,27 @@ export async function syncInbox(input: { platformId: string }): Promise<{
 }
 
 /**
+ * 探测某岗位在平台上的**接触阶段**（HR 是否已读/已回）。低危，不需要确认。
+ *
+ * ⚠️ 它**只报事实、不改状态**（识别 ≠ 改状态）：`stage` 是平台上看到的东西，
+ * `null` = 判不出来（会话不在列表里 / 状态标记认不出来）——**不是**"未接触"。
+ * 要不要据此推进本地接触态，由用户在界面上显式决定。
+ */
+export async function probeContactStage(jobId: number): Promise<{
+  jobId: number
+  platformId: string
+  stage: ContactStage | null
+  note: string
+  checkedAt: string
+}> {
+  const result = await request<{
+    ok: boolean
+    result: { jobId: number; platformId: string; stage: ContactStage | null; note: string; checkedAt: string }
+  }>(`/jobs/${String(jobId)}/detect-stage`, { method: 'POST', body: JSON.stringify({}) })
+  return result.result
+}
+
+/**
  * 投递简历：**真的用适配器把简历发出去**（与 `createApplication` 的"记一笔"不同）。
  *
  * 高危，两段式确认：不带 `confirm` 时宿主抛 `NEEDS_CONFIRM`，这里翻译成
@@ -1015,12 +1036,18 @@ export async function markMessageRead(id: number): Promise<void> {
   await request<{ ok: boolean }>(`/messages/${String(id)}/read`, { method: 'POST', body: JSON.stringify({}) })
 }
 
-export async function replyMessage(id: number, content: string, confirm = false): Promise<MessageDto> {
-  const result = await request<{ ok: boolean; message: MessageDto }>(`/messages/${String(id)}/reply`, {
+/**
+ * 回复一条 HR 消息。**这会把消息真的发到平台上**（高危：界面要二次确认）。
+ *
+ * 返回值刻意是 `void`：真正的结果是"平台上发出去没有"，而那不是靠一个本地 id 表达的 ——
+ * 服务端确认送达后才会写本地记录，失败会抛 `ApiError`（含适配器给的送达状态与处置建议）。
+ * 界面照旧重拉收件箱即可。
+ */
+export async function replyMessage(id: number, content: string, confirm = false): Promise<void> {
+  await request<{ ok: boolean }>(`/messages/${String(id)}/reply`, {
     method: 'POST',
     body: JSON.stringify({ content, confirm }),
   })
-  return result.message
 }
 
 export async function fetchInterviews(

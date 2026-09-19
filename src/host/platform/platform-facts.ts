@@ -35,6 +35,28 @@ export interface PlatformFacts {
    * 而"少投了几个"和"被平台盯上"都由用户承担，不该由我们瞎猜。
    */
   dailyCaps?: { greeting?: number; application?: number }
+  /**
+   * 投递时**平台自己还会做**的额外动作（平台事实，进审批文案）。
+   *
+   * 为什么要有这一格：智联的「立即投递」一次点击 = 投简历 **+ 平台自动发一句招呼语**
+   * （实测结果弹窗：「已向对方发送简历和打招呼语」）。这是用户在按下"确认"之前就必须知道的事 ——
+   * 只写"用哪版简历"是不够的，他同时还在替自己说了一句话。
+   *
+   * `undefined` = 该平台没有这类副作用（实测如此，不是"没查"）。
+   */
+  applicationSideEffect?: string
+  /**
+   * 打招呼时**平台自己还会做**的额外动作（平台事实，进审批文案）。
+   *
+   * BOSS 求职者端实测：点「立即沟通」会**先由平台替你发一句默认招呼语**，随后适配器才发
+   * 用户那段 text —— 一次 `greeting.send` 会在会话里留下**两条**消息。
+   *
+   * 这里如实写出来而不是"让适配器少发一条"：用户要的正是他那段话术，不能替他省掉；
+   * 但"对方会先看到一句不是你写的问候"必须在他按"确认"之前就知道。
+   *
+   * `undefined` = 该平台没有这类副作用（实测如此，不是"没查"）。
+   */
+  greetingSideEffect?: string
 }
 
 /** 不知道就说不。没验证过的环节一律 `unknown`。 */
@@ -62,10 +84,27 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
     maturity: {
       level: 'stable',
       verifiedAt: '2026-09-18',
-      notes: '列表与详情夹具取自真实 dump（合成结构）。投递上限约 100；第 2 页起用无 query path；详情页有 AB 分流兜底。',
+      notes:
+        '列表与详情夹具取自真实 dump（合成结构）。投递上限约 100；第 2 页起用无 query path；详情页有 AB 分流兜底。' +
+        '2026-09-18 登录态走查（`probe:zhaopin-login`）后新增三件事：① 收件箱走 `imapi/imV2/getTalkList` 接口' +
+        '（**只要 cookie** —— 四个调用变体实测等价），`readInbox`/`detectStage` 已落地（方向判据 senderId===userId）；' +
+        '② 沟通入口叫「先聊聊」，且 IM 发送走**网易云信私有 WS**（`imapi/imV2/getToken` 换 token）→ ' +
+        '智联没有独立的"打招呼"动作，`sayHello` 做不了（如实标 supportsGreeting=false）；' +
+        '③ 「立即投递」**一步到底、不可逆**（一次点击 = 投简历 + 平台自动发一条招呼语，`deliver-greeting-modal`）→ ' +
+        '`sendResume` **已实现**（页面驱动：点「立即投递」→ 验成功弹窗），走 `application.send` 两段式确认；' +
+        '接口路径刻意不用（`preparation` 要的 `rootOrgId`/`staffId` 在详情页载荷里出现 0 次，不可逆动作上不能编）。' +
+        '2026-09-18 未登录实测（`probe:zhaopin-anon`，全新 profile）钉住了 `authRequirement`：' +
+        '列表页未登录正常渲染（`crawl: none`）；详情页**能打开但不跳登录**、然而**没有 `__INITIAL_STATE__`**' +
+        '（载荷 JD 0 字）→ 只能读 DOM：正文为游客版、**薪资是掩码 `**-**元`**（`detail: required` 的含义是' +
+        '"完整准确的详情要登录"）；会话页 302 到 `passport.zhaopin.com/login`（`actions: required`）。' +
+        '另：未登录时详情页**照样有「立即投递」按钮**，点它只会被弹到登录页 —— `sendResume` 因此先认登录页。',
     },
     // 平台侧硬事实：投递上限约 100（ADAPTERS §7.2 实测）
     dailyCaps: { application: 100 },
+    // 实测：一次点击 = 投简历 + 平台自动发一句招呼语（内容由平台生成，见 `getUserPrologueNew`）
+    applicationSideEffect:
+      '智联会在投递的同时**替你发一句招呼语**（内容由平台生成，实测形如「您好，请问<岗位>职位还在招人吗？…」）。' +
+      '这句不是你写的，但对方会收到。',
     authRequirement: { crawl: 'none', detail: 'required', actions: 'required' },
   },
   liepin: {
@@ -86,13 +125,25 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
       verifiedAt: '2026-09-18',
       notes:
         '只有**未登录**夹具：单页 15 条、无分页区、薪资元素在但为空。详情页要带完整 securityId（登录后才有），登录夹具补齐后再升档。' +
-        '打招呼/收件箱/附件选择器取自求职者端生产实现 BossHunter（`executor/sender.py`、`executor/monitor.py`）：' +
-        '沟通入口 `.btn-startchat`/`.op-btn-chat`、首次沟通弹窗 `.dialog-wrap.startchat-dialog`、会话输入框 `#chat-input`、' +
-        '会话行 `li[role=listitem]`、平台简历弹窗 `.choose-resume-dialog`。' +
-        '已知缺口：BOSS 求职者网页端**没有会话内上传本地文件的入口**（BossHunter 实证），故 sendResume 的本地 PDF 只能 fail-closed、走平台简历。',
+        '详情页选择器已由 `probe:zhipin-chat` 的**真实登录态快照**（2026-09-18，两次不同岗位）校准：' +
+        '经验/学历用 `.text-experiece`/`.text-degree`，规模/行业用 `.sider-company p` + `i.icon-scale`/`i.icon-industry`/`i.icon-stage`，' +
+        'JD 显式排除 `.job-detail-company`（页面上有两个 `.job-sec-text`，第二个是公司介绍）。' +
+        '**会话级选择器也已实测确认**（登录态 + 一条真实会话）：`#chat-input`（div.chat-input[contenteditable]）、`.btn-send`、' +
+        '`.chat-record`、`li.message-item.item-myself`、`div.message-content`、`i.message-status.status-delivery`；' +
+        '收件箱行是 `li[role=listitem]`（在 `.user-list > .user-list-content > ul[role=group]` 里，**不是** `.user-list` 直接子级），' +
+        '行内 `.time`/`.name-text`/`.name-box`/`.last-msg-text` 全部命中 —— **招聘者端**的 `.chat-list-wrap`/`.chat-message-filter-left`/`.geek-item-wrap` 在求职者端命中 0。' +
+        '两个**纠正 BossHunter 的实测结论**：① 工具条按钮是 `.toolbar-btn`（不是 `.operate-btn`），' +
+        '且「发简历」要求**双方回复后**才可用（未回复时带 `unable` + aria-label 明写）；' +
+        '② 会话页上的 `input[type=file]` 只有「上传附件简历到我的简历」与「发送图片」两个，**没有**把本地文件发给 HR 的入口。' +
+        '仍未实测：`.choose-resume-dialog`（弹窗没机会打开）、会话行未读徽章、首次沟通/预设招呼语弹窗。',
     },
     // 平台侧硬事实：打招呼日上限约 150（ADAPTERS §7.2 实测）
     dailyCaps: { greeting: 150 },
+    // 实测：点「立即沟通」时平台会**先替你发一句默认招呼语**，随后适配器才发用户那段话术
+    // —— 一次 `greeting.send` 在会话里留下**两条**消息（计数仍算一次动作）。
+    greetingSideEffect:
+      'BOSS 会先替你发一句**平台默认招呼语**（内容由平台生成），然后才发你这段话术 —— ' +
+      '对方会连着看到两条开场消息。',
     authRequirement: { crawl: 'none', detail: 'required', actions: 'required' },
   },
   lagou: {

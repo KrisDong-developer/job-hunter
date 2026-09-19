@@ -281,9 +281,94 @@ npm test
        BossHunter 的定制 PDF 也是"生成后人工发送"。所以适配器对非空 `filePath`
        只在页面真存在 `input[type=file]` 时才上传，否则如实报 `missing`，**不假装发成功了**。
      - 上面这些选择器的**本仓实测入口**是 `npm run probe:zhipin-chat`（会话页 + 详情页登录态探针，
-       只读、不发消息、不投递）：它落盘 `zhipin-chat-list.html` / `zhipin-chat-conversation.html` /
-       `zhipin-detail.html` 与 `zhipin-chat-report.json`（逐选择器命中数 + 行样本 + 工具条文案）。
-       在 BossHunter 的证据之外，**改选择器前先跑它**；报告里 `count: 0` 的字段就是已经腐烂的那条。
+       只读、不发消息、不投递；`ZHIPIN_PROBE_SKIP_CHAT=1` 可只采详情页）。产物落
+       `.probe-zhipin-capture/`（`.probe*` 已 gitignore）：`chat-list-<日期>.html` /
+       `chat-conversation-<日期>.html` / `detail-<日期>.html` / `chat-report-<日期>.json`
+       （逐选择器命中数 + 会话行子节点样本 + 工具条文案）。**刻意不写 `test/fixtures/`**。
+       改选择器前先跑它；报告里 `count: 0` 的字段就是已经腐烂的那条。
+     - **2026-09-18 首次真实登录态实测结果**（`detail-2026-09-18.html`，深圳·Java 岗）：
+       - 详情页**经验/学历改过名**：`.info-primary .tag-list span` 命中 **0**，
+         现行是 `span.text-experiece`（**官方自己的拼写**，不是笔误）/ `span.text-degree`；
+       - 公司侧栏也改了：`.res-industry-item` / `.company-info-item` 命中 **0**，
+         现行是 `.sider-company p` 里的 `i.icon-stage`（融资阶段）/ `i.icon-scale`（规模）/
+         `i.icon-industry`（行业）—— 必须**按图标类名**判定，不能按"文本里有没有『人』"猜
+         （侧栏第一行是标题「公司基本信息」，猜法会把它当行业）；
+       - 页面里有**两个** `.job-sec-text`：第二个在 `.job-detail-company` 里（带 `fold-text`），
+         那是**公司介绍** —— 直接 `querySelector('.job-sec-text')` 靠文档顺序，一旦顺序变了
+         就会把公司简介当 JD 写进库。适配器显式排除该容器，用例把公司介绍排在 JD 前面钉住它；
+       - 沟通入口候选里 `a.btn-startchat` / `a[redirect-url*="/web/geek/chat"]` /
+         `a[data-url*="/friend/add"]` 各命中 2（顶部+底部各一个），
+         `[ka^="go_chat"]` / `[ka*="gochat"]` 各 1；`[ka="job_detail_chat"]` 与 `.op-btn-chat` 为 0。
+         **`.btn-startchat-wrap` 已从候选里剔除**：它是容器 `div`，而逗号选择器走**文档顺序**，
+         容器总在链接之前 → 会点到容器而不是 `a`；
+       - **2026-09-18 第二次实测（登录态 + 会话页外壳）**：账号资料补全后会话页**打开了**
+         （`/web/geek/chat`），但这个账号**一条会话都没有**（页面自报「30天内暂无联系人」）。
+         空列表外壳给出了一条**推翻假设**的证据 —— **招聘者端与求职者端是两套 DOM**：
+         - 求职者端实测：列表容器 `.chat-content .user-list`、筛选 tab `.label-list`
+           （全部/未读/新招呼/仅沟通/更多）、空态 `.user-list .no-data` + `.chat-no-data .no-data-text`、
+           搜索框 `.boss-search-input`（`placeholder="搜索30天内的联系人"`）；
+         - **招聘者端**（BossHunter 的取证对象）的 `.chat-list-wrap`、`.chat-message-filter-left`、
+           `.geek-item-wrap`、`li[role=listitem]` 在求职者端**全线命中 0**；
+         - 因此收件箱选择器改为：容器 / 空态 / 筛选 tab 三项**用实测值**，
+           行元素先用"**容器下直接子元素（排除空态）**"这种由实测容器推导的结构式写法，
+           行内的名字/公司/最后一条/未读仍**待一条真实会话确认**（都标注了"待确认"）；
+         - `readInbox` 改为**先等容器**：容器在而列表空 = **可信的 0 条**；
+           **容器都找不到就抛错**（带选择器名），绝不把"选择器腐烂"混成"今天没人回我"；
+         - 空列表下 `#chat-input` 命中 0（输入框只在会话视图里），
+           所以 `#chat-input` / 消息列表 / `.choose-resume-dialog` **仍未实测**。
+       - 会话页这次**没采到会话级证据**：原因是 `inbox-empty`（账号一条会话都没有）——
+          报告 `chatNotCaptured.reason` 会把这一种与 `redirected-away-from-chat`（资料未完善被
+          强制重定向）、`login-or-list-timeout`（没登录）**分开记**，三种要做的事完全不同。
+          探针在这种状态下不关窗口：继续等你在窗口里建立一条会话，建立后自动接着采。
+        - **2026-09-18 第三次实测（一条真实会话，端到端打通）**：先用
+          `npm run zhipin:send-one`（显式开关 `ZHIPIN_SEND_ONE=1`）经**真实 guard 链**
+          （`guard.run` 规则+审计+令牌 → `guard/actions/greeting.ts` → `adapters/zhipin.ts` 的
+          `sayHello`）给一个真岗位发了一条招呼，审计留痕 `{action:"greeting.send", result:"ok"}` ——
+          这同时**验证了 sayHello 在真站上端到端可用**（CDP 点击 → 进会话 → 逐字符输入 → Enter → 送达校验）。
+          随后探针采到会话级证据，又**纠正了两个来自 BossHunter 的判断**：
+          - ✅ 会话级选择器**全部命中**：`#chat-input`（`div.chat-input[contenteditable]`）、
+            `.btn-send`、`.chat-record`、`li.message-item.item-myself`、`div.message-content`、
+            `i.message-status.status-delivery`（文案 `[送达]`）—— 这些不必再怀疑；
+          - ⚠️ 探针**必须用真鼠标点击**（`page.mouse.click`）打开会话：DOM `el.click()`
+            触发不了 Vue 处理器，右栏一直是空态，会让人误判"`#chat-input`/`.chat-record` 全不对"（踩过）；
+          - 会话行 `li[role=listitem]` 实测确认，且**不是** `.user-list` 的直接子级
+            （在 `.user-list > .user-list-content > ul[role=group]` 里）；行内 `.time`（如 `00:53`）
+            确认存在 —— 这就是此前一直没着落的时间节点；
+          - 工具条按钮是 **`.toolbar-btn`**（`.operate-btn`/`.operate-icon-item` 是招聘者端，命中 0）；
+            「发简历」未回复时带 `unable` + `aria-label="求简历：双方回复后可用"` →
+            **平台要求双方回复后才能发简历**，适配器现在先读这个状态再决定，不点那个点不动的按钮；
+          - 会话页上的 `input[type=file]` 只有两个：「上传附件简历」到**自己的简历库**
+            （`.upload-resume-dialog`）与「发送图片」（`.btn-sendimg`）—— **都不是**把本地文件发给 HR。
+            故 `sendResume(filePath≠null)` 直接 fail-closed 并说明；仍**未实测** `.choose-resume-dialog`；
+          - 另一个文档顺序陷阱：`.last-msg` 是**容器**，逗号选择器里带上它会被先选中（拿到"消息+未读数"），
+            和 `.btn-startchat-wrap` 同一类 —— 候选里只放叶子节点。
+       - **2026-09-18 第四次：把"回复"从假动作改成真动作 + 阶段探测落地**（都用上面已实测的选择器，
+         没有新增猜测）：
+         - **`actions.reply`（在已有会话里接着聊）**：`#chat-input` → `clearAndType`（Ctrl/Cmd+A →
+           Backspace → 逐字符输入）→ `Enter` → 用 `.chat-record` 里同文本 + `.message-status`
+           做送达校验。四种结果如实区分（`delivered` / `pending` / `failed` / `missing`）。
+           ⚠️ 这次修的是一个**正在撒谎的功能**：原 `domain/messages.ts` 的 `reply()` 走完
+           `guard.run('message.reply')` 却只写本地一行 —— 工具文案写着「回复一条 HR 消息」，
+           平台上什么都没发生。现在链路是 `runtime.replyToMessage()` → `guard/actions/reply.ts`
+           （首行校验一次性令牌）→ `adapter.actions.reply`，**送达确认之后**才落本地记录；
+           适配器没实现 `reply` 的平台（其余 9 个）一律 `ADAPTER_BROKEN`，不再有"本地记了、平台没发"。
+         - **`actions.detectStage`（接触阶段探测）**：判据全部落在已实测的收件箱行上 ——
+           会话行不存在 → `null`（**不是** `none`：分不清"从没打过招呼"与"会话被移出保留窗口"）；
+           有未读、或最后一条不是我们发的 → `replied`；最后一条是我们的 + `status-read` → `read`；
+           + `status-delivery` → `delivered`。⚠️ `read` 这一档**代码支持但真实站点尚未见到样本**
+           （目前那条会话仍停在 `status-delivery`）。入口是 `POST /jobs/:id/detect-stage`（低危，
+           只看不发），**只报事实、不改状态**（识别 ≠ 改状态）。
+         - **方向判定口径改了（两处必须一致）**：`.message-status` 节点**只出现在我们发出的消息上**，
+           所以"节点在 ⇒ 我发的"，不再要求认得出具体状态类名。旧写法靠 `status-read`/`status-delivery`
+           类名判定 —— 平台改一次类名，HR 的会话会被整行读成"我发的"，并在本地写出一条假消息。
+           `readInboxInPage` 与 `detectStageInPage` 现在共用这一条口径。
+         - **收件箱可按 tab 读**（`inboxTab` = `all` / `unread` / `newGreet` / `communicated`，
+           对应实测 tab 文案 全部 / 未读 / 新招呼 / 仅沟通）。默认 `all`；切 tab 只影响**精度**，
+           点不上时读到的是当前展示的全量（**超集**，不会漏），所以点不上不报错。
+         - ⚠️ **仍未解决（OPEN）**：列表卡的薪资数字**不在 `textContent` 里** —— 实测拿到的是
+           `-K·薪`（没有 `@font-face`、没有 `content:"digits"`、没有数值型 `aria-label`/`title`）。
+           因此 `test/platform/zhipin.test.ts` 里那条"薪资可见率"断言**只能证明登录态**，不能证明
+           薪资可用；现在它同时量"文本可见率"与"带数字率"并把后者打印出来，不再给假的绿灯。
 - **猎聘**（2026-09-18 深度调研，夹具 + 接口采样交叉验证）：
   - 搜索接口 `POST api-c.liepin.com/api/com.liepin.searchfront4c.pc-search-job`，请求体
     `mainSearchPcConditionForm` 含全部筛选参数（city/dq/pubTime/salaryCode/workYearCode/eduLevel/industry…），
@@ -317,5 +402,11 @@ npm test
   **点击后要 200ms 间隔轮询 10 次**才抓得到 —— 一次性 detectBlock 会漏（已进 `quota-exhausted` 判墙）。
 - **智联**：投递上限约 100（文案"达到上限"）；只第 1 页用 `?kw=`，第 2 页起用站点自己生成的
   无 query path 链接（robots 合规取舍，见 `PLATFORM-ZHAOPIN.md` §5）。
+  2026-09-18 登录态实测补三条（详见 `PLATFORM-ZHAOPIN.md` §8）：**收件箱走
+  `cgate.zhaopin.com/imapi/imV2/getTalkList` 接口**（页面上下文只要 cookie；方向判据 `senderId === userId`）；
+  **智联没有独立的"打招呼"动作**、IM 发送走网易云信私有 WS（`getToken` 换 token）→ `sayHello` 做不了；
+  **「立即投递」没有二级确认**（点一下 = 投简历 + 平台自动发一句招呼语）→ 探针里它按语义护栏默认不点，
+  `actions.sendResume` 在严格两段式确认落地前保持不实现。
+  该平台的登录态走查入口是 `npm run probe:zhaopin-login`（产物落 `.probe-zhaopin-capture/`）。
 - **通用**：服务器 IP 会被招聘站直接拒绝返回数据（get_jobs 实测，本项目本机运行天然规避）；
   开着代理（墙外节点）访问国内平台既慢又异常，README 明确要求关闭。

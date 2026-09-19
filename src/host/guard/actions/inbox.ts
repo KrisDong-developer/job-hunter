@@ -92,6 +92,9 @@ export async function syncInbox(
 
   const page = await deps.pageSource.acquire()
   try {
+    // ⚠️ 适配器约定：`readInbox` 返回 `[]` 必须是**可信的 0 条**（列表容器在、只是没有会话）；
+    //    选择器腐烂 / 当前不是会话页时它应当**抛错**（zhipin 就是这么实现的）。
+    //    所以这里**不吞异常** —— 把"读不到"变成"没人回我"是这条链路上最贵的谎。
     const messages = await readInbox(page)
     let recorded = 0
     let duplicates = 0

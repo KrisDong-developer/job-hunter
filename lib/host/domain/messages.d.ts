@@ -77,16 +77,6 @@ export interface MessageService {
         unreadOnly?: boolean;
         limit?: number;
     }): InboxDto;
-    /**
-     * 回复一条消息。**高危**：这是真正对外发消息。
-     * 走闸门（模型发起必然审批），并且回复内容会进审批文案的正文。
-     */
-    reply(input: {
-        messageId: number;
-        content: string;
-        actor: string;
-        guiConfirmed?: boolean;
-    }): Promise<MessageDto>;
     /** 识别面试邀约信号（规则）。 */
     markRead(id: number): boolean;
     unreadCount(): number;
@@ -96,7 +86,8 @@ export interface MessageService {
      */
     extractInterview(id: number): Promise<InterviewSuggestionDto>;
     /**
-     * 按情境拟一段回复草稿。**只生成、不发送**：发送走 `reply`（闸门 + 两段式确认）。
+     * 按情境拟一段回复草稿。**只生成、不发送**：发送走 `runtime.replyToMessage()`
+     * （闸门 + 两段式确认），那一步**不在本服务里**。
      */
     draftReply(input: {
         messageId: number;
@@ -108,18 +99,6 @@ export interface MessageDeps {
     clock?: Clock;
     /** 识别面试安排的模型能力；缺省时退化为纯规则识别。 */
     ai?: AiService;
-    guardRun?: <T>(input: {
-        action: string;
-        actor: string;
-        danger: 'low' | 'mid' | 'high';
-        target?: {
-            jobId?: number;
-            platformId?: string;
-            companyId?: number;
-        };
-        payload?: Record<string, unknown>;
-        guiConfirmed?: boolean;
-    }, fn: () => Promise<T>) => Promise<T>;
     logger?: {
         info(message: string): void;
         warn(message: string): void;

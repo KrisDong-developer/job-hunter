@@ -1138,6 +1138,22 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
   }
 
   /**
+   * 探测某岗位在平台上的**接触阶段**（HR 是否已读/已回）。
+   *
+   * 低危（只看不发）→ 没有两段式确认，但仍然经闸门（会开真实页面）。
+   * ⚠️ **只探测、不改状态**（识别 ≠ 改状态，§4.3）：返回的是平台事实，
+   * 要不要据此推进接触态由用户显式决定 —— 误判一次会漏掉一个真在推进的岗位。
+   */
+  if (segments.length === 3 && segments[0] === 'jobs' && segments[2] === 'detect-stage') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '探测接触阶段只支持 POST')
+    requireData(runtime)
+    const id = Number.parseInt(segments[1] ?? '', 10)
+    if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法岗位 id：${segments[1] ?? ''}`)
+    const result = await runtime.probeContactStage({ jobId: id, actor: 'gui' })
+    return json(200, { ok: true, result })
+  }
+
+  /**
    * 投递简历（高危，两段式确认）。
    *
    * ⚠️ 与 `POST /applications`（记一笔投递）**不是一回事**：这条会真的用适配器把简历发出去。
@@ -1588,15 +1604,15 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     if (typeof body['content'] !== 'string' || body['content'].trim() === '') {
       throw new DomainError('INVALID_INPUT', 'content 不能为空')
     }
-    // **高危**：会真的对外发消息。界面上的用户要两段式确认（模型走 ctx.approval）
-    const message = await runtime.messages().reply({
+    // **高危**：会真的对外发消息（走 `message.reply` 闸门 → 适配器）。
+    // 界面上的用户要两段式确认（模型走 ctx.approval）
+    const reply = await runtime.replyToMessage({
       messageId: id,
       content: body['content'],
       actor: 'gui',
       ...(body['confirm'] === true ? { guiConfirmed: true } : {}),
     })
-    runtime.events().publish('message.replied', { id: message.id })
-    return json(200, { ok: true, message })
+    return json(200, { ok: true, reply })
   }
 
   if (method === 'POST' && segments.length === 3 && segments[0] === 'messages' && segments[2] === 'extract-interview') {

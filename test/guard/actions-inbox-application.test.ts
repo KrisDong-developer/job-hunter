@@ -1,10 +1,11 @@
 /**
- * 适配器动作的 guard 实现：`syncInbox`（收件箱同步）与 `sendApplication`（真投递）。
+ * 适配器动作的 guard 实现：`syncInbox`（收件箱同步）、`sendApplication`（真投递）、
+ * `sendReply`（真回复）。
  *
- * 这两条是本仓库把适配器的 `readInbox` / `sendResume` 接到安全闸门上的第一层，
+ * 这几条是本仓库把适配器的 `readInbox` / `sendResume` / `reply` 接到安全闸门上的第一层，
  * 所以必须钉住四件事：
  *   1. **令牌机制化强制**：绕过 `guard.run()` 直接调用必然失败；
- *   2. **送达语义不撒谎**：适配器没说 `delivered` 就不算发出去了，也不落投递记录；
+ *   2. **送达语义不撒谎**：适配器没说 `delivered` 就不算发出去了，也不落本地记录；
  *   3. **收件箱幂等**：同一个会话的同一条消息重复同步只写一次（`message` 表没有唯一索引，
  *      去重只能在这一层做 —— 漏了它每同步一次库就翻一倍）；
  *   4. **缺能力时如实报错**：`ADAPTER_BROKEN`，而不是静默 0 条 / 假成功。
@@ -18,6 +19,8 @@ import {
   APPLICATION_SEND_ACTION,
 } from '../../src/host/guard/actions/application.js'
 import { syncInbox, INBOX_SYNC_ACTION } from '../../src/host/guard/actions/inbox.js'
+import { sendReply, REPLY_SEND_ACTION } from '../../src/host/guard/actions/reply.js'
+import { probeContactStage, STAGE_PROBE_ACTION } from '../../src/host/guard/actions/stage.js'
 import { guardAuthority, type GuardToken } from '../../src/host/guard/token.js'
 import { createMessageService } from '../../src/host/domain/messages.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
@@ -365,6 +368,317 @@ test('sendApplication：适配器没实现投递 → ADAPTER_BROKEN（不假装�
         assert.ok(error instanceof DomainError)
         assert.equal(error.code, 'ADAPTER_BROKEN')
         assert.ok(error.message.includes('投递动作'), error.message)
+        return true
+      },
+    )
+  })
+})
+
+// ── probeContactStage ─────────────────────────────────────────────────
+
+test('probeContactStage：没有 guard 令牌 → 直接拒绝；探测不改动任何本地状态', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const deps = {
+      store,
+      registry: registryWith({ detectStage: async () => 'replied' }),
+      session: sessionOf(true),
+      pageSource: fakePageSource,
+    }
+    await assert.rejects(
+      () => probeContactStage(deps, undefined as unknown as GuardToken, { jobId }),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.ok(error.message.includes('缺少 guard 令牌'), error.message)
+        return true
+      },
+    )
+    assert.equal(store.pipeline.listGreetings().length, 0)
+  })
+})
+
+test('probeContactStage：适配器报 replied → 只回事实，并明说"没有改动任何本地状态"', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const deps = {
+      store,
+      registry: registryWith({ detectStage: async () => 'replied' }),
+      session: sessionOf(true),
+      pageSource: fakePageSource,
+    }
+
+    const result = await guardAuthority.run(
+      guardAuthority.issue({ action: STAGE_PROBE_ACTION, actor: 'gui', danger: 'low' }),
+      () => probeContactStage(deps, guardAuthority.current() as GuardToken, { jobId }),
+    )
+
+    assert.equal(result.stage, 'replied')
+    assert.equal(result.jobId, jobId)
+    assert.equal(result.platformId, PLATFORM)
+    assert.ok(result.note.includes('没有改动任何本地状态'), result.note)
+    // 探测 ≠ 改状态：接触态那条记录一条都不该冒出来
+    assert.equal(store.pipeline.listGreetings().length, 0, '探测不该写出任何接触记录')
+  })
+})
+
+test('probeContactStage：判不出来 → null（不是 none），并解释为什么', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const deps = {
+      store,
+      registry: registryWith({ detectStage: async () => null }),
+      session: sessionOf(true),
+      pageSource: fakePageSource,
+    }
+
+    const result = await guardAuthority.run(
+      guardAuthority.issue({ action: STAGE_PROBE_ACTION, actor: 'gui', danger: 'low' }),
+      () => probeContactStage(deps, guardAuthority.current() as GuardToken, { jobId }),
+    )
+
+    // 拿 `none` 顶上会让"从没打过招呼"与"会话被移出保留窗口"混成一件
+    assert.equal(result.stage, null)
+    assert.ok(result.note.includes('判不出'), result.note)
+  })
+})
+
+test('probeContactStage：未登录 / 适配器没实现 → 如实失败（不返回一个像 none 的东西）', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const token = (): GuardToken =>
+      guardAuthority.issue({ action: STAGE_PROBE_ACTION, actor: 'gui', danger: 'low' })
+
+    await assert.rejects(
+      () =>
+        guardAuthority.run(token(), () =>
+          probeContactStage(
+            {
+              store,
+              registry: registryWith({ detectStage: async () => 'replied' }),
+              session: sessionOf(false),
+              pageSource: fakePageSource,
+            },
+            guardAuthority.current() as GuardToken,
+            { jobId },
+          ),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'NOT_LOGGED_IN')
+        return true
+      },
+    )
+
+    await assert.rejects(
+      () =>
+        guardAuthority.run(token(), () =>
+          probeContactStage(
+            {
+              store,
+              registry: registryWith({ readInbox: async () => [] }),
+              session: sessionOf(true),
+              pageSource: fakePageSource,
+            },
+            guardAuthority.current() as GuardToken,
+            { jobId },
+          ),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'ADAPTER_BROKEN')
+        assert.ok(error.message.includes('探测接触阶段'), error.message)
+        return true
+      },
+    )
+
+    await assert.rejects(
+      () =>
+        guardAuthority.run(token(), () =>
+          probeContactStage(
+            { store, registry: registryWith({}), session: sessionOf(true), pageSource: fakePageSource },
+            guardAuthority.current() as GuardToken,
+            { jobId: 9999 },
+          ),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'NOT_FOUND')
+        return true
+      },
+    )
+  })
+})
+
+// ── sendReply ─────────────────────────────────────────────────────────
+
+/** 造一条 HR 发来的消息（可带/不带岗位）。 */
+function seedIncomingMessage(store: Store, jobId: number | null): number {
+  return store.pipeline.createMessage(
+    {
+      platformId: PLATFORM,
+      direction: 'hr',
+      content: '方便聊聊吗？',
+      ...(jobId === null ? {} : { jobId }),
+      conversationId: 'c1',
+    },
+    T,
+  ).id
+}
+
+test('sendReply：没有 guard 令牌 → 直接拒绝，且不落本地记录', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const messageId = seedIncomingMessage(store, jobId)
+    const deps = {
+      store,
+      registry: registryWith({
+        reply: async () => ({ ok: true, delivery: 'delivered', evidence: 'dom' }),
+      }),
+      session: sessionOf(true),
+      pageSource: fakePageSource,
+    }
+    await assert.rejects(
+      () => sendReply(deps, undefined as unknown as GuardToken, { messageId, text: '在的' }),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.ok(error.message.includes('缺少 guard 令牌'), error.message)
+        return true
+      },
+    )
+    assert.equal(store.pipeline.listMessages().filter((item) => item.direction === 'me').length, 0)
+  })
+})
+
+test('sendReply：适配器报 delivered → 返回结果并回调记账', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const messageId = seedIncomingMessage(store, jobId)
+    const recorded: Array<{ jobId: number; actor: string; content: string }> = []
+    const deps = {
+      store,
+      registry: registryWith({
+        reply: async () => ({ ok: true, delivery: 'delivered', evidence: 'dom' }),
+      }),
+      session: sessionOf(true),
+      pageSource: fakePageSource,
+      record: (input: { jobId: number; actor: string; content: string }) => void recorded.push(input),
+    }
+
+    const result = await guardAuthority.run(
+      guardAuthority.issue({ action: REPLY_SEND_ACTION, actor: 'gui', danger: 'high' }),
+      () => sendReply(deps, guardAuthority.current() as GuardToken, { messageId, text: '可以，明天下午两点。' }),
+    )
+
+    assert.equal(result.messageId, messageId)
+    assert.equal(result.jobId, jobId)
+    assert.equal(result.platformId, PLATFORM)
+    assert.equal(result.textLength, '可以，明天下午两点。'.length)
+    // 返回值与审计都**不带正文**（§4.1），只留长度
+    assert.equal(recorded.length, 1, '发送成功之后才记账')
+    assert.equal(recorded[0]?.content, '可以，明天下午两点。')
+  })
+})
+
+test('sendReply：适配器说没发出去 → 抛错带上 delivery/evidence，且不记账', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const messageId = seedIncomingMessage(store, jobId)
+    let recordedCount = 0
+    const deps = {
+      store,
+      registry: registryWith({
+        reply: async () => ({
+          ok: false,
+          delivery: 'pending',
+          evidence: 'dom',
+          message: '回复已出现在会话里但仍在「发送中」，未能确认送达。',
+        }),
+      }),
+      session: sessionOf(true),
+      pageSource: fakePageSource,
+      record: () => {
+        recordedCount += 1
+      },
+    }
+
+    await assert.rejects(
+      () =>
+        guardAuthority.run(
+          guardAuthority.issue({ action: REPLY_SEND_ACTION, actor: 'gui', danger: 'high' }),
+          () => sendReply(deps, guardAuthority.current() as GuardToken, { messageId, text: '在的' }),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal((error.detail as { delivery?: string })?.delivery, 'pending')
+        assert.equal((error.detail as { evidence?: string })?.evidence, 'dom')
+        // pending 的处置建议是"去核对，别急着重试"（重试会重复发送）
+        assert.ok(error.hint?.includes('不要立刻重试') === true, error.hint)
+        return true
+      },
+    )
+    assert.equal(recordedCount, 0, '没确认送达就不能记成"我已回复"')
+  })
+})
+
+test('sendReply：适配器没实现 reply → ADAPTER_BROKEN（不假装成功、不写本地）', async () => {
+  await withStore(async (store) => {
+    const jobId = seedJob(store)
+    const messageId = seedIncomingMessage(store, jobId)
+    await assert.rejects(
+      () =>
+        guardAuthority.run(
+          guardAuthority.issue({ action: REPLY_SEND_ACTION, actor: 'gui', danger: 'high' }),
+          () =>
+            sendReply(
+              {
+                store,
+                registry: registryWith({ readInbox: async () => [] }),
+                session: sessionOf(true),
+                pageSource: fakePageSource,
+              },
+              guardAuthority.current() as GuardToken,
+              { messageId, text: '在的' },
+            ),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'ADAPTER_BROKEN')
+        assert.ok(error.message.includes('回复消息'), error.message)
+        return true
+      },
+    )
+    assert.equal(store.pipeline.listMessages().filter((item) => item.direction === 'me').length, 0)
+  })
+})
+
+test('sendReply：消息不存在 / 没关联岗位 → 如实拒绝（不猜一个会话发出去）', async () => {
+  await withStore(async (store) => {
+    const orphanId = seedIncomingMessage(store, null)
+    const deps = {
+      store,
+      registry: registryWith({
+        reply: async () => ({ ok: true, delivery: 'delivered', evidence: 'dom' }),
+      }),
+      session: sessionOf(true),
+      pageSource: fakePageSource,
+    }
+    const token = (): GuardToken => guardAuthority.issue({ action: REPLY_SEND_ACTION, actor: 'gui', danger: 'high' })
+
+    await assert.rejects(
+      () => guardAuthority.run(token(), () => sendReply(deps, guardAuthority.current() as GuardToken, { messageId: 9999, text: '在的' })),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'NOT_FOUND')
+        return true
+      },
+    )
+
+    await assert.rejects(
+      () => guardAuthority.run(token(), () => sendReply(deps, guardAuthority.current() as GuardToken, { messageId: orphanId, text: '在的' })),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'INVALID_INPUT')
+        assert.equal((error.detail as { platformId?: string })?.platformId, PLATFORM)
         return true
       },
     )

@@ -46,9 +46,9 @@
  *      0 条 + `noJobTip`（"登录之后再搜索"）。**绝不要自己造 token。**
  *   2. path 的 `/p<N>` 会**覆盖** query 的 `p`，两种形式不要混用。
  */
-import type { BlockKind } from '../../../shared/enums.js';
+import type { BlockKind, ContactStage } from '../../../shared/enums.js';
 import { type BlockSignalSet } from '../block-signals.js';
-import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
+import type { RawInboxMessage, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** `/sou/` 列表页的选择器集。**每一项都可以在 DB 里覆盖着改**（ADR-19）。 */
 export interface ZhaopinSelectors {
     /** 卡片容器。 */
@@ -101,6 +101,33 @@ export interface ZhaopinDetailSelectors {
     companyName: string;
     /** 公司标签（`.company-summary__list` 下的 `<li>`，顺序 [融资, 规模, 行业]）。 */
     companyTags: string;
+}
+/**
+ * 会话（IM）页的选择器集。2026-09-18 登录态实测（`i.zhaopin.com/im`）。
+ *
+ * 数据来源有两条：**接口优先**（`talkListApi`，字段比 DOM 全得多），DOM 只作为
+ * "页面确实渲染出来了"的证据（以及 `waitForSelector` 的等待锚点）。
+ */
+export interface ZhaopinImSelectors {
+    /** 会话列表容器（`.im-container` 里那一列）。 */
+    listContainer: string;
+    /**
+     * 单条会话行。实测 class 全清单：`__avatar-wrap/__avatar/__body/__row/__title/__name/
+     * __company/__company-name/__sep/__job/__salary/__preview-row/__preview/__preview-text/
+     * __time/__badge/__tag/__tag--secondary/__online`（第一屏 11 条）。
+     */
+    sessionRow: string;
+    /**
+     * ⚠️ **下面这 6 个键当前没有任何代码读取**（`readInbox` / `detectStage` 走的是接口）。
+     * 留着是因为它们是**实测值**，将来要做 DOM 兜底（接口挂了仍能读个大概）时直接用；
+     * 但在那之前，改它们不会有任何效果 —— 别把它当成"可调参数"。
+     */
+    name: string;
+    company: string;
+    job: string;
+    preview: string;
+    time: string;
+    badge: string;
 }
 /**
  * 字段 → URL 参数的映射。这一层**无法自动推导**，必须每平台人工建一次（§4.2.2）。
@@ -168,6 +195,26 @@ export declare const ZHAOPIN_CITY_CODES: Record<string, string>;
 export declare const ZHAOPIN_DETAIL_URL_TEMPLATE = "https://www.zhaopin.com/jobdetail/{jobId}.htm";
 /** 未登录时薪资被掩码的样子（`/jobs` 老路由上会出现；`/sou/` 上实测是明文）。 */
 export declare const ZHAOPIN_SALARY_MASK = "**-**\u5143";
+/**
+ * 投递入口的选择器集（2026-09-18 登录态实测，`zhaopin-walk-01-detail.html`）。
+ *
+ * 实测 markup（未投递时）：
+ * ```html
+ * <div class="summary-planes__right">
+ *   <button class="summary-planes__prechat">先聊聊</button>
+ *   <div class="summary-planes__action"><button type="button" class="a-button a--bordered a--filled">立即投递</button></div>
+ * </div>
+ * ```
+ * 投递之后**同一个位置**变成「继续沟通」—— 所以判"能不能投"靠**文案**，不能靠"按钮在不在"。
+ */
+export interface ZhaopinApplySelectors {
+    /** 投递按钮的容器（实测 `div.summary-planes__action`；裸 `.a-button` 太泛，会命中页面上别的按钮）。 */
+    entry: string;
+    /** 投递成功弹窗（实测 `.deliver-greeting-modal`，文案「已向对方发送简历和打招呼语」）。 */
+    successModal: string;
+    /** 成功弹窗里的结论文案片段 —— 用来确认弹出来的**不是**别的弹窗。 */
+    successText: string;
+}
 export interface ZhaopinConfig {
     selectors: ZhaopinSelectors;
     urlParams: ZhaopinUrlParams;
@@ -175,6 +222,38 @@ export interface ZhaopinConfig {
     detailUrlTemplate: string;
     /** 详情页选择器（`detail.extract` 用）。 */
     detailSelectors: ZhaopinDetailSelectors;
+    /** 会话页地址（求职者端 IM；2026-09-18 实测，点页头「消息」即到）。 */
+    imUrl: string;
+    /** 会话页选择器（`readInbox` / `detectStage` 的 DOM 侧用）。 */
+    imSelectors: ZhaopinImSelectors;
+    /**
+     * 会话列表接口。
+     *
+     * 2026-09-18 实测：**只要 Cookie**（`credentials:'include'`）就能拿到数据 ——
+     * 观察到的真实请求还带着 `at`/`rt`(query)、`x-zp-client-id`、`x-zp-page-request-id`，
+     * 但四个变体（仅 cookie / +client-id / +at,rt / 全都带）**返回完全一样**（200/code 200/11 条），
+     * 所以适配器只发最简形式。见 `test/tools/probe-zhaopin-login.ts` 的 `talkListProbe`。
+     */
+    talkListApi: string;
+    /** 会话列表每页条数（实测 `PageSize` 与 `pageSize` **两个参数名都要带**）。 */
+    talkListPageSize: number;
+    /**
+     * 会话列表最多翻几页（默认 3 页 = 60 条会话）。
+     *
+     * 实测**翻页有效**：页长 5 时第 2 页给出另外 5 条、与第 1 页重叠 0（页长 20 那次第 2 页为空
+     * 只是因为该账号只有 11 条会话 —— 单看那次会得出"翻页无效"的错误结论）。
+     * 设上限的理由是"一次同步要把这些会话入库"，无上限地翻只会拖慢同步。
+     */
+    talkListMaxPages: number;
+    /** 投递入口/结果弹窗的选择器（`sendResume` 用）。 */
+    applySelectors: ZhaopinApplySelectors;
+    /**
+     * 投递动作的等待上限（ms）：等入口渲染、以及点击后等结果弹窗。
+     *
+     * 实测一次投递要串 4 个接口（preparation → intercept → application → getPrologue），
+     * 加上平台的动画，给 20 秒；等不到就如实报"没确认到"，不重试。
+     */
+    applyWaitMs: number;
 }
 export declare const DEFAULT_ZHAOPIN_CONFIG: ZhaopinConfig;
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
@@ -294,6 +373,116 @@ export declare function nextPageUrlInPage(arg: {
 }): string | null;
 /** 站点自报的总页数（用于"别翻过实际页数"）。 */
 export declare function totalPagesInPage(): number;
+/** 会话行里我们真正用到的字段（**接口字段名是平台自己的**，别照我们的名字去找）。 */
+export interface ZhaopinTalkRow {
+    sessionid: string;
+    peerPartnerId: string;
+    staffName: string;
+    companyName: string;
+    jobTitle: string;
+    jobNumber: string;
+    text: string;
+    unreadCount: number;
+    sendTime: number;
+    userId: number;
+    senderId: number;
+    oppositeRead: number;
+    oppositeReply: number;
+    selfRead: number;
+    selfReply: number;
+}
+/**
+ * 会话列表接口地址（某个页号的最简调用形式：**不带** at/rt 与任何自定义头 —— 实测四个变体等价）。
+ *
+ * ⚠️ `PageSize` 与 `pageSize` **两个参数名都要带**：实测的真实请求里两个都出现了，
+ * 而只带一个是否也生效**没单独验证过** —— 一次只读请求多带一个参数没有代价，就不去赌。
+ */
+export declare function buildTalkListUrl(config: ZhaopinConfig, pageNo: number): string;
+/**
+ * **在页面上下文里**取会话列表（自包含）。
+ *
+ * ⚠️ 必须走页面上下文的 `fetch`：那才带着智联的登录 Cookie，与用户自己翻会话走同一条链路。
+ * 绝不回退到宿主 Node 的 fetch —— 那等于绕开登录态直连接口，在离线测试里还会**真的打到线上**。
+ */
+export declare function fetchTalkListInPage(arg: {
+    url: string;
+}): Promise<{
+    ok: boolean;
+    status: number;
+    code: number | null;
+    message: string;
+    payload: unknown;
+}>;
+/** 把接口返回的 `data` 数组收窄成 `ZhaopinTalkRow[]`。结构不符**抛错**（不静默降级）。 */
+export declare function talkRowsOf(payload: unknown): ZhaopinTalkRow[];
+/**
+ * 会话行 → `RawInboxMessage`。
+ *
+ * 方向判定只有一条判据：**`senderId === userId` ⇒ 最后一条是我发的**。
+ * 实测样本（`text:"已发送附件简历"` 那条）两者相等、且那条确实是系统代我发出的。
+ * 两个字段缺任何一个都**抛错**而不是猜 —— 猜错会让"我发的话"变成"HR 说的"，
+ * 那正是本仓库最不愿意看到的谎（见 §4.2.4）。
+ */
+export declare function mapTalkRowsToInbox(rows: ZhaopinTalkRow[]): RawInboxMessage[];
+/**
+ * 会话行 → 接触态。**判不出来返回 null，不猜**。
+ *
+ * 判据只用**有真实样本**的两个字段（`unreadCount`、`selfReply`）：
+ *   * `unreadCount > 0` → `replied`（会话里有 HR 发来的未读 ⇒ 对方回过话）；
+ *   * `selfReply > 0` → `delivered`（我这边发过 ⇒ 至少送达过）；
+ *   * 其余 → `null`。
+ *
+ * ## ⚠️ 为什么**不用** `oppositeRead` / `oppositeReply`（2026-09-18 实测否决）
+ *
+ * 这两个字段按命名看着像"对方已读 / 对方已回"，所以第一版拿它们判 `read` / `replied`。
+ * 探针把每行的**值**dump 出来之后否掉了这个假设：第 1 页 11 条会话里
+ * `oppositeRead`/`oppositeReply` **全是 0**，**包括那几条有 2 条 / 1 条未读的会话**
+ * （未读 = HR 刚发来消息，按命名 `oppositeReply` 本该是 1）。语义与命名不符 →
+ * 用它判阶段就会把"HR 已回复"说成"没回复"。**没有样本支撑的字段一律不用。**
+ *
+ * 代价说清楚：**`read`（HR 已读）这一档在智联判不出来** —— 返回 `null`（契约允许），
+ * 上层保留原值。要恢复这一档，得先拿到"已知已读"的会话样本、确认哪个字段真的会变。
+ */
+export declare function stageOfTalkRow(row: ZhaopinTalkRow): ContactStage | null;
+/** 投递入口在"可以投"状态时的文案（实测值；投过之后这里会变成「继续沟通」）。 */
+export declare const ZHAOPIN_APPLY_ENTRY_TEXT = "\u7ACB\u5373\u6295\u9012";
+/**
+ * 投递入口当前是哪句话（自包含）。
+ *
+ * 为什么只读文案就够：入口容器 `.summary-planes__action` 投递前后**都在**，
+ * 变的只是里面那个按钮的文案（「立即投递」→「继续沟通」）—— 判"能不能投"必须靠文案。
+ */
+export declare function applyEntryStateInPage(arg: {
+    selector: string;
+}): {
+    found: boolean;
+    text: string;
+};
+/**
+ * 定位一个**可见**元素的中心坐标（自包含）。只定位、不点击 ——
+ * 点击由 host 侧的真鼠标完成（DOM `el.click()` 的 `isTrusted=false` 是最廉价的自动化特征）。
+ */
+export declare function elementCenterInPage(arg: {
+    selector: string;
+}): {
+    found: boolean;
+    x: number;
+    y: number;
+    text: string;
+};
+/**
+ * 成功弹窗是否**可见且**写着预期那句话（自包含）。
+ *
+ * 两步都要：只看"元素在不在"会被模板里那个隐藏的弹窗骗到（`.deliver-greeting-modal`
+ * 在没投递时也可能存在于 DOM 里），只看文案又会把别的提示当成投递成功。
+ */
+export declare function applySuccessInPage(arg: {
+    selector: string;
+    textIncludes: string;
+}): {
+    visible: boolean;
+    text: string;
+};
 export interface ZhaopinAdapterOptions {
     config?: ZhaopinConfig;
     /** 抓取请求之间的随机延时区间（§P5 保守优先）。 */

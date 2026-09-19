@@ -240,11 +240,17 @@ export interface MessageService {
     at?: string
   }): { message: MessageDto; created: boolean }
   inbox(filter?: { jobId?: number; unreadOnly?: boolean; limit?: number }): InboxDto
-  /**
-   * 回复一条消息。**高危**：这是真正对外发消息。
-   * 走闸门（模型发起必然审批），并且回复内容会进审批文案的正文。
+  /*
+   * ⚠️ 这里曾经有一个 `reply()`：它老老实实走完 `guard.run('message.reply')`，
+   * 可回调里只 `createMessage(...)` —— **平台上什么都没发生**，
+   * 而工具文案与界面都写着"已回复"。危险能力不外露（§4.4.1）在这一格上被做成了
+   * "没有能力、但有入口"：契约当时没有 reply 槽位，领域层想真发也无处可调。
+   *
+   * 2026-09-18 修正：真正的发送移到 `runtime.replyToMessage()` →
+   * `guard/actions/reply.ts`（首行校验一次性令牌）→ `adapter.actions.reply`。
+   * 本地那条 `direction='me'` 的记录仍由本服务写入 —— 但改由那个动作在**发送成功之后**
+   * 调 `record()`，所以不会再出现"本地记了、平台没发出去"。
    */
-  reply(input: { messageId: number; content: string; actor: string; guiConfirmed?: boolean }): Promise<MessageDto>
   /** 识别面试邀约信号（规则）。 */
   markRead(id: number): boolean
   unreadCount(): number
@@ -254,7 +260,8 @@ export interface MessageService {
    */
   extractInterview(id: number): Promise<InterviewSuggestionDto>
   /**
-   * 按情境拟一段回复草稿。**只生成、不发送**：发送走 `reply`（闸门 + 两段式确认）。
+   * 按情境拟一段回复草稿。**只生成、不发送**：发送走 `runtime.replyToMessage()`
+   * （闸门 + 两段式确认），那一步**不在本服务里**。
    */
   draftReply(input: { messageId: number; scenario: ReplyScenario }): Promise<ReplyDraftDto>
 }
@@ -264,14 +271,6 @@ export interface MessageDeps {
   clock?: Clock
   /** 识别面试安排的模型能力；缺省时退化为纯规则识别。 */
   ai?: AiService
-  guardRun?: <T>(input: {
-    action: string
-    actor: string
-    danger: 'low' | 'mid' | 'high'
-    target?: { jobId?: number; platformId?: string; companyId?: number }
-    payload?: Record<string, unknown>
-    guiConfirmed?: boolean
-  }, fn: () => Promise<T>) => Promise<T>
   logger?: { info(message: string): void; warn(message: string): void }
 }
 
@@ -355,65 +354,6 @@ export function createMessageService(deps: MessageDeps): MessageService {
       return { items, unread: store.pipeline.countUnread(), total: items.length }
     },
 
-    async reply(input): Promise<MessageDto> {
-      const target = store.pipeline.listMessages({ limit: 500 }).find((item) => item.id === input.messageId)
-      if (target === undefined) {
-        throw new DomainError('NOT_FOUND', `消息不存在：${String(input.messageId)}`, {
-          detail: { messageId: input.messageId },
-        })
-      }
-      if (input.content.trim() === '') {
-        throw new DomainError('INVALID_INPUT', '回复内容不能为空')
-      }
-      const job = target.jobId === null ? undefined : store.job.detail(target.jobId)
-
-      const create = async (): Promise<MessageDto> => {
-        const record = store.pipeline.createMessage(
-          {
-            platformId: target.platformId,
-            direction: 'me',
-            content: input.content,
-            ...(target.jobId === null ? {} : { jobId: target.jobId }),
-            ...(target.conversationId === '' ? {} : { conversationId: target.conversationId }),
-          },
-          clock(),
-        )
-        return decorate(record)
-      }
-
-      const run = deps.guardRun
-      const result =
-        run === undefined
-          ? await create()
-          : await run(
-              {
-                action: 'message.reply',
-                actor: input.actor,
-                danger: 'high',
-                ...(job === undefined
-                  ? {}
-                  : {
-                      target: {
-                        jobId: job.id,
-                        platformId: job.platformId,
-                        ...(job.companyId === null ? {} : { companyId: job.companyId }),
-                      },
-                    }),
-                payload: {
-                  // 正文进审批文案（§4.4.2），审计里只留摘要
-                  text: input.content,
-                  toJob: job?.title ?? '（未知岗位）',
-                  company: job?.companyName ?? '',
-                  replyTo: target.content.slice(0, 80),
-                },
-                ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
-              },
-              create,
-            )
-      deps.logger?.info(`[messages] 已回复消息 #${String(input.messageId)}（对方是 ${target.platformId}）`)
-      return result
-    },
-
     markRead(id): boolean {
       return store.pipeline.markMessageRead(id, clock())
     },
@@ -423,9 +363,9 @@ export function createMessageService(deps: MessageDeps): MessageService {
     },
 
     async extractInterview(id): Promise<InterviewSuggestionDto> {
-      const record = store.pipeline
-        .listMessages({ limit: 500 })
-        .find((item) => item.id === id)
+      // 用 `getMessage(id)` 而不是 `listMessages({limit:500}).find(...)`：后者在消息超过
+      // 500 条之后会**静默查不到**（表现为"消息不存在"），是一个只有老库才会踩到的假故障。
+      const record = store.pipeline.getMessage(id)
       if (record === undefined) {
         throw new DomainError('NOT_FOUND', `消息不存在：${String(id)}`, { detail: { messageId: id } })
       }

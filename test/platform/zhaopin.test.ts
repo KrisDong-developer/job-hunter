@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import {
+  buildTalkListUrl,
   buildZhaopinSearchUrl,
   createZhaopinAdapter,
   DEFAULT_ZHAOPIN_CONFIG,
@@ -22,6 +23,7 @@ import {
   ZHAOPIN_SALARY_MASK,
   type ZhaopinConfig,
 } from '../../src/host/platform/adapters/zhaopin.js'
+import type { HumanMouse } from '../../src/host/platform/humanize.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 
@@ -97,6 +99,526 @@ test('DB 覆盖能合并到默认配置上（ADR-19：配置以 DB 为权威）'
     DEFAULT_ZHAOPIN_CONFIG.detailSelectors.title,
     '未覆盖的详情选择器应保留默认',
   )
+  // 会话页同理（readInbox / detectStage 用）
+  const mergedIm = mergeZhaopinConfig({ imSelectors: { sessionRow: '.custom-session' } })
+  assert.equal(mergedIm.imSelectors.sessionRow, '.custom-session')
+  assert.equal(mergedIm.imSelectors.badge, DEFAULT_ZHAOPIN_CONFIG.imSelectors.badge)
+  assert.equal(mergedIm.talkListApi, DEFAULT_ZHAOPIN_CONFIG.talkListApi)
+})
+
+// ── 收件箱（2026-09-18 登录态实测：getTalkList 接口）──────────────────
+
+/**
+ * 会话行夹具：**A 行照实测原样**（`test/tools/probe-zhaopin-login.ts` 采到的那条，
+ * 「已发送附件简历」、selfReply=1、senderId===userId）；
+ * **B 行是构造的** —— 用来测"HR 发来的未读"这一档（该账号实测时没有这样的样本，
+ * 所以 B 行的字段组合**没有实测依据**，它只保证解析逻辑对，不证明线上就是这形状）。
+ */
+const TALK_ROW_ME = {
+  sessionid: '5da2f5329b907c648fb682182f88c540',
+  peerPartnerId: '1265452585',
+  staffName: '邓亚芳',
+  companyName: '深圳市威腾白猫科技',
+  jobTitle: '餐饮服务员兼职',
+  jobNumber: 'CC657755130J40874315311',
+  text: '已发送附件简历',
+  unreadCount: 0,
+  sendTime: 1789754924259,
+  userId: 1104065197,
+  senderId: 1104065197,
+  oppositeRead: 0,
+  oppositeReply: 0,
+  selfRead: 0,
+  selfReply: 1,
+}
+const TALK_ROW_HR = {
+  ...TALK_ROW_ME,
+  sessionid: 'conv-hr-1',
+  peerPartnerId: '999000111',
+  staffName: '李先生',
+  companyName: '另一家公司',
+  jobTitle: '前端工程师',
+  jobNumber: 'CC000000000J00000000001',
+  text: '方便聊聊吗？',
+  unreadCount: 2,
+  senderId: 999000111,
+  selfReply: 0,
+}
+
+function talkPage(options: {
+  payload?: unknown
+  /** 按 URL 给不同响应（翻页用例用）。 */
+  payloadFor?: (url: string) => unknown
+  fail?: string
+  status?: number
+  /** 记录实际请求过的 URL（断言"翻了几页"）。 */
+  urls?: string[]
+}): JsdomPage {
+  return new JsdomPage({
+    html: `<html><body><div class="im-container"></div></body></html>`,
+    url: DEFAULT_ZHAOPIN_CONFIG.imUrl,
+    fetchStub: async (url) => {
+      options.urls?.push(url)
+      if (options.fail !== undefined) throw new Error(options.fail)
+      return {
+        status: options.status ?? 200,
+        ok: true,
+        json: async () =>
+          options.payloadFor === undefined ? options.payload : options.payloadFor(url),
+      }
+    },
+  })
+}
+
+/** 从接口 URL 里取 pageNo（翻页用例用）。 */
+function pageNoOf(url: string): number {
+  return Number(/pageNo=(\d+)/.exec(url)?.[1] ?? '1')
+}
+
+test('readInbox：接口返回 → 逐条映射（方向靠 senderId===userId 判）', async () => {
+  const adapter = createZhaopinAdapter()
+  const page = talkPage({ payload: { code: 200, data: [TALK_ROW_ME, TALK_ROW_HR] } })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  assert.equal(inbox?.length, 2)
+  const [me, hr] = inbox ?? []
+  assert.equal(me?.conversationId, '5da2f5329b907c648fb682182f88c540')
+  assert.equal(me?.hrName, '邓亚芳')
+  assert.equal(me?.company, '深圳市威腾白猫科技')
+  assert.equal(me?.lastMessage, '已发送附件简历')
+  assert.equal(me?.platformJobId, 'CC657755130J40874315311')
+  assert.equal(me?.direction, 'me', 'senderId === userId ⇒ 最后一条是我发的')
+  assert.equal(me?.unread, false)
+  assert.equal(me?.at, new Date(1789754924259).toISOString())
+  assert.equal(hr?.direction, 'hr', 'senderId ≠ userId ⇒ HR 发的')
+  assert.equal(hr?.unread, true, 'unreadCount > 0 ⇒ 未读')
+})
+
+test('readInbox：接口说 code≠200 → **抛错**，绝不返回空数组', async () => {
+  const adapter = createZhaopinAdapter()
+  const page = talkPage({ payload: { code: 401, message: '登录已失效', data: null } })
+
+  await assert.rejects(
+    async () => await adapter.actions?.readInbox?.(page),
+    (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.ok(error.message.includes('code=401'), error.message)
+      return true
+    },
+    '把"读不到"变成"没人回我"是这条链路上最贵的谎',
+  )
+})
+
+test('readInbox：接口调不通（fetch 抛错）→ 抛错；形状变了 → 也抛错', async () => {
+  const adapter = createZhaopinAdapter()
+
+  await assert.rejects(
+    async () => await adapter.actions?.readInbox?.(talkPage({ fail: '网络断了' })),
+    (error: unknown) => error instanceof Error && error.message.includes('网络断了'),
+  )
+
+  await assert.rejects(
+    async () => await adapter.actions?.readInbox?.(talkPage({ payload: { code: 200, data: {} } })),
+    (error: unknown) => error instanceof Error && error.message.includes('形状变了'),
+  )
+})
+
+test('readInbox：code 200 + data:[] → 这才是**可信的 0 条**', async () => {
+  const adapter = createZhaopinAdapter()
+  const inbox = await adapter.actions?.readInbox?.(talkPage({ payload: { code: 200, data: [] } }))
+  assert.deepEqual(inbox, [])
+})
+
+test('readInbox：会话行缺 userId/senderId → 抛错（方向不敢猜）', async () => {
+  const adapter = createZhaopinAdapter()
+  const broken = { ...TALK_ROW_ME, userId: 0 }
+  await assert.rejects(
+    async () => await adapter.actions?.readInbox?.(talkPage({ payload: { code: 200, data: [broken] } })),
+    (error: unknown) => error instanceof Error && error.message.includes('方向判定必须重校'),
+  )
+})
+
+test('readInbox：会话多于一页 → 翻页读完，某页不满一页就停手', async () => {
+  const adapter = createZhaopinAdapter({
+    config: { ...DEFAULT_ZHAOPIN_CONFIG, talkListPageSize: 2, talkListMaxPages: 5 },
+  })
+  const urls: string[] = []
+  const page = talkPage({
+    urls,
+    payloadFor: (url) => {
+      const sizes: Record<number, number> = { 1: 2, 2: 2, 3: 1 }
+      const starts: Record<number, number> = { 1: 1, 2: 3, 3: 5 }
+      const pageNo = pageNoOf(url)
+      const n = sizes[pageNo] ?? 0
+      const start = starts[pageNo] ?? 99
+      return {
+        code: 200,
+        data: Array.from({ length: n }, (_, index) => ({
+          ...TALK_ROW_ME,
+          sessionid: `conv-${String(start + index)}`,
+        })),
+      }
+    },
+  })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  assert.equal(inbox?.length, 5, '三页加起来 5 条（2+2+1）')
+  assert.equal(urls.length, 3, '第 3 页只有 1 条（不满一页）→ 就该停手，不该再翻')
+})
+
+test('readInbox：同一条会话出现在两页里 → 只留一条（翻页期间会话会挪页）', async () => {
+  const adapter = createZhaopinAdapter({
+    config: { ...DEFAULT_ZHAOPIN_CONFIG, talkListPageSize: 2, talkListMaxPages: 3 },
+  })
+  const page = talkPage({
+    payloadFor: (url) => {
+      const pageNo = pageNoOf(url)
+      const ids = pageNo === 1 ? ['c1', 'c2'] : pageNo === 2 ? ['c2', 'c3'] : []
+      return { code: 200, data: ids.map((sid) => ({ ...TALK_ROW_ME, sessionid: sid })) }
+    },
+  })
+
+  const inbox = await adapter.actions?.readInbox?.(page)
+
+  assert.equal(inbox?.length, 3, 'c1/c2/c3 各一条 —— c2 在两页里都出现也只算一次')
+})
+
+test('readInbox：**翻页中某一页失败** → 抛错（不许把"读到一半"当读完了）', async () => {
+  const adapter = createZhaopinAdapter({
+    config: { ...DEFAULT_ZHAOPIN_CONFIG, talkListPageSize: 2, talkListMaxPages: 3 },
+  })
+  const page = talkPage({
+    payloadFor: (url) => {
+      if (pageNoOf(url) === 2) return { code: 500, message: '服务端错误', data: null }
+      return {
+        code: 200,
+        data: [{ ...TALK_ROW_ME, sessionid: 'c1' }, { ...TALK_ROW_ME, sessionid: 'c2' }],
+      }
+    },
+  })
+
+  await assert.rejects(
+    async () => await adapter.actions?.readInbox?.(page),
+    (error: unknown) => error instanceof Error && error.message.includes('第 2 页'),
+  )
+})
+
+test('talkList 接口地址带上实测的那几个 query 键（不带 at/rt —— 实测非必需）', () => {
+  const url = buildTalkListUrl(DEFAULT_ZHAOPIN_CONFIG, 2)
+  for (const key of ['pageNo=2', 'PageSize=20', 'pageSize=20', 'sessionType=1', 'imMessageListType=1', 'communicateStatusType=0']) {
+    assert.ok(url.includes(key), `缺少 ${key}：${url}`)
+  }
+  assert.ok(!url.includes('at='), '实测「仅 cookie」就能读，不该把 token 拼进 URL')
+})
+
+// ── 阶段探测（同一份会话列表）────────────────────────────────────────
+
+test('detectStage：有未读 → replied；我发过且对方没读没回 → delivered', async () => {
+  const adapter = createZhaopinAdapter()
+  const page = talkPage({ payload: { code: 200, data: [TALK_ROW_ME, TALK_ROW_HR] } })
+
+  const mine = await adapter.actions?.detectStage?.(page, {
+    title: '餐饮服务员兼职',
+    company: '深圳市威腾白猫科技',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/CC657755130J40874315311.htm',
+  })
+  assert.equal(mine, 'delivered', 'selfReply=1 且 oppositeRead/Reply 都是 0 ⇒ 我发出去了、对方还没读')
+
+  const replied = await adapter.actions?.detectStage?.(page, {
+    title: '前端工程师',
+    company: '另一家公司',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/x.htm',
+  })
+  assert.equal(replied, 'replied', '有未读 ⇒ HR 回过话')
+})
+
+test('detectStage：列表里没有这个岗位 → null（**不是** none）；接口挂了 → 也 null', async () => {
+  const adapter = createZhaopinAdapter()
+  const page = talkPage({ payload: { code: 200, data: [TALK_ROW_ME] } })
+
+  const missing = await adapter.actions?.detectStage?.(page, {
+    title: '查无此岗',
+    company: '查无此司',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/y.htm',
+  })
+  // 「从没接触过」与「会话被平台归档」在这里分不清 —— 写成 none 就是记错账
+  assert.equal(missing, null)
+
+  const broken = await adapter.actions?.detectStage?.(talkPage({ fail: '超时' }), {
+    title: '餐饮服务员兼职',
+    company: '深圳市威腾白猫科技',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/CC657755130J40874315311.htm',
+  })
+  assert.equal(broken, null, '判不出来就返回 null（契约允许），不猜')
+})
+
+test('detectStage：状态字段全是 0（判不出来）→ null', async () => {
+  const adapter = createZhaopinAdapter()
+  const blank = { ...TALK_ROW_ME, selfReply: 0, selfRead: 0 }
+  const page = talkPage({ payload: { code: 200, data: [blank] } })
+  const stage = await adapter.actions?.detectStage?.(page, {
+    title: '餐饮服务员兼职',
+    company: '深圳市威腾白猫科技',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/CC657755130J40874315311.htm',
+  })
+  assert.equal(stage, null)
+})
+
+test('detectStage：**不靠** oppositeRead/oppositeReply 判阶段（实测语义与命名不符）', async () => {
+  const adapter = createZhaopinAdapter()
+  // 「对方已读/已回」都标成 1，但没有未读、我方也没发过任何东西
+  const weird = { ...TALK_ROW_ME, unreadCount: 0, selfReply: 0, oppositeRead: 1, oppositeReply: 1 }
+  const page = talkPage({ payload: { code: 200, data: [weird] } })
+
+  const stage = await adapter.actions?.detectStage?.(page, {
+    title: '餐饮服务员兼职',
+    company: '深圳市威腾白猫科技',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/CC657755130J40874315311.htm',
+  })
+
+  // 实测：第 1 页 11 条会话里这两个字段**全是 0**，连有 2 条未读的会话也是 0 ——
+  // 也就是说它们并不表示"对方已读/已回"。用它们判阶段就会把"HR 已回复"说成"没回复"，
+  // 所以这里刻意返回 null（判不出来），而不是拿它们当判据。
+  assert.equal(stage, null)
+})
+
+test('detectStage：有未读时，即使 oppositeReply 是 0 也判 replied', async () => {
+  const adapter = createZhaopinAdapter()
+  const row = { ...TALK_ROW_ME, unreadCount: 3, oppositeReply: 0, oppositeRead: 0, selfReply: 0 }
+  const page = talkPage({ payload: { code: 200, data: [row] } })
+
+  const stage = await adapter.actions?.detectStage?.(page, {
+    title: '餐饮服务员兼职',
+    company: '深圳市威腾白猫科技',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/CC657755130J40874315311.htm',
+  })
+  assert.equal(stage, 'replied', '未读 = HR 发来的消息 ⇒ 对方回过话（这是唯一有样本的判据）')
+})
+
+test('detectStage：优先按**岗位号**匹配 —— 公司名/岗位名被平台改写也判得出来', async () => {
+  const adapter = createZhaopinAdapter()
+  // 会话行里的名字都被平台改写过（加后缀/括号），只有 jobNumber 没变
+  const rewritten = {
+    ...TALK_ROW_HR,
+    companyName: '深圳市威腾白猫科技有限公司（已认证）',
+    jobTitle: '餐饮服务员（兼职）',
+  }
+  const page = talkPage({ payload: { code: 200, data: [rewritten] } })
+
+  const stage = await adapter.actions?.detectStage?.(page, {
+    title: '餐饮服务员兼职',
+    company: '深圳市威腾白猫科技',
+    sourceUrl: 'https://www.zhaopin.com/jobdetail/CC000000000J00000000001.htm',
+  })
+  assert.equal(stage, 'replied', '会话行的 jobNumber 就是详情 URL 里那个 id —— 这条判据比名字稳')
+})
+
+
+// ── 投递（页面驱动 + DOM 送达验证）──────────────────────────────────
+
+/**
+ * 投递页夹具。
+ *
+ * ⚠️ 成功弹窗默认是**隐藏的**（`display:none`）—— 真页面里那个弹窗模板**一直在 DOM 里**，
+ * 这正是 `applySuccessInPage` 必须同时看"可见"和"文案"的原因。
+ */
+function applyHtml(options: { entryText?: string; modal?: 'success' | 'other' | 'none' }): string {
+  const kind = options.modal ?? 'none'
+  const modal =
+    kind === 'none'
+      ? ''
+      : `<div class="deliver-greeting-modal" style="display:none"><div class="deliver-greeting-modal__box">` +
+        `<div class="deliver-greeting-modal__title">${
+          kind === 'success' ? '已向对方发送简历和打招呼语' : '请先完善简历'
+        }</div></div></div>`
+  const entry =
+    options.entryText === undefined
+      ? ''
+      : `<div class="summary-planes__action"><button type="button" class="a-button">${options.entryText}</button></div>`
+  return `<html><body><div class="summary-planes__right">
+    <button class="summary-planes__prechat">先聊聊</button>${entry}</div>${modal}</body></html>`
+}
+
+/** 模拟平台对这次点击的响应：把成功弹窗显示出来（自包含）。 */
+function showSuccessModalInPage(): void {
+  const node = document.querySelector('.deliver-greeting-modal') as unknown as {
+    style: { display: string }
+  } | null
+  if (node !== null) node.style.display = ''
+}
+
+/** 造一个带 CDP 鼠标（可观察点击）的投递页。 */
+function applyPage(options: {
+  html: string
+  interaction?: 'full' | 'none'
+  onClick?: () => void
+  /** `goto` 之后实际落在哪个 URL（模拟"直接被弹到登录页"）。 */
+  landOn?: string
+  /** 点击之后落在哪个 URL（模拟"点了才被弹到登录页"）。 */
+  landAfterClick?: string
+}): { page: PageLike; counter: { ups: number } } {
+  const inner = new JsdomPage({ html: options.html, url: DETAIL_URL, layout: true })
+  const counter = { ups: 0 }
+  const state = { landed: '' }
+  const mouse: HumanMouse = {
+    async move(): Promise<void> {
+      /* no-op */
+    },
+    async down(): Promise<void> {
+      /* no-op */
+    },
+    async up(): Promise<void> {
+      counter.ups += 1
+      if (options.landAfterClick !== undefined) state.landed = options.landAfterClick
+      if (options.onClick !== undefined) {
+        await inner.evaluate(asSerialized(options.onClick as () => void), undefined as never)
+      }
+    },
+  }
+  const page: PageLike = {
+    goto: async (url) => {
+      await inner.goto(state.landed !== '' ? state.landed : (options.landOn ?? url))
+    },
+    url: () => inner.url(),
+    waitForTimeout: (ms) => inner.waitForTimeout(ms),
+    waitForSelector: (selector, timeoutMs) => inner.waitForSelector(selector, timeoutMs),
+    evaluate: async <R, A>(fn: (arg: A) => R, arg: A): Promise<R> => {
+      const rebuilt = asSerialized(fn as unknown as (...args: never[]) => unknown)
+      return await inner.evaluate(rebuilt as unknown as (value: A) => R, arg)
+    },
+    ...(options.interaction === 'none' ? {} : { mouse }),
+  }
+  return { page, counter }
+}
+
+const APPLY_JOB = {
+  title: '餐饮服务员兼职',
+  company: '深圳市威腾白猫科技',
+  sourceUrl: DETAIL_URL,
+}
+
+test('sendResume：入口是「立即投递」→ 真鼠标点击 → 看到成功弹窗 = delivered', async () => {
+  const adapter = createZhaopinAdapter()
+  const { page, counter } = applyPage({
+    html: applyHtml({ entryText: '立即投递', modal: 'success' }),
+    onClick: showSuccessModalInPage,
+  })
+
+  const result = await adapter.actions?.sendResume?.(page, APPLY_JOB, null)
+
+  assert.equal(result?.ok, true, JSON.stringify(result))
+  assert.equal(result?.delivery, 'delivered')
+  assert.equal(result?.evidence, 'dom')
+  assert.equal(counter.ups, 1, '必须走真鼠标（三段式），而不是 DOM click')
+})
+
+test('sendResume：入口文案是「继续沟通」（已投过/已沟通）→ **一个字都不点**', async () => {
+  const adapter = createZhaopinAdapter()
+  const { page, counter } = applyPage({
+    html: applyHtml({ entryText: '继续沟通', modal: 'success' }),
+    onClick: showSuccessModalInPage,
+  })
+
+  const result = await adapter.actions?.sendResume?.(page, APPLY_JOB, null)
+
+  assert.equal(result?.ok, false)
+  assert.equal(result?.delivery, 'missing')
+  assert.ok((result?.message ?? '').includes('已经投过或已经沟通过'), result?.message)
+  assert.equal(counter.ups, 0, '已投过的岗位绝不能再点一下 —— 那是重复投递')
+})
+
+test('sendResume：点了但成功弹窗没显示 → pending +「别立刻重试」', async () => {
+  const adapter = createZhaopinAdapter()
+  // 弹窗元素在 DOM 里但一直隐藏（真页面就是这种"模板常驻"的形态）
+  const { page, counter } = applyPage({ html: applyHtml({ entryText: '立即投递', modal: 'success' }) })
+
+  const result = await adapter.actions?.sendResume?.(page, APPLY_JOB, null)
+
+  assert.equal(counter.ups, 1, '这一下确实点了')
+  assert.equal(result?.ok, false)
+  assert.equal(result?.delivery, 'pending', '点了但没确认 —— 不能报 delivered')
+  assert.ok((result?.message ?? '').includes('不要立刻重试'), result?.message)
+})
+
+test('sendResume：弹窗文案不是"已发送简历" → 也不能算成功', async () => {
+  const adapter = createZhaopinAdapter()
+  const { page } = applyPage({
+    html: applyHtml({ entryText: '立即投递', modal: 'other' }),
+    onClick: showSuccessModalInPage,
+  })
+
+  const result = await adapter.actions?.sendResume?.(page, APPLY_JOB, null)
+
+  assert.equal(result?.ok, false)
+  assert.equal(result?.delivery, 'pending')
+  assert.ok((result?.message ?? '').includes('没能确认成功'), result?.message)
+})
+
+test('sendResume：本地文件 → fail-closed（智联只认平台内简历），且不点任何东西', async () => {
+  const adapter = createZhaopinAdapter()
+  const { page, counter } = applyPage({ html: applyHtml({ entryText: '立即投递', modal: 'success' }) })
+
+  const result = await adapter.actions?.sendResume?.(page, APPLY_JOB, 'D:/resume.pdf')
+
+  assert.equal(result?.ok, false)
+  assert.equal(result?.delivery, 'missing')
+  assert.ok((result?.message ?? '').includes('平台内简历'), result?.message)
+  assert.equal(counter.ups, 0)
+})
+
+test('sendResume：没有 CDP 鼠标 / 页面上找不到入口 → 都如实失败', async () => {
+  const adapter = createZhaopinAdapter()
+
+  const noMouse = await adapter.actions?.sendResume?.(
+    applyPage({ html: applyHtml({ entryText: '立即投递' }), interaction: 'none' }).page,
+    APPLY_JOB,
+    null,
+  )
+  assert.equal(noMouse?.ok, false)
+  assert.ok((noMouse?.message ?? '').includes('CDP'), noMouse?.message)
+
+  const noEntry = await adapter.actions?.sendResume?.(
+    applyPage({ html: applyHtml({}) }).page,
+    APPLY_JOB,
+    null,
+  )
+  assert.equal(noEntry?.ok, false)
+  assert.ok((noEntry?.message ?? '').includes('找不到投递入口'), noEntry?.message)
+})
+
+test('sendResume：没登录（直接落在登录页）→ missing，且**一个字都不点**', async () => {
+  const adapter = createZhaopinAdapter()
+  // 实测（probe:zhaopin-anon）：未登录时详情页**照样有**「立即投递」按钮 ——
+  // 只看"入口在不在"会真点下去，然后撞登录墙，最后报一条吓人的 pending。
+  const { page, counter } = applyPage({
+    html: applyHtml({ entryText: '立即投递', modal: 'success' }),
+    landOn: 'https://passport.zhaopin.com/login?BkUrl=https%3A%2F%2Fi.zhaopin.com%2Fim',
+  })
+
+  const result = await adapter.actions?.sendResume?.(page, APPLY_JOB, null)
+
+  assert.equal(result?.ok, false)
+  assert.equal(result?.delivery, 'missing')
+  assert.equal(counter.ups, 0, '登录墙挡着，点它是白点')
+  assert.ok((result?.message ?? '').includes('登录页'), result?.message)
+})
+
+test('sendResume：点了之后才被弹到登录页 → missing（**不是** pending）', async () => {
+  const adapter = createZhaopinAdapter()
+  const { page, counter } = applyPage({
+    html: applyHtml({ entryText: '立即投递', modal: 'success' }),
+    landAfterClick: 'https://passport.zhaopin.com/login?BkUrl=https%3A%2F%2Fi.zhaopin.com%2Fim',
+  })
+
+  const result = await adapter.actions?.sendResume?.(page, APPLY_JOB, null)
+
+  assert.equal(counter.ups, 1)
+  assert.equal(result?.ok, false)
+  // 登录墙挡在前面 ⇒ 这次点击**肯定没投出去**。报 pending（"别急着重试"）是假警报。
+  assert.equal(result?.delivery, 'missing', '落在登录页 = 没投出去，不该报"待确认"')
+  assert.ok((result?.message ?? '').includes('没有投出去'), result?.message)
 })
 
 test('排序只暴露实测过的那一项 —— 不编没有证据的取值', () => {
@@ -422,6 +944,16 @@ test('适配器 id 与能力声明符合平台事实', () => {
   assert.equal(adapter.capabilities.searchWithoutLogin, true)
   assert.equal(adapter.capabilities.fieldCompleteness, 'high')
   // 打招呼没实现 → 必须声明 false，让 guard 明确拒绝而不是假装能发
+  // （2026-09-18 实测把原因钉死了：智联没有独立的打招呼动作，IM 发送走网易云信私有 WS）
   assert.equal(adapter.capabilities.supportsGreeting, false)
-  assert.equal(adapter.actions, undefined)
+  // 收件箱 2026-09-18 落地（实测 11 条会话 + getTalkList 接口）
+  assert.equal(adapter.capabilities.supportsInbox, true)
+  // 平台支持附件简历（preparation 返回 isShowAttachmentSelect + attachmentResumeInfo.fileList）
+  assert.equal(adapter.capabilities.supportsAttachment, true)
+  // 只读两项 + 投递（页面驱动）已实现；**打招呼仍然刻意不做** ——
+  // 智联没有独立的打招呼动作，IM 发送走网易云信私有 WS，编一个只会乱点
+  assert.equal(typeof adapter.actions?.readInbox, 'function')
+  assert.equal(typeof adapter.actions?.detectStage, 'function')
+  assert.equal(typeof adapter.actions?.sendResume, 'function')
+  assert.equal(adapter.actions?.sayHello, undefined, '打招呼在智联做不了（没有独立动作 + IM 私有协议）')
 })

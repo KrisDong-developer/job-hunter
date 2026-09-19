@@ -187,6 +187,14 @@ export interface PipelineRepo {
     direction: MessageDirection
     content: string
   }): MessageRecord | undefined
+  /**
+   * 按 id 取一条消息。
+   *
+   * 存在的理由：回复流程需要在**群量**消息里精确定位那一条。原先用
+   * `listMessages({ limit: 500 }).find(...)`，一旦收件箱超过 500 条，老消息就"找不到"了 ——
+   * 那种失败会被误报成"消息不存在"。
+   */
+  getMessage(id: number): MessageRecord | undefined
   markMessageRead(id: number, now: string): boolean
   countUnread(): number
 
@@ -405,6 +413,7 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
      ORDER BY id DESC LIMIT 1`,
   )
   const markRead = db.prepare('UPDATE message SET read_at = ? WHERE id = ? AND read_at IS NULL')
+  const selectMessageById = db.prepare('SELECT * FROM message WHERE id = ?')
   const countUnreadStmt = db.prepare('SELECT count(*) AS n FROM message WHERE read_at IS NULL')
 
   const insertApplication = db.prepare(
@@ -583,6 +592,11 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
         input.direction,
         input.content,
       ) as Row | undefined
+      return row === undefined ? undefined : toMessage(row)
+    },
+
+    getMessage(id): MessageRecord | undefined {
+      const row = selectMessageById.get(id) as Row | undefined
       return row === undefined ? undefined : toMessage(row)
     },
 

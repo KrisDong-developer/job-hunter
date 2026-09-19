@@ -16,6 +16,8 @@ import type { IntelService } from './domain/intel.js';
 import { type GreetingSendResult } from './guard/actions/greeting.js';
 import { type ApplicationSendResult } from './guard/actions/application.js';
 import { type InboxSyncResult } from './guard/actions/inbox.js';
+import { type ReplySendResult } from './guard/actions/reply.js';
+import { type StageProbeResult } from './guard/actions/stage.js';
 import type { Guard } from './guard/index.js';
 import type { Actor } from './guard/types.js';
 import { type EventBus } from './http/sse.js';
@@ -132,6 +134,19 @@ export interface HostRuntime {
         guiConfirmed?: boolean;
     }): Promise<GreetingSendResult>;
     /**
+     * 回复一条 HR 消息 —— **高危**（§22.4），走 `message.reply` 闸门，**真的发到平台上**。
+     *
+     * 与 `messages().record()` 的区别：那是"记一笔我说过的话"，这是**真的发出去**。
+     * 本地那条记录由闸门动作在**发送成功之后**写入 —— 所以不会再出现
+     * "界面说已回复、平台上什么都没有"（2026-09-18 修正的正是这一点）。
+     */
+    replyToMessage(input: {
+        messageId: number;
+        content: string;
+        actor: Actor;
+        guiConfirmed?: boolean;
+    }): Promise<ReplySendResult>;
+    /**
      * 同步收件箱 —— 把平台会话列表读进本地消息表（§13 U6）。
      *
      * **低危**（不对外发任何东西），但仍经闸门：它会开一个真实浏览器页面访问平台。
@@ -141,6 +156,19 @@ export interface HostRuntime {
         platformId: string;
         actor: Actor;
     }): Promise<InboxSyncResult>;
+    /**
+     * 探测某岗位在平台上的接触阶段（§13 U6 的「已读 / 已回」）。
+     *
+     * **低危**（只看不发），但仍经闸门：它会开一个真实浏览器页面。模型发起也不打扰用户。
+     *
+     * ⚠️ **只报事实、不改状态**（识别 ≠ 改状态，§4.3）：`stage` 是平台上看到的东西，
+     * 本地那条接触态不会被它改动 —— 误判一次就会让一个真在推进的岗位被漏掉。
+     * `stage === null` = 判不出来（会话不在列表里 / 状态标记认不出来），**不猜**。
+     */
+    probeContactStage(input: {
+        jobId: number;
+        actor: Actor;
+    }): Promise<StageProbeResult>;
     /**
      * 投递简历 —— **高危**（§22.4），走 `application.send` 闸门。
      *

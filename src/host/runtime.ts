@@ -72,9 +72,16 @@ import {
   type ApplicationSendResult,
 } from './guard/actions/application.js'
 import { syncInbox, INBOX_SYNC_ACTION, type InboxSyncResult } from './guard/actions/inbox.js'
+import { sendReply, REPLY_SEND_ACTION, type ReplySendResult } from './guard/actions/reply.js'
+import {
+  probeContactStage,
+  STAGE_PROBE_ACTION,
+  type StageProbeResult,
+} from './guard/actions/stage.js'
 import { SETTINGS_WRITE_ACTION } from './guard/actions/settings.js'
 import type { Guard } from './guard/index.js'
 import { createGuard } from './guard/index.js'
+import type { GuardToken } from './guard/token.js'
 import type { Actor } from './guard/types.js'
 import { createEventBus, type EventBus } from './http/sse.js'
 import { createFiftyOneAdapter, mergeFiftyOneConfig } from './platform/adapters/fiftyone-job.js'
@@ -93,6 +100,7 @@ import { idleCloseMsOf, readBrowserConfig, writeBrowserConfig } from './browser-
 import { readCrawlConfig, writeCrawlConfig } from './crawl-config.js'
 import { citySupportOf } from './platform/cities.js'
 import { readAdapterHealth } from './platform/health.js'
+import { platformFacts } from './platform/platform-facts.js'
 import { readPlatformRiskPause } from './platform/risk-pause.js'
 import { readYieldSnapshot } from './platform/yield-baseline.js'
 import type { LeaseManager } from './platform/lease.js'
@@ -229,12 +237,35 @@ export interface HostRuntime {
     guiConfirmed?: boolean
   }): Promise<GreetingSendResult>
   /**
+   * 回复一条 HR 消息 —— **高危**（§22.4），走 `message.reply` 闸门，**真的发到平台上**。
+   *
+   * 与 `messages().record()` 的区别：那是"记一笔我说过的话"，这是**真的发出去**。
+   * 本地那条记录由闸门动作在**发送成功之后**写入 —— 所以不会再出现
+   * "界面说已回复、平台上什么都没有"（2026-09-18 修正的正是这一点）。
+   */
+  replyToMessage(input: {
+    messageId: number
+    content: string
+    actor: Actor
+    guiConfirmed?: boolean
+  }): Promise<ReplySendResult>
+  /**
    * 同步收件箱 —— 把平台会话列表读进本地消息表（§13 U6）。
    *
    * **低危**（不对外发任何东西），但仍经闸门：它会开一个真实浏览器页面访问平台。
    * `actor === 'model'` 也不会被要求审批（低危不打扰用户）。
    */
   syncInbox(input: { platformId: string; actor: Actor }): Promise<InboxSyncResult>
+  /**
+   * 探测某岗位在平台上的接触阶段（§13 U6 的「已读 / 已回」）。
+   *
+   * **低危**（只看不发），但仍经闸门：它会开一个真实浏览器页面。模型发起也不打扰用户。
+   *
+   * ⚠️ **只报事实、不改状态**（识别 ≠ 改状态，§4.3）：`stage` 是平台上看到的东西，
+   * 本地那条接触态不会被它改动 —— 误判一次就会让一个真在推进的岗位被漏掉。
+   * `stage === null` = 判不出来（会话不在列表里 / 状态标记认不出来），**不猜**。
+   */
+  probeContactStage(input: { jobId: number; actor: Actor }): Promise<StageProbeResult>
   /**
    * 投递简历 —— **高危**（§22.4），走 `application.send` 闸门。
    *
@@ -912,7 +943,9 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
 
     // ── P7：跟进与看板 ──────────────────────────────────────────────
     // guardRun 把"走闸门"这件事以回调形式注进去，领域层因此不需要 import guard
-    // （依赖方向保持 domain ← guard，而不是互相依赖）
+    // （依赖方向保持 domain ← guard，而不是互相依赖）。
+    // `fn` 收一次性令牌：领域层若真要执行对外动作（而不是只写本地库），
+    // 必须把令牌一路传到 `guard/actions/*` 的实现在首行校验 —— 否则那个实现会拒绝执行。
     const guardRun = async <T>(
       input: {
         action: string
@@ -922,7 +955,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         payload?: Record<string, unknown>
         guiConfirmed?: boolean
       },
-      fn: () => Promise<T>,
+      fn: (token: GuardToken) => Promise<T>,
     ): Promise<T> => {
       if (guard === undefined) throw dataNotReady(runtime)
       return await guard.run(
@@ -934,7 +967,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
           ...(input.payload === undefined ? {} : { payload: input.payload }),
           ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
         },
-        async () => await fn(),
+        async (token) => await fn(token),
       )
     }
 
@@ -947,7 +980,6 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     messages = createMessageService({
       store: opened,
       clock,
-      guardRun,
       ai,
       ...(logger === undefined ? {} : { logger }),
     })
@@ -1363,6 +1395,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         text = draft.text
         via = draft.via
       }
+      const greetingSideEffect = platformFacts(job.platformId).greetingSideEffect
 
       const result = await gate.run(
         {
@@ -1382,6 +1415,9 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
             // §4.4.2 要求审批文案显示"用了哪版简历" —— 打招呼不用简历，如实写出来
             resumeVersion: '不适用（打招呼只发文本）',
             draftVia: via,
+            // 平台自己还会做的额外动作（平台事实）：BOSS 点了「立即沟通」会**先替你发一句
+            // 平台默认招呼语**，随后我们才发上面这段 text —— 一次动作两条消息，用户得知道。
+            ...(greetingSideEffect === undefined ? {} : { sideEffect: greetingSideEffect }),
           },
           ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
         },
@@ -1413,6 +1449,98 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         platformId: result.platformId,
         company: result.company,
         actor: input.actor,
+      })
+      return result
+    },
+
+    async replyToMessage(input): Promise<ReplySendResult> {
+      const opened = store
+      const gate = guard
+      const sessionService = session
+      const messageService = messages
+      if (opened === undefined || gate === undefined || sessionService === undefined || messageService === undefined) {
+        throw dataNotReady(runtime)
+      }
+
+      const text = input.content.trim()
+      if (text === '') {
+        // **必须在闸门之前**：这条正文会被逐字打进输入框，为空的话用户确认完才发现发不出去
+        throw new DomainError('INVALID_INPUT', '回复内容不能为空')
+      }
+
+      // 审批文案要写清"发给谁、回的是哪条"（§4.4.2），所以这里先读一次目标。
+      // 真正的定位与发送在闸门里（`guard/actions/reply.ts`）**再做一遍** ——
+      // 审批期间对方可能已经把它移出会话列表，那一步不该信任这里的快照。
+      const target = opened.pipeline.getMessage(input.messageId)
+      if (target === undefined) {
+        throw new DomainError('NOT_FOUND', `消息不存在：${String(input.messageId)}`, {
+          hint: '先用 inbox_list 看看当前有哪些消息。',
+          detail: { messageId: input.messageId },
+        })
+      }
+      if (target.jobId === null) {
+        throw new DomainError('INVALID_INPUT', '这条消息没有关联岗位，无法定位到具体会话，不能回复', {
+          hint: '回复要靠"发往哪个岗位的会话"来定位；请把它关联到岗位，或直接去平台上回。',
+          detail: { messageId: target.id, platformId: target.platformId },
+        })
+      }
+      const job = opened.job.detail(target.jobId)
+      if (job === undefined) {
+        throw new DomainError('NOT_FOUND', `岗位不存在：${String(target.jobId)}`, {
+          detail: { jobId: target.jobId },
+        })
+      }
+
+      const result = await gate.run(
+        {
+          action: REPLY_SEND_ACTION,
+          actor: input.actor,
+          danger: 'high',
+          target: {
+            jobId: job.id,
+            platformId: job.platformId,
+            ...(job.companyId === null ? {} : { companyId: job.companyId }),
+          },
+          payload: {
+            // 正文只用于**审批展示**；审计里只留摘要与长度（§4.1）
+            text,
+            toJob: job.title,
+            company: job.companyName ?? '',
+            replyTo: target.content.slice(0, 80),
+            // §4.4.2 要求审批文案写清"用了哪版简历" —— 回复只发文本，如实写出来
+            resumeVersion: '不适用（回复只发文本）',
+          },
+          ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
+        },
+        async (token) =>
+          await sendReply(
+            {
+              store: opened,
+              registry,
+              session: sessionService,
+              pageSource: browserPageSource(browser),
+              clock,
+              ...(logger === undefined ? {} : { logger }),
+              // 发送**成功之后**才落本地那条 `direction='me'` ——
+              // 发失败了也记"我已回复"，看板与接触态从第一天开始就说谎（与打招呼同一条原则）
+              record: (recorded) => {
+                messageService.record({
+                  platformId: recorded.platformId,
+                  direction: 'me',
+                  content: recorded.content,
+                  jobId: recorded.jobId,
+                })
+              },
+            },
+            token,
+            { messageId: target.id, text },
+          ),
+      )
+
+      bus.publish('message.replied', {
+        messageId: result.messageId,
+        jobId: result.jobId,
+        platformId: result.platformId,
       })
       return result
     },
@@ -1466,6 +1594,44 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       return result
     },
 
+    async probeContactStage(input): Promise<StageProbeResult> {
+      const opened = store
+      const gate = guard
+      const sessionService = session
+      if (opened === undefined || gate === undefined || sessionService === undefined) {
+        throw dataNotReady(runtime)
+      }
+
+      const result = await gate.run(
+        {
+          action: STAGE_PROBE_ACTION,
+          actor: input.actor,
+          // 低危：只读平台上的状态标记，**一个字段都不写**（本地库也不写）
+          danger: 'low',
+          target: { jobId: input.jobId },
+        },
+        async (token) =>
+          await probeContactStage(
+            {
+              store: opened,
+              registry,
+              session: sessionService,
+              pageSource: browserPageSource(browser),
+              clock,
+              ...(logger === undefined ? {} : { logger }),
+            },
+            token,
+            { jobId: input.jobId },
+          ),
+      )
+      bus.publish('contact.stage.probed', {
+        jobId: result.jobId,
+        platformId: result.platformId,
+        stage: result.stage,
+      })
+      return result
+    },
+
     async sendApplication(input): Promise<ApplicationSendResult> {
       const opened = store
       const gate = guard
@@ -1483,6 +1649,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       }
 
       const filePath = input.filePath ?? null
+      const sideEffect = platformFacts(job.platformId).applicationSideEffect
       const result = await gate.run(
         {
           action: APPLICATION_SEND_ACTION,
@@ -1500,6 +1667,9 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
             resumeVersion:
               filePath === null ? '平台内简历（未指定本地版本）' : `本地文件：${filePath}`,
             resumeFileId: filePath === null ? null : filePath,
+            // 平台自己还会做的额外动作（如智联投递时会替你发一句招呼语）——
+            // **来自平台事实表**，不是各入口自己写死；没有这一格的平台就不会出现这一行。
+            ...(sideEffect === undefined ? {} : { sideEffect }),
           },
           ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
         },

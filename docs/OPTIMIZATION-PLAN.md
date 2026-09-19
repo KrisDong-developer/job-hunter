@@ -38,7 +38,7 @@
 | 开发 profile | `p5test`（用 `link:` 指向包根，改完 `npm run build` + 重启即可） |
 | 测试 profile | `p5headless`（跑单轮对话，任务**必须写成一行**） |
 | 数据目录 | `$DSH_HOME\job-hunter\data.db`（**累积型**，断言要用 `>=`/增量，别用精确数） |
-| 单测基线 | **750 个（749 通过 / 1 跳过）**（`npm test`，离线，绝不访问真实招聘站）。P17 判墙信号表+共享构造样板、批次 5 单轮预算+到点中止+平台总览矩阵、批次 3/4 收尾（去重复核/折叠、城市目录）后 |
+| 单测基线 | **870 个（869 通过 / 1 跳过）**（`npm test`，离线，绝不访问真实招聘站）。2026-09-18 复核时更新（原记录 750 个）—— 期间落了 zhipin 的打招呼/回复/收件箱/阶段探测、zhaopin 的收件箱/阶段探测与对应护栏 |
 
 ### 1.2 不可违反的约束（违反即返工）
 
@@ -273,11 +273,14 @@ for ($i=1; $i -le 3; $i++) { git push 2>&1 | Select-Object -Last 1; if ($LASTEXI
 
 | 项 | 状态 |
 |---|---|
-| 平台适配：BOSS 直聘 / 猎聘 / 拉勾 | 实测有风控墙，**未实现** |
-| 平台适配：牛客 / 实习僧（校招）、Indeed / LinkedIn（海外） | 需求文档标注"⚠️ 待预研"，**未实现** |
-| `greeting_send` 对 51job | 一律返回 `ADAPTER_BROKEN`（适配器没实现打招呼动作）；happy path 只用假适配器测过 |
+| 平台适配：BOSS 直聘 / 猎聘 / 拉勾 | **已过期**（2026-09-18 复核更正）：BOSS（`zhipin`）**已实现**打招呼 / 回复 / 收件箱 / 阶段探测，且经真实账号端到端验证；`zhaopin` 的收件箱 / 阶段探测也已实现（接口化）；猎聘 / 拉勾的适配器**已注册**（列表/详情夹具校准过）但仍无 `actions` |
+| 平台适配：牛客 / 实习僧（校招）、Indeed / LinkedIn（海外） | 需求文档标注"⚠️ 待预研"，**未实现**（Indeed 有适配器但默认域已停运，需改配置换域） |
+| `greeting_send` 对 51job / zhaopin | 一律 `ADAPTER_BROKEN`：51job 没实现打招呼动作；zhaopin **没有独立的打招呼动作**（IM 发送走网易云信私有 WS），实测后如实标 `supportsGreeting=false` |
+| `sendResume` 对 zhaopin | **已实现（2026-09-18 复核更正）**：页面驱动（点「立即投递」→ 验证 `.deliver-greeting-modal`），走 `application.send` 两段式确认；接口路径**刻意不用**（`preparation` 要的 `rootOrgId`/`staffId` 在详情页载荷里出现 0 次，不可逆动作上不能编）。同一次点击会**顺带发一句平台生成的招呼语**，已写进审批文案（`applicationSideEffect`） |
+| zhaopin 会话列表 | **已支持翻页**（2026-09-18 复核更正）：实测页长 5 时第 2 页给出另外 5 条、重叠 0 ⇒ 翻页有效；按 `talkListPageSize`（20）× `talkListMaxPages`（3）翻，跨页去重 |
+| zhaopin 阶段判据 | 只用 `unreadCount` / `selfReply`（有真实样本）；`oppositeRead`/`oppositeReply` 实测**语义与命名不符**（有未读的会话里也是 0）⇒ 不用，**`read` 这一档判不出来**（返回 null） |
 | L2（LLM 语义精评） | 未实现；界面只给"粗筛分" |
-| U10 设置 / U11 日志与诊断 | 规划过，未实现（批次 E3） |
+| U10 设置 / U11 日志与诊断 | **已实现大半**（2026-09-18 复核更正）：`src/client/screens/settings.tsx` 已有「设置与诊断 / 当前风控态势 / 模型用途 / 系统控制中心 / 诊断 / 模型调用留痕 / 操作审计」；**未逐项核对**原规划清单，若还要做请先重新基线 |
 | 薪资箱线图 / 本地基准 / A/B 对比 | 批次 F |
 | Word 导出的**像素级**验证 | 做不了：这台机器 Word COM 激活失败（`CO_E_SERVER_EXEC_FAILURE`），只能做 OOXML 级断言 + 让你打开 docx 看 |
 | 验收脚本的仓库化 | 脚本都在 `D:\DSH-work\`，**不在仓库**（绑定了本机 profile 与 playwright 安装位置） |

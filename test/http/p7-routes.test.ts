@@ -430,7 +430,7 @@ test('POST /messages/:id/read：未读数下降；重复标记同一封返回 40
   }
 })
 
-test('POST /messages/:id/reply：先要确认，确认后落一条 direction=me 的新消息', async () => {
+test('POST /messages/:id/reply：先要确认；适配器没实现 reply 时**如实失败**，且不落本地记录', async () => {
   const { runtime, dir } = await openRuntime()
   try {
     await openGate(runtime)
@@ -443,18 +443,45 @@ test('POST /messages/:id/reply：先要确认，确认后落一条 direction=me 
 
     const first = await call(runtime, 'POST', `/messages/${String(messageId)}/reply`, { body: { content: text } })
     assert.equal(first.status, 409, '回复是真正对外发消息，必须先让用户看一眼')
+    assert.equal((first.body as { code: string }).code, 'NEEDS_CONFIRM')
 
+    // 确认之后**不是**"写条本地记录就算回复了"：51job 的适配器没有 actions.reply，
+    // 于是这里必须如实报"还没实现"，而不是给用户一个假的成功。
     const second = await call(runtime, 'POST', `/messages/${String(messageId)}/reply`, {
       body: { content: text, confirm: true },
     })
-    assert.equal(second.status, 200)
-    const replied = (second.body as { message: MessageDto }).message
-    assert.equal(replied.direction, 'me')
-    assert.equal(replied.content, text)
+    assert.equal(second.status, 409)
+    assert.equal((second.body as { code: string }).code, 'ADAPTER_BROKEN')
 
+    // 这一条才是这次修正的核心：没发出去，就**不能**留下"我已回复"的痕迹
     const inbox = await call(runtime, 'GET', '/inbox')
     const items = (inbox.body as InboxDto).items
-    assert.equal(items.filter((item) => item.direction === 'me' && item.content === text).length, 1)
+    assert.equal(
+      items.filter((item) => item.direction === 'me').length,
+      0,
+      '平台上没发出去，本地就不该有 direction=me 的记录',
+    )
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('POST /messages/:id/reply：没有关联岗位的消息拒绝回复（定位不到会话）', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    await openGate(runtime)
+    const created = await call(runtime, 'POST', '/messages', {
+      body: { platformId: '51job', direction: 'hr', content: '在吗？' },
+    })
+    const messageId = (created.body as { message: MessageDto }).message.id
+
+    const result = await call(runtime, 'POST', `/messages/${String(messageId)}/reply`, {
+      body: { content: '在的', confirm: true },
+    })
+    // 连岗位都没有，就没有"发往哪个会话"可言 —— 拒绝发生在闸门之前，不该问用户确认
+    assert.equal(result.status, 400)
+    assert.equal((result.body as { code: string }).code, 'INVALID_INPUT')
   } finally {
     runtime.close()
     cleanup(dir)
@@ -855,6 +882,53 @@ test('POST /inbox/sync：未登录 → 403 NOT_LOGGED_IN；缺 platformId → 40
     const missing = await call(runtime, 'POST', '/inbox/sync', { body: {} })
     assert.equal(missing.status, 400)
     assert.equal((missing.body as { code: string }).code, 'INVALID_INPUT')
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('POST /jobs/:id/detect-stage：适配器没实现探测 → 如实失败（不返回一个像 none 的东西）', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    storeOf(runtime).account.upsert(
+      { platformId: '51job', loggedIn: true, hiddenFromCurrentEmployer: true, hint: null },
+      T,
+    )
+    const jobId = seedJob(runtime)
+    const result = await call(runtime, 'POST', `/jobs/${String(jobId)}/detect-stage`)
+    assert.equal(result.status, 409)
+    const body = result.body as { code: string; message: string }
+    assert.equal(body.code, 'ADAPTER_BROKEN')
+    assert.ok(body.message.includes('探测接触阶段'), body.message)
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
+test('POST /jobs/:id/detect-stage：低危 → 没有两段式确认；未登录 403 / GET 400 / 岗位不存在 404', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    const store = storeOf(runtime)
+    store.account.upsert(
+      { platformId: '51job', loggedIn: true, hiddenFromCurrentEmployer: true, hint: null },
+      T,
+    )
+    const jobId = seedJob(runtime)
+
+    // 低危：不弹确认（对比 /messages/:id/reply 的 409 NEEDS_CONFIRM）——
+    // 它只读平台上的状态标记，一个字节都不往外发
+    const zhipinJobId = seedJob(runtime, { platformId: 'zhipin', platformJobId: 'zp-1' })
+    const notLoggedIn = await call(runtime, 'POST', `/jobs/${String(zhipinJobId)}/detect-stage`)
+    assert.equal(notLoggedIn.status, 403, '未登录要如实说未登录，而不是先问用户确认')
+    assert.equal((notLoggedIn.body as { code: string }).code, 'NOT_LOGGED_IN')
+
+    const wrongMethod = await call(runtime, 'GET', `/jobs/${String(jobId)}/detect-stage`)
+    assert.equal(wrongMethod.status, 400)
+
+    const missingJob = await call(runtime, 'POST', '/jobs/9999/detect-stage')
+    assert.equal(missingJob.status, 404)
   } finally {
     runtime.close()
     cleanup(dir)

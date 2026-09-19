@@ -316,6 +316,21 @@ export interface SiteAdapter {
             sourceUrl: string;
         }, filePath: string | null): Promise<ActionResult>;
         /**
+         * 在**已存在的会话**里回一条消息（对方先说话之后）。
+         *
+         * 与 `sayHello` 的区别：打招呼是"从岗位详情页发起第一次接触"，回复是"进已有会话接着聊"。
+         * 之所以单开一个槽位而不是复用 `sayHello`：命中目标的方式不同（按岗位详情页入口 vs 按会话列表匹配），
+         * 幂等语义也不同（回复时"同文本已存在"更可能是我之前说过的话）。
+         *
+         * ⚠️ 这个槽位是 2026-09-18 补上的，原因是发现 `domain/messages.ts` 的"回复"**只写本地库**：
+         * 工具文案说"回复一条 HR 消息"，平台上却什么都没发生。契约里缺这一格，领域层就只能空跑。
+         */
+        reply?(page: PageLike, job: {
+            title: string;
+            company: string;
+            sourceUrl: string;
+        }, text: string): Promise<ActionResult>;
+        /**
          * 读收件箱（HR 消息）。列表页就能拿到"有没有人回复"，
          * 不必逐个打开会话 —— 见 BossHunter 的"状态节点反推法"。
          */
