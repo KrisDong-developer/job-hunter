@@ -276,6 +276,14 @@ window.__ModuleLoader__.load({
 		  concise: "\u7B80\u6D01",
 		  professional: "\u4E13\u4E1A"
 		};
+		var CONTACT_STAGE_LABEL = {
+		  none: "\u672A\u63A5\u89E6",
+		  greeted: "\u5DF2\u6253\u62DB\u547C",
+		  delivered: "\u5DF2\u9001\u8FBE",
+		  read: "HR \u5DF2\u8BFB",
+		  replied: "HR \u5DF2\u56DE\u590D",
+		  interview_scheduled: "\u5DF2\u7EA6\u9762"
+		};
 		var APPLICATION_STAGES = [
 		  "sent",
 		  "viewed",
@@ -721,6 +729,14 @@ window.__ModuleLoader__.load({
 		  });
 		  return result.application;
 		}
+		async function syncInbox(input) {
+		  const result = await request("/inbox/sync", { method: "POST", body: JSON.stringify(input) });
+		  return result.result;
+		}
+		async function probeContactStage(jobId) {
+		  const result = await request(`/jobs/${String(jobId)}/detect-stage`, { method: "POST", body: JSON.stringify({}) });
+		  return result.result;
+		}
 		async function advanceApplication(input) {
 		  const result = await request(
 		    `/applications/${String(input.applicationId)}/advance`,
@@ -767,11 +783,10 @@ window.__ModuleLoader__.load({
 		  await request(`/messages/${String(id)}/read`, { method: "POST", body: JSON.stringify({}) });
 		}
 		async function replyMessage(id, content, confirm = false) {
-		  const result = await request(`/messages/${String(id)}/reply`, {
+		  await request(`/messages/${String(id)}/reply`, {
 		    method: "POST",
 		    body: JSON.stringify({ content, confirm })
 		  });
-		  return result.message;
 		}
 		async function fetchInterviews(signal) {
 		  return await request("/interviews", signal === void 0 ? {} : { signal });
@@ -1928,6 +1943,21 @@ window.__ModuleLoader__.load({
 		  const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision]);
 		  const [busy, setBusy] = (0, import_react6.useState)(null);
 		  const [failure, setFailure] = (0, import_react6.useState)(null);
+		  const [probing, setProbing] = (0, import_react6.useState)(false);
+		  const [probe, setProbe] = (0, import_react6.useState)(null);
+		  const [probeError, setProbeError] = (0, import_react6.useState)(null);
+		  const probeStage = async () => {
+		    setProbing(true);
+		    setProbeError(null);
+		    try {
+		      const result = await probeContactStage(props.id);
+		      setProbe({ stage: result.stage, note: result.note });
+		    } catch (error) {
+		      setProbeError(error instanceof ApiError ? error.display : String(error));
+		    } finally {
+		      setProbing(false);
+		    }
+		  };
 		  const mark = async (next) => {
 		    setBusy(next);
 		    setFailure(null);
@@ -2019,6 +2049,27 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u5F53\u524D\u72B6\u6001" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: JOB_STATE_LABEL[job.state] })
+		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-row-head", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-tag-group-name", children: "\u5E73\u53F0\u4E0A\u7684\u63A5\u89E6\u9636\u6BB5" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "jh-spacer" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: "jh-btn jh-btn-inline",
+		            disabled: probing,
+		            onClick: () => void probeStage(),
+		            children: probing ? "\u63A2\u6D4B\u4E2D\u2026" : "\u63A2\u6D4B"
+		          }
+		        )
+		      ] }),
+		      probeError === null ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-error", children: probeError }),
+		      probe === null ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u63A2\u6D4B\u8FC7\u3002\u63A2\u6D4B\u53EA**\u8BFB**\u5E73\u53F0\u4E0A\u7684\u72B6\u6001\uFF08\u4E0D\u53D1\u6D88\u606F\u3001\u4E0D\u6295\u9012\uFF09\uFF0C\u4E5F\u4E0D\u4F1A\u6539\u52A8\u672C\u5730\u72B6\u6001\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: probe.stage === null ? "\u5224\u4E0D\u51FA\u6765" : CONTACT_STAGE_LABEL[probe.stage] }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "jh-muted", children: probe.note })
 		      ] })
 		    ] }),
 		    job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "jh-card jh-card-tight", children: [
@@ -2865,8 +2916,41 @@ window.__ModuleLoader__.load({
 		  const [replyText, setReplyText] = (0, import_react8.useState)("");
 		  const [draftingScenario, setDraftingScenario] = (0, import_react8.useState)(null);
 		  const [busy, setBusy] = (0, import_react8.useState)(false);
+		  const [syncing, setSyncing] = (0, import_react8.useState)(false);
 		  const [error, setError] = (0, import_react8.useState)(null);
 		  const [notice, setNotice] = (0, import_react8.useState)(null);
+		  const syncFromPlatforms = async () => {
+		    setSyncing(true);
+		    setError(null);
+		    setNotice(null);
+		    try {
+		      const listed = await fetchPlatforms();
+		      const targets = listed.items.filter(
+		        (item) => item.implementation.actions.readInbox && item.account.loggedIn
+		      );
+		      if (targets.length === 0) {
+		        setNotice(
+		          "\u6CA1\u6709\u53EF\u540C\u6B65\u7684\u5E73\u53F0\uFF1A\u9700\u8981**\u5DF2\u767B\u5F55**\u4E14\u9002\u914D\u5668\u5B9E\u73B0\u4E86\u6536\u4EF6\u7BB1\u8BFB\u53D6\uFF08\u76EE\u524D\u662F BOSS \u76F4\u8058 / \u667A\u8054\u62DB\u8058\uFF09\u3002\u5148\u53BB\u300C\u91C7\u96C6\u300D\u9875\u5B8C\u6210\u767B\u5F55\u3002"
+		        );
+		        return;
+		      }
+		      const parts = [];
+		      for (const item of targets) {
+		        const result = await syncInbox({ platformId: item.id });
+		        parts.push(
+		          `${item.displayName} \u8BFB\u5230 ${String(result.fetched)} \u6761\uFF08\u65B0\u589E ${String(result.recorded)}\u3001\u91CD\u590D ${String(result.duplicates)}\u3001\u672A\u8BFB ${String(result.unread)}\uFF09`
+		        );
+		      }
+		      setNotice(`\u6536\u4EF6\u7BB1\u540C\u6B65\u5B8C\u6210 \u2014\u2014 ${parts.join("\uFF1B")}`);
+		      props.onChanged();
+		    } catch (caught) {
+		      setError(
+		        caught instanceof ApiError ? caught.display : caught instanceof Error ? caught.message : String(caught)
+		      );
+		    } finally {
+		      setSyncing(false);
+		    }
+		  };
 		  const [extracting, setExtracting] = (0, import_react8.useState)(null);
 		  const [creating, setCreating] = (0, import_react8.useState)(false);
 		  const [extractPanel, setExtractPanel] = (0, import_react8.useState)(null);
@@ -2965,6 +3049,16 @@ window.__ModuleLoader__.load({
 		        "button",
 		        {
 		          type: "button",
+		          className: "jh-btn jh-btn-inline",
+		          disabled: syncing,
+		          onClick: () => void syncFromPlatforms(),
+		          children: syncing ? "\u540C\u6B65\u4E2D\u2026" : "\u540C\u6B65\u6536\u4EF6\u7BB1"
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		        "button",
+		        {
+		          type: "button",
 		          className: `jh-btn jh-btn-inline${unreadOnly ? " jh-btn-active" : ""}`,
 		          onClick: () => setUnreadOnly((value) => !value),
 		          children: "\u53EA\u770B\u672A\u8BFB"
@@ -2975,7 +3069,7 @@ window.__ModuleLoader__.load({
 		    notice === null ? null : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-ok", children: notice }),
 		    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h3", { className: "jh-card-title", children: "\u624B\u52A8\u5F55\u5165\u4E00\u6761\u6D88\u606F" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: "\u5E73\u53F0\u6536\u4EF6\u7BB1\u7684\u81EA\u52A8\u89E3\u6790\u8FD8\u6CA1\u505A\uFF08\u5C5E\u4E8E P8\uFF09\u2014\u2014 \u73B0\u5728\u4F60\u53EF\u4EE5\u628A HR \u7684\u6D88\u606F\u8D34\u8FDB\u6765\uFF0C \u7CFB\u7EDF\u548C\u72B6\u6001\u63A8\u8FDB\u3001\u8DDF\u8FDB\u5EFA\u8BAE\u5C31\u80FD\u8054\u52A8\u3002" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "jh-muted", children: '\u5E73\u53F0\u6536\u4EF6\u7BB1\u53EF\u4EE5**\u81EA\u52A8\u540C\u6B65**\uFF08\u53F3\u4E0A\u89D2\u300C\u540C\u6B65\u6536\u4EF6\u7BB1\u300D\uFF0C\u6216\u76F4\u63A5\u8BA9\u6211\u8C03 `inbox_sync`\uFF09\uFF1A \u5B83\u8BFB\u5E73\u53F0\u4F1A\u8BDD\u5217\u8868\u5E76\u53BB\u91CD\u5165\u5E93\uFF0C\u8BFB\u4E0D\u5230\u65F6\u4F1A**\u5982\u5B9E\u62A5\u9519**\u800C\u4E0D\u662F\u8FD4\u56DE 0 \u6761\u3002 \u8FD9\u91CC\u7684\u624B\u52A8\u5F55\u5165\u7559\u7ED9"\u5E73\u53F0\u8BFB\u4E0D\u5230\u3001\u6216\u4F60\u60F3\u81EA\u5DF1\u8865\u4E00\u6761"\u7684\u573A\u5408\u3002' }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		        "textarea",
 		        {
