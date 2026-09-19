@@ -1,5 +1,5 @@
-import type { FieldHealthDto } from '../../shared/dto.js';
-import type { CoreField, HealthState } from '../../shared/enums.js';
+import type { FieldHealthDto } from '../../shared/contract/dto/crawl.js';
+import type { CoreField, HealthState } from '../../shared/contract/enums/crawl.js';
 import type { Store } from '../store/store.js';
 import { type FieldPresence } from './validate.js';
 export interface FieldMissOutcome {

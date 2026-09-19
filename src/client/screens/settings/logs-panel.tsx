@@ -1,10 +1,10 @@
 // ── 诊断与调用日志页 ──────────────────────────────────────────────────
 
 import { useState } from 'react'
-import type { HealthDto } from '../../../shared/dto.js'
+import type { HealthDto } from '../../../shared/contract/dto/crawl.js'
 import type { AsyncState } from '../../hooks/use-async.js'
 import type { fetchAudit, fetchLlmCalls } from '../../net/ops.js'
-import type { LlmCallDto } from '../../net/types.js'
+import type { LlmCallDto } from '../../../shared/contract/dto/settings.js'
 import { AuditTable } from './audit-table.js'
 import { DiagnosticsPanel } from './diagnostics-panel.js'
 import { LlmCallsTable } from './llm-calls-table.js'

@@ -19,26 +19,12 @@
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../shared/enums.js'
-import { RESUME_FORMATS, RESUME_TEMPLATES } from '../../shared/enums.js'
-import type {
-  ResumeContent,
-  ResumeDto,
-  ResumeFileDto,
-  ResumeIssue,
-  ResumeSummaryDto,
-  TailoringDto,
-} from '../../shared/resume.js'
-import {
-  checkNoFabrication,
-  emptyResumeContent,
-  isResumeContentUsable,
-  normalizeResumeContent,
-  resumeFileName,
-  sanitizeFileName,
-  techTokensOf,
-} from '../../shared/resume.js'
-import { ATTACHMENT_MAX_BYTES, RESUME_IMPORT_MAX_CHARS } from '../../shared/constants.js'
+import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../shared/contract/enums/resume.js'
+import { RESUME_FORMATS, RESUME_TEMPLATES } from '../../shared/contract/enums/resume.js'
+import type { ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js'
+import type { ResumeContent, ResumeIssue } from '../../shared/domain/resume-content.js'
+import { checkNoFabrication, emptyResumeContent, isResumeContentUsable, normalizeResumeContent, resumeFileName, sanitizeFileName, techTokensOf } from '../../shared/domain/resume-content.js'
+import { ATTACHMENT_MAX_BYTES, RESUME_IMPORT_MAX_CHARS } from '../../shared/config/limits.js'
 import type { AiService } from '../ai/client.js'
 import { extractJson } from '../ai/prompts.js'
 import { renderResumeDocx } from '../render/docx.js'
@@ -666,8 +652,8 @@ function inspectOf(content: ResumeContent): ResumeIssue[] {
   return inspectResumeLocal(content)
 }
 
-// 就地引入，避免与 shared/resume.ts 形成循环（shared 不依赖 host）
-import { inspectResume as inspectResumeLocal } from '../../shared/resume.js'
+// 就地引入，避免与 shared/domain/resume-content.ts 形成循环（shared 不依赖 host）
+import { inspectResume as inspectResumeLocal } from '../../shared/domain/resume-content.js'
 
 /**
  * 规则定制（无模型路径，也是模型结果不合规时的兜底）。

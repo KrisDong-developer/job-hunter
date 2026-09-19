@@ -4,7 +4,8 @@
  * 只聚合**现在真有数据**的东西。待跟进 / 面试 / 额度分别属于 P7 与 P5（guard），
  * 这里刻意不返回恒为 0 的占位字段 —— 界面上显示一个假的「0 个面试」比不显示更误导。
  */
-import type { TodayDto } from '../../shared/dto.js'
+import type { TodayDto } from '../../shared/contract/dto/today.js'
+import { TODAY_NEW_WINDOW_HOURS } from '../../shared/contract/enums/job.js'
 import type { Store } from '../store/store.js'
 import type { OfferService } from './offers.js'
 import { readAdapterHealth } from '../platform/health.js'
@@ -12,8 +13,14 @@ import type { AdapterRegistry } from '../platform/registry.js'
 import { isOfflineMode } from '../util/offline.js'
 import { systemClock, type Clock } from '../util/time.js'
 
-/** 「今日新增」的窗口。 */
-const NEW_JOB_WINDOW_MS = 24 * 60 * 60 * 1000
+/**
+ * 「今日新增」的窗口。
+ *
+ * 小时数取自 shared 的 `TODAY_NEW_WINDOW_HOURS` —— 岗位库里那个「只看新增」的
+ * 24 小时档用的是**同一个常量**。两处各写一个 24，迟早会出现
+ * "首屏说今日新增 12 条、列表筛出 3 条"，而它们看的是同一列 `first_seen_at`。
+ */
+const NEW_JOB_WINDOW_MS = TODAY_NEW_WINDOW_HOURS * 60 * 60 * 1000
 
 /**
  * 首屏展示 offer 截止倒计时的窗口（天）。

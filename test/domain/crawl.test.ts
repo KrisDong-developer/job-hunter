@@ -14,7 +14,7 @@ import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { readYieldSnapshot } from '../../src/host/platform/yield-baseline.js'
 import type { PageSource, SiteAdapter } from '../../src/host/platform/types.js'
 import { DomainError } from '../../src/host/util/errors.js'
-import { CORE_FIELD_MISS_THRESHOLD } from '../../src/shared/constants.js'
+import { CORE_FIELD_MISS_THRESHOLD } from '../../src/shared/config/crawl.js'
 import { fixturePageSource, inlinePageSource, JsdomPage } from '../support/jsdom-page.js'
 import { cleanup, fixedClock, fixtureHtmlPath, openTestStore } from '../support/store.js'
 

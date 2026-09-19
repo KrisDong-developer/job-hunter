@@ -1,4 +1,4 @@
-import type { JobDetailDto } from '../../../../shared/dto.js'
+import type { JobDetailDto } from '../../../../shared/contract/dto/job.js'
 import { FieldHint } from '../../../ui/field-hint.js'
 import { InlineMd } from '../../../ui/inline-md.js'
 import { Gauge } from '../gauge.js'

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../../shared/dto.js';
+import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../../shared/contract/dto/plan.js';
 import { detectTimezone } from '../../util/time.js';
 /**
  * 默认排程（D-19 / SR-1）：**工作日 09:00–11:00 之间随机选点**。

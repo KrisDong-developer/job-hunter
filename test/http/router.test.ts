@@ -7,8 +7,8 @@ import { routeRequest, type RouteRequest, type RouteResult } from '../../src/hos
 import { setPlatformRiskPause } from '../../src/host/platform/risk-pause.js'
 import { createHostRuntime } from '../../src/host/runtime.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
-import { DAILY_CRAWL_LIMIT } from '../../src/shared/constants.js'
-import type { PlatformOverviewDto } from '../../src/shared/dto.js'
+import { DAILY_CRAWL_LIMIT } from '../../src/shared/config/crawl.js'
+import type { PlatformOverviewDto } from '../../src/shared/contract/dto/platform.js'
 import { cleanup, tempDataDir } from '../support/store.js'
 
 const T1 = '2026-09-16T01:00:00.000Z'

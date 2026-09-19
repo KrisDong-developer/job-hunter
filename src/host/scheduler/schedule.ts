@@ -18,8 +18,8 @@
  * 用 `hash(windowKey)` 就得到"同一个窗口里恒定、不同窗口里不同"的随机点，
  * 既满足"连续 5 天触发时刻互不相同"，也满足"落库之后不再变"。
  */
-import type { PlanSchedule } from '../../shared/dto.js'
-import { formatHourMinute } from '../../shared/time-format.js'
+import type { PlanSchedule } from '../../shared/contract/dto/plan.js'
+import { formatHourMinute } from '../../shared/text/time-format.js'
 
 /** 空 weekdays 视为每天。 */
 export function effectiveWeekdays(schedule: PlanSchedule): number[] {

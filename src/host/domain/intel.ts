@@ -16,7 +16,7 @@ import type { Store } from '../store/store.js'
 import { DICTIONARY_SEED } from './dictionary-seed.js'
 // 只借简历服务的**类型**（`resumeProfileOf` 读它，不建它）—— type-only，不引入运行时依赖
 import type { ResumeService } from './resumes.js'
-import type { ResumeContent } from '../../shared/resume.js'
+import type { ResumeContent } from '../../shared/domain/resume-content.js'
 import { parseSalary } from '../util/salary.js'
 import { describeHit, matchTerms, type TermHit } from '../util/text.js'
 

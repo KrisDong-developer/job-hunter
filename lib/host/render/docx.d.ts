@@ -10,8 +10,8 @@
  * 本文件**只依赖 `node:zlib`**（经由那个容器）：没有 IO、没有外部进程、没有 npm 依赖，
  * 同一份输入永远产出同一串字节（时间戳写死，便于测试与去重）。
  */
-import type { ResumeTemplate } from '../../shared/enums.js';
-import type { ResumeContent } from '../../shared/resume.js';
+import type { ResumeTemplate } from '../../shared/contract/enums/resume.js';
+import type { ResumeContent } from '../../shared/domain/resume-content.js';
 /** 把结构化简历渲染成**真正的 .docx**（OOXML + 自建 ZIP 容器）。 */
 export declare function renderResumeDocx(content: ResumeContent, options?: {
     template?: ResumeTemplate;

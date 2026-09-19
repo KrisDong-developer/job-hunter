@@ -77,8 +77,8 @@
  * 列表公共可看（未登录可抓，`searchWithoutLogin: true`），投递需登录。未在列表夹具验证
  * 稳定投递按钮契约之前，**不实现** `actions`（fail-closed，见 docs/ADAPTERS.md §6）。
  */
-import type { BlockKind, CoreField } from '../../../shared/enums.js'
-import { CORE_FIELDS } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
+import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'

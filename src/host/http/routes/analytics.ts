@@ -5,8 +5,8 @@
  * 简历版本 A/B 对比（GET /analytics/resume/compare）。
  * 这几个接口共用一组 query 筛选参数，解析与校验统一放在私有的 `analyticsFilterOf` 里。
  */
-import type { AnalyticsFilter } from '../../../shared/dto.js'
-import { SALARY_BASES, type SalaryBasis } from '../../../shared/dto.js'
+import type { AnalyticsFilter } from '../../../shared/contract/dto/analytics.js'
+import { SALARY_BASES, type SalaryBasis } from '../../../shared/contract/enums/analytics.js'
 import { DomainError } from '../../util/errors.js'
 import { json, requireData, type RouteContext } from './kit.js'
 import type { RouteRequest, RouteResult } from './types.js'

@@ -10,7 +10,7 @@
  * 以及把 SSE 流挂上。所有路由与业务判断在 `router.ts`（可离线单测）里。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Disposer, PluginContext } from '../shared/dsh.js';
+import type { Disposer, PluginContext } from '../shared/contract/dsh.js';
 import type { HostRuntime } from './runtime.js';
 import { type EventBus } from './http/sse.js';
 /**

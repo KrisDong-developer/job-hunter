@@ -6,16 +6,14 @@
  * 下面两个私有解析器（`buildJobQuery` / `parseState`）与常量 `ORDER_BY_VALUES` 只服务本域，不外传。
  */
 import { dataNotReady } from '../../runtime/contract.js'
-import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/constants.js'
-import type { JobDto, JobPageDto } from '../../../shared/dto.js'
-import { JOB_FLAG_TYPES, JOB_STATES } from '../../../shared/enums.js'
-import type { JobFlagType, JobState } from '../../../shared/enums.js'
+import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/config/limits.js'
+import type { JobDto, JobPageDto } from '../../../shared/contract/dto/job.js'
+import { JOB_FLAG_TYPES, JOB_ORDER_VALUES, JOB_STATES } from '../../../shared/contract/enums/job.js'
+import type { JobFlagType, JobOrderValue, JobState } from '../../../shared/contract/enums/job.js'
 import { DomainError } from '../../util/errors.js'
 import type { JobQuery } from '../../store/repo/jobs.js'
 import { json, parsePositiveInt, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'
-
-const ORDER_BY_VALUES = ['crawled_at', 'salary_min', 'title', 'last_seen_at', 'first_seen_at'] as const
 
 function parseState(raw: string | null): JobState | undefined {
   if (raw === null || raw === '') return undefined
@@ -30,9 +28,9 @@ function parseState(raw: string | null): JobState | undefined {
 function buildJobQuery(query: URLSearchParams): JobQuery {
   const state = parseState(query.get('state'))
   const orderByRaw = query.get('orderBy')
-  if (orderByRaw !== null && orderByRaw !== '' && !ORDER_BY_VALUES.includes(orderByRaw as never)) {
+  if (orderByRaw !== null && orderByRaw !== '' && !JOB_ORDER_VALUES.includes(orderByRaw as never)) {
     throw new DomainError('INVALID_INPUT', `非法排序字段：${orderByRaw}`, {
-      hint: `合法取值：${ORDER_BY_VALUES.join(' / ')}`,
+      hint: `合法取值：${JOB_ORDER_VALUES.join(' / ')}`,
     })
   }
 
@@ -86,7 +84,7 @@ function buildJobQuery(query: URLSearchParams): JobQuery {
     ...(eduReqs.length > 0 ? { eduReqs } : {}),
     ...(orderByRaw === null || orderByRaw === ''
       ? {}
-      : { orderBy: orderByRaw as (typeof ORDER_BY_VALUES)[number] }),
+      : { orderBy: orderByRaw as JobOrderValue }),
     ...(excludeFlags.length > 0 ? { excludeFlagTypes: excludeFlags } : {}),
     // 批次 4：按跨平台去重分组折叠（界面上的「跨平台折叠」开关）
     ...(query.get('groupDuplicates') === '1' ? { groupDuplicates: true } : {}),

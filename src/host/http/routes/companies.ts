@@ -3,7 +3,7 @@
  * 管 GET /companies（列表）、GET /companies/:id（详情：画像 + 信号 + 岗位 + 标记计数）、
  * PATCH /companies/:id（人工复核：白名单键的黑名单 / 备注 / 人工标签）。
  */
-import type { CompanyDetailDto } from '../../../shared/dto.js'
+import type { CompanyDetailDto } from '../../../shared/contract/dto/job.js'
 import { dataNotReady } from '../../runtime/contract.js'
 import { DomainError } from '../../util/errors.js'
 import { json, parsePositiveInt, readObject, requireData, type RouteContext } from './kit.js'

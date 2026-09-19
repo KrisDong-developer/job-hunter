@@ -4,17 +4,12 @@
  * 这一族的共同点：只跟 `runtime.jobs()`、`runtime.store()`、`runtime.intel()` 打交道，
  * 不触发任何对外动作（唯一的例外是 `job_search` 会真的抓一次，它走 `runtime.crawl`）。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import type { JobDto } from '../../shared/dto.js'
-import { CONTACT_STAGE_LABEL, JOB_FLAG_LABEL, JOB_STATES, type JobState } from '../../shared/enums.js'
-import { JOB_STATE_LABEL } from '../../shared/labels.js'
-import {
-  DETAIL_KEYS,
-  formatDetailLine,
-  formatJobDetailTitle,
-  formatJobListLine,
-  summarizeJd,
-} from '../../shared/tool-format.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import type { JobDto } from '../../shared/contract/dto/job.js'
+import { JOB_FLAG_LABEL, JOB_STATES, type JobState } from '../../shared/contract/enums/job.js'
+import { CONTACT_STAGE_LABEL } from '../../shared/contract/enums/pipeline.js'
+import { JOB_STATE_LABEL } from '../../shared/contract/enums/job.js'
+import { DETAIL_KEYS, formatDetailLine, formatJobDetailTitle, formatJobListLine, summarizeJd } from '../../shared/text/tool-format.js'
 import type { DedupSweepResult } from '../domain/dedupe-sweep.js'
 import type { HostRuntime } from '../runtime.js'
 import type { JobQuery } from '../store/repo/jobs.js'

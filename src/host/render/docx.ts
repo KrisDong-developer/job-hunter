@@ -10,8 +10,8 @@
  * 本文件**只依赖 `node:zlib`**（经由那个容器）：没有 IO、没有外部进程、没有 npm 依赖，
  * 同一份输入永远产出同一串字节（时间戳写死，便于测试与去重）。
  */
-import type { ResumeTemplate } from '../../shared/enums.js'
-import type { ResumeBasics, ResumeContent, ResumeEducation, ResumeExperience, ResumeProject } from '../../shared/resume.js'
+import type { ResumeTemplate } from '../../shared/contract/enums/resume.js'
+import type { ResumeBasics, ResumeContent, ResumeEducation, ResumeExperience, ResumeProject } from '../../shared/domain/resume-content.js'
 import { buildZip, type ZipEntry } from './zip.js'
 
 // ─────────────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 /**
  * 海外支线：工签/远程判定、时区换算、英语检查、Cover Letter。
  */
-import type { CoverLetterDto, TimezoneDisplayDto, VisaRequirementDto } from '../../shared/dto.js'
-import type { CoverLetterLanguage, RemoteKind } from '../../shared/enums.js'
+import type { CoverLetterDto, TimezoneDisplayDto, VisaRequirementDto } from '../../shared/contract/dto/overseas.js'
+import type { CoverLetterLanguage, RemoteKind } from '../../shared/contract/enums/overseas.js'
 import { request } from './client.js'
 
 export async function analyzeOverseas(

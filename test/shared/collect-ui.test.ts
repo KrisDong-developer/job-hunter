@@ -1,22 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  describeCriteria,
-  formatCriteriaLine,
-  type CriteriaDimensionLike,
-} from '../../src/shared/criteria-label.js'
-import {
-  FAILURE_KIND_LABEL,
-  failureKindOf,
-  humanizeFailure,
-  looksLikeStackTrace,
-} from '../../src/shared/error-text.js'
-import {
-  CRAWL_STATE_LABEL,
-  CRAWL_STATE_TONE,
-  HEALTH_STATE_LABEL,
-  runReasonLabel,
-} from '../../src/shared/enums.js'
+import { describeCriteria, formatCriteriaLine, type CriteriaDimensionLike } from '../../src/shared/text/criteria-label.js'
+import { FAILURE_KIND_LABEL, failureKindOf, humanizeFailure, looksLikeStackTrace } from '../../src/shared/text/error-text.js'
+import { CRAWL_STATE_LABEL, CRAWL_STATE_TONE, HEALTH_STATE_LABEL } from '../../src/shared/contract/enums/crawl.js'
+import { runReasonLabel } from '../../src/shared/contract/enums/plan.js'
 
 /**
  * 采集页可用性修复的**纯逻辑**测试。

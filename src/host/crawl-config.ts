@@ -7,12 +7,7 @@
  * 让模型自己调高它等于让被监管方掌握监管参数 —— 浏览器空闲关闭是纯资源
  * 设置所以放行了，这条不一样。
  */
-import {
-  CRAWL_ROUND_BUDGET_DEFAULT_MIN,
-  CRAWL_ROUND_BUDGET_KEY,
-  CRAWL_ROUND_BUDGET_MAX_MIN,
-  CRAWL_ROUND_BUDGET_MIN_MIN,
-} from '../shared/constants.js'
+import { CRAWL_ROUND_BUDGET_DEFAULT_MIN, CRAWL_ROUND_BUDGET_KEY, CRAWL_ROUND_BUDGET_MAX_MIN, CRAWL_ROUND_BUDGET_MIN_MIN } from '../shared/config/crawl.js'
 import type { Store } from './store/store.js'
 
 export interface CrawlConfig {

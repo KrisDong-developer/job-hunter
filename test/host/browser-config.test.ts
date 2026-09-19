@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  BROWSER_CLOSE_AFTER_RUN_MS,
-  BROWSER_IDLE_DEFAULT_MIN,
-  BROWSER_IDLE_MAX_MIN,
-  BROWSER_IDLE_KEY,
-} from '../../src/shared/constants.js'
+import { BROWSER_CLOSE_AFTER_RUN_MS, BROWSER_IDLE_DEFAULT_MIN, BROWSER_IDLE_KEY, BROWSER_IDLE_MAX_MIN } from '../../src/shared/config/browser.js'
 import {
   BROWSER_IDLE_FALLBACK,
   idleCloseMsOf,

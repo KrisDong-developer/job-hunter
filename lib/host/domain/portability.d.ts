@@ -1,4 +1,5 @@
-import type { DataExportEntryDto, DataExportFormat, DataImportResultDto } from '../../shared/dto.js';
+import type { DataExportEntryDto, DataImportResultDto } from '../../shared/contract/dto/storage.js';
+import type { DataExportFormat } from '../../shared/contract/enums/storage.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';
 /** 导入进来的岗位挂在这个虚拟平台下（不参与抓取，只在界面上标出"手动导入"）。 */

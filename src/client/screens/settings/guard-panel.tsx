@@ -1,10 +1,6 @@
-import {
-  CRAWL_ROUND_BUDGET_DEFAULT_MIN,
-  CRAWL_ROUND_BUDGET_MAX_MIN,
-  CRAWL_ROUND_BUDGET_MIN_MIN,
-} from '../../../shared/constants.js'
-import { parseWindow } from '../../format/settings-window.js'
-import type { SettingsDto } from '../../net/types.js'
+import { CRAWL_ROUND_BUDGET_DEFAULT_MIN, CRAWL_ROUND_BUDGET_MAX_MIN, CRAWL_ROUND_BUDGET_MIN_MIN } from '../../../shared/config/crawl.js'
+import { parseWindow } from '../../../shared/text/time-format.js'
+import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { NumberField } from '../../ui/number-field.js'

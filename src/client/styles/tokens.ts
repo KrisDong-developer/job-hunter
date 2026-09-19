@@ -33,15 +33,23 @@ export const SEMANTIC_TEXT = `
       （"只够非文本图形，所以用 label-secondary"），只是没推广到 .jh-board-age。
       → --jh-muted-fg 用 45% 混色：浅色 5.22:1、深色 6.76:1。
 
-   ④ **--jh-*-fg 被当成"实底填充"复用** —— 变量名本身没有区分开
+   ④ **--jh-*-fg 同时被当成"实底填充"与"文字色"用** —— 变量名本身没有区分开
       "在浅底上当文字"与"当实底配白字"两种角色。深色主题下 label-primary 是浅色，
-      混出来的变体也跟着变浅，于是 :161/:254/:844 那三处"混色当底 +
-      label-primary-foreground 当前景"在深色下**没有反向**（实测深色
-      .jh-todo-level = 7.10:1 达标）—— 但两套主题都对同一个变量提出
-      相反的方向要求，是个隐患。本轮把角色拆开并各写实测值：
-         --jh-*-fg   ：当**实底填充**的底色（:161/:254/:844 继续用它）；
-         --jh-*-text ：当**文字色**压在两套主题的卡片表面上。
-      当前两组的取值恰好相同，拆分是为了让"下次只调一处"不至于连带破坏另一处。 */
+      混出来的变体也跟着变浅，于是"混色当底 + label-primary-foreground 当前景"
+      那几处（.jh-todo-level / .jh-tag-* / .jh-chip-neg-on…）在深色下方向是反的。
+
+      ── 这一条**曾经**打算靠拆出一组 --jh-*-text 来解，但那次拆分没有落地：
+      全仓库搜不到任何 --jh-*-text 的定义或引用，两种角色至今共用同一个值。
+      现在把结论写清楚，不再留一句与实现不符的话：
+
+      **一个值同时服务两种角色是成立的，前提是这两条不变式都守着** ——
+        · 当**实底**用时，前景必须取 label-primary-foreground（它与 label-primary
+          永远反向，所以底色跟着 label-primary 走时，前景自动是对的）；
+        · 当**文字**用时，必须压在 bg-base / bg-layer-1 这类卡片表面上
+          （不要压在 bg-overlay / interactive-* 上 —— 那些底色的取值没量过）。
+      混色本身朝 label-primary 靠拢，而 label-primary 就是"当前主题的正文色"，
+      所以这两条不变式一旦成立，两套主题都会自动反向。
+      将来若要真的拆开这两个变量，先按上面两条把用法审一遍，再动值。 */
 .jh-root{
   /* 实底填充（当底色，配 label-primary-foreground 作前景）*/
   --jh-ok-fg:color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary));
@@ -52,5 +60,11 @@ export const SEMANTIC_TEXT = `
   --jh-muted-fg:color-mix(in srgb, var(--dsw-alias-label-tertiary) 45%, var(--dsw-alias-label-primary));
   --jh-error-bg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent);
   --jh-warn-bg:var(--dsw-alias-state-warn-tertiary);
-  --jh-ok-bg:var(--dsw-alias-state-success-tertiary)}
+  --jh-ok-bg:var(--dsw-alias-state-success-tertiary);
+  /* 投影色。**刻意是一个字面值，也刻意不跟 label-primary 混色** ——
+     投影在两套主题下都必须是"暗的"，而 label-primary 在深色主题里是浅色，
+     混出来的会是发光，不是投影。收成一个变量是为了让"弹窗的投影"只有一处定义
+     （原来是散在各文件里的 rgba(0,0,0,…)）；将来宿主主题若给出 elevation 令牌，
+     改这一行即可。 */
+  --jh-shadow-ink:rgba(0,0,0,.22)}
 `

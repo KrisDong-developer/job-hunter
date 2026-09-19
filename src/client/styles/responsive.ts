@@ -34,6 +34,17 @@ export const SMALL = `
   .jh-table-runs .jh-col-hide-sm{display:none}
   /* 矩阵同理：小屏先让「成熟度」「产量」让位，留下 平台/今天能跑/登录/健康/额度/最近一轮 */
   .jh-table-matrix .jh-col-hide-sm{display:none}
+  /* 能力矩阵：让「成熟度」「上次验证」两列退场（它们最不让位），
+     其余照旧横滑 —— 首列已经粘住，横滑时仍认得出是哪一行 */
+  .jh-table-caps .jh-col-hide-sm{display:none}
+  /* 采集页顶部工具条：这里装着 3 个分区按钮 + 状态 + 3 个全局按钮，
+     375px 下必然折成 2~3 行。它原来还带 position:sticky ——
+     等于常驻吃掉视口高度的 1/4~1/3，而它下面是这一页真正要看的内容。
+     窄屏改回随页面滚动："随手够得着"在这里不如"看得见内容"重要。 */
+  .jh-collect-bar{position:static}
+  /* 状态只留圆点（与顶栏 .jh-live 同一套降级）。圆点本身是 aria-hidden，
+     所以状态对读屏仍然完整 —— 靠的就是被隐掉的这一层文字。 */
+  .jh-collect-switch-text{display:none}
   .jh-clip{max-width:11em}
   /* 主要操作在小屏仍然找得到：方案卡的动作换行且左对齐，不挤成一条 */
   .jh-plan-head{gap:4px}

@@ -1,4 +1,4 @@
-import type { CrawlSummaryDto } from '../../shared/dto.js';
+import type { CrawlSummaryDto } from '../../shared/contract/dto/crawl.js';
 import { type Clock } from '../util/time.js';
 import type { PlatformLocks } from '../platform/locks.js';
 import { type BurstGuardLike } from '../platform/pacing.js';

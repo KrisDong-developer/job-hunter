@@ -1,4 +1,4 @@
-import type { AttributionRowDto } from '../../../shared/dto.js'
+import type { AttributionRowDto } from '../../../shared/contract/dto/analytics.js'
 import { formatRate } from './format.js'
 
 /**

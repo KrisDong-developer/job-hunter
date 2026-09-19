@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MAX_CONCURRENT_PLATFORMS } from '../../src/shared/constants.js'
+import { MAX_CONCURRENT_PLATFORMS } from '../../src/shared/config/crawl.js'
 import { runInLanes } from '../../src/host/scheduler/lanes.js'
 
 /**

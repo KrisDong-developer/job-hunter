@@ -5,25 +5,9 @@
  * 所以工具面把它们单独暴露出来 —— 硬截止必须能被模型主动查到并提醒，
  * 而不是等用户在界面上发现。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import {
-  ASSESSMENT_KINDS,
-  ASSESSMENT_KIND_LABEL,
-  ASSESSMENT_STATES,
-  ASSESSMENT_STATE_LABEL,
-  CAMPUS_BATCHES,
-  CAMPUS_BATCH_LABEL,
-  CAMPUS_STAGES,
-  CAMPUS_STAGE_LABEL,
-  TRIPARTITE_STATES,
-  TRIPARTITE_STATE_LABEL,
-  type AssessmentKind,
-  type AssessmentState,
-  type CampusBatch,
-  type CampusStage,
-  type TripartiteState,
-} from '../../shared/enums.js'
-import { formatLocalMoment } from '../../shared/time-format.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import { ASSESSMENT_KINDS, ASSESSMENT_KIND_LABEL, ASSESSMENT_STATES, ASSESSMENT_STATE_LABEL, CAMPUS_BATCHES, CAMPUS_BATCH_LABEL, CAMPUS_STAGES, CAMPUS_STAGE_LABEL, TRIPARTITE_STATES, TRIPARTITE_STATE_LABEL, type AssessmentKind, type AssessmentState, type CampusBatch, type CampusStage, type TripartiteState } from '../../shared/contract/enums/campus.js'
+import { formatLocalMoment } from '../../shared/text/time-format.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import {

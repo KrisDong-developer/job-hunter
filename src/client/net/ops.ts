@@ -1,10 +1,11 @@
 /**
  * 运维面：设置读写、数据目录、审计与模型调用留痕、存储清理、导入导出、待办。
  */
-import { ROUTE_PREFIX } from '../../shared/constants.js'
-import type { CleanupPlanDto, CleanupResultDto, DataImportResultDto, StorageUsageDto } from '../../shared/dto.js'
+import { ROUTE_PREFIX } from '../../shared/config/plugin.js'
+import type { CleanupPlanDto, CleanupResultDto, DataImportResultDto, StorageUsageDto } from '../../shared/contract/dto/storage.js'
 import { request } from './client.js'
-import type { AuditRecordDto, ConfirmActionIntentDto, LlmCallDto, SettingsDto } from './types.js'
+import type { AuditRecordDto, LlmCallDto, SettingsDto } from '../../shared/contract/dto/settings.js'
+import type { ConfirmActionIntentDto } from '../../shared/contract/dto/today.js'
 
 export async function closeTodo(id: number): Promise<void> {
   await request<{ ok: boolean }>(`/todos/${String(id)}/close`, {

@@ -11,30 +11,13 @@
  * 3. **状态只能往前走，但允许人工回退**：回退要显式传 `allowBackward`，
  *    免得手滑把"已 Offer"点回"已投递"而没人知道为什么。
  */
-import type {
-  ApplicationChannel,
-  ApplicationStage,
-  ContactStage,
-  StageSource,
-} from '../../shared/enums.js'
-import {
-  APPLICATION_CHANNELS,
-  APPLICATION_STAGES,
-  NO_PROGRESS_DAYS,
-  STAGE_ORDER,
-  TERMINAL_STAGES,
-  stageRank,
-} from '../../shared/enums.js'
-import type { ApplicationDto, BoardDto, BoardCardDto, GreetingDto, StageEventDto } from '../../shared/dto.js'
+import type { ApplicationChannel, ApplicationStage, ContactStage, StageSource } from '../../shared/contract/enums/pipeline.js'
+import { APPLICATION_CHANNELS, APPLICATION_STAGES, NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank } from '../../shared/contract/enums/pipeline.js'
+import type { ApplicationDto, BoardCardDto, BoardDto, GreetingDto, StageEventDto } from '../../shared/contract/dto/pipeline.js'
 import type { Store } from '../store/store.js'
 import type { ApplicationRecord, GreetingRecord } from '../store/repo/pipeline.js'
 import { systemClock, type Clock } from '../util/time.js'
 import { DomainError } from '../util/errors.js'
-
-/* 阶段顺序 / 终态 / 无进展阈值现在定义在 `shared/enums.ts`：
-   客户端也要用它们决定看板怎么画（列序、"推进到 X"的文案、终态不给按钮），
-   留在 host 会让两边各写一份顺序，迟早对不上。这里转发，保持既有 import 不用改。 */
-export { NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank }
 
 export interface PipelineService {
   /** 记一次投递。`actor` 决定审计归属（gui / model）。 */
@@ -151,7 +134,7 @@ export interface FollowUpSuggestion {
 export const UNREAD_TIMEOUT_HOURS = 72
 /** 已读未回超时阈值（小时）——超过就建议改简历/话术，而不是继续加量（§3.3 / §3.2）。 */
 export const READ_TIMEOUT_HOURS = 24 * 7
-/** 投递后完全没进展的阈值（天）现在也在 shared/enums.ts（客户端要用来判断"该催了"）。 */
+/** 投递后完全没进展的阈值（天）现在也在 shared/contract/enums/pipeline.ts（客户端要用来判断"该催了"）。 */
 
 export interface PipelineDeps {
   store: Store

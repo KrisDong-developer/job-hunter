@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Disposer, PluginContext, ToolDefinition, ToolsService } from '../../src/shared/dsh.js'
+import type { Disposer, PluginContext, ToolDefinition, ToolsService } from '../../src/shared/contract/dsh.js'
 import { TOOL_BATCH_MAX, registerJobHunterTools, type ToolRegistrationReport } from '../../src/host/tools/index.js'
 import { toolExec } from '../../src/host/tools/exec-context.js'
 import { createHostRuntime, type HostRuntime } from '../../src/host/runtime.js'
@@ -253,13 +253,13 @@ test('job_query / job_detail 的结果能被共享解析器读出来（卡片依
     const listValue = (await h.run('job_query', { pageSize: 5 })) as { total: number; jobs: unknown[] }
     assert.equal(listValue.total, 2)
     const listText = render(h.definitions.get('job_query') as ToolDefinition, { pageSize: 5 }, listValue)
-    const { parseJobListLine } = await import('../../src/shared/tool-format.js')
+    const { parseJobListLine } = await import('../../src/shared/text/tool-format.js')
     const parsed = listText.split('\n').map((line) => parseJobListLine(line)).filter((item) => item !== undefined)
     assert.equal(parsed.length, 2, '列表里的每个岗位都要能被解析出来')
 
     const detailValue = (await h.run('job_detail', { jobId: 1 })) as { text: string }
     const detailText = render(h.definitions.get('job_detail') as ToolDefinition, { jobId: 1 }, detailValue)
-    const { parseDetailLines, DETAIL_KEYS } = await import('../../src/shared/tool-format.js')
+    const { parseDetailLines, DETAIL_KEYS } = await import('../../src/shared/text/tool-format.js')
     const keys = parseDetailLines(detailText).map((row) => row?.key)
     assert.ok(keys.includes(DETAIL_KEYS.company))
     assert.ok(keys.includes(DETAIL_KEYS.salary))

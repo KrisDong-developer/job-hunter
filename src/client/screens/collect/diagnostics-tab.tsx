@@ -1,7 +1,9 @@
 // 分区三「诊断与明细」：实验配置（平台静态事实 / 能力矩阵）+ 异常日志。
 // 纯展示组件：数据与动作全部由 CollectScreen 通过 props 传入，本文件不持有任何状态。
-import type { PlatformOverviewDto, RecentRunDto, SchedulerStatusDto } from '../../../shared/dto.js'
-import type { FailureText } from '../../../shared/error-text.js'
+import type { RecentRunDto } from '../../../shared/contract/dto/crawl.js'
+import type { SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
+import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
+import type { FailureText } from '../../../shared/text/error-text.js'
 import { LoadingLine } from '../../ui/async-view.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { CapabilityMatrix } from './capability-matrix.js'

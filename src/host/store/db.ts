@@ -10,12 +10,7 @@ import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import {
-  APPLICATION_ID,
-  DATA_DIR_ENV,
-  DATA_DIR_NAME,
-  DB_FILENAME,
-} from '../../shared/constants.js'
+import { APPLICATION_ID, DATA_DIR_ENV, DATA_DIR_NAME, DB_FILENAME } from '../../shared/config/plugin.js'
 import { DomainError } from '../util/errors.js'
 import { asInt, type Row } from './row.js'
 

@@ -15,8 +15,8 @@
  */
 import type { AdapterRegistry } from '../../platform/registry.js'
 import type { SessionService } from '../../platform/session.js'
-import type { DeliveryState } from '../../../shared/enums.js'
-import type { JobDto } from '../../../shared/dto.js'
+import type { DeliveryState } from '../../../shared/contract/enums/job.js'
+import type { JobDto } from '../../../shared/contract/dto/job.js'
 import type { PageSource } from '../../platform/types.js'
 import type { Store } from '../../store/store.js'
 import { DomainError, messageOf } from '../../util/errors.js'

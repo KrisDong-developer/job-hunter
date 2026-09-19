@@ -54,8 +54,8 @@
  *   `pcOuterLink`（外链岗）—— 这是 v2 接口化解析的方向（采样已存
  *   `test/fixtures/liepin-search-api*.json`）。
  */
-import type { BlockKind, CoreField } from '../../../shared/enums.js'
-import { CORE_FIELDS } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
+import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'

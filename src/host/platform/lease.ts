@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { LeaseStatusDto } from '../../shared/dto.js'
+import type { LeaseStatusDto } from '../../shared/contract/dto/plan.js'
 import { systemClock, type Clock } from '../util/time.js'
 
 export interface LeaseRecord {

@@ -1,7 +1,7 @@
 /**
  * 公司画像与人工复核（打标签 / 拉黑）。
  */
-import type { CompanyDetailDto } from '../../shared/dto.js'
+import type { CompanyDetailDto } from '../../shared/contract/dto/job.js'
 import { request } from './client.js'
 
 /**

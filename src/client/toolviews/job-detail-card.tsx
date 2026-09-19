@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { ToolCallOwnerProps } from '../../shared/dsh.js'
-import { parseDetailLines } from '../../shared/tool-format.js'
+import type { ToolCallOwnerProps } from '../../shared/contract/dsh.js'
+import { parseDetailLines } from '../../shared/text/tool-format.js'
 import { markJob } from '../net/jobs.js'
 import { draftGreeting } from '../net/outreach.js'
 import { CardShell, isSettled, textOf, useAction } from './parts.js'

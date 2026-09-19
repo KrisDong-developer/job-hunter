@@ -1,10 +1,12 @@
 /**
  * 岗位库：列表 / 筛选面 / 详情 / 处置态 / 查看历史。
  */
-import type { JobDetailDto, JobDto, JobFacetsDto, JobPageDto, StageEventDto } from '../../shared/dto.js'
-import type { ContactStage, JobState } from '../../shared/enums.js'
+import type { JobDetailDto, JobDto, JobFacetsDto, JobPageDto } from '../../shared/contract/dto/job.js'
+import type { StageEventDto } from '../../shared/contract/dto/pipeline.js'
+import type { JobState } from '../../shared/contract/enums/job.js'
+import type { ContactStage } from '../../shared/contract/enums/pipeline.js'
 import { request } from './client.js'
-import type { JobListParams } from './types.js'
+import type { JobListParams } from '../../shared/contract/dto/job.js'
 
 export async function fetchJobs(params: JobListParams, signal?: AbortSignal): Promise<JobPageDto> {
   const query = new URLSearchParams()

@@ -9,8 +9,8 @@
  * 把"再不做就来不及了"这件事单独挑出来。它们会被 U0 与待办系统当 **urgent** 处理，
  * 而不是普通通知 —— 这类错误没有第二次机会（决策记录第 3 条）。
  */
-import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../shared/enums.js';
-import type { CampusApplicationDto, AssessmentDto, DeadlineDto, TalkSessionDto, TripartiteDto } from '../../shared/dto.js';
+import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../shared/contract/enums/campus.js';
+import type { AssessmentDto, CampusApplicationDto, DeadlineDto, TalkSessionDto, TripartiteDto } from '../../shared/contract/dto/campus.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';
 /** 距截止多久开始算"紧急"。24 小时以内的硬截止才是 urgent —— 再早会变成狼来了。 */

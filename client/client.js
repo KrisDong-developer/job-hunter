@@ -33,27 +33,14 @@ window.__ModuleLoader__.load({
 		});
 		module.exports = __toCommonJS(index_exports);
 
-		// src/shared/constants.ts
+		// src/shared/config/plugin.ts
 		var PLUGIN_ID = "dsh-job-hunter";
 		var PANEL_KEY = "job-hunter";
 		var ROUTE_PREFIX = "/job-hunter";
 		var NOTICE_TTL_MS = 6e3;
 		var PHASE = "P8";
-		var MAX_BODY_BYTES = 64 * 1024;
-		var ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
-		var ATTACHMENT_BODY_MAX_BYTES = 8 * 1024 * 1024;
-		var ROUND_BUDGET_MS = 20 * 60 * 1e3;
-		var PLAN_KEYWORDS_MAX = 10;
-		var CRAWL_ROUND_BUDGET_DEFAULT_MIN = 20;
-		var CRAWL_ROUND_BUDGET_MIN_MIN = 5;
-		var CRAWL_ROUND_BUDGET_MAX_MIN = 240;
-		var BROWSER_IDLE_DEFAULT_MIN = 10;
-		var BROWSER_IDLE_MIN_MIN = 0;
-		var BROWSER_IDLE_MAX_MIN = 240;
-		var BROWSER_CLOSE_AFTER_RUN_MS = 3e3;
-		var EXPORT_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
 
-		// src/shared/dsh.ts
+		// src/shared/contract/dsh.ts
 		function serviceOf(ctx2, name2) {
 		  const value = ctx2.get(name2);
 		  return value === void 0 || value === null ? void 0 : value;
@@ -142,7 +129,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/app/panel.tsx
-		var import_react38 = require("react");
+		var import_react39 = require("react");
 
 		// src/client/app/error-boundary.tsx
 		var import_react2 = require("react");
@@ -309,43 +296,15 @@ window.__ModuleLoader__.load({
 		  }, deps);
 		}
 
-		// src/shared/enums.ts
+		// src/shared/contract/enums/job.ts
 		var JOB_STATES = ["new", "seen", "saved", "ignored", "archived"];
-		var CRAWL_STATE_LABEL = {
-		  queued: "\u6392\u961F\u4E2D",
-		  running: "\u8FDB\u884C\u4E2D",
-		  ok: "\u6210\u529F",
-		  partial: "\u90E8\u5206\u6210\u529F",
-		  failed: "\u5931\u8D25",
-		  aborted: "\u5DF2\u4E2D\u6B62"
+		var JOB_STATE_LABEL = {
+		  new: "\u65B0",
+		  seen: "\u5DF2\u8BFB",
+		  saved: "\u5DF2\u6536\u85CF",
+		  ignored: "\u5DF2\u5FFD\u7565",
+		  archived: "\u5DF2\u5F52\u6863"
 		};
-		var CRAWL_STATE_TONE = {
-		  queued: "muted",
-		  running: "muted",
-		  ok: "ok",
-		  partial: "warn",
-		  failed: "error",
-		  aborted: "muted"
-		};
-		var HEALTH_STATE_LABEL = {
-		  healthy: "\u6B63\u5E38",
-		  degraded: "\u964D\u7EA7",
-		  broken: "\u5931\u6548"
-		};
-		var HEALTH_STATE_TONE = {
-		  healthy: "ok",
-		  degraded: "warn",
-		  broken: "error"
-		};
-		var RUN_REASON_LABEL = {
-		  schedule: "\u5B9A\u65F6",
-		  manual: "\u624B\u52A8",
-		  "catch-up": "\u8865\u8DD1"
-		};
-		function runReasonLabel(reason) {
-		  if (reason === null || reason === "") return null;
-		  return RUN_REASON_LABEL[reason] ?? reason;
-		}
 		var DELIVERY_STATE_LABEL = {
 		  delivered: "\u5DF2\u786E\u8BA4\u9001\u8FBE",
 		  pending: "\u5DF2\u53D1\u51FA\xB7\u672A\u786E\u8BA4",
@@ -357,48 +316,6 @@ window.__ModuleLoader__.load({
 		  pending: "warn",
 		  failed: "error",
 		  missing: "muted"
-		};
-		var MATURITY_LEVEL_LABEL = {
-		  stable: "\u53EF\u7528\uFF08\u771F\u5B9E\u5939\u5177 + \u5192\u70DF\u9A8C\u8BC1\uFF09",
-		  calibrated: "\u5DF2\u6821\u51C6\uFF08\u63A2\u9488/\u5939\u5177\u9A8C\u8BC1\uFF0C\u7F3A\u53E3\u89C1\u5907\u6CE8\uFF09",
-		  experimental: "\u5B9E\u9A8C\uFF08\u672A\u9A8C\u8BC1\u6216\u90E8\u5206\u672A\u5B9E\u73B0\uFF0C\u53EF\u80FD\u8FD4\u56DE\u7A7A\uFF09",
-		  disabled: "\u505C\u7528\uFF08\u5E73\u53F0\u4FA7\u4E0D\u53EF\u7528\uFF0C\u9700\u6539\u914D\u7F6E\u624D\u542F\u7528\uFF09"
-		};
-		var MATURITY_LEVEL_SHORT = {
-		  stable: "\u53EF\u7528",
-		  calibrated: "\u5DF2\u6821\u51C6",
-		  experimental: "\u5B9E\u9A8C",
-		  disabled: "\u505C\u7528"
-		};
-		var MATURITY_LEVEL_TONE = {
-		  stable: "ok",
-		  calibrated: "warn",
-		  experimental: "error",
-		  disabled: "muted"
-		};
-		function maturityNeedsWarning(level) {
-		  return level === "experimental" || level === "disabled";
-		}
-		var AUTH_REQUIREMENT_LABEL = {
-		  none: "\u4E0D\u9700\u8981\u767B\u5F55",
-		  required: "\u9700\u8981\u767B\u5F55",
-		  unknown: "\u5C1A\u672A\u9A8C\u8BC1"
-		};
-		var TODO_LEVEL_LABEL = {
-		  info: "\u63D0\u793A",
-		  warn: "\u63D0\u9192",
-		  urgent: "\u7D27\u6025"
-		};
-		var TODO_KIND_LABEL = {
-		  "adapter-degraded": "\u9002\u914D\u5668\u964D\u7EA7",
-		  "adapter-broken": "\u9002\u914D\u5668\u5931\u6548",
-		  "yield-drop": "\u91CF\u7EA7\u9AA4\u964D",
-		  "login-required": "\u9700\u8981\u767B\u5F55",
-		  blocked: "\u98CE\u63A7\u6682\u505C",
-		  "new-jobs": "\u65B0\u5C97\u4F4D",
-		  "catch-up": "\u8865\u6293\u6B20\u8D26",
-		  "confirm-action": "\u5F85\u786E\u8BA4\u52A8\u4F5C",
-		  deadline: "\u786C\u622A\u6B62"
 		};
 		var JOB_FLAG_TYPES = [
 		  "outsourcing",
@@ -414,129 +331,19 @@ window.__ModuleLoader__.load({
 		  salary_inflation: "\u85AA\u8D44\u865A\u6807",
 		  jargon_hit: "\u9ED1\u8BDD"
 		};
-		var RESUME_LANGUAGE_LABEL = {
-		  zh: "\u4E2D\u6587",
-		  en: "\u82F1\u6587"
-		};
-		var RESUME_TEMPLATES = ["concise", "professional"];
-		var RESUME_TEMPLATE_LABEL = {
-		  concise: "\u7B80\u6D01",
-		  professional: "\u4E13\u4E1A"
-		};
-		var CONTACT_STAGE_LABEL = {
-		  none: "\u672A\u63A5\u89E6",
-		  greeted: "\u5DF2\u6253\u62DB\u547C",
-		  delivered: "\u5DF2\u9001\u8FBE",
-		  read: "HR \u5DF2\u8BFB",
-		  replied: "HR \u5DF2\u56DE\u590D",
-		  interview_scheduled: "\u5DF2\u7EA6\u9762"
-		};
-		var MANUAL_CONTACT_STAGES = ["greeted", "delivered", "read", "replied", "interview_scheduled"];
-		var APPLICATION_STAGES = [
-		  "sent",
-		  "viewed",
-		  "interviewing",
-		  "interviewed",
-		  "offer",
-		  "rejected",
-		  "no_reply"
+		var JOB_ORDER_OPTIONS = [
+		  { value: "crawled_at", label: "\u6309\u6293\u53D6\u65F6\u95F4" },
+		  { value: "salary_min", label: "\u6309\u6708\u85AA" },
+		  { value: "last_seen_at", label: "\u6309\u6700\u8FD1\u51FA\u73B0" },
+		  { value: "first_seen_at", label: "\u6309\u9996\u6B21\u51FA\u73B0" },
+		  { value: "title", label: "\u6309\u6807\u9898" }
 		];
-		var APPLICATION_STAGE_LABEL = {
-		  sent: "\u5DF2\u6295\u9012",
-		  viewed: "\u5DF2\u67E5\u770B",
-		  interviewing: "\u9762\u8BD5\u4E2D",
-		  interviewed: "\u5DF2\u9762\u8BD5",
-		  offer: "Offer",
-		  rejected: "\u5DF2\u62D2\u7EDD",
-		  no_reply: "\u65E0\u56DE\u590D"
-		};
-		var STAGE_ORDER = APPLICATION_STAGES;
-		var TERMINAL_STAGES = ["offer", "rejected", "no_reply"];
-		function nextStageOf(stage) {
-		  const index = STAGE_ORDER.indexOf(stage);
-		  if (index < 0 || index >= STAGE_ORDER.length - 1) return null;
-		  const next = STAGE_ORDER[index + 1];
-		  return next === void 0 || TERMINAL_STAGES.includes(next) ? null : next;
-		}
-		var NO_PROGRESS_DAYS = 21;
-		var APPLICATION_CHANNEL_LABEL = {
-		  platform: "\u5E73\u53F0\u5185\u6295",
-		  referral: "\u5185\u63A8",
-		  website: "\u5B98\u7F51",
-		  headhunter: "\u730E\u5934"
-		};
-		var INTERVIEW_STATE_LABEL = {
-		  pending: "\u5F85\u786E\u8BA4",
-		  confirmed: "\u5DF2\u786E\u8BA4",
-		  done: "\u5DF2\u5B8C\u6210",
-		  reviewed: "\u5DF2\u590D\u76D8",
-		  cancelled: "\u5DF2\u53D6\u6D88",
-		  rescheduled: "\u5DF2\u6539\u671F"
-		};
-		var INTERVIEW_KINDS = ["onsite", "video", "phone", "other"];
-		var INTERVIEW_KIND_LABEL = {
-		  onsite: "\u73B0\u573A",
-		  video: "\u89C6\u9891",
-		  phone: "\u7535\u8BDD",
-		  other: "\u5176\u5B83"
-		};
-		var CAMPUS_BATCHES = ["autumn", "spring", "other"];
-		var CAMPUS_BATCH_LABEL = {
-		  autumn: "\u79CB\u62DB",
-		  spring: "\u6625\u62DB",
-		  other: "\u5176\u4ED6\u6279\u6B21"
-		};
-		var CAMPUS_STAGE_LABEL = {
-		  intent: "\u610F\u5411",
-		  applied: "\u5DF2\u7F51\u7533",
-		  assessment_pending: "\u5F85\u7B14\u8BD5",
-		  assessment_done: "\u5DF2\u7B14\u8BD5",
-		  interview_pending: "\u5F85\u9762\u8BD5",
-		  interviewing: "\u9762\u8BD5\u4E2D",
-		  final: "\u7EC8\u9762",
-		  tripartite_pending: "\u5F85\u53D1\u4E09\u65B9",
-		  tripartite_signed: "\u5DF2\u7B7E\u4E09\u65B9",
-		  closed: "\u7ED3\u675F",
-		  rejected: "\u5DF2\u62D2"
-		};
-		var ASSESSMENT_KIND_LABEL = {
-		  written: "\u7B14\u8BD5",
-		  aptitude: "\u80FD\u529B\u6D4B\u8BC4",
-		  personality: "\u6027\u683C\u6D4B\u8BC4",
-		  video: "AI \u89C6\u9891\u9762",
-		  other: "\u5176\u5B83"
-		};
-		var ASSESSMENT_STATE_LABEL = {
-		  pending: "\u5F85\u5B8C\u6210",
-		  in_progress: "\u8FDB\u884C\u4E2D",
-		  done: "\u5DF2\u5B8C\u6210",
-		  missed: "\u5DF2\u9519\u8FC7"
-		};
-		var TRIPARTITE_STATE_LABEL = {
-		  pending: "\u5F85\u7B7E",
-		  signed: "\u5DF2\u7B7E",
-		  breached: "\u8FDD\u7EA6"
-		};
-		var VISA_STANCE_LABEL = {
-		  provides: "\u63D0\u4F9B\u7B7E\u8BC1\u62C5\u4FDD",
-		  no_sponsorship: "\u4E0D\u63D0\u4F9B\u62C5\u4FDD",
-		  local_only: "\u4EC5\u9650\u672C\u5730\u8EAB\u4EFD",
-		  unknown: "\u672A\u8BC6\u522B"
-		};
-		var REMOTE_KIND_LABEL = {
-		  onsite: "\u5750\u73ED",
-		  hybrid: "\u6DF7\u5408",
-		  remote: "\u8FDC\u7A0B",
-		  unknown: "\u672A\u8BC6\u522B"
-		};
-		var REPLY_SCENARIOS = [
-		  { key: "negotiate-time", label: "\u534F\u5546\u9762\u8BD5\u65F6\u95F4" },
-		  { key: "salary", label: "\u8BE2\u95EE\u85AA\u8D44\u7ED3\u6784" },
-		  { key: "decline", label: "\u5A49\u62D2\u9080\u7EA6" }
+		var TODAY_NEW_WINDOW_HOURS = 24;
+		var JOB_NEW_WINDOWS = [
+		  { value: "1d", label: "\u8FD1 24 \u5C0F\u65F6", hours: TODAY_NEW_WINDOW_HOURS },
+		  { value: "3d", label: "\u8FD1 3 \u5929", hours: 72 },
+		  { value: "7d", label: "\u8FD1 7 \u5929", hours: 168 }
 		];
-		var REPLY_SCENARIO_LABEL = Object.fromEntries(
-		  REPLY_SCENARIOS.map((item) => [item.key, item.label])
-		);
 
 		// src/client/format/job.ts
 		var JOB_ACTION_LABEL = {
@@ -562,6 +369,13 @@ window.__ModuleLoader__.load({
 		  const days = Math.floor(hours / 24);
 		  if (days <= 30) return `${String(days)} \u5929\u524D`;
 		  return iso.slice(0, 10);
+		}
+		function localDateTime(iso, now = /* @__PURE__ */ new Date()) {
+		  const at = new Date(iso);
+		  if (Number.isNaN(at.getTime())) return iso;
+		  const pad2 = (value) => String(value).padStart(2, "0");
+		  const date = `${pad2(at.getMonth() + 1)}-${pad2(at.getDate())} ${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+		  return at.getFullYear() === now.getFullYear() ? date : `${String(at.getFullYear())}-${date}`;
 		}
 		var BENEFIT_KEYWORDS = [
 		  "\u4E94\u9669",
@@ -669,16 +483,22 @@ window.__ModuleLoader__.load({
 		};
 
 		// src/client/hooks/use-async.ts
-		function useAsync(loader, deps) {
+		function useAsync(loader, deps, options = {}) {
 		  const [nonce, setNonce] = (0, import_react4.useState)(0);
 		  const [state, setState] = (0, import_react4.useState)({ status: "loading" });
+		  const [refreshing, setRefreshing] = (0, import_react4.useState)(false);
+		  const stateRef = (0, import_react4.useRef)(state);
+		  stateRef.current = state;
 		  (0, import_react4.useEffect)(() => {
 		    const controller = new AbortController();
-		    setState({ status: "loading" });
+		    const keep = options.keepPrevious === true && stateRef.current.status === "ok";
+		    if (keep) setRefreshing(true);
+		    else setState({ status: "loading" });
 		    loader(controller.signal).then(
 		      (data) => {
 		        if (controller.signal.aborted) return;
 		        setState({ status: "ok", data });
+		        setRefreshing(false);
 		      },
 		      (error) => {
 		        if (controller.signal.aborted) return;
@@ -687,6 +507,7 @@ window.__ModuleLoader__.load({
 		          message: error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error),
 		          hint: error instanceof ApiError ? error.hint : void 0
 		        });
+		        setRefreshing(false);
 		      }
 		    );
 		    return () => {
@@ -696,7 +517,7 @@ window.__ModuleLoader__.load({
 		  const reload = (0, import_react4.useCallback)(() => {
 		    setNonce((value) => value + 1);
 		  }, []);
-		  return { state, reload };
+		  return { state, reload, refreshing };
 		}
 
 		// src/client/net/jobs.ts
@@ -867,9 +688,6 @@ window.__ModuleLoader__.load({
 		    `/analytics/attribution${analyticsQuery(filter)}`,
 		    signal === void 0 ? {} : { signal }
 		  );
-		}
-		async function fetchSalaryBand(filter = {}, signal) {
-		  return await request(`/analytics/salary${analyticsQuery(filter)}`, signal === void 0 ? {} : { signal });
 		}
 		async function fetchSalaryBox(filter = {}, basis = "monthly_min", signal) {
 		  const query = analyticsQuery(filter);
@@ -1189,6 +1007,20 @@ window.__ModuleLoader__.load({
 		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: props.className ?? "jh-error", role: props.role, children: props.children });
 		}
 
+		// src/shared/contract/enums/overseas.ts
+		var VISA_STANCE_LABEL = {
+		  provides: "\u63D0\u4F9B\u7B7E\u8BC1\u62C5\u4FDD",
+		  no_sponsorship: "\u4E0D\u63D0\u4F9B\u62C5\u4FDD",
+		  local_only: "\u4EC5\u9650\u672C\u5730\u8EAB\u4EFD",
+		  unknown: "\u672A\u8BC6\u522B"
+		};
+		var REMOTE_KIND_LABEL = {
+		  onsite: "\u5750\u73ED",
+		  hybrid: "\u6DF7\u5408",
+		  remote: "\u8FDC\u7A0B",
+		  unknown: "\u672A\u8BC6\u522B"
+		};
+
 		// src/client/net/overseas.ts
 		async function analyzeOverseas(jobId) {
 		  return await request(
@@ -1435,19 +1267,35 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/ui/field-hint.tsx
+		var import_react7 = require("react");
 		var import_jsx_runtime9 = require("react/jsx-runtime");
 		function FieldHint(props) {
-		  if (props.variant === "inline") {
-		    return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-hint", role: "img", "aria-label": props.text, title: props.text, children: "?" });
-		  }
-		  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "jh-field-hint", title: props.text, "aria-label": props.text, children: "?" });
+		  const [open, setOpen] = (0, import_react7.useState)(false);
+		  const textId = (0, import_react7.useId)();
+		  const inline = props.variant === "inline";
+		  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "jh-hint-wrap", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: inline ? "jh-hint" : "jh-field-hint",
+		        "aria-label": "\u67E5\u770B\u8BF4\u660E",
+		        "aria-expanded": open,
+		        "aria-controls": textId,
+		        title: props.text,
+		        onClick: () => setOpen((value) => !value),
+		        children: "?"
+		      }
+		    ),
+		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { id: textId, role: "note", className: open ? "jh-hint-text" : "jh-sr-only", children: props.text })
+		  ] });
 		}
 
 		// src/client/ui/modal.tsx
-		var import_react7 = require("react");
+		var import_react8 = require("react");
 		var import_jsx_runtime10 = require("react/jsx-runtime");
 		function Modal(props) {
-		  const dialogRef = (0, import_react7.useRef)(null);
+		  const dialogRef = (0, import_react8.useRef)(null);
 		  useDialogA11y(dialogRef, props.onClose);
 		  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "jh-modal-layer", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
@@ -1646,13 +1494,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/views/job-detail/company-review.tsx
-		var import_react8 = require("react");
+		var import_react9 = require("react");
 		var import_jsx_runtime14 = require("react/jsx-runtime");
 		function CompanyReview(props) {
-		  const [label, setLabel] = (0, import_react8.useState)(props.company.manualLabel ?? "");
-		  const [blacklisted, setBlacklisted] = (0, import_react8.useState)(props.company.blacklisted);
-		  const [busy, setBusy] = (0, import_react8.useState)(false);
-		  const [failure, setFailure] = (0, import_react8.useState)(null);
+		  const [label, setLabel] = (0, import_react9.useState)(props.company.manualLabel ?? "");
+		  const [blacklisted, setBlacklisted] = (0, import_react9.useState)(props.company.blacklisted);
+		  const [busy, setBusy] = (0, import_react9.useState)(false);
+		  const [failure, setFailure] = (0, import_react9.useState)(null);
 		  const save = async (event) => {
 		    event.preventDefault();
 		    setBusy(true);
@@ -1770,11 +1618,11 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/views/job-detail/jd-text.tsx
-		var import_react9 = require("react");
+		var import_react10 = require("react");
 		var import_jsx_runtime16 = require("react/jsx-runtime");
 		var JD_PREVIEW_CHARS = 320;
 		function JdText(props) {
-		  const [expanded, setExpanded] = (0, import_react9.useState)(false);
+		  const [expanded, setExpanded] = (0, import_react10.useState)(false);
 		  const long = props.text.length > JD_PREVIEW_CHARS;
 		  const shown = long && !expanded ? `${props.text.slice(0, JD_PREVIEW_CHARS)}\u2026` : props.text;
 		  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
@@ -1917,13 +1765,48 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 
-		// src/shared/labels.ts
-		var JOB_STATE_LABEL = {
-		  new: "\u65B0",
-		  seen: "\u5DF2\u8BFB",
-		  saved: "\u5DF2\u6536\u85CF",
-		  ignored: "\u5DF2\u5FFD\u7565",
-		  archived: "\u5DF2\u5F52\u6863"
+		// src/shared/contract/enums/pipeline.ts
+		var CONTACT_STAGE_LABEL = {
+		  none: "\u672A\u63A5\u89E6",
+		  greeted: "\u5DF2\u6253\u62DB\u547C",
+		  delivered: "\u5DF2\u9001\u8FBE",
+		  read: "HR \u5DF2\u8BFB",
+		  replied: "HR \u5DF2\u56DE\u590D",
+		  interview_scheduled: "\u5DF2\u7EA6\u9762"
+		};
+		var MANUAL_CONTACT_STAGES = ["greeted", "delivered", "read", "replied", "interview_scheduled"];
+		var APPLICATION_STAGES = [
+		  "sent",
+		  "viewed",
+		  "interviewing",
+		  "interviewed",
+		  "offer",
+		  "rejected",
+		  "no_reply"
+		];
+		var APPLICATION_STAGE_LABEL = {
+		  sent: "\u5DF2\u6295\u9012",
+		  viewed: "\u5DF2\u67E5\u770B",
+		  interviewing: "\u9762\u8BD5\u4E2D",
+		  interviewed: "\u5DF2\u9762\u8BD5",
+		  offer: "Offer",
+		  rejected: "\u5DF2\u62D2\u7EDD",
+		  no_reply: "\u65E0\u56DE\u590D"
+		};
+		var STAGE_ORDER = APPLICATION_STAGES;
+		var TERMINAL_STAGES = ["offer", "rejected", "no_reply"];
+		function nextStageOf(stage) {
+		  const index = STAGE_ORDER.indexOf(stage);
+		  if (index < 0 || index >= STAGE_ORDER.length - 1) return null;
+		  const next = STAGE_ORDER[index + 1];
+		  return next === void 0 || TERMINAL_STAGES.includes(next) ? null : next;
+		}
+		var NO_PROGRESS_DAYS = 21;
+		var APPLICATION_CHANNEL_LABEL = {
+		  platform: "\u5E73\u53F0\u5185\u6295",
+		  referral: "\u5185\u63A8",
+		  website: "\u5B98\u7F51",
+		  headhunter: "\u730E\u5934"
 		};
 
 		// src/client/views/job-detail/panels/summary-panel.tsx
@@ -2074,7 +1957,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/views/job-detail/body.tsx
-		var import_react10 = require("react");
+		var import_react11 = require("react");
 		var import_jsx_runtime23 = require("react/jsx-runtime");
 		var ACTION_STATES = ["saved", "ignored", "seen", "archived"];
 		function JobDetailBody(props) {
@@ -2084,17 +1967,17 @@ window.__ModuleLoader__.load({
 		    (signal) => fetchGreetings({ jobId: props.id, limit: 5 }, signal),
 		    [props.id, props.revision]
 		  );
-		  const [busy, setBusy] = (0, import_react10.useState)(null);
-		  const [failure, setFailure] = (0, import_react10.useState)(null);
-		  const [probing, setProbing] = (0, import_react10.useState)(false);
-		  const [probe, setProbe] = (0, import_react10.useState)(null);
-		  const [probeError, setProbeError] = (0, import_react10.useState)(null);
-		  const [staging, setStaging] = (0, import_react10.useState)(null);
-		  const [deliverOpen, setDeliverOpen] = (0, import_react10.useState)(false);
-		  const [deliverResumeId, setDeliverResumeId] = (0, import_react10.useState)(null);
-		  const [deliverAsk, setDeliverAsk] = (0, import_react10.useState)(null);
-		  const [delivering, setDelivering] = (0, import_react10.useState)(false);
-		  const [deliverNote, setDeliverNote] = (0, import_react10.useState)(null);
+		  const [busy, setBusy] = (0, import_react11.useState)(null);
+		  const [failure, setFailure] = (0, import_react11.useState)(null);
+		  const [probing, setProbing] = (0, import_react11.useState)(false);
+		  const [probe, setProbe] = (0, import_react11.useState)(null);
+		  const [probeError, setProbeError] = (0, import_react11.useState)(null);
+		  const [staging, setStaging] = (0, import_react11.useState)(null);
+		  const [deliverOpen, setDeliverOpen] = (0, import_react11.useState)(false);
+		  const [deliverResumeId, setDeliverResumeId] = (0, import_react11.useState)(null);
+		  const [deliverAsk, setDeliverAsk] = (0, import_react11.useState)(null);
+		  const [delivering, setDelivering] = (0, import_react11.useState)(false);
+		  const [deliverNote, setDeliverNote] = (0, import_react11.useState)(null);
 		  const deliver = async (confirm) => {
 		    setDelivering(true);
 		    setDeliverNote(null);
@@ -2285,10 +2168,10 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/views/job-detail/drawer.tsx
-		var import_react11 = require("react");
+		var import_react12 = require("react");
 		var import_jsx_runtime24 = require("react/jsx-runtime");
 		function JobDetailDrawer(props) {
-		  const dialogRef = (0, import_react11.useRef)(null);
+		  const dialogRef = (0, import_react12.useRef)(null);
 		  useDialogA11y(dialogRef, props.onClose, [props.id]);
 		  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-drawer-layer", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { type: "button", className: "jh-drawer-backdrop", "aria-label": "\u5173\u95ED\u8BE6\u60C5", onClick: props.onClose }),
@@ -2315,9 +2198,16 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/jobs/index.tsx
-		var import_react14 = require("react");
+		var import_react15 = require("react");
 
-		// src/shared/facets.ts
+		// src/shared/config/limits.ts
+		var MAX_BODY_BYTES = 64 * 1024;
+		var ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+		var ATTACHMENT_BODY_MAX_BYTES = 8 * 1024 * 1024;
+		var PAGE_SIZE_DEFAULT = 20;
+		var EXPORT_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
+
+		// src/shared/domain/job-facets.ts
 		var EXP_BUCKETS = [
 		  { id: "any", label: "\u4E0D\u9650/\u65E0\u9700\u7ECF\u9A8C" },
 		  { id: "fresh", label: "\u5E94\u5C4A\u751F" },
@@ -2429,8 +2319,83 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/jobs/batch-deliver-modal.tsx
-		var import_react12 = require("react");
+		var import_react13 = require("react");
+
+		// src/client/screens/jobs/icons.tsx
 		var import_jsx_runtime26 = require("react/jsx-runtime");
+		function IconChat() {
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+		    "svg",
+		    {
+		      width: "14",
+		      height: "14",
+		      viewBox: "0 0 16 16",
+		      fill: "none",
+		      stroke: "currentColor",
+		      strokeWidth: "1.4",
+		      strokeLinejoin: "round",
+		      strokeLinecap: "round",
+		      "aria-hidden": "true",
+		      children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("path", { d: "M2 3.6A1.6 1.6 0 0 1 3.6 2h8.8A1.6 1.6 0 0 1 14 3.6v5.8a1.6 1.6 0 0 1-1.6 1.6H6.8L4 13.6V11A1.6 1.6 0 0 1 2 9.4z" })
+		    }
+		  );
+		}
+		function IconSend() {
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+		    "svg",
+		    {
+		      width: "14",
+		      height: "14",
+		      viewBox: "0 0 16 16",
+		      fill: "none",
+		      stroke: "currentColor",
+		      strokeWidth: "1.4",
+		      strokeLinejoin: "round",
+		      strokeLinecap: "round",
+		      "aria-hidden": "true",
+		      children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("path", { d: "M14.5 1.5 9.6 14.5 6.7 9.3 1.5 6.4z" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("path", { d: "M14.5 1.5 6.7 9.3" })
+		      ]
+		    }
+		  );
+		}
+		function IconCheck() {
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+		    "svg",
+		    {
+		      width: "13",
+		      height: "13",
+		      viewBox: "0 0 16 16",
+		      fill: "none",
+		      stroke: "currentColor",
+		      strokeWidth: "1.8",
+		      strokeLinejoin: "round",
+		      strokeLinecap: "round",
+		      "aria-hidden": "true",
+		      children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("path", { d: "M2.5 8.6 6.3 12.4 13.5 3.8" })
+		    }
+		  );
+		}
+		function IconCross() {
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+		    "svg",
+		    {
+		      width: "13",
+		      height: "13",
+		      viewBox: "0 0 16 16",
+		      fill: "none",
+		      stroke: "currentColor",
+		      strokeWidth: "1.8",
+		      strokeLinecap: "round",
+		      "aria-hidden": "true",
+		      children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("path", { d: "M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" })
+		    }
+		  );
+		}
+
+		// src/client/screens/jobs/batch-deliver-modal.tsx
+		var import_jsx_runtime27 = require("react/jsx-runtime");
 		function reasonOf(error) {
 		  return error instanceof ApiError ? error.display : String(error);
 		}
@@ -2447,14 +2412,19 @@ window.__ModuleLoader__.load({
 		  return `jh-${DELIVERY_STATE_TONE[receipt.delivery ?? "missing"]}`;
 		}
 		function BatchDeliverModal(props) {
-		  const [plan, setPlan] = (0, import_react12.useState)(null);
-		  const [error, setError] = (0, import_react12.useState)(null);
-		  const [resumeFileId, setResumeFileId] = (0, import_react12.useState)(null);
-		  const [skipped, setSkipped] = (0, import_react12.useState)([]);
-		  const [receipts, setReceipts] = (0, import_react12.useState)([]);
-		  const [sending, setSending] = (0, import_react12.useState)(false);
-		  const [progress, setProgress] = (0, import_react12.useState)(null);
-		  (0, import_react12.useEffect)(() => {
+		  const [plan, setPlan] = (0, import_react13.useState)(null);
+		  const [error, setError] = (0, import_react13.useState)(null);
+		  const [resumeFileId, setResumeFileId] = (0, import_react13.useState)(null);
+		  const [skipped, setSkipped] = (0, import_react13.useState)([]);
+		  const [receipts, setReceipts] = (0, import_react13.useState)([]);
+		  const [sending, setSending] = (0, import_react13.useState)(false);
+		  const [progress, setProgress] = (0, import_react13.useState)(null);
+		  const [summary, setSummary] = (0, import_react13.useState)(null);
+		  const note = (tone, text) => {
+		    setSummary({ tone, text });
+		    props.notify(tone, text);
+		  };
+		  (0, import_react13.useEffect)(() => {
 		    let cancelled = false;
 		    void (async () => {
 		      try {
@@ -2480,7 +2450,7 @@ window.__ModuleLoader__.load({
 		    const already = new Set(receipts.map((receipt) => receipt.jobId));
 		    const pending2 = deliverable.filter((item) => !already.has(item.jobId));
 		    if (pending2.length === 0) {
-		      props.notify("ok", "\u8FD9\u4E00\u6279\u90FD\u6295\u8FC7\u4E86");
+		      note("ok", "\u8FD9\u4E00\u6279\u90FD\u6295\u8FC7\u4E86");
 		      return;
 		    }
 		    setSending(true);
@@ -2499,28 +2469,28 @@ window.__ModuleLoader__.load({
 		        failed += result.failed;
 		        setReceipts((current) => [...current, ...result.receipts]);
 		        setProgress({ done: Math.min(start + chunk.length, pending2.length), total: pending2.length });
-		        props.onBatchDone(result.sent, result.failed);
 		      }
-		      props.notify("ok", `\u6279\u91CF\u6295\u9012\u5B8C\u6210\uFF1A\u6210\u529F ${String(sent)} \u6761\u3001\u5931\u8D25 ${String(failed)} \u6761`);
+		      note("ok", `\u6279\u91CF\u6295\u9012\u5B8C\u6210\uFF1A\u6210\u529F ${String(sent)} \u6761\u3001\u5931\u8D25 ${String(failed)} \u6761`);
 		    } catch (caught) {
-		      props.notify("error", `\u6295\u9012\u4E2D\u65AD\uFF1A${reasonOf(caught)}\uFF08\u524D\u9762\u5DF2\u7ECF\u6295\u51FA\u53BB\u7684\u4E0D\u4F1A\u64A4\u56DE\uFF09`);
+		      note("error", `\u6295\u9012\u4E2D\u65AD\uFF1A${reasonOf(caught)}\uFF08\u524D\u9762\u5DF2\u7ECF\u6295\u51FA\u53BB\u7684\u4E0D\u4F1A\u64A4\u56DE\uFF09`);
 		    } finally {
 		      setSending(false);
+		      if (sent + failed > 0) props.onBatchDone(sent, failed);
 		    }
 		  };
 		  const receiptOf = (jobId) => receipts.find((receipt) => receipt.jobId === jobId);
 		  const unconfirmed = receipts.filter(
 		    (receipt) => receipt.ok && receipt.delivery !== null && receipt.delivery !== "delivered"
 		  ).length;
-		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
 		    Modal,
 		    {
 		      title: "\u6279\u91CF\u6295\u9012\u7B80\u5386",
 		      label: "\u6279\u91CF\u6295\u9012\u7B80\u5386",
 		      size: "lg",
 		      onClose: sending ? () => void 0 : props.onClose,
-		      footer: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
-		        sending && progress !== null ? /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-muted", children: [
+		      footer: /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(import_jsx_runtime27.Fragment, { children: [
+		        sending && progress !== null ? /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "jh-muted", children: [
 		          "\u6B63\u5728\u6295\u9012 ",
 		          progress.done,
 		          "/",
@@ -2529,9 +2499,17 @@ window.__ModuleLoader__.load({
 		          intervalSec,
 		          "\uFF0C\u5206\u6279\u4E4B\u95F4\u4E5F\u4E00\u6837\uFF0C\u6162\u662F\u6545\u610F\u7684\uFF09"
 		        ] }) : null,
-		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-spacer" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled: sending, onClick: props.onClose, children: "\u5173\u95ED" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+		        summary === null ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+		          "span",
+		          {
+		            className: `jh-modal-foot-note ${summary.tone === "ok" ? "jh-ok" : "jh-error"}`,
+		            role: summary.tone === "ok" ? "status" : "alert",
+		            children: summary.text
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-spacer" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled: sending, onClick: props.onClose, children: "\u5173\u95ED" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -2543,15 +2521,15 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }),
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(InlineMd, { text: "\u6295\u9012**\u4E0D\u53EF\u9006**\uFF1A\u5E73\u53F0\u4E00\u65E6\u6536\u5230\uFF0C\u64A4\u56DE\u4E0D\u4E86\u3002\u6240\u4EE5\u8FD9\u91CC\u4E00\u6B21\u6700\u591A\u53D1 5 \u6761\uFF0C\u800C\u4E14\u6BCF\u6761\u4F1A\u5355\u72EC\u7559\u4E00\u6761\u56DE\u6267\uFF08\u542B\u9001\u8FBE\u72B6\u6001\uFF09\u3002" }) }),
-		        error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-error", children: error }),
-		        plan === null && error === null ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u68C0\u67E5\u8FD9\u4E9B\u5C97\u4F4D\u80FD\u4E0D\u80FD\u6295\u2026" }) : null,
-		        plan === null ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-note", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(InlineMd, { text: "\u6295\u9012**\u4E0D\u53EF\u9006**\uFF1A\u5E73\u53F0\u4E00\u65E6\u6536\u5230\uFF0C\u64A4\u56DE\u4E0D\u4E86\u3002\u6240\u4EE5\u8FD9\u91CC\u4E00\u6B21\u6700\u591A\u53D1 5 \u6761\uFF0C\u800C\u4E14\u6BCF\u6761\u4F1A\u5355\u72EC\u7559\u4E00\u6761\u56DE\u6267\uFF08\u542B\u9001\u8FBE\u72B6\u6001\uFF09\u3002" }) }),
+		        error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-error", children: error }),
+		        plan === null && error === null ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u68C0\u67E5\u8FD9\u4E9B\u5C97\u4F4D\u80FD\u4E0D\u80FD\u6295\u2026" }) : null,
+		        plan === null ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(import_jsx_runtime27.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "jh-note", children: [
 		            "\u5171 ",
 		            plan.items.length,
 		            " \u6761\uFF1A",
-		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("b", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("b", { children: [
 		              "\u80FD\u6295 ",
 		              plan.sendable,
 		              " \u6761"
@@ -2561,12 +2539,12 @@ window.__ModuleLoader__.load({
 		            " \u6761\u3002",
 		            batches > 1 ? `\u4E00\u6B21\u8BF7\u6C42\u6700\u591A\u6295 ${String(batchMax)} \u6761\uFF0C\u6240\u4EE5\u4F1A\u5206 ${String(batches)} \u6279\u4F9D\u6B21\u53D1\u51FA\uFF08\u6BCF\u6279\u7ED3\u675F\u540E\u8FD9\u91CC\u4F1A\u66F4\u65B0\u56DE\u6267\uFF09\u3002` : ""
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-ctl", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "jh-field-label", children: [
 		              "\u7528\u54EA\u4EFD\u7B80\u5386",
-		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(FieldHint, { text: "**\u5E73\u53F0\u4E0A\u6536\u5230\u7684**\u662F\u5E73\u53F0\u81EA\u5DF1\u90A3\u4EFD\u7B80\u5386\uFF08\u5E73\u53F0\u6CA1\u6709\u628A\u672C\u5730\u6587\u4EF6\u53D1\u7ED9 HR \u7684\u5165\u53E3\uFF0C\u6211\u4EEC\u6539\u4E0D\u4E86\u5B83\uFF09\u3002\u8FD9\u91CC\u9009\u7684\u662F**\u8FD9\u6B21\u6295\u9012\u5728\u4F60\u7684\u8BB0\u5F55\u91CC\u5F52\u5230\u54EA\u4E00\u7248** \u2014\u2014\u300C\u54EA\u7248\u56DE\u590D\u7387\u9AD8\u300D\u8FD9\u7C7B\u5BF9\u6BD4\u8981\u9760\u5B83\uFF0C\u6240\u4EE5\u9009\u5F97\u51C6\u4E00\u70B9\u66F4\u6709\u7528\u3002\u4E0D\u9009\u5C31\u4E0D\u767B\u8BB0\u7248\u672C\u3002" })
+		              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(FieldHint, { text: "**\u5E73\u53F0\u4E0A\u6536\u5230\u7684**\u662F\u5E73\u53F0\u81EA\u5DF1\u90A3\u4EFD\u7B80\u5386\uFF08\u5E73\u53F0\u6CA1\u6709\u628A\u672C\u5730\u6587\u4EF6\u53D1\u7ED9 HR \u7684\u5165\u53E3\uFF0C\u6211\u4EEC\u6539\u4E0D\u4E86\u5B83\uFF09\u3002\u8FD9\u91CC\u9009\u7684\u662F**\u8FD9\u6B21\u6295\u9012\u5728\u4F60\u7684\u8BB0\u5F55\u91CC\u5F52\u5230\u54EA\u4E00\u7248** \u2014\u2014\u300C\u54EA\u7248\u56DE\u590D\u7387\u9AD8\u300D\u8FD9\u7C7B\u5BF9\u6BD4\u8981\u9760\u5B83\uFF0C\u6240\u4EE5\u9009\u5F97\u51C6\u4E00\u70B9\u66F4\u6709\u7528\u3002\u4E0D\u9009\u5C31\u4E0D\u767B\u8BB0\u7248\u672C\u3002" })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		              ResumeFilePicker,
 		              {
 		                value: resumeFileId,
@@ -2578,20 +2556,20 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          plan.uploadsResumeFile === null ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: plan.uploadsResumeFile ? "jh-muted" : "jh-warn", children: plan.uploadsResumeFile ? "\u8FD9\u4E9B\u5E73\u53F0\u63A5\u53D7\u672C\u5730\u9644\u4EF6\uFF1A\u6295\u9012\u65F6\u4F1A\u628A\u9009\u4E2D\u7684\u90A3\u4EFD\u6587\u4EF6\u4F20\u4E0A\u53BB\u3002" : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+		          plan.uploadsResumeFile === null ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: plan.uploadsResumeFile ? "jh-muted" : "jh-warn", children: plan.uploadsResumeFile ? "\u8FD9\u4E9B\u5E73\u53F0\u63A5\u53D7\u672C\u5730\u9644\u4EF6\uFF1A\u6295\u9012\u65F6\u4F1A\u628A\u9009\u4E2D\u7684\u90A3\u4EFD\u6587\u4EF6\u4F20\u4E0A\u53BB\u3002" : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		            InlineMd,
 		            {
 		              text: "\u9009\u4E2D\u7684\u90A3\u4EFD\u6587\u4EF6**\u4E0D\u4F1A**\u4E0A\u4F20 \u2014\u2014 \u8FD9\u4E9B\u5E73\u53F0\u53EA\u5403\u5B83\u4EEC\u81EA\u5DF1\u90A3\u4EFD\u7B80\u5386\u3002\u8FD9\u4E00\u6279\u4F1A\u7167\u6295\uFF08\u7528\u7684\u662F\u5E73\u53F0\u4E0A\u5DF2\u6709\u7684\u90A3\u4EFD\uFF09\uFF0C\u4F60\u9009\u7684\u7248\u672C\u53EA\u4F5C**\u672C\u5730\u767B\u8BB0**\uFF08\u5F52\u56E0\u7528\uFF09\u3002\u8981\u6362\u5E73\u53F0\u4E0A\u90A3\u4EFD\uFF0C\u5F97\u5148\u53BB\u5E73\u53F0\u4E0A\u6362\u3002"
 		            }
 		          ) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-muted", children: plan.note }),
-		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("ul", { className: "jh-tailor-notes", children: plan.items.map((item) => {
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: plan.note }),
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("ul", { className: "jh-tailor-notes", children: plan.items.map((item) => {
 		            const receipt = receiptOf(item.jobId);
 		            const off = skipped.includes(item.jobId);
-		            return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-row-head", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("label", { className: "jh-check", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+		            return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("li", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-row-head", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "jh-check", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		                    "input",
 		                    {
 		                      type: "checkbox",
@@ -2602,49 +2580,48 @@ window.__ModuleLoader__.load({
 		                      )
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("b", { children: item.title }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: item.title }),
 		                    item.company === "" ? "" : ` \xB7 ${item.company}`,
-		                    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-muted", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "jh-muted", children: [
 		                      "\uFF08",
 		                      item.platformId,
 		                      "\uFF09"
 		                    ] })
 		                  ] })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-spacer" }),
-		                receipt === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: receiptClass(receipt), children: receipt.ok ? `\u5DF2\u6295\u9012\uFF08${DELIVERY_STATE_LABEL[receipt.delivery ?? "missing"]}\uFF09` : receipt.message ?? "\u5931\u8D25" })
+		                /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-spacer" }),
+		                receipt === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: receiptClass(receipt), children: receipt.ok ? `\u5DF2\u6295\u9012\uFF08${DELIVERY_STATE_LABEL[receipt.delivery ?? "missing"]}\uFF09` : receipt.message ?? "\u5931\u8D25" })
 		              ] }),
-		              item.willDeliver ? /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-muted", children: [
+		              item.willDeliver ? /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-muted", children: [
 		                "\u4F1A\u771F\u7684\u70B9\u4E0B\u5E73\u53F0\u7684\u300C\u6295\u9012\u300D\u6309\u94AE",
 		                item.sideEffect === null ? "" : ` \xB7 \u540C\u65F6\u4F1A\u53D1\u751F\uFF1A${item.sideEffect}`
-		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-muted", children: [
+		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-muted", children: [
 		                "\u6295\u4E0D\u4E86\uFF1A",
 		                item.blocker?.message,
 		                item.blocker?.hint === void 0 ? "" : ` \u2014\u2014 ${item.blocker.hint}`
 		              ] })
 		            ] }, item.jobId);
 		          }) }),
-		          receipts.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("details", { className: "jh-details", open: true, children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("summary", { children: [
+		          receipts.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("details", { className: "jh-details", open: true, children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("summary", { children: [
 		              "\u56DE\u6267\uFF08",
 		              receipts.length,
 		              " \u6761\uFF0C\u9010\u6761\uFF09"
 		            ] }),
-		            unconfirmed === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-error", children: [
+		            unconfirmed === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "jh-error", children: [
 		              unconfirmed,
 		              " \u6761\u53EA\u5230\u300C",
 		              DELIVERY_STATE_LABEL.pending,
 		              "\u300D\uFF1A\u52A8\u4F5C\u53EF\u80FD\u5DF2\u7ECF\u751F\u6548\uFF0C",
-		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("b", { children: "\u5148\u53BB\u5E73\u53F0\u4E0A\u6838\u5BF9\uFF0C\u4E0D\u8981\u76F4\u63A5\u91CD\u6295" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: "\u5148\u53BB\u5E73\u53F0\u4E0A\u6838\u5BF9\uFF0C\u4E0D\u8981\u76F4\u63A5\u91CD\u6295" }),
 		              "\uFF08\u6295\u9012\u4E0D\u50CF\u6253\u62DB\u547C\uFF0C\u6295\u91CD\u4E86\u6536\u4E0D\u56DE\u6765\uFF09\u3002"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("ul", { className: "jh-tailor-notes", children: receipts.map((receipt) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("li", { className: receiptClass(receipt), children: [
-		              receipt.ok ? "\u2705" : "\u274C",
-		              " ",
+		            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("ul", { className: "jh-tailor-notes", children: receipts.map((receipt) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("li", { className: receiptClass(receipt), children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-receipt-mark", children: receipt.ok ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconCheck, {}) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconCross, {}) }),
 		              receipt.company || receipt.title,
 		              "\uFF1A",
-		              receipt.ok ? `\u5DF2\u6295\u9012\uFF08${DELIVERY_STATE_LABEL[receipt.delivery ?? "missing"]}\uFF0C${receipt.sentAt?.slice(0, 19).replace("T", " ") ?? ""}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
+		              receipt.ok ? `\u5DF2\u6295\u9012\uFF08${DELIVERY_STATE_LABEL[receipt.delivery ?? "missing"]}\uFF0C${receipt.sentAt === null ? "" : localDateTime(receipt.sentAt)}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
 		            ] }, receipt.jobId)) })
 		          ] })
 		        ] })
@@ -2654,8 +2631,8 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/jobs/batch-greeting-modal.tsx
-		var import_react13 = require("react");
-		var import_jsx_runtime27 = require("react/jsx-runtime");
+		var import_react14 = require("react");
+		var import_jsx_runtime28 = require("react/jsx-runtime");
 		function reasonOf2(error) {
 		  return error instanceof ApiError ? error.display : String(error);
 		}
@@ -2671,15 +2648,20 @@ window.__ModuleLoader__.load({
 		  return receipt.ok ? "\u5DF2\u53D1\u9001" : receipt.message ?? "\u5931\u8D25";
 		}
 		function BatchGreetingModal(props) {
-		  const [plan, setPlan] = (0, import_react13.useState)(null);
-		  const [error, setError] = (0, import_react13.useState)(null);
-		  const [texts, setTexts] = (0, import_react13.useState)({});
-		  const [skipped, setSkipped] = (0, import_react13.useState)([]);
-		  const [receipts, setReceipts] = (0, import_react13.useState)([]);
-		  const [sending, setSending] = (0, import_react13.useState)(false);
-		  const [progress, setProgress] = (0, import_react13.useState)(null);
-		  const [regenerating, setRegenerating] = (0, import_react13.useState)(null);
-		  (0, import_react13.useEffect)(() => {
+		  const [plan, setPlan] = (0, import_react14.useState)(null);
+		  const [error, setError] = (0, import_react14.useState)(null);
+		  const [texts, setTexts] = (0, import_react14.useState)({});
+		  const [skipped, setSkipped] = (0, import_react14.useState)([]);
+		  const [receipts, setReceipts] = (0, import_react14.useState)([]);
+		  const [sending, setSending] = (0, import_react14.useState)(false);
+		  const [progress, setProgress] = (0, import_react14.useState)(null);
+		  const [regenerating, setRegenerating] = (0, import_react14.useState)(null);
+		  const [summary, setSummary] = (0, import_react14.useState)(null);
+		  const note = (tone, text) => {
+		    setSummary({ tone, text });
+		    props.notify(tone, text);
+		  };
+		  (0, import_react14.useEffect)(() => {
 		    let cancelled = false;
 		    void (async () => {
 		      try {
@@ -2708,7 +2690,7 @@ window.__ModuleLoader__.load({
 		    const already = new Set(receipts.map((receipt) => receipt.jobId));
 		    const pending2 = sendable.filter((item) => !already.has(item.jobId));
 		    if (pending2.length === 0) {
-		      props.notify("ok", "\u8FD9\u4E00\u6279\u90FD\u53D1\u8FC7\u4E86");
+		      note("ok", "\u8FD9\u4E00\u6279\u90FD\u53D1\u8FC7\u4E86");
 		      return;
 		    }
 		    setSending(true);
@@ -2729,13 +2711,13 @@ window.__ModuleLoader__.load({
 		        failed += result.failed;
 		        setReceipts((current) => [...current, ...result.receipts]);
 		        setProgress({ done: Math.min(start + chunk.length, pending2.length), total: pending2.length });
-		        props.onBatchDone(result.sent, result.failed);
 		      }
-		      props.notify("ok", `\u6279\u91CF\u6253\u62DB\u547C\u5B8C\u6210\uFF1A\u6210\u529F ${String(sent)} \u6761\u3001\u5931\u8D25 ${String(failed)} \u6761`);
+		      note("ok", `\u6279\u91CF\u6253\u62DB\u547C\u5B8C\u6210\uFF1A\u6210\u529F ${String(sent)} \u6761\u3001\u5931\u8D25 ${String(failed)} \u6761`);
 		    } catch (caught) {
-		      props.notify("error", `\u53D1\u9001\u4E2D\u65AD\uFF1A${reasonOf2(caught)}\uFF08\u524D\u9762\u5DF2\u7ECF\u53D1\u51FA\u53BB\u7684\u4E0D\u4F1A\u64A4\u56DE\uFF09`);
+		      note("error", `\u53D1\u9001\u4E2D\u65AD\uFF1A${reasonOf2(caught)}\uFF08\u524D\u9762\u5DF2\u7ECF\u53D1\u51FA\u53BB\u7684\u4E0D\u4F1A\u64A4\u56DE\uFF09`);
 		    } finally {
 		      setSending(false);
+		      if (sent + failed > 0) props.onBatchDone(sent, failed);
 		    }
 		  };
 		  const regenerate = async (jobId) => {
@@ -2744,21 +2726,21 @@ window.__ModuleLoader__.load({
 		      const draft = await draftGreeting(jobId);
 		      setTexts((current) => ({ ...current, [jobId]: draft.text }));
 		    } catch (caught) {
-		      props.notify("error", reasonOf2(caught));
+		      note("error", reasonOf2(caught));
 		    } finally {
 		      setRegenerating(null);
 		    }
 		  };
 		  const receiptOf = (jobId) => receipts.find((receipt) => receipt.jobId === jobId);
-		  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
 		    Modal,
 		    {
 		      title: "\u6279\u91CF\u6253\u62DB\u547C",
 		      label: "\u6279\u91CF\u6253\u62DB\u547C",
 		      size: "lg",
 		      onClose: sending ? () => void 0 : props.onClose,
-		      footer: /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(import_jsx_runtime27.Fragment, { children: [
-		        sending && progress !== null ? /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "jh-muted", children: [
+		      footer: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
+		        sending && progress !== null ? /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("span", { className: "jh-muted", children: [
 		          "\u6B63\u5728\u53D1\u9001 ",
 		          progress.done,
 		          "/",
@@ -2767,8 +2749,16 @@ window.__ModuleLoader__.load({
 		          intervalSec,
 		          "\uFF0C\u5206\u6279\u4E4B\u95F4\u4E5F\u4E00\u6837\uFF0C\u6162\u662F\u6545\u610F\u7684\uFF09"
 		        ] }) : null,
-		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-spacer" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+		        summary === null ? null : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+		          "span",
+		          {
+		            className: `jh-modal-foot-note ${summary.tone === "ok" ? "jh-ok" : "jh-error"}`,
+		            role: summary.tone === "ok" ? "status" : "alert",
+		            children: summary.text
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-spacer" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -2778,7 +2768,7 @@ window.__ModuleLoader__.load({
 		            children: "\u5173\u95ED"
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -2790,14 +2780,14 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }),
 		      children: [
-		        error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-error", children: error }),
-		        plan === null && error === null ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u68C0\u67E5\u8FD9\u4E9B\u5C97\u4F4D\u80FD\u4E0D\u80FD\u53D1\u2026" }) : null,
-		        plan === null ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(import_jsx_runtime27.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "jh-note", children: [
+		        error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "jh-error", children: error }),
+		        plan === null && error === null ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u68C0\u67E5\u8FD9\u4E9B\u5C97\u4F4D\u80FD\u4E0D\u80FD\u53D1\u2026" }) : null,
+		        plan === null ? null : /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("p", { className: "jh-note", children: [
 		            "\u5171 ",
 		            plan.items.length,
 		            " \u6761\uFF1A",
-		            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("b", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("b", { children: [
 		              "\u80FD\u53D1 ",
 		              plan.sendable,
 		              " \u6761"
@@ -2807,14 +2797,14 @@ window.__ModuleLoader__.load({
 		            " \u6761\u3002",
 		            batches > 1 ? `\u4E00\u6B21\u8BF7\u6C42\u6700\u591A\u53D1 ${String(batchMax)} \u6761\uFF0C\u6240\u4EE5\u4F1A\u5206 ${String(batches)} \u6279\u4F9D\u6B21\u53D1\u51FA\uFF08\u6BCF\u6279\u7ED3\u675F\u540E\u8FD9\u91CC\u4F1A\u66F4\u65B0\u56DE\u6267\uFF09\u3002` : ""
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: plan.note }),
-		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("ul", { className: "jh-tailor-notes", children: plan.items.map((item) => {
+		          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "jh-muted", children: plan.note }),
+		          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("ul", { className: "jh-tailor-notes", children: plan.items.map((item) => {
 		            const receipt = receiptOf(item.jobId);
 		            const off = skipped.includes(item.jobId);
-		            return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-row-head", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "jh-check", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+		            return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("li", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "jh-row-head", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("label", { className: "jh-check", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		                    "input",
 		                    {
 		                      type: "checkbox",
@@ -2825,21 +2815,21 @@ window.__ModuleLoader__.load({
 		                      )
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: item.title }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("span", { children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("b", { children: item.title }),
 		                    item.company === "" ? "" : ` \xB7 ${item.company}`,
-		                    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "jh-muted", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("span", { className: "jh-muted", children: [
 		                      "\uFF08",
 		                      item.platformId,
 		                      "\uFF09"
 		                    ] })
 		                  ] })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-spacer" }),
-		                receipt === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: receipt.ok ? "jh-ok" : "jh-error", children: receiptTone(receipt) })
+		                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-spacer" }),
+		                receipt === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: receipt.ok ? "jh-ok" : "jh-error", children: receiptTone(receipt) })
 		              ] }),
-		              item.willSend ? /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(import_jsx_runtime27.Fragment, { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+		              item.willSend ? /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(import_jsx_runtime28.Fragment, { children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		                  "textarea",
 		                  {
 		                    className: "jh-input jh-greeting-edit",
@@ -2850,13 +2840,13 @@ window.__ModuleLoader__.load({
 		                    onChange: (event) => setTexts((current) => ({ ...current, [item.jobId]: event.target.value }))
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-muted", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "jh-muted", children: [
 		                  "\u8BDD\u672F\u6765\u6E90\uFF1A",
 		                  item.via === "llm" ? "\u6A21\u578B\u751F\u6210" : item.via === "template" ? "\u6A21\u677F" : "\u4F60\u5199\u7684",
 		                  (texts[item.jobId] ?? "").length === 0 ? "" : ` \xB7 ${String((texts[item.jobId] ?? "").length)} \u5B57`,
 		                  item.sideEffect === null ? "" : ` \xB7 \u540C\u65F6\u4F1A\u53D1\u751F\uFF1A${item.sideEffect}`,
-		                  /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-spacer" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-spacer" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -2867,25 +2857,24 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] })
-		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-muted", children: [
+		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "jh-muted", children: [
 		                "\u53D1\u4E0D\u4E86\uFF1A",
 		                item.blocker?.message,
 		                item.blocker?.hint === void 0 ? "" : ` \u2014\u2014 ${item.blocker.hint}`
 		              ] })
 		            ] }, item.jobId);
 		          }) }),
-		          receipts.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("details", { className: "jh-details", open: true, children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("summary", { children: [
+		          receipts.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("details", { className: "jh-details", open: true, children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("summary", { children: [
 		              "\u56DE\u6267\uFF08",
 		              receipts.length,
 		              " \u6761\uFF0C\u9010\u6761\uFF09"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("ul", { className: "jh-tailor-notes", children: receipts.map((receipt) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("li", { className: receipt.ok ? "jh-ok" : "jh-error", children: [
-		              receipt.ok ? "\u2705" : "\u274C",
-		              " ",
+		            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("ul", { className: "jh-tailor-notes", children: receipts.map((receipt) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("li", { className: receipt.ok ? "jh-ok" : "jh-error", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-receipt-mark", children: receipt.ok ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconCheck, {}) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconCross, {}) }),
 		              receipt.company || receipt.title,
 		              "\uFF1A",
-		              receipt.ok ? `\u5DF2\u53D1\u9001\uFF08${String(receipt.textLength ?? 0)} \u5B57\uFF0C${receipt.sentAt?.slice(0, 19).replace("T", " ") ?? ""}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
+		              receipt.ok ? `\u5DF2\u53D1\u9001\uFF08${String(receipt.textLength ?? 0)} \u5B57\uFF0C${receipt.sentAt === null ? "" : localDateTime(receipt.sentAt)}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
 		            ] }, receipt.jobId)) })
 		          ] })
 		        ] })
@@ -2895,28 +2884,198 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/jobs/batch-toolbar.tsx
-		var import_jsx_runtime28 = require("react/jsx-runtime");
+		var import_jsx_runtime29 = require("react/jsx-runtime");
 		function BatchToolbar(props) {
-		  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "jh-picked", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("span", { children: [
+		  return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-picked", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("span", { children: [
 		      "\u5DF2\u9009 ",
 		      props.count,
 		      " \u6761"
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-spacer" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGreet, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-spacer" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGreet, children: [
 		      "\u6279\u91CF\u6253\u62DB\u547C\uFF08",
 		      props.count,
 		      "\uFF09"
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onDeliver, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onDeliver, children: [
 		      "\u6279\u91CF\u6295\u9012\uFF08",
 		      props.count,
 		      "\uFF09"
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onClear, children: "\u6E05\u9664\u9009\u62E9" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(FieldHint, { text: "\u6279\u91CF\u6253\u62DB\u547C\u4F1A\u5148\u505A\u4E00\u6B21**\u53EA\u8BFB\u9884\u89C8**\uFF1A\u9010\u6761\u5217\u51FA\u80FD\u4E0D\u80FD\u53D1\u3001\u4E3A\u4EC0\u4E48\u4E0D\u80FD\uFF0C\u6B63\u6587\u53EF\u4EE5\u9010\u6761\u6539\u6216\u8DF3\u8FC7\u3002\u771F\u6B63\u7684\u53D1\u9001\u8981\u4F60\u5728\u9884\u89C8\u91CC\u786E\u8BA4\u4E00\u6B21\uFF0C\u4E4B\u540E\u6309\u6BCF\u6279\u6700\u591A 5 \u6761\u4F9D\u6B21\u53D1\u51FA\uFF08\u6761\u4E0E\u6761\u4E4B\u95F4\u4F1A\u7B49 3\u20139 \u79D2 \u2014\u2014 \u8FDE\u70B9\u662F\u6700\u660E\u663E\u7684\u673A\u5668\u4FE1\u53F7\uFF0C\u6162\u662F\u6709\u610F\u7684\uFF09\u3002" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(FieldHint, { text: "\u6279\u91CF\u6295\u9012\uFF08L4\uFF09\u8D70\u7684\u662F**\u5E73\u53F0\u4E0A\u5DF2\u6709\u7684\u90A3\u4EFD**\u7B80\u5386\uFF0C\u6295\u51FA\u53BB**\u4E0D\u53EF\u9006**\u3002\u5B83\u4F1A\u5148\u505A\u4E00\u6B21\u53EA\u8BFB\u9884\u89C8\uFF1A\u9010\u6761\u5217\u51FA\u80FD\u4E0D\u80FD\u6295\u3001\u4E3A\u4EC0\u4E48\u4E0D\u80FD\uFF08\u53EA\u6709\u63A5\u4E86\u6295\u9012\u52A8\u4F5C\u7684\u5E73\u53F0\u80FD\u6295\uFF09\u3002\u9ED8\u8BA4\u5173\u95ED \u2014\u2014 \u9700\u8981\u5728\u300C\u8BBE\u7F6E \u2192 \u7CFB\u7EDF\u63A7\u5236\u4E2D\u5FC3 \u2192 \u53D1\u9001\u5206\u5C42\u300D\u91CC\u5148\u6253\u5F00 L4 \u6295\u9012\u3002" })
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onClear, children: "\u6E05\u9664\u9009\u62E9" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u6279\u91CF\u6253\u62DB\u547C\u4F1A\u5148\u505A\u4E00\u6B21**\u53EA\u8BFB\u9884\u89C8**\uFF1A\u9010\u6761\u5217\u51FA\u80FD\u4E0D\u80FD\u53D1\u3001\u4E3A\u4EC0\u4E48\u4E0D\u80FD\uFF0C\u6B63\u6587\u53EF\u4EE5\u9010\u6761\u6539\u6216\u8DF3\u8FC7\u3002\u771F\u6B63\u7684\u53D1\u9001\u8981\u4F60\u5728\u9884\u89C8\u91CC\u786E\u8BA4\u4E00\u6B21\uFF0C\u4E4B\u540E\u6309\u6BCF\u6279\u6700\u591A 5 \u6761\u4F9D\u6B21\u53D1\u51FA\uFF08\u6761\u4E0E\u6761\u4E4B\u95F4\u4F1A\u7B49 3\u20139 \u79D2 \u2014\u2014 \u8FDE\u70B9\u662F\u6700\u660E\u663E\u7684\u673A\u5668\u4FE1\u53F7\uFF0C\u6162\u662F\u6709\u610F\u7684\uFF09\u3002" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u6279\u91CF\u6295\u9012\uFF08L4\uFF09\u8D70\u7684\u662F**\u5E73\u53F0\u4E0A\u5DF2\u6709\u7684\u90A3\u4EFD**\u7B80\u5386\uFF0C\u6295\u51FA\u53BB**\u4E0D\u53EF\u9006**\u3002\u5B83\u4F1A\u5148\u505A\u4E00\u6B21\u53EA\u8BFB\u9884\u89C8\uFF1A\u9010\u6761\u5217\u51FA\u80FD\u4E0D\u80FD\u6295\u3001\u4E3A\u4EC0\u4E48\u4E0D\u80FD\uFF08\u53EA\u6709\u63A5\u4E86\u6295\u9012\u52A8\u4F5C\u7684\u5E73\u53F0\u80FD\u6295\uFF09\u3002\u9ED8\u8BA4\u5173\u95ED \u2014\u2014 \u9700\u8981\u5728\u300C\u8BBE\u7F6E \u2192 \u7CFB\u7EDF\u63A7\u5236\u4E2D\u5FC3 \u2192 \u53D1\u9001\u5206\u5C42\u300D\u91CC\u5148\u6253\u5F00 L4 \u6295\u9012\u3002" })
+		  ] });
+		}
+
+		// src/client/screens/jobs/filter-bar.tsx
+		var import_jsx_runtime30 = require("react/jsx-runtime");
+		function FilterBar(props) {
+		  const draft = props.draft;
+		  const advancedOpen = props.advancedOpen;
+		  const advancedCount = props.advancedCount;
+		  const citiesAll = props.citiesAll;
+		  const eduAll = props.eduAll;
+		  const expChips = props.expChips;
+		  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("form", { className: "jh-jobs-filters", onSubmit: props.onSubmit, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-line", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-jobs-filter-text", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: "\u5173\u952E\u8BCD" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "input",
+		          {
+		            className: "jh-input",
+		            value: draft.q,
+		            onChange: (event) => props.onKeyword(event.target.value)
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+		        "select",
+		        {
+		          className: "jh-select jh-input-md",
+		          "aria-label": "\u57CE\u5E02",
+		          value: draft.cities[0] ?? "",
+		          onChange: (event) => props.onCity(event.target.value),
+		          children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: "", children: "\u5168\u90E8\u57CE\u5E02" }),
+		            citiesAll.map((city) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: city, children: city }, city))
+		          ]
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+		        "select",
+		        {
+		          className: "jh-select jh-input-md",
+		          "aria-label": "\u72B6\u6001",
+		          value: draft.state,
+		          onChange: (event) => props.onState(event.target.value),
+		          children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: "", children: "\u5168\u90E8\u72B6\u6001" }),
+		            JOB_STATES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value, children: JOB_STATE_LABEL[value] }, value))
+		          ]
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-jobs-filter-text jh-jobs-filter-text-narrow", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: "\u6700\u4F4E\u6708\u85AA" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "input",
+		          {
+		            className: "jh-input",
+		            inputMode: "numeric",
+		            value: draft.minSalary,
+		            onChange: (event) => props.onMinSalary(event.target.value)
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline jh-btn-primary", children: "\u7B5B\u9009" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline jh-btn-quiet", onClick: props.onReset, children: "\u91CD\u7F6E" }),
+		      props.pending ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-pending", children: "\u6761\u4EF6\u5DF2\u6539\u52A8\uFF0C\u70B9\u300C\u7B5B\u9009\u300D\u751F\u6548" }) : null
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-jobs-filter-toggle",
+		        "aria-expanded": advancedOpen,
+		        "aria-controls": "jh-jobs-advanced",
+		        onClick: props.onToggleAdvanced,
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-caret", "aria-hidden": "true", children: advancedOpen ? "\u25BE" : "\u25B8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-toggle-text", children: "\u9AD8\u7EA7\u7B5B\u9009" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: `jh-filter-note${advancedCount > 0 ? " jh-filter-note-on" : ""}`, children: advancedCount > 0 ? `\u5DF2\u9009 ${String(advancedCount)} \u9879` : "\u7ECF\u9A8C / \u5B66\u5386 / \u65B0\u589E\u65F6\u95F4 / \u5C4F\u853D / \u8DE8\u5E73\u53F0\u6298\u53E0" })
+		        ]
+		      }
+		    ),
+		    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-panel", id: "jh-jobs-advanced", hidden: !advancedOpen, children: [
+		      expChips.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
+		          "\u7ECF\u9A8C",
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u5404\u5E73\u53F0\u7684\u7ECF\u9A8C\u5199\u6CD5\u4E0D\u7EDF\u4E00\uFF081-3\u5E74 / 1\u5E74\uFF5E3\u5E74 / 2-3\u5E74 / 2\u5E74\u53CA\u4EE5\u4E0A\u2026\uFF09\uFF0C\u8FD9\u91CC\u5F52\u6210 6 \u4E2A\u6807\u51C6\u68AF\u961F\u3002\u9009\u4E2D\u4E00\u6863\uFF0C\u4F1A\u628A\u5E93\u91CC\u5C5E\u4E8E\u5B83\u7684\u5199\u6CD5\u4E00\u8D77\u67E5\u51FA\u6765\uFF0C\u6240\u4EE5\u4E0D\u4F1A\u88AB\u68AF\u961F\u7684\u540D\u5B57\u6F0F\u6389\u3002" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u7ECF\u9A8C\u8981\u6C42\uFF08\u53EF\u591A\u9009\uFF09", children: expChips.map((chip) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-chip${draft.expBuckets.includes(chip.id) ? " jh-chip-on" : ""}`,
+		            "aria-pressed": draft.expBuckets.includes(chip.id),
+		            title: `\u5E93\u91CC\u5C5E\u4E8E\u8FD9\u4E00\u6863\u7684\u5199\u6CD5\uFF1A${chip.values.join(" / ")}`,
+		            onClick: () => props.onExpBucket(chip.id),
+		            children: chip.label
+		          },
+		          chip.id
+		        )) })
+		      ] }),
+		      eduAll.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-label", children: "\u5B66\u5386" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u5B66\u5386\u8981\u6C42\uFF08\u53EF\u591A\u9009\uFF09", children: eduAll.map((value) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-chip${draft.eduReqs.includes(value) ? " jh-chip-on" : ""}`,
+		            "aria-pressed": draft.eduReqs.includes(value),
+		            onClick: () => props.onEdu(value),
+		            children: value
+		          },
+		          value
+		        )) })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
+		          "\u65B0\u589E\u65F6\u95F4",
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u6309\u300C\u9996\u6B21\u89C1\u5230\u300D\u65F6\u95F4\u7B97\uFF0C\u4E0E\u9996\u5C4F\u300C\u4ECA\u65E5\u65B0\u589E\u300D\u540C\u53E3\u5F84 \u2014\u2014 \u518D\u6293\u4E00\u6B21\u4E0D\u4F1A\u8BA9\u8001\u5C97\u4F4D\u6DF7\u8FDB\u6765\uFF08\u90A3\u662F\u300C\u6700\u8FD1\u89C1\u5230\u300D\uFF09\u3002\u5355\u9009\uFF0C\u4E0D\u9009 = \u4E0D\u9650\u3002" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", children: /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+		          "select",
+		          {
+		            className: "jh-select jh-input-md",
+		            "aria-label": "\u53EA\u770B\u65B0\u589E",
+		            value: draft.newWindow,
+		            onChange: (event) => props.onNewWindow(event.target.value),
+		            children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: "", children: "\u4E0D\u9650" }),
+		              JOB_NEW_WINDOWS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: option.value, title: option.label, children: option.label }, option.value))
+		            ]
+		          }
+		        ) })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
+		          "\u5C4F\u853D",
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u547D\u4E2D\u6807\u6CE8\u7684\u5C97\u4F4D\u4E00\u5F8B\u4E0D\u663E\u793A\u3002\u6807\u6CE8\u662F\u672C\u5730\u89C4\u5219\u7B97\u51FA\u6765\u7684\uFF08\u5916\u5305/\u9AD8\u98CE\u9669/\u50F5\u5C38\u5C97/\u9ED1\u8BDD\u7B49\uFF09\uFF0C\u4E0D\u9700\u8981\u4F60\u9010\u6761\u5224\u65AD\uFF1B\u6BCF\u4E00\u9879\u90FD\u53EF\u4EE5\u5355\u72EC\u5173\u6389\u3002" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u5C4F\u853D\u6807\u6CE8", children: JOB_FLAG_TYPES.map((type) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-chip jh-chip-neg${draft.excludeFlags.includes(type) ? " jh-chip-neg-on" : ""}`,
+		            "aria-pressed": draft.excludeFlags.includes(type),
+		            title: `\u4E0D\u663E\u793A\u6807\u6CE8\u4E3A\u300C${JOB_FLAG_LABEL[type]}\u300D\u7684\u5C97\u4F4D`,
+		            onClick: () => props.onExcludeFlag(type),
+		            children: JOB_FLAG_LABEL[type]
+		          },
+		          type
+		        )) })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
+		          "\u6298\u53E0",
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u540C\u4E00\u6761\u5C97\u4F4D\u5728\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u53EA\u663E\u793A\u4E00\u884C\uFF08\u5C55\u5F00\u53EF\u770B\u5404\u5E73\u53F0\u5BF9\u7167\uFF09\u3002\u6761\u6570\u4E0E\u5206\u9875\u4E5F\u8DDF\u7740\u6309\u6298\u53E0\u540E\u7B97\u3002\u9ED8\u8BA4\u5173\u95ED\uFF1A\u6298\u53E0\u4F1A\u5C11\u663E\u793A\u884C\uFF0C\u300C\u9ED8\u8BA4\u5C11\u663E\u793A\u300D\u662F\u66FF\u4F60\u505A\u51B3\u5B9A\u3002" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", children: /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-check", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		            "input",
+		            {
+		              type: "checkbox",
+		              checked: draft.groupDuplicates,
+		              onChange: (event) => props.onGroupDuplicates(event.target.checked)
+		            }
+		          ),
+		          "\u8DE8\u5E73\u53F0\u6298\u53E0\uFF08\u540C\u4E00\u6761\u5C97\u4F4D\u53EA\u663E\u793A\u4E00\u884C\uFF09"
+		        ] }) })
+		      ] })
+		    ] })
 		  ] });
 		}
 
@@ -2937,28 +3096,19 @@ window.__ModuleLoader__.load({
 		function toggleValue(list, value) {
 		  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 		}
+		function sameFilters(left, right) {
+		  const sameList = (a, b) => a.length === b.length && a.every((item) => b.includes(item));
+		  return left.q === right.q && left.state === right.state && left.minSalary === right.minSalary && left.newWindow === right.newWindow && left.groupDuplicates === right.groupDuplicates && left.orderBy === right.orderBy && left.descending === right.descending && sameList(left.cities, right.cities) && sameList(left.expBuckets, right.expBuckets) && sameList(left.eduReqs, right.eduReqs) && sameList(left.excludeFlags, right.excludeFlags);
+		}
 		function expandExpBuckets(ids, chips) {
 		  const wanted = new Set(ids);
 		  return chips.filter((chip) => wanted.has(chip.id)).flatMap((chip) => chip.values);
 		}
-		var ORDER_OPTIONS = [
-		  { value: "crawled_at", label: "\u6309\u6293\u53D6\u65F6\u95F4" },
-		  { value: "salary_min", label: "\u6309\u6708\u85AA" },
-		  { value: "last_seen_at", label: "\u6309\u6700\u8FD1\u51FA\u73B0" },
-		  { value: "first_seen_at", label: "\u6309\u9996\u6B21\u51FA\u73B0" },
-		  { value: "title", label: "\u6309\u6807\u9898" }
-		];
-		var NEW_JOB_WINDOWS = [
-		  { value: "1d", label: "\u8FD1 24 \u5C0F\u65F6", hours: 24 },
-		  { value: "3d", label: "\u8FD1 3 \u5929", hours: 72 },
-		  { value: "7d", label: "\u8FD1 7 \u5929", hours: 168 }
-		];
 		function firstSeenSinceOf(window2, now = Date.now()) {
-		  const found = NEW_JOB_WINDOWS.find((item) => item.value === window2);
+		  const found = JOB_NEW_WINDOWS.find((item) => item.value === window2);
 		  if (found === void 0) return void 0;
 		  return new Date(now - found.hours * 60 * 60 * 1e3).toISOString();
 		}
-		var PAGE_SIZE = 20;
 		function pageNumbers(page, pages) {
 		  if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
 		  const wanted = [.../* @__PURE__ */ new Set([1, pages, page - 1, page, page + 1])].filter((value) => value >= 1 && value <= pages).sort((a, b) => a - b);
@@ -2970,173 +3120,6 @@ window.__ModuleLoader__.load({
 		    previous = value;
 		  }
 		  return out;
-		}
-
-		// src/client/screens/jobs/filter-bar.tsx
-		var import_jsx_runtime29 = require("react/jsx-runtime");
-		function FilterBar(props) {
-		  const draft = props.draft;
-		  const advancedOpen = props.advancedOpen;
-		  const advancedCount = props.advancedCount;
-		  const citiesAll = props.citiesAll;
-		  const eduAll = props.eduAll;
-		  const expChips = props.expChips;
-		  return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("form", { className: "jh-jobs-filters", onSubmit: props.onSubmit, children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-jobs-filter-line", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
-		        "input",
-		        {
-		          className: "jh-input jh-input-grow",
-		          placeholder: "\u5173\u952E\u8BCD\uFF08\u5C97\u4F4D\u540D\uFF09",
-		          "aria-label": "\u5173\u952E\u8BCD",
-		          value: draft.q,
-		          onChange: (event) => props.onKeyword(event.target.value)
-		        }
-		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
-		        "select",
-		        {
-		          className: "jh-select jh-input-md",
-		          "aria-label": "\u57CE\u5E02",
-		          value: draft.cities[0] ?? "",
-		          onChange: (event) => props.onCity(event.target.value),
-		          children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("option", { value: "", children: "\u5168\u90E8\u57CE\u5E02" }),
-		            citiesAll.map((city) => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("option", { value: city, children: city }, city))
-		          ]
-		        }
-		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
-		        "select",
-		        {
-		          className: "jh-select jh-input-md",
-		          "aria-label": "\u72B6\u6001",
-		          value: draft.state,
-		          onChange: (event) => props.onState(event.target.value),
-		          children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("option", { value: "", children: "\u5168\u90E8\u72B6\u6001" }),
-		            JOB_STATES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("option", { value, children: JOB_STATE_LABEL[value] }, value))
-		          ]
-		        }
-		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
-		        "input",
-		        {
-		          className: "jh-input jh-input-sm",
-		          placeholder: "\u6700\u4F4E\u6708\u85AA",
-		          "aria-label": "\u6700\u4F4E\u6708\u85AA",
-		          inputMode: "numeric",
-		          value: draft.minSalary,
-		          onChange: (event) => props.onMinSalary(event.target.value)
-		        }
-		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline jh-btn-primary", children: "\u7B5B\u9009" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline jh-btn-quiet", onClick: props.onReset, children: "\u91CD\u7F6E" })
-		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
-		      "button",
-		      {
-		        type: "button",
-		        className: "jh-jobs-filter-toggle",
-		        "aria-expanded": advancedOpen,
-		        "aria-controls": "jh-jobs-advanced",
-		        onClick: props.onToggleAdvanced,
-		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-caret", "aria-hidden": "true", children: advancedOpen ? "\u25BE" : "\u25B8" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-toggle-text", children: "\u9AD8\u7EA7\u7B5B\u9009" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: `jh-filter-note${advancedCount > 0 ? " jh-filter-note-on" : ""}`, children: advancedCount > 0 ? `\u5DF2\u9009 ${String(advancedCount)} \u9879` : "\u7ECF\u9A8C / \u5B66\u5386 / \u65B0\u589E\u65F6\u95F4 / \u5C4F\u853D / \u8DE8\u5E73\u53F0\u6298\u53E0" })
-		        ]
-		      }
-		    ),
-		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-jobs-filter-panel", id: "jh-jobs-advanced", hidden: !advancedOpen, children: [
-		      expChips.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-jobs-filter-row", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("span", { className: "jh-jobs-filter-label", children: [
-		          "\u7ECF\u9A8C",
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u5404\u5E73\u53F0\u7684\u7ECF\u9A8C\u5199\u6CD5\u4E0D\u7EDF\u4E00\uFF081-3\u5E74 / 1\u5E74\uFF5E3\u5E74 / 2-3\u5E74 / 2\u5E74\u53CA\u4EE5\u4E0A\u2026\uFF09\uFF0C\u8FD9\u91CC\u5F52\u6210 6 \u4E2A\u6807\u51C6\u68AF\u961F\u3002\u9009\u4E2D\u4E00\u6863\uFF0C\u4F1A\u628A\u5E93\u91CC\u5C5E\u4E8E\u5B83\u7684\u5199\u6CD5\u4E00\u8D77\u67E5\u51FA\u6765\uFF0C\u6240\u4EE5\u4E0D\u4F1A\u88AB\u68AF\u961F\u7684\u540D\u5B57\u6F0F\u6389\u3002" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u7ECF\u9A8C\u8981\u6C42\uFF08\u53EF\u591A\u9009\uFF09", children: expChips.map((chip) => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
-		          "button",
-		          {
-		            type: "button",
-		            className: `jh-chip${draft.expBuckets.includes(chip.id) ? " jh-chip-on" : ""}`,
-		            "aria-pressed": draft.expBuckets.includes(chip.id),
-		            title: `\u5E93\u91CC\u5C5E\u4E8E\u8FD9\u4E00\u6863\u7684\u5199\u6CD5\uFF1A${chip.values.join(" / ")}`,
-		            onClick: () => props.onExpBucket(chip.id),
-		            children: chip.label
-		          },
-		          chip.id
-		        )) })
-		      ] }),
-		      eduAll.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-jobs-filter-row", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-label", children: "\u5B66\u5386" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u5B66\u5386\u8981\u6C42\uFF08\u53EF\u591A\u9009\uFF09", children: eduAll.map((value) => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
-		          "button",
-		          {
-		            type: "button",
-		            className: `jh-chip${draft.eduReqs.includes(value) ? " jh-chip-on" : ""}`,
-		            "aria-pressed": draft.eduReqs.includes(value),
-		            onClick: () => props.onEdu(value),
-		            children: value
-		          },
-		          value
-		        )) })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-jobs-filter-row", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("span", { className: "jh-jobs-filter-label", children: [
-		          "\u65B0\u589E\u65F6\u95F4",
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u6309\u300C\u9996\u6B21\u89C1\u5230\u300D\u65F6\u95F4\u7B97\uFF0C\u4E0E\u9996\u5C4F\u300C\u4ECA\u65E5\u65B0\u589E\u300D\u540C\u53E3\u5F84 \u2014\u2014 \u518D\u6293\u4E00\u6B21\u4E0D\u4F1A\u8BA9\u8001\u5C97\u4F4D\u6DF7\u8FDB\u6765\uFF08\u90A3\u662F\u300C\u6700\u8FD1\u89C1\u5230\u300D\uFF09\u3002\u5355\u9009\uFF0C\u4E0D\u9009 = \u4E0D\u9650\u3002" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-body", children: /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
-		          "select",
-		          {
-		            className: "jh-select jh-input-md",
-		            "aria-label": "\u53EA\u770B\u65B0\u589E",
-		            value: draft.newWindow,
-		            onChange: (event) => props.onNewWindow(event.target.value),
-		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("option", { value: "", children: "\u4E0D\u9650" }),
-		              NEW_JOB_WINDOWS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("option", { value: option.value, title: option.label, children: option.label }, option.value))
-		            ]
-		          }
-		        ) })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-jobs-filter-row", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("span", { className: "jh-jobs-filter-label", children: [
-		          "\u5C4F\u853D",
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u547D\u4E2D\u6807\u6CE8\u7684\u5C97\u4F4D\u4E00\u5F8B\u4E0D\u663E\u793A\u3002\u6807\u6CE8\u662F\u672C\u5730\u89C4\u5219\u7B97\u51FA\u6765\u7684\uFF08\u5916\u5305/\u9AD8\u98CE\u9669/\u50F5\u5C38\u5C97/\u9ED1\u8BDD\u7B49\uFF09\uFF0C\u4E0D\u9700\u8981\u4F60\u9010\u6761\u5224\u65AD\uFF1B\u6BCF\u4E00\u9879\u90FD\u53EF\u4EE5\u5355\u72EC\u5173\u6389\u3002" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u5C4F\u853D\u6807\u6CE8", children: JOB_FLAG_TYPES.map((type) => /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
-		          "button",
-		          {
-		            type: "button",
-		            className: `jh-chip jh-chip-neg${draft.excludeFlags.includes(type) ? " jh-chip-neg-on" : ""}`,
-		            "aria-pressed": draft.excludeFlags.includes(type),
-		            title: `\u4E0D\u663E\u793A\u6807\u6CE8\u4E3A\u300C${JOB_FLAG_LABEL[type]}\u300D\u7684\u5C97\u4F4D`,
-		            onClick: () => props.onExcludeFlag(type),
-		            children: JOB_FLAG_LABEL[type]
-		          },
-		          type
-		        )) })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-jobs-filter-row", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("span", { className: "jh-jobs-filter-label", children: [
-		          "\u6298\u53E0",
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u540C\u4E00\u6761\u5C97\u4F4D\u5728\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u53EA\u663E\u793A\u4E00\u884C\uFF08\u5C55\u5F00\u53EF\u770B\u5404\u5E73\u53F0\u5BF9\u7167\uFF09\u3002\u6761\u6570\u4E0E\u5206\u9875\u4E5F\u8DDF\u7740\u6309\u6298\u53E0\u540E\u7B97\u3002\u9ED8\u8BA4\u5173\u95ED\uFF1A\u6298\u53E0\u4F1A\u5C11\u663E\u793A\u884C\uFF0C\u300C\u9ED8\u8BA4\u5C11\u663E\u793A\u300D\u662F\u66FF\u4F60\u505A\u51B3\u5B9A\u3002" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-jobs-filter-body", children: /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("label", { className: "jh-check", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
-		            "input",
-		            {
-		              type: "checkbox",
-		              checked: draft.groupDuplicates,
-		              onChange: (event) => props.onGroupDuplicates(event.target.checked)
-		            }
-		          ),
-		          "\u8DE8\u5E73\u53F0\u6298\u53E0\uFF08\u540C\u4E00\u6761\u5C97\u4F4D\u53EA\u663E\u793A\u4E00\u884C\uFF09"
-		        ] }) })
-		      ] })
-		    ] })
-		  ] });
 		}
 
 		// src/client/net/dedup.ts
@@ -3167,79 +3150,50 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/jobs/dedup-compare-pane.tsx
-		var import_jsx_runtime30 = require("react/jsx-runtime");
+		var import_jsx_runtime31 = require("react/jsx-runtime");
 		function DedupComparePane(props) {
 		  const { state } = useAsync((signal) => fetchDedupGroup(props.groupId, signal), [props.groupId]);
 		  if (state.status === "loading") {
-		    return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u8BFB\u53D6\u540C\u5C97\u4F4D\u7684\u5176\u5B83\u6765\u6E90\u2026" });
+		    return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u8BFB\u53D6\u540C\u5C97\u4F4D\u7684\u5176\u5B83\u6765\u6E90\u2026" });
 		  }
-		  if (state.status === "error") return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(ErrorLine, { children: state.message });
+		  if (state.status === "error") return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(ErrorLine, { children: state.message });
 		  const group = state.data;
-		  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-dedup-pane", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-muted", children: [
+		  return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "jh-dedup-pane", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "jh-muted", children: [
 		      "\u5224\u5B9A\u4F9D\u636E\uFF1A",
 		      group.basis
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("th", { scope: "col", children: "\u6765\u6E90" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("th", { scope: "col", children: "\u6807\u9898" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("th", { scope: "col", children: "\u85AA\u8D44" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u57CE\u5E02" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("th", { scope: "col", children: "\u539F\u9875\u9762" })
+		    /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("th", { scope: "col", children: "\u6765\u6E90" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("th", { scope: "col", children: "\u6807\u9898" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("th", { scope: "col", children: "\u85AA\u8D44" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u57CE\u5E02" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("th", { scope: "col", children: "\u539F\u9875\u9762" })
 		      ] }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("tbody", { children: group.members.map((member) => /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("td", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("tbody", { children: group.members.map((member) => /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("td", { children: [
 		          member.platformName ?? member.platformId,
-		          member.isPrimary ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-muted", children: "\uFF08\u4E3B\uFF09" }) : null
+		          member.isPrimary ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { className: "jh-muted", children: "\uFF08\u4E3B\uFF09" }) : null
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "jh-link", onClick: () => props.onSelect(member.id), children: member.title }) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("td", { className: "jh-num", children: member.salaryRaw }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("td", { className: "jh-col-hide-sm", children: member.city }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("a", { className: "jh-link", href: member.sourceUrl, target: "_blank", rel: "noreferrer", children: "\u6253\u5F00" }) })
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("button", { type: "button", className: "jh-link", onClick: () => props.onSelect(member.id), children: member.title }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("td", { className: "jh-num", children: member.salaryRaw }),
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("td", { className: "jh-col-hide-sm", children: member.city }),
+		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+		          "a",
+		          {
+		            className: "jh-link",
+		            href: member.sourceUrl,
+		            target: "_blank",
+		            rel: "noreferrer",
+		            title: "\u5728\u65B0\u7A97\u53E3\u6253\u5F00\u539F\u9875\u9762",
+		            "aria-label": `\u6253\u5F00\u539F\u9875\u9762\uFF08\u65B0\u7A97\u53E3\uFF09\uFF1A${member.title}`,
+		            children: "\u6253\u5F00"
+		          }
+		        ) })
 		      ] }, member.id)) })
 		    ] }) })
 		  ] });
-		}
-
-		// src/client/screens/jobs/icons.tsx
-		var import_jsx_runtime31 = require("react/jsx-runtime");
-		function IconChat() {
-		  return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
-		    "svg",
-		    {
-		      width: "14",
-		      height: "14",
-		      viewBox: "0 0 16 16",
-		      fill: "none",
-		      stroke: "currentColor",
-		      strokeWidth: "1.4",
-		      strokeLinejoin: "round",
-		      strokeLinecap: "round",
-		      "aria-hidden": "true",
-		      children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("path", { d: "M2 3.6A1.6 1.6 0 0 1 3.6 2h8.8A1.6 1.6 0 0 1 14 3.6v5.8a1.6 1.6 0 0 1-1.6 1.6H6.8L4 13.6V11A1.6 1.6 0 0 1 2 9.4z" })
-		    }
-		  );
-		}
-		function IconSend() {
-		  return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
-		    "svg",
-		    {
-		      width: "14",
-		      height: "14",
-		      viewBox: "0 0 16 16",
-		      fill: "none",
-		      stroke: "currentColor",
-		      strokeWidth: "1.4",
-		      strokeLinejoin: "round",
-		      strokeLinecap: "round",
-		      "aria-hidden": "true",
-		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("path", { d: "M14.5 1.5 9.6 14.5 6.7 9.3 1.5 6.4z" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("path", { d: "M14.5 1.5 6.7 9.3" })
-		      ]
-		    }
-		  );
 		}
 
 		// src/client/screens/jobs/job-row.tsx
@@ -3251,9 +3205,13 @@ window.__ModuleLoader__.load({
 		  const crawled = relativeTime(job.crawledAt) ?? job.crawledAt;
 		  const seen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt;
 		  const dedupGroupId = job.dedupGroupId;
+		  const signals = [
+		    job.matchScore === null ? "" : `\u7C97\u7B5B ${String(job.matchScore)}`,
+		    job.flagTypes.map((type) => JOB_FLAG_LABEL[type]).join("\u3001")
+		  ].filter((item) => item !== "").join("\uFF0C");
 		  return /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("li", { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("div", { className: "jh-job-row", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { className: "jh-job-pick", children: /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("label", { className: "jh-job-pick", children: /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(
 		        "input",
 		        {
 		          type: "checkbox",
@@ -3269,7 +3227,7 @@ window.__ModuleLoader__.load({
 		          className: `jh-job${active ? " jh-job-active" : ""}`,
 		          "data-job-id": job.id,
 		          "aria-current": active ? "true" : void 0,
-		          "aria-label": `\u5C97\u4F4D\uFF1A${job.title}\uFF0C${job.salaryRaw}\uFF0C${job.city}${job.district === "" ? "" : `\xB7${job.district}`}\uFF0C${JOB_STATE_LABEL[job.state]}`,
+		          "aria-label": `\u5C97\u4F4D\uFF1A${job.title}\uFF0C${job.salaryRaw}\uFF0C${job.city}${job.district === "" ? "" : `\xB7${job.district}`}\uFF0C${JOB_STATE_LABEL[job.state]}${signals === "" ? "" : `\uFF0C${signals}`}`,
 		          onClick: () => props.onSelect(job.id),
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { className: "jh-job-main", "aria-hidden": "true", children: [
@@ -3285,11 +3243,11 @@ window.__ModuleLoader__.load({
 		              ] }),
 		              /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { className: "jh-job-origin", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { children: job.platformName ?? job.platformId }),
-		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { title: job.crawledAt, children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { title: localDateTime(job.crawledAt), children: [
 		                  "\u6293\u53D6 ",
 		                  crawled
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { title: job.lastSeenAt, children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { title: localDateTime(job.lastSeenAt), children: [
 		                  "\u6700\u8FD1\u89C1\u5230 ",
 		                  seen
 		                ] }),
@@ -3411,22 +3369,22 @@ window.__ModuleLoader__.load({
 		// src/client/screens/jobs/index.tsx
 		var import_jsx_runtime34 = require("react/jsx-runtime");
 		function JobsScreen(props) {
-		  const [draft, setDraft] = (0, import_react14.useState)(EMPTY_FILTERS);
-		  const [applied, setApplied] = (0, import_react14.useState)(EMPTY_FILTERS);
-		  const [page, setPage] = (0, import_react14.useState)(1);
-		  const [openGroup, setOpenGroup] = (0, import_react14.useState)(null);
-		  const [advancedOpen, setAdvancedOpen] = (0, import_react14.useState)(false);
-		  const [picked, setPicked] = (0, import_react14.useState)([]);
-		  const [greetTargets, setGreetTargets] = (0, import_react14.useState)(null);
-		  const [deliverTargets, setDeliverTargets] = (0, import_react14.useState)(null);
-		  const [batchNote, setBatchNote] = (0, import_react14.useState)(null);
+		  const [draft, setDraft] = (0, import_react15.useState)(EMPTY_FILTERS);
+		  const [applied, setApplied] = (0, import_react15.useState)(EMPTY_FILTERS);
+		  const [page, setPage] = (0, import_react15.useState)(1);
+		  const [openGroup, setOpenGroup] = (0, import_react15.useState)(null);
+		  const [advancedOpen, setAdvancedOpen] = (0, import_react15.useState)(false);
+		  const [picked, setPicked] = (0, import_react15.useState)([]);
+		  const [greetTargets, setGreetTargets] = (0, import_react15.useState)(null);
+		  const [deliverTargets, setDeliverTargets] = (0, import_react15.useState)(null);
+		  const [batchNote, setBatchNote] = (0, import_react15.useState)(null);
 		  const facets = useAsync((signal) => fetchJobFacets(signal), []);
 		  const facetData = facets.state.status === "ok" ? facets.state.data : null;
 		  const citiesAll = facetData?.cities ?? [];
 		  const eduAll = sortEduValues(facetData?.eduReqs ?? []);
 		  const expChips = buildExpChips(facetData?.expReqs ?? []);
 		  const appliedExpReqs = expandExpBuckets(applied.expBuckets, expChips);
-		  const { state, reload } = useAsync(
+		  const { state, reload, refreshing } = useAsync(
 		    (signal) => fetchJobs(
 		      {
 		        q: applied.q,
@@ -3442,14 +3400,24 @@ window.__ModuleLoader__.load({
 		        orderBy: applied.orderBy,
 		        descending: applied.descending,
 		        page,
-		        pageSize: PAGE_SIZE
+		        pageSize: PAGE_SIZE_DEFAULT
 		      },
 		      signal
 		    ),
 		    // `appliedExpReqs` 是 facet 的函数，而 facet 比首屏查询晚到 ——
 		    // 不把展开结果算进依赖，梯队就会"选了没反应"（第一次查询根本没带上它）。
-		    [props.revision, applied, page, appliedExpReqs.join(",")]
+		    [props.revision, applied, page, appliedExpReqs.join(",")],
+		    // keepPrevious（第四轮，审核 P2-6）：翻页 / 改筛选 / 外部刷新时列表不再整块消失 ——
+		    // 这一屏是"左列表 + 右详情"的对照阅读，整列闪一下正好打断它。
+		    // 重取期间沿用上一次结果，界面另用 refreshing 说明"这是旧数据，正在更新"。
+		    { keepPrevious: true }
 		  );
+		  (0, import_react15.useEffect)(() => {
+		    if (state.status !== "ok") return;
+		    if (state.data.total === 0 || state.data.items.length > 0) return;
+		    const lastPage = Math.max(1, Math.ceil(state.data.total / PAGE_SIZE_DEFAULT));
+		    if (page > lastPage) setPage(lastPage);
+		  }, [state, page]);
 		  const setCity = (city) => {
 		    setDraft((current) => ({ ...current, cities: city === "" ? [] : [city] }));
 		  };
@@ -3525,7 +3493,7 @@ window.__ModuleLoader__.load({
 		  const toggleGroup = (groupId) => {
 		    setOpenGroup(openGroup === groupId ? null : groupId);
 		  };
-		  const [marking, setMarking] = (0, import_react14.useState)(null);
+		  const [marking, setMarking] = (0, import_react15.useState)(null);
 		  const quickMark = async (id, state2) => {
 		    setMarking(id);
 		    try {
@@ -3538,8 +3506,11 @@ window.__ModuleLoader__.load({
 		    }
 		  };
 		  const total = state.status === "ok" ? state.data.total : 0;
-		  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-		  const appliedWindowLabel = NEW_JOB_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null;
+		  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE_DEFAULT));
+		  const pendingChanges = !sameFilters(draft, applied);
+		  const hasFilters = !sameFilters(applied, EMPTY_FILTERS);
+		  const beyondLastPage = state.status === "ok" && state.data.items.length === 0 && total > 0 && page > pages;
+		  const appliedWindowLabel = JOB_NEW_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null;
 		  const advancedCount = draft.expBuckets.length + draft.eduReqs.length + draft.excludeFlags.length + (draft.newWindow === "" ? 0 : 1) + (draft.groupDuplicates ? 1 : 0);
 		  return /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-jobs-split", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
@@ -3551,6 +3522,7 @@ window.__ModuleLoader__.load({
 		        expChips,
 		        advancedOpen,
 		        advancedCount,
+		        pending: pendingChanges,
 		        onSubmit: submit,
 		        onReset: reset,
 		        onToggleAdvanced: toggleAdvanced,
@@ -3566,21 +3538,23 @@ window.__ModuleLoader__.load({
 		      }
 		    ),
 		    /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-jobs-cols", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-jobs-pane", "data-job-hunter": "job-list", children: [
-		        state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(LoadingLine, { children: "\u6B63\u5728\u67E5\u8BE2\u5C97\u4F4D\u2026" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-jobs-pane", "data-job-hunter": "job-list", "aria-busy": refreshing ? true : void 0, children: [
+		        state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u67E5\u8BE2\u5C97\u4F4D\u2026" }),
 		        state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("h2", { className: "jh-card-title", children: "\u67E5\u8BE2\u5931\u8D25" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("p", { className: "jh-error", children: state.message }),
 		          state.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("p", { className: "jh-muted", children: state.hint }),
 		          /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("button", { type: "button", className: "jh-btn", onClick: reload, children: "\u91CD\u8BD5" })
 		        ] }),
-		        state.status === "ok" && state.data.items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-card", children: [
+		        beyondLastPage && /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u8FD9\u4E00\u9875\u5DF2\u7ECF\u6CA1\u6709\u6761\u76EE\u4E86\uFF0C\u6B63\u5728\u56DE\u5230\u6700\u540E\u4E00\u9875\u2026" }),
+		        state.status === "ok" && state.data.items.length === 0 && !beyondLastPage && /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-card", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("h2", { className: "jh-card-title", children: "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u5C97\u4F4D" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("p", { className: "jh-muted", children: [
 		            "\u5171 ",
 		            state.data.total,
 		            " \u6761\u3002\u6362\u4E2A\u5173\u952E\u8BCD\u6216\u653E\u5BBD\u7B5B\u9009\u6761\u4EF6\u8BD5\u8BD5\uFF1B\u4E5F\u53EF\u4EE5\u56DE\u5230\u300C\u4ECA\u65E5\u300D\u624B\u52A8\u6293\u53D6\u4E00\u6B21\u3002"
-		          ] })
+		          ] }),
+		          hasFilters ? /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("button", { type: "button", className: "jh-btn", onClick: reset, children: "\u6E05\u9664\u7B5B\u9009\u6761\u4EF6" }) : null
 		        ] }),
 		        state.status === "ok" && state.data.items.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)(import_jsx_runtime34.Fragment, { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-listbar", children: [
@@ -3597,6 +3571,7 @@ window.__ModuleLoader__.load({
 		              pages,
 		              " \u9875"
 		            ] }),
+		            refreshing ? /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("span", { className: "jh-refreshing", role: "status", children: "\u66F4\u65B0\u4E2D\u2026" }) : null,
 		            /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("span", { className: "jh-listbar-right", children: [
 		              state.data.items.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("label", { className: "jh-check", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
@@ -3621,14 +3596,21 @@ window.__ModuleLoader__.load({
 		                    className: "jh-select jh-sort-select",
 		                    value: applied.orderBy,
 		                    onChange: (event) => changeOrder(event.target.value),
-		                    children: ORDER_OPTIONS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("option", { value: option.value, children: option.label }, option.value))
+		                    children: JOB_ORDER_OPTIONS.map((option) => /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("option", { value: option.value, children: option.label }, option.value))
 		                  }
 		                )
 		              ] }),
 		              /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(Pager, { page: state.data.page, pages, hasMore: state.data.hasMore, onGo: setPage })
 		            ] })
 		          ] }),
-		          batchNote === null ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("p", { className: batchNote.tone === "ok" ? "jh-ok" : "jh-error", children: batchNote.text }),
+		          batchNote === null ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
+		            "p",
+		            {
+		              className: batchNote.tone === "ok" ? "jh-ok" : "jh-error",
+		              role: batchNote.tone === "ok" ? "status" : "alert",
+		              children: batchNote.text
+		            }
+		          ),
 		          picked.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
 		            BatchToolbar,
 		            {
@@ -3693,6 +3675,33 @@ window.__ModuleLoader__.load({
 		    )
 		  ] });
 		}
+
+		// src/shared/contract/enums/interview.ts
+		var INTERVIEW_STATE_LABEL = {
+		  pending: "\u5F85\u786E\u8BA4",
+		  confirmed: "\u5DF2\u786E\u8BA4",
+		  done: "\u5DF2\u5B8C\u6210",
+		  reviewed: "\u5DF2\u590D\u76D8",
+		  cancelled: "\u5DF2\u53D6\u6D88",
+		  rescheduled: "\u5DF2\u6539\u671F"
+		};
+		var INTERVIEW_KINDS = ["onsite", "video", "phone", "other"];
+		var INTERVIEW_KIND_LABEL = {
+		  onsite: "\u73B0\u573A",
+		  video: "\u89C6\u9891",
+		  phone: "\u7535\u8BDD",
+		  other: "\u5176\u5B83"
+		};
+
+		// src/shared/contract/enums/message.ts
+		var REPLY_SCENARIOS = [
+		  { key: "negotiate-time", label: "\u534F\u5546\u9762\u8BD5\u65F6\u95F4" },
+		  { key: "salary", label: "\u8BE2\u95EE\u85AA\u8D44\u7ED3\u6784" },
+		  { key: "decline", label: "\u5A49\u62D2\u9080\u7EA6" }
+		];
+		var REPLY_SCENARIO_LABEL = Object.fromEntries(
+		  REPLY_SCENARIOS.map((item) => [item.key, item.label])
+		);
 
 		// src/client/net/collect/platforms.ts
 		async function fetchPlatforms(signal) {
@@ -3800,23 +3809,23 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/inbox/index.tsx
-		var import_react15 = require("react");
+		var import_react16 = require("react");
 		var import_jsx_runtime35 = require("react/jsx-runtime");
 		function InboxScreen(props) {
 		  const inbox = useAsync((signal) => fetchInbox({}, signal), [props.revision]);
-		  const [unreadOnly, setUnreadOnly] = (0, import_react15.useState)(false);
+		  const [unreadOnly, setUnreadOnly] = (0, import_react16.useState)(false);
 		  const filtered = useAsync(
 		    (signal) => fetchInbox({ unreadOnly }, signal),
 		    [props.revision, unreadOnly]
 		  );
-		  const [draft, setDraft] = (0, import_react15.useState)("");
-		  const [replyTo, setReplyTo] = (0, import_react15.useState)(null);
-		  const [replyText, setReplyText] = (0, import_react15.useState)("");
-		  const [draftingScenario, setDraftingScenario] = (0, import_react15.useState)(null);
-		  const [busy, setBusy] = (0, import_react15.useState)(false);
-		  const [syncing, setSyncing] = (0, import_react15.useState)(false);
-		  const [error, setError] = (0, import_react15.useState)(null);
-		  const [notice, setNotice] = (0, import_react15.useState)(null);
+		  const [draft, setDraft] = (0, import_react16.useState)("");
+		  const [replyTo, setReplyTo] = (0, import_react16.useState)(null);
+		  const [replyText, setReplyText] = (0, import_react16.useState)("");
+		  const [draftingScenario, setDraftingScenario] = (0, import_react16.useState)(null);
+		  const [busy, setBusy] = (0, import_react16.useState)(false);
+		  const [syncing, setSyncing] = (0, import_react16.useState)(false);
+		  const [error, setError] = (0, import_react16.useState)(null);
+		  const [notice, setNotice] = (0, import_react16.useState)(null);
 		  const syncFromPlatforms = async () => {
 		    setSyncing(true);
 		    setError(null);
@@ -3849,9 +3858,9 @@ window.__ModuleLoader__.load({
 		      setSyncing(false);
 		    }
 		  };
-		  const [extracting, setExtracting] = (0, import_react15.useState)(null);
-		  const [creating, setCreating] = (0, import_react15.useState)(false);
-		  const [extractPanel, setExtractPanel] = (0, import_react15.useState)(null);
+		  const [extracting, setExtracting] = (0, import_react16.useState)(null);
+		  const [creating, setCreating] = (0, import_react16.useState)(false);
+		  const [extractPanel, setExtractPanel] = (0, import_react16.useState)(null);
 		  const patchExtract = (patch) => {
 		    setExtractPanel((current) => current === null ? null : { ...current, ...patch });
 		  };
@@ -4211,17 +4220,17 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/interviews/index.tsx
-		var import_react16 = require("react");
+		var import_react17 = require("react");
 		var import_jsx_runtime37 = require("react/jsx-runtime");
 		function InterviewsScreen(props) {
 		  const list = useAsync((signal) => fetchInterviews(signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react16.useState)(false);
-		  const [error, setError] = (0, import_react16.useState)(null);
-		  const [notice, setNotice] = (0, import_react16.useState)(null);
-		  const [prepId, setPrepId] = (0, import_react16.useState)(null);
-		  const [at, setAt] = (0, import_react16.useState)("");
-		  const [kind, setKind] = (0, import_react16.useState)("video");
-		  const [commute, setCommute] = (0, import_react16.useState)("");
+		  const [busy, setBusy] = (0, import_react17.useState)(false);
+		  const [error, setError] = (0, import_react17.useState)(null);
+		  const [notice, setNotice] = (0, import_react17.useState)(null);
+		  const [prepId, setPrepId] = (0, import_react17.useState)(null);
+		  const [at, setAt] = (0, import_react17.useState)("");
+		  const [kind, setKind] = (0, import_react17.useState)("video");
+		  const [commute, setCommute] = (0, import_react17.useState)("");
 		  const run = async (fn, done) => {
 		    setBusy(true);
 		    setError(null);
@@ -4375,7 +4384,7 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 
-		// src/shared/dto.ts
+		// src/shared/contract/enums/analytics.ts
 		var SALARY_BASES = ["monthly_min", "annualized"];
 		var SALARY_BASIS_LABEL = {
 		  monthly_min: "\u6708\u85AA\u4E0B\u9650\uFF08\u5143/\u6708\uFF09",
@@ -4465,11 +4474,19 @@ window.__ModuleLoader__.load({
 		            type: "button",
 		            className: "jh-funnel-count",
 		            title: "\u70B9\u5F00\u770B\u8FD9\u4E00\u6BB5\u7684\u660E\u7EC6",
+		            "aria-label": `${step.label} ${String(step.count)} \u6761\uFF0C\u70B9\u5F00\u770B\u8FD9\u4E00\u6BB5\u7684\u660E\u7EC6`,
 		            onClick: () => props.onDrillDown(step.key),
 		            children: step.count
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime39.jsx)("span", { className: "jh-funnel-rate", children: step.rate === null ? /* @__PURE__ */ (0, import_jsx_runtime39.jsx)("span", { className: "jh-cell-empty", title: "\u8DE8\u603B\u4F53\uFF08\u63A5\u89E6 \u2192 \u6295\u9012\uFF09\u6CA1\u6709\u8F6C\u5316\u7387", children: "\u2014" }) : formatRate(step.rate) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime39.jsx)("span", { className: "jh-funnel-rate", children: step.rate === null ? (
+		          /* 破折号本身没有含义，解释不能只挂在 title 上（键盘与触屏都读不到）——
+		             与 SampleBadge 同一个做法：正文之外再给读屏一份。 */
+		          /* @__PURE__ */ (0, import_jsx_runtime39.jsxs)("span", { className: "jh-cell-empty", children: [
+		            "\u2014",
+		            /* @__PURE__ */ (0, import_jsx_runtime39.jsx)("span", { className: "jh-sr-only", children: "\u8DE8\u603B\u4F53\uFF08\u63A5\u89E6 \u2192 \u6295\u9012\uFF09\u6CA1\u6709\u8F6C\u5316\u7387" })
+		          ] })
+		        ) : formatRate(step.rate) }),
 		        /* @__PURE__ */ (0, import_jsx_runtime39.jsx)("span", { className: "jh-funnel-drop", title: drop === null || drop <= 0 ? void 0 : `\u6BD4\u4E0A\u4E00\u5C42\u5C11 ${String(drop)} \u6761`, children: drop === null || drop <= 0 ? "" : `\u2193 ${String(drop)}` })
 		      ] })
 		    ] }, step.key);
@@ -4481,10 +4498,10 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/board/salary-box-chart.tsx
-		var import_react17 = require("react");
+		var import_react18 = require("react");
 		var import_jsx_runtime40 = require("react/jsx-runtime");
 		function SalaryBoxChart(props) {
-		  const [hot, setHot] = (0, import_react17.useState)(null);
+		  const [hot, setHot] = (0, import_react18.useState)(null);
 		  const { min, p25, median, p75, max, count, withinBox, basisLabel } = props.box;
 		  if (min === null || p25 === null || median === null || p75 === null || max === null) return null;
 		  const span = max - min;
@@ -4605,9 +4622,22 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/board/index.tsx
-		var import_react18 = require("react");
+		var import_react19 = require("react");
 		var import_jsx_runtime42 = require("react/jsx-runtime");
-		var FILTER_SCOPE_HINT = "\u65B9\u5411\u4E0E\u7B80\u5386\u7248\u672C\u53EA\u4F5C\u7528\u4E8E\u6295\u9012\u6BB5 \u2014\u2014 \u6253\u62DB\u547C\u6CA1\u6709\u8BB0\u5F55\u7528\u8FC7\u54EA\u7248\u7B80\u5386\uFF0F\u4EC0\u4E48\u65B9\u5411\uFF0C\u63A5\u89E6\u6BB5\uFF08\u6253\u62DB\u547C/\u9001\u8FBE/\u5DF2\u8BFB/\u56DE\u590D\uFF09\u4E0D\u53D7\u8FD9\u4E24\u9879\u5F71\u54CD\u3002\u85AA\u8D44\u5206\u4F4D\u6765\u81EA\u5C97\u4F4D\u5E93\uFF0C\u5B83\u7684\u65F6\u95F4\u7A97\u662F\u5C97\u4F4D\u6293\u53D6\u65F6\u95F4\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002";
+		var FILTER_SCOPE_HINT = "\u65B9\u5411\u4E0E\u7B80\u5386\u7248\u672C\u53EA\u4F5C\u7528\u4E8E\u6295\u9012\u6BB5 \u2014\u2014 \u6253\u62DB\u547C\u6CA1\u6709\u8BB0\u5F55\u7528\u8FC7\u54EA\u7248\u7B80\u5386\uFF0F\u4EC0\u4E48\u65B9\u5411\uFF0C\u63A5\u89E6\u6BB5\uFF08\u6253\u62DB\u547C/\u9001\u8FBE/\u5DF2\u8BFB/\u56DE\u590D\uFF09\u4E0D\u53D7\u8FD9\u4E24\u9879\u5F71\u54CD\u3002\u85AA\u8D44\u6765\u81EA\u5C97\u4F4D\u5E93\uFF0C\u5B83\u7684\u65F6\u95F4\u7A97\u662F\u5C97\u4F4D\u6293\u53D6\u65F6\u95F4\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002";
+		function localDayStart(date) {
+		  return (/* @__PURE__ */ new Date(`${date}T00:00:00`)).toISOString();
+		}
+		function localDayEnd(date) {
+		  return (/* @__PURE__ */ new Date(`${date}T23:59:59.999`)).toISOString();
+		}
+		function localDayOf(iso) {
+		  if (iso === void 0 || iso === "") return "";
+		  const date = new Date(iso);
+		  if (Number.isNaN(date.getTime())) return "";
+		  const pad2 = (value) => String(value).padStart(2, "0");
+		  return `${String(date.getFullYear())}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+		}
 		function cleanFilter(input) {
 		  const next = { ...input };
 		  for (const key of Object.keys(next)) {
@@ -4619,29 +4649,24 @@ window.__ModuleLoader__.load({
 		  return Object.entries(cleanFilter(input)).sort(([a], [b]) => a < b ? -1 : 1).map(([key, value]) => `${key}=${String(value)}`).join("&");
 		}
 		function BoardScreen(props) {
-		  const [draft, setDraft] = (0, import_react18.useState)({});
-		  const [applied, setApplied] = (0, import_react18.useState)({});
-		  const [resumeOptions, setResumeOptions] = (0, import_react18.useState)([]);
-		  const [directionOptions, setDirectionOptions] = (0, import_react18.useState)([]);
-		  (0, import_react18.useEffect)(() => {
+		  const [draft, setDraft] = (0, import_react19.useState)({});
+		  const [applied, setApplied] = (0, import_react19.useState)({});
+		  const [resumeOptions, setResumeOptions] = (0, import_react19.useState)([]);
+		  const [directionOptions, setDirectionOptions] = (0, import_react19.useState)([]);
+		  (0, import_react19.useEffect)(() => {
 		    void fetchResumes().then((result) => {
 		      setResumeOptions(result.items.map((item) => ({ id: item.id, label: `${item.name} #${String(item.id)}` })));
 		      setDirectionOptions([...new Set(result.items.map((item) => item.direction).filter((d) => d !== ""))].sort());
 		    }).catch(() => {
 		    });
 		  }, [props.revision]);
-		  const [basis, setBasis] = (0, import_react18.useState)("monthly_min");
+		  const [basis, setBasis] = (0, import_react19.useState)("monthly_min");
 		  const funnel = useAsync((signal) => fetchFunnel(applied, signal), [props.revision, applied]);
 		  const attribution = useAsync((signal) => fetchAttribution(applied, signal), [props.revision, applied]);
-		  const salary = useAsync((signal) => fetchSalaryBand(applied, signal), [props.revision, applied]);
 		  const salaryBox = useAsync((signal) => fetchSalaryBox(applied, basis, signal), [props.revision, applied, basis]);
 		  const baseline = useAsync((signal) => fetchSalaryBaseline(applied, signal), [props.revision, applied]);
 		  const resumeCompare = useAsync((signal) => fetchResumeCompare(applied, signal), [props.revision, applied]);
-		  const funnelData = funnel.state.status === "ok" ? funnel.state.data : null;
-		  const attributionData = attribution.state.status === "ok" ? attribution.state.data : null;
-		  const salaryData = salary.state.status === "ok" ? salary.state.data : null;
-		  const resumeCompareData = resumeCompare.state.status === "ok" ? resumeCompare.state.data : null;
-		  const bestResume = resumeCompareData === null ? null : bestResumeKey(resumeCompareData.rows);
+		  const bestResume = resumeCompare.state.status === "ok" ? bestResumeKey(resumeCompare.state.data.rows) : null;
 		  const activeCount = Object.keys(applied).length;
 		  const dirty = filterSignature(draft) !== filterSignature(applied);
 		  const patch = (next) => {
@@ -4690,8 +4715,8 @@ window.__ModuleLoader__.load({
 		                {
 		                  className: "jh-input",
 		                  type: "date",
-		                  value: (draft.from ?? "").slice(0, 10),
-		                  onChange: (event) => patch({ from: event.target.value === "" ? "" : `${event.target.value}T00:00:00.000Z` })
+		                  value: localDayOf(draft.from),
+		                  onChange: (event) => patch({ from: event.target.value === "" ? "" : localDayStart(event.target.value) })
 		                }
 		              )
 		            ] }),
@@ -4702,8 +4727,8 @@ window.__ModuleLoader__.load({
 		                {
 		                  className: "jh-input",
 		                  type: "date",
-		                  value: (draft.to ?? "").slice(0, 10),
-		                  onChange: (event) => patch({ to: event.target.value === "" ? "" : `${event.target.value}T23:59:59.999Z` })
+		                  value: localDayOf(draft.to),
+		                  onChange: (event) => patch({ to: event.target.value === "" ? "" : localDayEnd(event.target.value) })
 		                }
 		              )
 		            ] }),
@@ -4783,42 +4808,51 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h3", { className: "jh-panel-title", children: "\u6F0F\u6597" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-muted", children: "\u63A5\u89E6\u6BB5\u4E0E\u6295\u9012\u6BB5\u5206\u5F00\u753B \u2014\u2014 \u5B83\u4EEC\u662F\u4E24\u4E2A\u4E0D\u53EF\u6BD4\u7684\u603B\u4F53\u3002" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-spacer" }),
-		        funnelData === null ? null : /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(SampleBadge, { sample: funnelData.sampleSize, enough: funnelData.enoughSample, hint: funnelData.note })
+		        funnel.state.status !== "ok" ? null : /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(
+		          SampleBadge,
+		          {
+		            sample: funnel.state.data.sampleSize,
+		            enough: funnel.state.data.enoughSample,
+		            hint: funnel.state.data.note
+		          }
+		        )
 		      ] }),
-		      funnelData === null ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(FunnelChart, { steps: funnelData.steps, onDrillDown: props.onDrillDown })
+		      funnel.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : funnel.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(PanelFailure, { message: funnel.state.message, hint: funnel.state.hint, onRetry: funnel.reload }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(FunnelChart, { steps: funnel.state.data.steps, onDrillDown: props.onDrillDown })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("section", { className: "jh-card jh-panel", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-panel-head", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h3", { className: "jh-panel-title", children: "\u5F52\u56E0" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-muted", children: "\u8FD9\u4E9B\u6295\u9012\u662F\u54EA\u6761\u6E20\u9053\u3001\u54EA\u7248\u7B80\u5386\u6362\u6765\u7684\u3002" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-spacer" }),
-		        attributionData === null ? null : /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(
+		        attribution.state.status !== "ok" ? null : /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(
 		          SampleBadge,
 		          {
-		            sample: attributionData.sampleSize,
-		            enough: attributionData.enoughSample,
-		            hint: attributionData.note
+		            sample: attribution.state.data.sampleSize,
+		            enough: attribution.state.data.enoughSample,
+		            hint: attribution.state.data.note
 		          }
 		        )
 		      ] }),
-		      attributionData === null ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
+		      attribution.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : attribution.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(PanelFailure, { message: attribution.state.message, hint: attribution.state.hint, onRetry: attribution.reload }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h4", { className: "jh-panel-sub", children: "\u6309\u6E20\u9053" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(AttributionTable, { rows: attributionData.byChannel }),
+		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(AttributionTable, { rows: attribution.state.data.byChannel }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h4", { className: "jh-panel-sub", children: "\u6309\u7B80\u5386\u7248\u672C" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(AttributionTable, { rows: attributionData.byResume })
+		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(AttributionTable, { rows: attribution.state.data.byResume })
 		      ] })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("section", { className: "jh-card jh-panel", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-panel-head", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h3", { className: "jh-panel-title", children: "\u85AA\u8D44\u5206\u5E03" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-muted", children: "\u7BB1\u7EBF\u56FE \xB7 \u57FA\u51C6\u53EA\u6765\u81EA\u4F60\u81EA\u5DF1\u6293\u5230\u7684\u5C97\u4F4D\u5E93\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-muted", children: "\u7BB1\u7EBF\u56FE + \u4E94\u6570\u6982\u62EC \xB7 \u53EA\u6765\u81EA\u4F60\u81EA\u5DF1\u6293\u5230\u7684\u5C97\u4F4D\u5E93\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(FieldHint, { text: "\u57CE\u5E02\u4E0E\u5173\u952E\u8BCD\u5728\u8FD9\u91CC\u7B5B\u7684\u662F\u5C97\u4F4D\u5E93\uFF1B\u65F6\u95F4\u7A97\u662F\u5C97\u4F4D\u6293\u53D6\u65F6\u95F4\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-spacer" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-muted", children: "\u53E3\u5F84" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("div", { className: "jh-modes", children: SALARY_BASES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("div", { className: "jh-modes", role: "group", "aria-label": "\u85AA\u8D44\u7EDF\u8BA1\u53E3\u5F84", children: SALARY_BASES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(
 		          "button",
 		          {
 		            type: "button",
 		            className: `jh-mode${value === basis ? " jh-mode-active" : ""}`,
+		            "aria-pressed": value === basis,
 		            onClick: () => setBasis(value),
 		            children: SALARY_BASIS_LABEL[value]
 		          },
@@ -4833,11 +4867,35 @@ window.__ModuleLoader__.load({
 		          }
 		        ) : null
 		      ] }),
-		      salaryBox.state.status !== "ok" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : salaryBox.state.data.box.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u8303\u56F4\u91CC\u6CA1\u6709\u7B26\u5408\u8BE5\u53E3\u5F84\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
+		      salaryBox.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : salaryBox.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(PanelFailure, { message: salaryBox.state.message, hint: salaryBox.state.hint, onRetry: salaryBox.reload }) : salaryBox.state.data.box.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u8303\u56F4\u91CC\u6CA1\u6709\u7B26\u5408\u8BE5\u53E3\u5F84\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(SalaryBoxChart, { box: salaryBox.state.data.box }),
+		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric-row", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "\u6700\u4F4E" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryBox.state.data.box.min })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "P25" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryBox.state.data.box.p25 })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric jh-metric-key", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "\u4E2D\u4F4D" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryBox.state.data.box.median })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "P75" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryBox.state.data.box.p75 })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "\u6700\u9AD8" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryBox.state.data.box.max })
+		          ] })
+		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-panel-foot", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("span", { className: "jh-muted", children: [
-		            "\u6837\u672C ",
+		            "\u53E3\u5F84 ",
+		            salaryBox.state.data.box.basisLabel,
+		            " \xB7 \u6837\u672C ",
 		            salaryBox.state.data.box.count,
 		            " \u6761 \xB7 \u7BB1\u4F53\uFF08P25\u2013P75\uFF09\u91CC\u88C5\u4E86",
 		            " ",
@@ -4851,7 +4909,7 @@ window.__ModuleLoader__.load({
 		          ] })
 		        ] })
 		      ] }),
-		      baseline.state.status === "ok" && /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-baseline", children: [
+		      baseline.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u7EDF\u8BA1\u57FA\u51C6\u2026" }) : baseline.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(PanelFailure, { message: baseline.state.message, hint: baseline.state.hint, onRetry: baseline.reload }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-baseline", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h4", { className: "jh-panel-sub", children: "\u6211\u6295\u9012\u8FC7\u7684 vs \u5168\u90E8\u5728\u5E93\uFF08\u540C\u4E00\u53E3\u5F84\uFF1A\u6708\u85AA\u4E0B\u9650\uFF09" }),
 		        baseline.state.data.all.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u5C97\u4F4D\u5E93\u91CC\u8FD8\u6CA1\u6709\u5E26\u85AA\u8D44\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("table", { className: "jh-table jh-table-board", children: [
@@ -4908,14 +4966,24 @@ window.__ModuleLoader__.load({
 		          }
 		        ) : null
 		      ] }),
-		      resumeCompareData === null ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
+		      resumeCompare.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : resumeCompare.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(
+		        PanelFailure,
+		        {
+		          message: resumeCompare.state.message,
+		          hint: resumeCompare.state.hint,
+		          onRetry: resumeCompare.reload
+		        }
+		      ) : resumeCompare.state.data.rows.length === 0 ? (
+		        /* 空态就是一句话，不画空表壳 —— 与同屏的 AttributionTable 同一个写法 */
+		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6295\u9012\u8BB0\u5F55\u3002" })
+		      ) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("table", { className: "jh-table jh-table-board", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("tr", { children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("th", { scope: "col", children: "\u7B80\u5386\u7248\u672C" }),
 		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("th", { scope: "col", className: "jh-num", children: "\u6295\u9012\u6570" }),
-		            resumeCompareData.stages.map((stage) => /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("th", { scope: "col", className: "jh-num", children: stage.label }, stage.stage))
+		            resumeCompare.state.data.stages.map((stage) => /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("th", { scope: "col", className: "jh-num", children: stage.label }, stage.stage))
 		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("tbody", { children: resumeCompareData.rows.map((row) => {
+		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("tbody", { children: resumeCompare.state.data.rows.map((row) => {
 		            const rowKey = String(row.resumeId);
 		            const best = rowKey === bestResume;
 		            return /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("tr", { className: best ? "jh-row-best" : void 0, children: [
@@ -4933,51 +5001,23 @@ window.__ModuleLoader__.load({
 		            ] }, rowKey);
 		          }) })
 		        ] }) }),
-		        resumeCompareData.rows.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6295\u9012\u8BB0\u5F55\u3002" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-panel-foot", children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-muted", children: "\u6BCF\u683C\u662F\u300C\u5206\u5B50/\u5206\u6BCD\u300D\uFF1B\u5E26\u989C\u8272\u7684\u683C\u5B50\u6837\u672C\u4E0D\u8DB3 5\uFF0C\u53EA\u770B\u6570\u5B57\u522B\u4E0B\u7ED3\u8BBA\u3002" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-spacer" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("details", { className: "jh-details jh-details-inline", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("summary", { children: "\u53E3\u5F84\u8BF4\u660E" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-note", children: resumeCompareData.note })
+		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-note", children: resumeCompare.state.data.note })
 		          ] })
 		        ] })
 		      ] })
-		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("section", { className: "jh-card jh-panel", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-panel-head", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h3", { className: "jh-panel-title", children: "\u85AA\u8D44\u5206\u4F4D" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-muted", children: salaryData === null ? "\u5C97\u4F4D\u5E93\u53E3\u5F84" : `${salaryData.scope} \xB7 \u53EA\u7EDF\u8BA1\u85AA\u8D44\u4E0B\u9650` }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { className: "jh-spacer" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(FieldHint, { text: "\u57CE\u5E02\u4E0E\u5173\u952E\u8BCD\u5728\u8FD9\u91CC\u7B5B\u7684\u662F\u5C97\u4F4D\u5E93\uFF1B\u65F6\u95F4\u7A97\u662F\u5C97\u4F4D\u6293\u53D6\u65F6\u95F4\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002" })
-		      ] }),
-		      salaryData === null ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u7EDF\u8BA1\u2026" }) : salaryData.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u8303\u56F4\u91CC\u6CA1\u6709\u5E26\u85AA\u8D44\u4E0B\u9650\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric-row", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "\u6837\u672C" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryData.count })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "\u6700\u4F4E" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryData.min })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "P25" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryData.p25 })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric jh-metric-key", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "\u4E2D\u4F4D" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryData.median })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "P75" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryData.p75 })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-metric", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("span", { children: "\u6700\u9AD8" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("b", { children: salaryData.max })
-		        ] })
-		      ] })
 		    ] })
+		  ] });
+		}
+		function PanelFailure(props) {
+		  return /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(ErrorLine, { children: props.message }),
+		    props.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: props.hint }),
+		    /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("button", { type: "button", className: "jh-btn", onClick: props.onRetry, children: "\u91CD\u8BD5" })
 		  ] });
 		}
 		function numOrDash(value) {
@@ -5013,19 +5053,19 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/pipeline/index.tsx
-		var import_react19 = require("react");
+		var import_react20 = require("react");
 		var import_jsx_runtime44 = require("react/jsx-runtime");
 		function PipelineScreen(props) {
 		  const board = useAsync((signal) => fetchBoard(signal), [props.revision]);
 		  const followUps = useAsync((signal) => fetchFollowUps(signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react19.useState)(null);
-		  const [error, setError] = (0, import_react19.useState)(null);
-		  const [openJobId, setOpenJobId] = (0, import_react19.useState)(null);
+		  const [busy, setBusy] = (0, import_react20.useState)(null);
+		  const [error, setError] = (0, import_react20.useState)(null);
+		  const [openJobId, setOpenJobId] = (0, import_react20.useState)(null);
 		  const apps = useAsync(
 		    (signal) => fetchApplications(openJobId === null ? {} : { jobId: openJobId }, signal),
 		    [openJobId, props.revision]
 		  );
-		  const run = (0, import_react19.useCallback)(
+		  const run = (0, import_react20.useCallback)(
 		    async (id, fn) => {
 		      setBusy(id);
 		      setError(null);
@@ -5212,7 +5252,46 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 
-		// src/shared/time-format.ts
+		// src/shared/contract/enums/campus.ts
+		var CAMPUS_BATCHES = ["autumn", "spring", "other"];
+		var CAMPUS_BATCH_LABEL = {
+		  autumn: "\u79CB\u62DB",
+		  spring: "\u6625\u62DB",
+		  other: "\u5176\u4ED6\u6279\u6B21"
+		};
+		var CAMPUS_STAGE_LABEL = {
+		  intent: "\u610F\u5411",
+		  applied: "\u5DF2\u7F51\u7533",
+		  assessment_pending: "\u5F85\u7B14\u8BD5",
+		  assessment_done: "\u5DF2\u7B14\u8BD5",
+		  interview_pending: "\u5F85\u9762\u8BD5",
+		  interviewing: "\u9762\u8BD5\u4E2D",
+		  final: "\u7EC8\u9762",
+		  tripartite_pending: "\u5F85\u53D1\u4E09\u65B9",
+		  tripartite_signed: "\u5DF2\u7B7E\u4E09\u65B9",
+		  closed: "\u7ED3\u675F",
+		  rejected: "\u5DF2\u62D2"
+		};
+		var ASSESSMENT_KIND_LABEL = {
+		  written: "\u7B14\u8BD5",
+		  aptitude: "\u80FD\u529B\u6D4B\u8BC4",
+		  personality: "\u6027\u683C\u6D4B\u8BC4",
+		  video: "AI \u89C6\u9891\u9762",
+		  other: "\u5176\u5B83"
+		};
+		var ASSESSMENT_STATE_LABEL = {
+		  pending: "\u5F85\u5B8C\u6210",
+		  in_progress: "\u8FDB\u884C\u4E2D",
+		  done: "\u5DF2\u5B8C\u6210",
+		  missed: "\u5DF2\u9519\u8FC7"
+		};
+		var TRIPARTITE_STATE_LABEL = {
+		  pending: "\u5F85\u7B7E",
+		  signed: "\u5DF2\u7B7E",
+		  breached: "\u8FDD\u7EA6"
+		};
+
+		// src/shared/text/time-format.ts
 		function pad(value) {
 		  return String(value).padStart(2, "0");
 		}
@@ -5290,6 +5369,24 @@ window.__ModuleLoader__.load({
 		  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
 		  return { hour, minute };
 		}
+		function parseClockWindow(raw) {
+		  const matched = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(raw.trim());
+		  if (matched === null) return null;
+		  const startHour = Number(matched[1]);
+		  const startMinute = Number(matched[2]);
+		  const endHour = Number(matched[3]);
+		  const endMinute = Number(matched[4]);
+		  if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59) return null;
+		  return { startHour, startMinute, endHour, endMinute };
+		}
+		function parseWindow(raw) {
+		  const window2 = parseClockWindow(raw);
+		  if (window2 === null) return null;
+		  return {
+		    start: formatHourMinute(window2.startHour, window2.startMinute),
+		    end: formatHourMinute(window2.endHour, window2.endMinute)
+		  };
+		}
 		var WEEKDAY_PRESETS = [
 		  { key: "workdays", label: "\u5DE5\u4F5C\u65E5", days: [1, 2, 3, 4, 5] },
 		  { key: "weekend", label: "\u5468\u672B", days: [0, 6] },
@@ -5351,20 +5448,20 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/campus/index.tsx
-		var import_react20 = require("react");
+		var import_react21 = require("react");
 		var import_jsx_runtime45 = require("react/jsx-runtime");
 		function CampusScreen(props) {
 		  const data = useAsync((signal) => fetchCampus(signal), [props.revision]);
 		  const tripartite = useAsync((signal) => fetchTripartite(signal), [props.revision]);
 		  const deadlines = useAsync((signal) => fetchDeadlines(signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react20.useState)(false);
-		  const [error, setError] = (0, import_react20.useState)(null);
-		  const [notice, setNotice] = (0, import_react20.useState)(null);
-		  const [name2, setName] = (0, import_react20.useState)("");
-		  const [batch, setBatch] = (0, import_react20.useState)("autumn");
-		  const [closeAt, setCloseAt] = (0, import_react20.useState)("");
-		  const [dueAt, setDueAt] = (0, import_react20.useState)("");
-		  const [dueFor, setDueFor] = (0, import_react20.useState)(null);
+		  const [busy, setBusy] = (0, import_react21.useState)(false);
+		  const [error, setError] = (0, import_react21.useState)(null);
+		  const [notice, setNotice] = (0, import_react21.useState)(null);
+		  const [name2, setName] = (0, import_react21.useState)("");
+		  const [batch, setBatch] = (0, import_react21.useState)("autumn");
+		  const [closeAt, setCloseAt] = (0, import_react21.useState)("");
+		  const [dueAt, setDueAt] = (0, import_react21.useState)("");
+		  const [dueFor, setDueFor] = (0, import_react21.useState)(null);
 		  const now = /* @__PURE__ */ new Date();
 		  const run = async (fn, done) => {
 		    setBusy(true);
@@ -5675,9 +5772,37 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/index.tsx
-		var import_react25 = require("react");
+		var import_react26 = require("react");
 
-		// src/shared/error-text.ts
+		// src/shared/contract/enums/crawl.ts
+		var CRAWL_STATE_LABEL = {
+		  queued: "\u6392\u961F\u4E2D",
+		  running: "\u8FDB\u884C\u4E2D",
+		  ok: "\u6210\u529F",
+		  partial: "\u90E8\u5206\u6210\u529F",
+		  failed: "\u5931\u8D25",
+		  aborted: "\u5DF2\u4E2D\u6B62"
+		};
+		var CRAWL_STATE_TONE = {
+		  queued: "muted",
+		  running: "muted",
+		  ok: "ok",
+		  partial: "warn",
+		  failed: "error",
+		  aborted: "muted"
+		};
+		var HEALTH_STATE_LABEL = {
+		  healthy: "\u6B63\u5E38",
+		  degraded: "\u964D\u7EA7",
+		  broken: "\u5931\u6548"
+		};
+		var HEALTH_STATE_TONE = {
+		  healthy: "ok",
+		  degraded: "warn",
+		  broken: "error"
+		};
+
+		// src/shared/text/error-text.ts
 		var TECHNICAL_PATTERNS = [
 		  /page\.evaluate/i,
 		  /\b(ReferenceError|TypeError|SyntaxError|RangeError)\b/,
@@ -5689,30 +5814,27 @@ window.__ModuleLoader__.load({
 		function looksLikeStackTrace(message) {
 		  return TECHNICAL_PATTERNS.some((pattern) => pattern.test(message));
 		}
+		var KIND_OF = {
+		  NO_RECORDS: "selector",
+		  PARSE_FAILED: (message) => looksLikeStackTrace(message) ? "script" : "selector",
+		  NOT_LOGGED_IN: "login",
+		  BLOCKED: "risk",
+		  RATE_LIMITED: "risk",
+		  PLATFORM_QUOTA: "risk",
+		  RISK: "risk",
+		  NAVIGATION_FAILED: "navigation",
+		  PLATFORM_PAUSED: "platform-paused",
+		  QUOTA_REACHED: "quota",
+		  OFFLINE: "offline",
+		  DEADLINE_REACHED: "budget",
+		  ORPHANED: "unknown"
+		};
 		function kindOf(errorCode, message) {
-		  switch (errorCode) {
-		    case "NO_RECORDS":
-		      return "selector";
-		    case "PARSE_FAILED":
-		      return looksLikeStackTrace(message) ? "script" : "selector";
-		    case "NOT_LOGGED_IN":
-		      return "login";
-		    case "BLOCKED":
-		    case "RATE_LIMITED":
-		    case "PLATFORM_QUOTA":
-		    case "RISK":
-		      return "risk";
-		    case "NAVIGATION_FAILED":
-		      return "navigation";
-		    case "PLATFORM_PAUSED":
-		      return "platform-paused";
-		    case "QUOTA_REACHED":
-		      return "quota";
-		    case "OFFLINE":
-		      return "offline";
-		    default:
-		      return looksLikeStackTrace(message) ? "script" : "unknown";
+		  if (errorCode !== null && errorCode in KIND_OF) {
+		    const mapped = KIND_OF[errorCode];
+		    return typeof mapped === "function" ? mapped(message) : mapped;
 		  }
+		  return looksLikeStackTrace(message) ? "script" : "unknown";
 		}
 		var SHORT = {
 		  selector: "\u6CA1\u89E3\u6790\u5230\u5C97\u4F4D\uFF08\u9009\u62E9\u5668\u53EF\u80FD\u5931\u6548\uFF09",
@@ -5723,6 +5845,7 @@ window.__ModuleLoader__.load({
 		  "platform-paused": "\u5E73\u53F0\u5DF2\u6682\u505C\u5199\u5165",
 		  quota: "\u4ECA\u5929\u7684\u6B21\u6570\u5DF2\u8FBE\u4E0A\u9650",
 		  offline: "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F",
+		  budget: "\u672C\u8F6E\u5230\u65F6\u9650\u4E86",
 		  unknown: "\u8FD0\u884C\u51FA\u9519"
 		};
 		var ADVICE = {
@@ -5734,6 +5857,7 @@ window.__ModuleLoader__.load({
 		  "platform-paused": "\u9002\u914D\u5668\u5904\u4E8E\u964D\u7EA7/\u5931\u6548\u72B6\u6001\uFF0C\u6B64\u65F6**\u53EA\u89E3\u6790\u4E0D\u5199\u5E93**\uFF08\u907F\u514D\u628A\u810F\u6570\u636E\u5199\u8FDB\u53BB\uFF09\u3002\u4FEE\u597D\u89E3\u6790\u540E\u8DD1\u4E00\u8F6E\u6210\u529F\u5373\u81EA\u52A8\u6062\u590D\u3002",
 		  quota: "\u8FD9\u662F\u6BCF\u65E5\u4E0A\u9650\u5728\u8D77\u4F5C\u7528\uFF08\u9632\u5931\u63A7\u7684\u4FDD\u9669\u4E1D\uFF09\u3002\u7B49\u660E\u5929\uFF0C\u6216\u76F4\u63A5\u5728\u65B9\u6848\u4E0A\u70B9\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4EBA\u5DE5\u8DD1\u4E00\u6B21\u3002",
 		  offline: '\u73AF\u5883\u53D8\u91CF DSH_JOB_HUNTER_NO_NETWORK \u5F00\u7740\u65F6\u4E0D\u4F1A\u53D1\u8D77\u4EFB\u4F55\u771F\u5B9E\u8BBF\u95EE \u2014\u2014 \u8FD9\u662F"\u81EA\u52A8\u5316\u6D4B\u8BD5\u7EDD\u4E0D\u8BBF\u95EE\u771F\u5B9E\u62DB\u8058\u7AD9"\u7684\u5F00\u5173\u3002',
+		  budget: "\u5230\u5355\u8F6E\u9884\u7B97\u4E0A\u9650\u5C31\u4E3B\u52A8\u505C\u624B\u4E86\uFF08\u9632\u7684\u662F\u5361\u4F4F\u7684\u9875\u9762\u628A\u6574\u8F6E\u62D6\u5230\u5929\u4EAE\uFF09\uFF0C**\u4E0D\u662F\u51FA\u9519**\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u8BB0\u5F55\u90FD\u5DF2\u5165\u5E93\uFF0C\u5269\u4E0B\u7684\u5E73\u53F0\u4E0E\u5173\u952E\u8BCD\u5728\u4E0B\u4E00\u8F6E\u7EE7\u7EED\uFF1B\u4E0D\u9700\u8981\u505A\u4EFB\u4F55\u5904\u7406\u3002",
 		  unknown: "\u5C55\u5F00\u4E0B\u9762\u7684\u539F\u59CB\u4FE1\u606F\u53EF\u4EE5\u770B\u5230\u5B8C\u6574\u539F\u56E0\uFF1B\u5982\u679C\u53CD\u590D\u51FA\u73B0\uFF0C\u628A\u5B83\u8FDE\u540C\u300C\u5E73\u53F0\u72B6\u6001\u300D\u4E00\u8D77\u53CD\u9988\u3002"
 		};
 		function humanizeFailure(errorCode, errorMsg) {
@@ -5763,6 +5887,7 @@ window.__ModuleLoader__.load({
 		  "platform-paused": "\u5E73\u53F0\u964D\u7EA7",
 		  quota: "\u6B21\u6570\u4E0A\u9650",
 		  offline: "\u79BB\u7EBF\u6A21\u5F0F",
+		  budget: "\u672C\u8F6E\u5230\u65F6\u9650",
 		  unknown: "\u672A\u77E5\u539F\u56E0"
 		};
 
@@ -5871,7 +5996,12 @@ window.__ModuleLoader__.load({
 		    return `${trigger.planName} ${formatClock(at)}\uFF08${formatRelative(at, now)}${jitter === null ? "" : ` \xB7 ${jitter}`}\uFF09`;
 		  }).join(" / ");
 		  if (status.paused) {
-		    return { owner: "\u5B9A\u65F6\u5DF2\u6682\u505C", tone: "warn", nextRun, detail: null };
+		    return {
+		      owner: status.readOnly ? "\u7531\u53E6\u4E00\u4E2A\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6" : "\u672C\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6",
+		      tone: "warn",
+		      nextRun,
+		      detail: "\u300C\u5230\u70B9\u81EA\u52A8\u8DD1\u300D\u5DF2\u5173\u6389\uFF1B\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E0D\u53D7\u5F71\u54CD\u3002"
+		    };
 		  }
 		  if (status.readOnly) {
 		    return {
@@ -5991,7 +6121,44 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/plan-editor-modal.tsx
-		var import_react21 = require("react");
+		var import_react22 = require("react");
+
+		// src/shared/contract/enums/platform.ts
+		var MATURITY_LEVEL_LABEL = {
+		  stable: "\u53EF\u7528\uFF08\u771F\u5B9E\u5939\u5177 + \u5192\u70DF\u9A8C\u8BC1\uFF09",
+		  calibrated: "\u5DF2\u6821\u51C6\uFF08\u63A2\u9488/\u5939\u5177\u9A8C\u8BC1\uFF0C\u7F3A\u53E3\u89C1\u5907\u6CE8\uFF09",
+		  experimental: "\u5B9E\u9A8C\uFF08\u672A\u9A8C\u8BC1\u6216\u90E8\u5206\u672A\u5B9E\u73B0\uFF0C\u53EF\u80FD\u8FD4\u56DE\u7A7A\uFF09",
+		  disabled: "\u505C\u7528\uFF08\u5E73\u53F0\u4FA7\u4E0D\u53EF\u7528\uFF0C\u9700\u6539\u914D\u7F6E\u624D\u542F\u7528\uFF09"
+		};
+		var MATURITY_LEVEL_SHORT = {
+		  stable: "\u53EF\u7528",
+		  calibrated: "\u5DF2\u6821\u51C6",
+		  experimental: "\u5B9E\u9A8C",
+		  disabled: "\u505C\u7528"
+		};
+		var MATURITY_LEVEL_TONE = {
+		  stable: "ok",
+		  calibrated: "warn",
+		  experimental: "error",
+		  disabled: "muted"
+		};
+		function maturityNeedsWarning(level) {
+		  return level === "experimental" || level === "disabled";
+		}
+		var AUTH_REQUIREMENT_LABEL = {
+		  none: "\u4E0D\u9700\u8981\u767B\u5F55",
+		  required: "\u9700\u8981\u767B\u5F55",
+		  unknown: "\u5C1A\u672A\u9A8C\u8BC1"
+		};
+
+		// src/shared/config/crawl.ts
+		var ROUND_BUDGET_MS = 20 * 60 * 1e3;
+		var PLAN_KEYWORDS_MAX = 10;
+		var CRAWL_ROUND_BUDGET_DEFAULT_MIN = 20;
+		var CRAWL_ROUND_BUDGET_MIN_MIN = 5;
+		var CRAWL_ROUND_BUDGET_MAX_MIN = 240;
+
+		// src/client/screens/collect/plan-editor-modal.tsx
 		var import_jsx_runtime46 = require("react/jsx-runtime");
 		var PLAN_STEPS = ["\u57FA\u7840\u4E0E\u5E73\u53F0", "\u91C7\u96C6\u4E0E\u7B5B\u9009", "\u8C03\u5EA6\u4E0E\u540E\u5904\u7406"];
 		var PRIMARY_CRITERIA_KEYS = [
@@ -6017,17 +6184,17 @@ window.__ModuleLoader__.load({
 		  return parts.join(" \xB7 ");
 		}
 		function PlanEditorModal(props) {
-		  const [form, setForm] = (0, import_react21.useState)(props.initial);
-		  const [localDuplicates, setLocalDuplicates] = (0, import_react21.useState)([]);
-		  const [localNotices, setLocalNotices] = (0, import_react21.useState)([]);
-		  const [step, setStep] = (0, import_react21.useState)(0);
-		  const [rulesOpen, setRulesOpen] = (0, import_react21.useState)(false);
-		  const [advancedOpen, setAdvancedOpen] = (0, import_react21.useState)(false);
-		  const [batchPages, setBatchPages] = (0, import_react21.useState)("5");
-		  const allBoxRef = (0, import_react21.useRef)(null);
-		  const [submitting, setSubmitting] = (0, import_react21.useState)(false);
-		  const [submitError, setSubmitError] = (0, import_react21.useState)(null);
-		  const [receipt, setReceipt] = (0, import_react21.useState)(null);
+		  const [form, setForm] = (0, import_react22.useState)(props.initial);
+		  const [localDuplicates, setLocalDuplicates] = (0, import_react22.useState)([]);
+		  const [localNotices, setLocalNotices] = (0, import_react22.useState)([]);
+		  const [step, setStep] = (0, import_react22.useState)(0);
+		  const [rulesOpen, setRulesOpen] = (0, import_react22.useState)(false);
+		  const [advancedOpen, setAdvancedOpen] = (0, import_react22.useState)(false);
+		  const [batchPages, setBatchPages] = (0, import_react22.useState)("5");
+		  const allBoxRef = (0, import_react22.useRef)(null);
+		  const [submitting, setSubmitting] = (0, import_react22.useState)(false);
+		  const [submitError, setSubmitError] = (0, import_react22.useState)(null);
+		  const [receipt, setReceipt] = (0, import_react22.useState)(null);
 		  const patch = (next) => setForm((current) => ({ ...current, ...next }));
 		  const duplicates = [
 		    ...new Map(
@@ -6041,7 +6208,7 @@ window.__ModuleLoader__.load({
 		  const endMissing = endClock === null;
 		  const keywordsKey = JSON.stringify(parseKeywordsText(form.keywordsText));
 		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.overrides)}\0${JSON.stringify(form.criteria)}\0${keywordsKey}`;
-		  (0, import_react21.useEffect)(() => {
+		  (0, import_react22.useEffect)(() => {
 		    const timer = window.setTimeout(() => {
 		      void props.onValidate(form).then((result) => {
 		        setLocalDuplicates(result.duplicates);
@@ -6121,11 +6288,11 @@ window.__ModuleLoader__.load({
 		    (item) => (form.criteria[item.key] ?? "") !== ""
 		  ).length;
 		  const advancedNames = advancedItems.filter((item) => item.supported).map((item) => item.label).slice(0, 4).join(" / ") || "\u6392\u5E8F\u65B9\u5F0F / \u53D1\u5E03\u65F6\u95F4 / \u5E73\u53F0\u7279\u6709\u7EF4\u5EA6";
-		  (0, import_react21.useEffect)(() => {
+		  (0, import_react22.useEffect)(() => {
 		    if (advancedActiveCount > 0) setAdvancedOpen(true);
 		  }, [advancedActiveCount]);
 		  const allIncluded = includedCount > 0 && includedCount === props.available.length;
-		  (0, import_react21.useEffect)(() => {
+		  (0, import_react22.useEffect)(() => {
 		    const box = allBoxRef.current;
 		    if (box !== null) box.indeterminate = includedCount > 0 && !allIncluded;
 		  }, [includedCount, allIncluded]);
@@ -6170,6 +6337,7 @@ window.__ModuleLoader__.load({
 		          max: dimension.max ?? void 0,
 		          disabled: !dimension.supported,
 		          value,
+		          "aria-label": dimension.label,
 		          placeholder: dimension.supported ? "\u4E0D\u9650" : "\u4E0D\u652F\u6301",
 		          onChange: (event) => setCriteria(dimension.key, event.target.value)
 		        }
@@ -6179,6 +6347,7 @@ window.__ModuleLoader__.load({
 		          className: "jh-input",
 		          disabled: !dimension.supported,
 		          value,
+		          "aria-label": dimension.label,
 		          placeholder: dimension.supported ? "\u4E0D\u9650" : "\u4E0D\u652F\u6301",
 		          onChange: (event) => setCriteria(dimension.key, event.target.value)
 		        }
@@ -6188,6 +6357,7 @@ window.__ModuleLoader__.load({
 		          className: "jh-select",
 		          disabled: !dimension.supported,
 		          value,
+		          "aria-label": dimension.label,
 		          onChange: (event) => setCriteria(dimension.key, event.target.value),
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("option", { value: "", children: "\u4E0D\u9650" }),
@@ -6231,7 +6401,7 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }),
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("nav", { className: "jh-steps", "aria-label": "\u65B9\u6848\u914D\u7F6E\u6B65\u9AA4", children: PLAN_STEPS.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)(import_react21.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("nav", { className: "jh-steps", "aria-label": "\u65B9\u6848\u914D\u7F6E\u6B65\u9AA4", children: PLAN_STEPS.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)(import_react22.Fragment, { children: [
 		          index === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("span", { className: "jh-step-sep", "aria-hidden": "true", children: "\u203A" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)(
 		            "button",
@@ -6330,11 +6500,12 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)("div", { className: "jh-step-body", children: [
 		          step === 0 ? /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)(import_jsx_runtime46.Fragment, { children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)("div", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("span", { className: "jh-field-label", children: "\u65B9\u6848\u540D" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("label", { className: "jh-field-label", htmlFor: "jh-plan-name", children: "\u65B9\u6848\u540D" }),
 		              /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)("div", { className: "jh-affix", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime46.jsx)(
 		                  "input",
 		                  {
+		                    id: "jh-plan-name",
 		                    className: "jh-input",
 		                    value: form.name,
 		                    "aria-invalid": nameMissing,
@@ -6819,7 +6990,7 @@ window.__ModuleLoader__.load({
 		  return null;
 		}
 
-		// src/shared/criteria-label.ts
+		// src/shared/text/criteria-label.ts
 		var FALLBACK_LABEL = {
 		  keyword: "\u5173\u952E\u8BCD",
 		  city: "\u57CE\u5E02",
@@ -6919,7 +7090,13 @@ window.__ModuleLoader__.load({
 		          type: "button",
 		          className: "jh-btn jh-btn-inline jh-btn-tiny",
 		          disabled: props.running || !takeoverPossible,
-		          title: takeoverPossible ? "\u5BF9\u65B9\u7684\u5FC3\u8DF3\u5DF2\u7ECF\u8FC7\u671F\uFF08\u5F88\u53EF\u80FD\u5DF2\u88AB\u5F3A\u6740\uFF09\u3002\u70B9\u8FD9\u91CC\u628A\u91C7\u96C6\u6743\u62FF\u8FC7\u6765\u3002" : `\u53E6\u4E00\u4E2A\u7A97\u53E3\uFF08\u8FDB\u7A0B ${String(lease.pid ?? "?")}\uFF09\u8FD8\u6D3B\u7740\uFF0C\u4E0D\u80FD\u62A2\u5B83\u7684\u91C7\u96C6\u6743 \u2014\u2014 \u4E24\u4E2A\u7A97\u53E3\u540C\u65F6\u91C7\u96C6\u4F1A\u62A2\u540C\u4E00\u4EFD\u6D4F\u89C8\u5668\u767B\u5F55\u6001\u3002\u8BF7\u5728\u90A3\u4E2A\u7A97\u53E3\u91CC\u64CD\u4F5C\uFF0C\u6216\u5148\u628A\u5B83\u5173\u6389\uFF0C\u7136\u540E\u70B9\u4E0A\u9762\u7684\u300C\u91CD\u65B0\u68C0\u6D4B\u7CFB\u7EDF\u300D\uFF08\u5173\u6389\u540E\u6700\u591A 90 \u79D2\u4F1A\u81EA\u52A8\u63A5\u7BA1\uFF0C\u4E0D\u9700\u8981\u91CD\u542F\uFF09\u3002`,
+		          title: (
+		            /* 置灰时那句解释原来是**一整段**（含"先把它关掉，关掉后最多 90 秒会
+		               自动接管"）塞在 title 里。而"怎么办"下面那段 .jh-note 已经逐条写全了
+		               （而且是**看得见**的文字，不用悬停）—— 这里只需要说清"为什么不行"，
+		               再把用户指过去。 */
+		            takeoverPossible ? "\u5BF9\u65B9\u7684\u5FC3\u8DF3\u5DF2\u7ECF\u8FC7\u671F\uFF08\u5F88\u53EF\u80FD\u5DF2\u88AB\u5F3A\u6740\uFF09\u3002\u70B9\u8FD9\u91CC\u628A\u91C7\u96C6\u6743\u62FF\u8FC7\u6765\u3002" : "\u53E6\u4E00\u4E2A\u7A97\u53E3\u8FD8\u6D3B\u7740\uFF0C\u4E0D\u80FD\u62A2\u5B83\u7684\u91C7\u96C6\u6743 \u2014\u2014 \u4E24\u4E2A\u7A97\u53E3\u540C\u65F6\u91C7\u96C6\u4F1A\u62A2\u540C\u4E00\u4EFD\u6D4F\u89C8\u5668\u767B\u5F55\u6001\u3002\u600E\u4E48\u529E\u89C1\u4E0B\u9762\u3002"
+		          ),
 		          onClick: props.onTakeover,
 		          children: "\u63A5\u7BA1\u8C03\u5EA6"
 		        }
@@ -6930,7 +7107,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/platform-matrix.tsx
-		var import_react22 = require("react");
+		var import_react23 = require("react");
 
 		// src/client/screens/collect/state-tag.tsx
 		var import_jsx_runtime51 = require("react/jsx-runtime");
@@ -6947,20 +7124,21 @@ window.__ModuleLoader__.load({
 		  const at = new Date(until);
 		  return Number.isNaN(at.getTime()) || at.getTime() <= now.getTime() ? null : at;
 		}
+		var MATRIX_COLUMNS = [
+		  { key: "platform", label: "\u5E73\u53F0", className: "jh-col-sticky" },
+		  { key: "runnable", label: "\u4ECA\u5929\u80FD\u8DD1" },
+		  { key: "login", label: "\u767B\u5F55" },
+		  { key: "health", label: "\u5065\u5EB7", className: "jh-cell-status" },
+		  { key: "maturity", label: "\u6210\u719F\u5EA6", className: "jh-col-hide-sm" },
+		  { key: "quota", label: "\u4ECA\u65E5\u989D\u5EA6", className: "jh-num" },
+		  { key: "yield", label: "\u4EA7\u91CF", className: "jh-num jh-col-hide-sm" },
+		  { key: "lastRun", label: "\u6700\u8FD1\u4E00\u8F6E" },
+		  { key: "detail", label: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-sr-only", children: "\u660E\u7EC6" }) }
+		];
 		function PlatformMatrix(props) {
 		  const now = /* @__PURE__ */ new Date();
 		  return /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5E73\u53F0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", children: "\u4ECA\u5929\u80FD\u8DD1" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", children: "\u767B\u5F55" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u5065\u5EB7" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u6210\u719F\u5EA6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", className: "jh-num", children: "\u4ECA\u65E5\u989D\u5EA6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u4EA7\u91CF" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", children: "\u6700\u8FD1\u4E00\u8F6E" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-sr-only", children: "\u660E\u7EC6" }) })
-		    ] }) }),
+		    /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("tr", { children: MATRIX_COLUMNS.map((column) => /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", className: column.className, children: column.label }, column.key)) }) }),
 		    /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("tbody", { children: props.items.map((item) => {
 		      const blocked = item.governance.blocked === null ? null : props.reasonText[item.governance.blocked] ?? item.governance.blocked;
 		      const cooldown = cooldownActive(item.governance.cooldownUntil, now);
@@ -6968,7 +7146,7 @@ window.__ModuleLoader__.load({
 		      const lastRun = item.governance.lastRun;
 		      const open = props.expandedId === item.id;
 		      const detailId = `jh-plat-detail-${item.id}`;
-		      return /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_react22.Fragment, { children: [
+		      return /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_react23.Fragment, { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("tr", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("td", { className: "jh-col-sticky", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("code", { children: item.id }),
@@ -7045,7 +7223,7 @@ window.__ModuleLoader__.load({
 		            }
 		          ) })
 		        ] }),
-		        open ? /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("tr", { className: "jh-row-detail", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("td", { colSpan: 9, id: detailId, children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
+		        open ? /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("tr", { className: "jh-row-detail", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("td", { colSpan: MATRIX_COLUMNS.length, id: detailId, children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
 		          PlatformDetail,
 		          {
 		            item,
@@ -7140,10 +7318,21 @@ window.__ModuleLoader__.load({
 		        className: "jh-btn jh-btn-inline jh-btn-tiny",
 		        onClick: props.onGoSettings,
 		        title: "\u770B\u8BCA\u65AD\u4FE1\u606F\uFF08\u7248\u672C\u3001\u6570\u636E\u8DEF\u5F84\u3001\u8BA1\u6570\u3001\u5DE5\u5177\u6CE8\u518C\u7ED3\u679C\uFF09",
-		        children: "\u6392\u67E5\u65B9\u6848"
+		        children: "\u53BB\u8BBE\u7F6E\u770B\u8BCA\u65AD"
 		      }
 		    ) })
 		  ] });
+		}
+
+		// src/shared/contract/enums/plan.ts
+		var RUN_REASON_LABEL = {
+		  schedule: "\u5B9A\u65F6",
+		  manual: "\u624B\u52A8",
+		  "catch-up": "\u8865\u8DD1"
+		};
+		function runReasonLabel(reason) {
+		  if (reason === null || reason === "") return null;
+		  return RUN_REASON_LABEL[reason] ?? reason;
 		}
 
 		// src/client/screens/collect/run-history.tsx
@@ -7285,7 +7474,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/adapter-maintenance.tsx
-		var import_react23 = require("react");
+		var import_react24 = require("react");
 		var import_jsx_runtime54 = require("react/jsx-runtime");
 		function stamp(at) {
 		  return at.slice(0, 16).replace("T", " ");
@@ -7295,10 +7484,10 @@ window.__ModuleLoader__.load({
 		}
 		function RepairQueueCard(props) {
 		  const repairs = useAsync((signal) => fetchRepairs(void 0, signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react23.useState)(null);
-		  const [error, setError] = (0, import_react23.useState)(null);
-		  const [clearing, setClearing] = (0, import_react23.useState)(null);
-		  const [filter, setFilter] = (0, import_react23.useState)("");
+		  const [busy, setBusy] = (0, import_react24.useState)(null);
+		  const [error, setError] = (0, import_react24.useState)(null);
+		  const [clearing, setClearing] = (0, import_react24.useState)(null);
+		  const [filter, setFilter] = (0, import_react24.useState)("");
 		  const all = repairs.state.status === "ok" ? repairs.state.data.items : [];
 		  const byPlatform = repairs.state.status === "ok" ? repairs.state.data.byPlatform : [];
 		  const total = repairs.state.status === "ok" ? repairs.state.data.total : 0;
@@ -7436,18 +7625,18 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function AdapterConfigCard(props) {
-		  const [selected, setSelected] = (0, import_react23.useState)("");
+		  const [selected, setSelected] = (0, import_react24.useState)("");
 		  const platformId = selected !== "" ? selected : props.platforms[0]?.id ?? "";
 		  const config = useAsync(
 		    async (signal) => platformId === "" ? null : await fetchAdapterConfig(platformId, signal),
 		    [platformId, props.revision]
 		  );
-		  const [draft, setDraft] = (0, import_react23.useState)("");
-		  const [busy, setBusy] = (0, import_react23.useState)(false);
-		  const [error, setError] = (0, import_react23.useState)(null);
-		  const [saved, setSaved] = (0, import_react23.useState)(null);
+		  const [draft, setDraft] = (0, import_react24.useState)("");
+		  const [busy, setBusy] = (0, import_react24.useState)(false);
+		  const [error, setError] = (0, import_react24.useState)(null);
+		  const [saved, setSaved] = (0, import_react24.useState)(null);
 		  const current = config.state.status === "ok" ? config.state.data : null;
-		  (0, import_react23.useEffect)(() => {
+		  (0, import_react24.useEffect)(() => {
 		    if (current === null) return;
 		    setDraft(current.override === null ? "{}" : JSON.stringify(current.override, null, 2));
 		    setSaved(null);
@@ -7736,13 +7925,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/dedup-groups-card.tsx
-		var import_react24 = require("react");
+		var import_react25 = require("react");
 		var import_jsx_runtime57 = require("react/jsx-runtime");
 		function DedupGroupsCard(props) {
 		  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision]);
-		  const [busyId, setBusyId] = (0, import_react24.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react24.useState)(null);
-		  const [error, setError] = (0, import_react24.useState)(null);
+		  const [busyId, setBusyId] = (0, import_react25.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react25.useState)(null);
+		  const [error, setError] = (0, import_react25.useState)(null);
 		  const act = async (id, fn) => {
 		    setBusyId(id);
 		    setError(null);
@@ -7785,7 +7974,7 @@ window.__ModuleLoader__.load({
 		        "\xB7 ",
 		        member.isPrimary ? "\u4E3B" : "\u4ECE",
 		        "\uFF5C",
-		        member.platformId,
+		        member.platformName ?? member.platformId,
 		        "\uFF5C",
 		        member.title,
 		        member.companyName === null ? "" : `\uFF5C${member.companyName}`,
@@ -8003,9 +8192,9 @@ window.__ModuleLoader__.load({
 		function CapabilityMatrix(props) {
 		  return /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime59.jsxs)("table", { className: "jh-table jh-table-caps", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime59.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", children: "\u6210\u719F\u5EA6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", children: "\u4E0A\u6B21\u9A8C\u8BC1" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5E73\u53F0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u6210\u719F\u5EA6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u4E0A\u6B21\u9A8C\u8BC1" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", children: "\u5217\u8868\u91C7\u96C6" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", children: "\u8BE6\u60C5\u9875" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", children: "\u6253\u62DB\u547C" }),
@@ -8017,15 +8206,15 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("th", { scope: "col", children: "\u53CD\u722C\u5F3A\u5EA6" })
 		    ] }) }),
 		    /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("tbody", { children: props.items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime59.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime59.jsxs)("td", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime59.jsxs)("td", { className: "jh-col-sticky", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("code", { children: item.id }),
 		        /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("div", { className: "jh-muted", children: item.displayName })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime59.jsxs)("td", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime59.jsxs)("td", { className: "jh-col-hide-sm", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("span", { className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`, children: MATURITY_LEVEL_SHORT[item.maturity.level] }),
 		        item.maturity.notes === void 0 || item.maturity.notes === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("div", { className: "jh-muted", children: item.maturity.notes })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("td", { children: item.maturity.verifiedAt ?? "\u2014" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("td", { className: "jh-col-hide-sm", children: item.maturity.verifiedAt ?? "\u2014" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime59.jsx)(DoneCell, { done: item.implementation.crawl }) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime59.jsx)(DoneCell, { done: item.implementation.detail }) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime59.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime59.jsx)(
@@ -8101,16 +8290,16 @@ window.__ModuleLoader__.load({
 		  const plans = useAsync((signal) => fetchPlans(signal), [props.revision]);
 		  const reasons = useAsync((signal) => fetchSkipReasons(signal), [props.revision]);
 		  const dimensions = useAsync((signal) => fetchCriteriaDimensions([], signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react25.useState)(IDLE);
-		  const [editing, setEditing] = (0, import_react25.useState)(null);
-		  const [duplicates, setDuplicates] = (0, import_react25.useState)([]);
-		  const [notices, setNotices] = (0, import_react25.useState)([]);
-		  const [errorDetail, setErrorDetail] = (0, import_react25.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react25.useState)(null);
-		  const [tab, setTab] = (0, import_react25.useState)("dashboard");
-		  const [expandedPlatform, setExpandedPlatform] = (0, import_react25.useState)(null);
-		  const [focusPlanId, setFocusPlanId] = (0, import_react25.useState)(null);
-		  const [dedupRevision, setDedupRevision] = (0, import_react25.useState)(0);
+		  const [feedback, setFeedback] = (0, import_react26.useState)(IDLE);
+		  const [editing, setEditing] = (0, import_react26.useState)(null);
+		  const [duplicates, setDuplicates] = (0, import_react26.useState)([]);
+		  const [notices, setNotices] = (0, import_react26.useState)([]);
+		  const [errorDetail, setErrorDetail] = (0, import_react26.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react26.useState)(null);
+		  const [tab, setTab] = (0, import_react26.useState)("dashboard");
+		  const [expandedPlatform, setExpandedPlatform] = (0, import_react26.useState)(null);
+		  const [focusPlanId, setFocusPlanId] = (0, import_react26.useState)(null);
+		  const [dedupRevision, setDedupRevision] = (0, import_react26.useState)(0);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -8143,7 +8332,7 @@ window.__ModuleLoader__.load({
 		  const runsLoading = scheduler.state.status === "loading";
 		  const reasonText = reasons.state.status === "ok" ? reasons.state.data.items : {};
 		  const dimensionList = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
-		  const now = (0, import_react25.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const now = (0, import_react26.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
 		  const story = status === null ? null : scheduleStoryOf(status, now);
 		  const login = (platformId) => act("\u5DF2\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u8BF7\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\uFF08\u6BCF 3 \u79D2\u68C0\u6D4B\u4E00\u6B21\uFF09", async () => {
 		    const result = await startLogin(platformId);
@@ -8223,7 +8412,7 @@ window.__ModuleLoader__.load({
 		            "aria-hidden": "true"
 		          }
 		        ),
-		        status.paused ? "\u5B9A\u65F6\u5DF2\u6682\u505C" : "\u5B9A\u65F6\u8FD0\u884C\u4E2D"
+		        /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { className: "jh-collect-switch-text", children: status.paused ? "\u5B9A\u65F6\u5DF2\u6682\u505C" : "\u5B9A\u65F6\u8FD0\u884C\u4E2D" })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
 		        "button",
@@ -8231,7 +8420,6 @@ window.__ModuleLoader__.load({
 		          type: "button",
 		          className: "jh-btn jh-btn-inline jh-btn-primary",
 		          disabled: status === null || feedback.running,
-		          "aria-pressed": status === null ? void 0 : !status.paused,
 		          title: status?.paused === true ? "\u6062\u590D\u300C\u5230\u70B9\u81EA\u52A8\u8DD1\u300D\u3002\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E00\u76F4\u90FD\u80FD\u7528\u3002" : "\u53EA\u505C\u300C\u5230\u70B9\u81EA\u52A8\u8DD1\u300D\uFF1B\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E0D\u53D7\u5F71\u54CD\u3002",
 		          onClick: toggleSchedule,
 		          children: status?.paused === true ? "\u542F\u52A8\u8C03\u5EA6" : "\u6682\u505C\u8C03\u5EA6"
@@ -8254,7 +8442,7 @@ window.__ModuleLoader__.load({
 		          type: "button",
 		          className: "jh-btn jh-btn-inline",
 		          disabled: feedback.running,
-		          title: "\u628A\u5168\u5E93\u5C97\u4F4D\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u4E00\u904D\uFF08\u8DE8\u5E73\u53F0 + \u540C\u516C\u53F8\u540C\u57CE + \u85AA\u8D44\u4E0D\u51B2\u7A81 + \u6807\u9898\u76F8\u4F3C\uFF09\u3002\u7528\u5728\u300C\u521A\u6253\u5F00\u53BB\u91CD\u5F00\u5173\u300D\u6216\u300C\u521A\u6539\u8FC7\u6293\u53D6\u8303\u56F4\u300D\u4E4B\u540E\u8865\u505A\u4E00\u6B21 \u2014\u2014 \u5426\u5219\u8981\u5E72\u7B49\u4E0B\u4E00\u8F6E\u6293\u53D6\uFF0C\u800C\u90A3\u4E00\u8F6E\u53EF\u80FD\u4E00\u6761\u65B0\u5C97\u4F4D\u90FD\u6CA1\u6709\u3002\u5408\u5E76\u662F\u53EF\u9006\u7684\u3002",
+		          title: "\u6309\u540C\u4E00\u5957\u95E8\u69DB\u628A\u5168\u5E93\u5C97\u4F4D\u590D\u6838\u4E00\u904D\u3002\u7528\u5728\u521A\u6253\u5F00\u53BB\u91CD\u5F00\u5173\u3001\u6216\u521A\u6539\u8FC7\u6293\u53D6\u8303\u56F4\u4E4B\u540E\u3002",
 		          onClick: sweep,
 		          children: "\u8FD0\u884C\u5168\u5E93\u53BB\u91CD"
 		        }
@@ -8269,8 +8457,8 @@ window.__ModuleLoader__.load({
 		      "div",
 		      {
 		        className: `jh-card jh-card-tight jh-feedback ${feedback.tone === "error" ? "jh-card-error" : ""}`,
-		        role: "status",
-		        "aria-live": "polite",
+		        role: feedback.tone === "error" ? "alert" : "status",
+		        "aria-live": feedback.tone === "error" ? "assertive" : "polite",
 		        children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(InlineMd, { text: feedback.message }) }),
 		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
@@ -8502,9 +8690,20 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/index.tsx
-		var import_react28 = require("react");
+		var import_react29 = require("react");
 
-		// src/shared/resume.ts
+		// src/shared/contract/enums/resume.ts
+		var RESUME_LANGUAGE_LABEL = {
+		  zh: "\u4E2D\u6587",
+		  en: "\u82F1\u6587"
+		};
+		var RESUME_TEMPLATES = ["concise", "professional"];
+		var RESUME_TEMPLATE_LABEL = {
+		  concise: "\u7B80\u6D01",
+		  professional: "\u4E13\u4E1A"
+		};
+
+		// src/shared/domain/resume-content.ts
 		function emptyResumeContent(direction = "") {
 		  return {
 		    basics: { name: "", title: direction },
@@ -8518,7 +8717,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/resume-work.tsx
-		var import_react27 = require("react");
+		var import_react28 = require("react");
 
 		// src/client/screens/resumes/english-check-panel.tsx
 		var import_jsx_runtime62 = require("react/jsx-runtime");
@@ -8540,7 +8739,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/editors.tsx
-		var import_react26 = require("react");
+		var import_react27 = require("react");
 		var import_jsx_runtime63 = require("react/jsx-runtime");
 		function move(items, index, delta) {
 		  const target = index + delta;
@@ -8635,7 +8834,7 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function ChipsEditor(props) {
-		  const [text, setText] = (0, import_react26.useState)("");
+		  const [text, setText] = (0, import_react27.useState)("");
 		  const commit = () => {
 		    const parts = text.split(/[、,，\s]+/).map((part) => part.trim()).filter((part) => part !== "");
 		    if (parts.length > 0) props.onChange([.../* @__PURE__ */ new Set([...props.values, ...parts])]);
@@ -9288,15 +9487,15 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime69 = require("react/jsx-runtime");
 		function ResumeWork(props) {
 		  const detail = useAsync((signal) => fetchResume(props.id, signal), [props.id]);
-		  const [draft, setDraft] = (0, import_react27.useState)(null);
-		  const [dirty, setDirty] = (0, import_react27.useState)(false);
-		  const [mode, setMode] = (0, import_react27.useState)("edit");
-		  const [busy, setBusy] = (0, import_react27.useState)(null);
-		  const [error, setError] = (0, import_react27.useState)(null);
-		  const [notice, setNotice] = (0, import_react27.useState)(null);
-		  const [template, setTemplate] = (0, import_react27.useState)("concise");
-		  const [split, setSplit] = (0, import_react27.useState)(55);
-		  const bodyRef = (0, import_react27.useRef)(null);
+		  const [draft, setDraft] = (0, import_react28.useState)(null);
+		  const [dirty, setDirty] = (0, import_react28.useState)(false);
+		  const [mode, setMode] = (0, import_react28.useState)("edit");
+		  const [busy, setBusy] = (0, import_react28.useState)(null);
+		  const [error, setError] = (0, import_react28.useState)(null);
+		  const [notice, setNotice] = (0, import_react28.useState)(null);
+		  const [template, setTemplate] = (0, import_react28.useState)("concise");
+		  const [split, setSplit] = (0, import_react28.useState)(55);
+		  const bodyRef = (0, import_react28.useRef)(null);
 		  const startDrag = (clientX, clientY) => {
 		    const body = bodyRef.current;
 		    if (body === null) return;
@@ -9313,14 +9512,14 @@ window.__ModuleLoader__.load({
 		    window.addEventListener("pointermove", move2);
 		    window.addEventListener("pointerup", stop);
 		  };
-		  (0, import_react27.useEffect)(() => {
+		  (0, import_react28.useEffect)(() => {
 		    if (detail.state.status === "ok") setDraft(detail.state.data);
 		  }, [detail.state]);
-		  (0, import_react27.useEffect)(() => {
+		  (0, import_react28.useEffect)(() => {
 		    props.onDirtyChange(dirty);
 		  }, [dirty, props]);
 		  const issues = detail.state.status === "ok" ? detail.state.data.issues : [];
-		  const run = (0, import_react27.useCallback)(
+		  const run = (0, import_react28.useCallback)(
 		    async (label, fn, done) => {
 		      setBusy(label);
 		      setError(null);
@@ -9605,24 +9804,24 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime70 = require("react/jsx-runtime");
 		function ResumesScreen(props) {
 		  const list = useAsync((signal) => fetchResumes(signal), [props.revision]);
-		  const [selected, setSelected] = (0, import_react28.useState)(null);
-		  const [creating, setCreating] = (0, import_react28.useState)(false);
-		  const [query, setQuery] = (0, import_react28.useState)("");
-		  const [dirty, setDirty] = (0, import_react28.useState)(false);
-		  const [issuesById, setIssuesById] = (0, import_react28.useState)({});
+		  const [selected, setSelected] = (0, import_react29.useState)(null);
+		  const [creating, setCreating] = (0, import_react29.useState)(false);
+		  const [query, setQuery] = (0, import_react29.useState)("");
+		  const [dirty, setDirty] = (0, import_react29.useState)(false);
+		  const [issuesById, setIssuesById] = (0, import_react29.useState)({});
 		  const items = list.state.status === "ok" ? list.state.data.items : [];
-		  const shown = (0, import_react28.useMemo)(() => {
+		  const shown = (0, import_react29.useMemo)(() => {
 		    const key = query.trim().toLowerCase();
 		    if (key === "") return items;
 		    return items.filter(
 		      (item) => `${item.name} ${item.direction}`.toLowerCase().includes(key)
 		    );
 		  }, [items, query]);
-		  (0, import_react28.useEffect)(() => {
+		  (0, import_react29.useEffect)(() => {
 		    if (selected !== null || items.length === 0) return;
 		    setSelected((items.find((item) => item.isDefault) ?? items[0])?.id ?? null);
 		  }, [items, selected]);
-		  const loadIssues = (0, import_react28.useCallback)(
+		  const loadIssues = (0, import_react29.useCallback)(
 		    (id) => {
 		      if (issuesById[id] !== void 0) return;
 		      void fetchResume(id).then((detail) => {
@@ -9632,7 +9831,7 @@ window.__ModuleLoader__.load({
 		    },
 		    [issuesById]
 		  );
-		  const onCreate = (0, import_react28.useCallback)(async () => {
+		  const onCreate = (0, import_react29.useCallback)(async () => {
 		    setCreating(true);
 		    try {
 		      const created = await createResume({ name: "\u65B0\u7B80\u5386", direction: "", content: emptyResumeContent() });
@@ -9767,7 +9966,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/index.tsx
-		var import_react34 = require("react");
+		var import_react35 = require("react");
 
 		// src/client/net/ops.ts
 		async function closeTodo(id) {
@@ -9848,20 +10047,6 @@ window.__ModuleLoader__.load({
 		  return await request(`/guard/usage${suffix}`, signal === void 0 ? {} : { signal });
 		}
 
-		// src/client/format/settings-window.ts
-		function parseWindow(raw) {
-		  const match = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(raw.trim());
-		  if (match === null) return null;
-		  const startHour = Number(match[1] ?? "");
-		  const startMin = Number(match[2] ?? "");
-		  const endHour = Number(match[3] ?? "");
-		  const endMin = Number(match[4] ?? "");
-		  if (!Number.isFinite(startHour + startMin + endHour + endMin)) return null;
-		  if (startHour > 23 || endHour > 23 || startMin > 59 || endMin > 59) return null;
-		  const pad2 = (value) => String(value).padStart(2, "0");
-		  return { start: `${pad2(startHour)}:${pad2(startMin)}`, end: `${pad2(endHour)}:${pad2(endMin)}` };
-		}
-
 		// src/client/format/risk-story.ts
 		function riskStory(current) {
 		  const { levels, dailyLimits, cooldownMinutes, requireApproval, auditEnabled } = current.guard;
@@ -9894,12 +10079,12 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/ui/number-field.tsx
-		var import_react29 = require("react");
+		var import_react30 = require("react");
 		var import_jsx_runtime71 = require("react/jsx-runtime");
 		function NumberField(props) {
-		  const [draft, setDraft] = (0, import_react29.useState)(String(props.value));
-		  const focused = (0, import_react29.useRef)(false);
-		  (0, import_react29.useEffect)(() => {
+		  const [draft, setDraft] = (0, import_react30.useState)(String(props.value));
+		  const focused = (0, import_react30.useRef)(false);
+		  (0, import_react30.useEffect)(() => {
 		    if (!focused.current) setDraft(String(props.value));
 		  }, [props.value]);
 		  const commit = () => {
@@ -9961,6 +10146,12 @@ window.__ModuleLoader__.load({
 		    /* @__PURE__ */ (0, import_jsx_runtime72.jsx)("span", { className: "jh-switch-track", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime72.jsx)("span", { className: "jh-switch-thumb" }) })
 		  ] });
 		}
+
+		// src/shared/config/browser.ts
+		var BROWSER_IDLE_DEFAULT_MIN = 10;
+		var BROWSER_IDLE_MIN_MIN = 0;
+		var BROWSER_IDLE_MAX_MIN = 240;
+		var BROWSER_CLOSE_AFTER_RUN_MS = 3e3;
 
 		// src/client/screens/settings/browser-panel.tsx
 		var import_jsx_runtime73 = require("react/jsx-runtime");
@@ -10478,7 +10669,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/data-panel.tsx
-		var import_react30 = require("react");
+		var import_react31 = require("react");
 		var import_jsx_runtime77 = require("react/jsx-runtime");
 		var CHUNK_ROWS = 300;
 		var RETENTION_FIELDS = [
@@ -10499,20 +10690,20 @@ window.__ModuleLoader__.load({
 		  return error instanceof ApiError ? error.display : String(error);
 		}
 		function DataPanel(props) {
-		  const [storageRevision, setStorageRevision] = (0, import_react30.useState)(0);
+		  const [storageRevision, setStorageRevision] = (0, import_react31.useState)(0);
 		  const storage = useAsync((signal) => fetchStorage(signal), [storageRevision]);
 		  const retention = props.current?.retention ?? null;
 		  const defaults = props.current?.derived.defaults.retention ?? null;
-		  const [draft, setDraft] = (0, import_react30.useState)(null);
+		  const [draft, setDraft] = (0, import_react31.useState)(null);
 		  const shownDays = (key) => draft?.[key] ?? retention?.[key] ?? 0;
-		  const [plan, setPlan] = (0, import_react30.useState)(null);
-		  const [selected, setSelected] = (0, import_react30.useState)([]);
-		  const [planning, setPlanning] = (0, import_react30.useState)(false);
-		  const [confirming, setConfirming] = (0, import_react30.useState)(false);
-		  const [running, setRunning] = (0, import_react30.useState)(false);
-		  const [cleanupResult, setCleanupResult] = (0, import_react30.useState)(null);
-		  const [importResult, setImportResult] = (0, import_react30.useState)(null);
-		  const [importing, setImporting] = (0, import_react30.useState)(false);
+		  const [plan, setPlan] = (0, import_react31.useState)(null);
+		  const [selected, setSelected] = (0, import_react31.useState)([]);
+		  const [planning, setPlanning] = (0, import_react31.useState)(false);
+		  const [confirming, setConfirming] = (0, import_react31.useState)(false);
+		  const [running, setRunning] = (0, import_react31.useState)(false);
+		  const [cleanupResult, setCleanupResult] = (0, import_react31.useState)(null);
+		  const [importResult, setImportResult] = (0, import_react31.useState)(null);
+		  const [importing, setImporting] = (0, import_react31.useState)(false);
 		  const loadPlan = async () => {
 		    setPlanning(true);
 		    setCleanupResult(null);
@@ -10907,7 +11098,18 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/logs-panel.tsx
-		var import_react33 = require("react");
+		var import_react34 = require("react");
+
+		// src/shared/contract/enums/guard.ts
+		var ACTOR_LABEL = {
+		  gui: "\u754C\u9762\u4E0A\u7684\u4F60",
+		  model: "\u6A21\u578B\uFF08\u5BF9\u8BDD\u91CC\u53D1\u8D77\uFF09",
+		  schedule: "\u5B9A\u65F6\u4EFB\u52A1",
+		  user: "\u7528\u6237"
+		};
+		function actorLabel(actor) {
+		  return ACTOR_LABEL[actor] ?? actor;
+		}
 
 		// src/client/screens/settings/audit-table.tsx
 		var import_jsx_runtime78 = require("react/jsx-runtime");
@@ -10933,7 +11135,7 @@ window.__ModuleLoader__.load({
 		        ] }) }),
 		        /* @__PURE__ */ (0, import_jsx_runtime78.jsx)("tbody", { children: props.audit.data.items.map((record) => /* @__PURE__ */ (0, import_jsx_runtime78.jsxs)("tr", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime78.jsx)("td", { children: record.at.slice(5, 16).replace("T", " ") }),
-		          /* @__PURE__ */ (0, import_jsx_runtime78.jsx)("td", { children: record.actor }),
+		          /* @__PURE__ */ (0, import_jsx_runtime78.jsx)("td", { children: actorLabel(record.actor) }),
 		          /* @__PURE__ */ (0, import_jsx_runtime78.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime78.jsx)("code", { children: record.action }) }),
 		          /* @__PURE__ */ (0, import_jsx_runtime78.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime78.jsx)(
 		            "span",
@@ -10952,7 +11154,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/diagnostics-panel.tsx
-		var import_react31 = require("react");
+		var import_react32 = require("react");
 
 		// src/client/ui/icons.tsx
 		var import_jsx_runtime79 = require("react/jsx-runtime");
@@ -11105,8 +11307,8 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function LiveUptimeCard(props) {
-		  const [elapsed, setElapsed] = (0, import_react31.useState)(0);
-		  (0, import_react31.useEffect)(() => {
+		  const [elapsed, setElapsed] = (0, import_react32.useState)(0);
+		  (0, import_react32.useEffect)(() => {
 		    setElapsed(0);
 		    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1e3);
 		    return () => window.clearInterval(timer);
@@ -11256,10 +11458,10 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/payload-drawer.tsx
-		var import_react32 = require("react");
+		var import_react33 = require("react");
 		var import_jsx_runtime82 = require("react/jsx-runtime");
 		function PayloadDrawer(props) {
-		  const dialogRef = (0, import_react32.useRef)(null);
+		  const dialogRef = (0, import_react33.useRef)(null);
 		  useDialogA11y(dialogRef, props.onClose);
 		  const call = props.call;
 		  const json = JSON.stringify(
@@ -11340,10 +11542,10 @@ window.__ModuleLoader__.load({
 		// src/client/screens/settings/logs-panel.tsx
 		var import_jsx_runtime83 = require("react/jsx-runtime");
 		function LogsPanel(props) {
-		  const [purpose, setPurpose] = (0, import_react33.useState)("");
-		  const [status, setStatus] = (0, import_react33.useState)("all");
-		  const [query, setQuery] = (0, import_react33.useState)("");
-		  const [payload, setPayload] = (0, import_react33.useState)(null);
+		  const [purpose, setPurpose] = (0, import_react34.useState)("");
+		  const [status, setStatus] = (0, import_react34.useState)("all");
+		  const [query, setQuery] = (0, import_react34.useState)("");
+		  const [payload, setPayload] = (0, import_react34.useState)(null);
 		  return /* @__PURE__ */ (0, import_jsx_runtime83.jsxs)(import_jsx_runtime83.Fragment, { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime83.jsx)(DiagnosticsPanel, { health: props.health, notify: props.notify }),
 		    /* @__PURE__ */ (0, import_jsx_runtime83.jsx)(
@@ -11388,9 +11590,9 @@ window.__ModuleLoader__.load({
 		  const health = useAsync((signal) => fetchHealth(signal), [props.revision]);
 		  const audit = useAsync((signal) => fetchAudit(50, {}, signal), [props.revision]);
 		  const llm = useAsync((signal) => fetchLlmCalls(50, signal), [props.revision]);
-		  const [tab, setTab] = (0, import_react34.useState)("config");
-		  const [message, setMessage] = (0, import_react34.useState)(null);
-		  const [busy, setBusy] = (0, import_react34.useState)(false);
+		  const [tab, setTab] = (0, import_react35.useState)("config");
+		  const [message, setMessage] = (0, import_react35.useState)(null);
+		  const [busy, setBusy] = (0, import_react35.useState)(false);
 		  const current = settings.state.status === "ok" ? settings.state.data : null;
 		  const write = async (patch, okText) => {
 		    setBusy(true);
@@ -11406,7 +11608,7 @@ window.__ModuleLoader__.load({
 		    }
 		  };
 		  const labelOf = (purpose) => current?.derived.purposes.find((item) => item.purpose === purpose)?.label ?? purpose;
-		  const tabRefs = (0, import_react34.useRef)([]);
+		  const tabRefs = (0, import_react35.useRef)([]);
 		  const onTabKeyDown = (event, index) => {
 		    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
 		    event.preventDefault();
@@ -11464,12 +11666,12 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/today/index.tsx
-		var import_react36 = require("react");
+		var import_react37 = require("react");
 
 		// src/client/hooks/use-sticky.ts
-		var import_react35 = require("react");
+		var import_react36 = require("react");
 		function useSticky(state) {
-		  const last = (0, import_react35.useRef)(null);
+		  const last = (0, import_react36.useRef)(null);
 		  if (state.status === "ok") last.current = state.data;
 		  return state.status === "ok" ? state.data : state.status === "loading" ? last.current : null;
 		}
@@ -11506,6 +11708,24 @@ window.__ModuleLoader__.load({
 		    feedback.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime85.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: feedback.message })
 		  ] });
 		}
+
+		// src/shared/contract/enums/today.ts
+		var TODO_LEVEL_LABEL = {
+		  info: "\u63D0\u793A",
+		  warn: "\u63D0\u9192",
+		  urgent: "\u7D27\u6025"
+		};
+		var TODO_KIND_LABEL = {
+		  "adapter-degraded": "\u9002\u914D\u5668\u964D\u7EA7",
+		  "adapter-broken": "\u9002\u914D\u5668\u5931\u6548",
+		  "yield-drop": "\u91CF\u7EA7\u9AA4\u964D",
+		  "login-required": "\u9700\u8981\u767B\u5F55",
+		  blocked: "\u98CE\u63A7\u6682\u505C",
+		  "new-jobs": "\u65B0\u5C97\u4F4D",
+		  "catch-up": "\u8865\u6293\u6B20\u8D26",
+		  "confirm-action": "\u5F85\u786E\u8BA4\u52A8\u4F5C",
+		  deadline: "\u786C\u622A\u6B62"
+		};
 
 		// src/client/format/today.ts
 		function planIdOf(todo) {
@@ -11600,8 +11820,8 @@ window.__ModuleLoader__.load({
 		  const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision]);
 		  const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision]);
 		  const usage = useAsync((signal) => fetchGuardUsage(void 0, signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react36.useState)(IDLE);
-		  const now = (0, import_react36.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const [feedback, setFeedback] = (0, import_react37.useState)(IDLE);
+		  const now = (0, import_react37.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -11777,13 +11997,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/hooks/use-event-stream.ts
-		var import_react37 = require("react");
+		var import_react38 = require("react");
 		function useEventStream(onHint) {
-		  const [status, setStatus] = (0, import_react37.useState)("connecting");
-		  const [lastEventAt, setLastEventAt] = (0, import_react37.useState)(null);
-		  const hintRef = (0, import_react37.useRef)(onHint);
+		  const [status, setStatus] = (0, import_react38.useState)("connecting");
+		  const [lastEventAt, setLastEventAt] = (0, import_react38.useState)(null);
+		  const hintRef = (0, import_react38.useRef)(onHint);
 		  hintRef.current = onHint;
-		  (0, import_react37.useEffect)(() => {
+		  (0, import_react38.useEffect)(() => {
 		    const source = new EventSource(`${ROUTE_PREFIX}/events`);
 		    source.onopen = () => {
 		      setStatus("open");
@@ -11822,17 +12042,17 @@ window.__ModuleLoader__.load({
 		  return /* @__PURE__ */ (0, import_jsx_runtime88.jsx)("div", { className: "jh-body", role: "main", children: /* @__PURE__ */ (0, import_jsx_runtime88.jsx)(ScreenErrorBoundary, { name: tabLabelOf(props.screen), children: props.children }, props.screen) });
 		}
 		function JobHunterPanel() {
-		  const [screen, setScreen] = (0, import_react38.useState)("today");
-		  const [selected, setSelected] = (0, import_react38.useState)(null);
-		  const [revision, setRevision] = (0, import_react38.useState)(0);
-		  const timer = (0, import_react38.useRef)(null);
-		  (0, import_react38.useEffect)(
+		  const [screen, setScreen] = (0, import_react39.useState)("today");
+		  const [selected, setSelected] = (0, import_react39.useState)(null);
+		  const [revision, setRevision] = (0, import_react39.useState)(0);
+		  const timer = (0, import_react39.useRef)(null);
+		  (0, import_react39.useEffect)(
 		    () => () => {
 		      if (timer.current !== null) window.clearTimeout(timer.current);
 		    },
 		    []
 		  );
-		  const onHint = (0, import_react38.useCallback)((type) => {
+		  const onHint = (0, import_react39.useCallback)((type) => {
 		    if (type === "resync") {
 		      setRevision((value) => value + 1);
 		      return;
@@ -11844,7 +12064,7 @@ window.__ModuleLoader__.load({
 		    }, 250);
 		  }, []);
 		  const stream = useEventStream(onHint);
-		  (0, import_react38.useEffect)(() => {
+		  (0, import_react39.useEffect)(() => {
 		    const apply2 = (intent) => {
 		      setScreen("jobs");
 		      setSelected(intent.jobId);
@@ -12019,7 +12239,11 @@ window.__ModuleLoader__.load({
 		.jh-lease{margin:8px 0;padding:8px 10px;border-radius:9px;
 		  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
 		.jh-lease-warn{border-color:var(--dsw-alias-state-warn-secondary)}
-		.jh-lease-ok{border-color:var(--dsw-alias-state-success-secondary)}
+		/* \u6B63\u5E38\u6001\uFF08\u672C\u7A97\u53E3\u8D1F\u8D23\u91C7\u96C6\uFF09**\u4E0D\u7ED9\u6846\u4E5F\u4E0D\u7ED9\u5E95**\u3002
+		   \u5B83\u672C\u6765\u5C31\u957F\u5728\u300C\u8FD0\u884C\u72B6\u6001\u300D\u90A3\u5F20 .jh-card \u91CC\u9762\uFF0C\u518D\u5957\u4E00\u5C42\u8FB9\u6846+\u586B\u5145\u5C31\u662F
+		   "\u5361\u7247\u5957\u5361\u7247" \u2014\u2014 \u672C\u9875\u6700\u591A\u7684\u5730\u65B9\u53E0\u4E86\u4E09\u5C42\uFF08.jh-card \u2192 .jh-lease \u2192 \u5185\u5C42\u8BF4\u660E\uFF09\u3002
+		   \u53EA\u6709\u5F02\u5E38\u6001\uFF08\u672C\u7A97\u53E3\u53EA\u8BFB\uFF09\u624D\u7528\u8FB9\u6846\u628A\u5B83\u62AC\u51FA\u6765\uFF0C\u56E0\u4E3A\u90A3\u65F6\u5B83\u624D\u771F\u7684\u9700\u8981\u88AB\u770B\u89C1\u3002 */
+		.jh-lease-ok{border-color:transparent;background:transparent}
 		.jh-lease-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px}
 
 		/* \u660E\u7EC6\u6298\u53E0\uFF08\u539F\u6765\u7684\u5806\u6808\u76F4\u51FA\u6539\u6210\u4E00\u53E5\u4EBA\u8BDD + \u53EF\u5C55\u5F00\u7684\u539F\u59CB\u4FE1\u606F\uFF09*/
@@ -12122,16 +12346,25 @@ window.__ModuleLoader__.load({
 		.jh-schedule-row .jh-field{margin:0}
 		.jh-schedule-row .jh-timerange{margin:0}
 
-		/* \u5361\u7247\u5185\u7684\u8B66\u544A Banner\uFF08\u628A"\u8FDE\u7EED\u5931\u8D25 N \u6B21"\u8FD9\u7C7B\u6838\u5FC3\u98CE\u9669\u62AC\u51FA\u6765\uFF09*/
-		.jh-banner{display:flex;flex-direction:column;gap:2px;margin-top:8px;padding:7px 10px;
-		  border-radius:8px;font-size:12.5px;line-height:1.6}
+		/* \u5361\u7247\u5185\u7684\u8B66\u544A Banner\uFF08\u628A"\u8FDE\u7EED\u5931\u8D25 N \u6B21"\u8FD9\u7C7B\u6838\u5FC3\u98CE\u9669\u62AC\u51FA\u6765\uFF09\u3002
+		   \u2500\u2500 \u7528**\u5DE6\u4FA7\u8272\u6761**\u800C\u4E0D\u662F\u586B\u5145\u5E95\u8272\uFF1A\u5B83\u957F\u5728 .jh-plan-card \u91CC\u9762\uFF0C\u800C\u90A3\u5F20\u5361\u81EA\u5DF1
+		   \u5DF2\u7ECF\u6709\u8FB9\u6846\u548C\u80CC\u666F\uFF0C\u518D\u53E0\u4E00\u5757\u5B9E\u5FC3\u8272\u5C31\u662F"\u5361\u7247\u5957\u5361\u7247\u5957\u8272\u5757"\uFF08\u4E09\u5C42\u8FB9\u754C\uFF0C
+		   \u6BCF\u5C42\u7684\u89C6\u89C9\u843D\u70B9\u90FD\u88AB\u91CD\u7F6E\u4E00\u6B21\uFF09\u3002
+		   \u5DE6\u8FB9\u6846\u53D6 currentColor\uFF0C\u989C\u8272\u4ECD\u7136\u53EA\u7531\u4E0B\u9762\u4E24\u6761\u7684 color \u51B3\u5B9A \u2014\u2014 \u52A0\u4E00\u4E2A\u8272\u8C03
+		   \u4E0D\u5FC5\u540C\u65F6\u6539\u4E24\u5904\uFF0C\u4E5F\u4E0D\u4F1A\u51FA\u73B0"\u5E95\u8272\u662F\u9EC4\u3001\u6587\u5B57\u662F\u7EA2"\u7684\u4E0D\u4E00\u81F4\u3002 */
+		.jh-banner{display:flex;flex-direction:column;gap:2px;margin-top:8px;
+		  padding:2px 0 2px 10px;border-left:3px solid currentColor;
+		  font-size:12.5px;line-height:1.6}
 		.jh-banner-title{font-weight:600}
-		.jh-banner-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
-		.jh-banner-error{background:var(--jh-error-bg);color:var(--jh-error-fg)}
+		.jh-banner-warn{color:var(--jh-warn-fg)}
+		.jh-banner-error{color:var(--jh-error-fg)}
 
-		/* \u65B9\u6848\u5361\u7247\uFF1A\u660E\u786E\u8FB9\u6846 + \u9634\u5F71\uFF0C\u4E0E\u5361\u7247\u80CC\u666F\u62C9\u5F00\u5C42\u6B21 */
+		/* \u65B9\u6848\u5361\u7247\uFF1A\u660E\u786E\u8FB9\u6846\uFF0C\u4E0E\u5361\u7247\u80CC\u666F\u62C9\u5F00\u5C42\u6B21\u3002
+		   \u2500\u2500 \u53BB\u6389\u4E86\u539F\u6765\u90A3\u5C42 box-shadow:0 1px 3px rgba(0,0,0,.07)\uFF1A\u5B83\u538B\u5728
+		   .jh-card \u7684\u80CC\u666F\u4E0A\uFF0C\u6D45\u8272\u4E3B\u9898\u91CC\u51E0\u4E4E\u770B\u4E0D\u51FA\uFF0C\u6DF1\u8272\u4E3B\u9898\u91CC\u5B8C\u5168\u6D88\u5931\uFF0C
+		   \u800C\u5B83\u5E26\u6765\u7684"\u8FD9\u662F\u5361\u7247\u91CC\u7684\u5361\u7247"\u90A3\u5C42\u6697\u793A\u5374\u662F\u5B9E\u5B9E\u5728\u5728\u7684 \u2014\u2014 \u7559\u8FB9\u6846\u5C31\u591F\u3002 */
 		.jh-plan-card{padding:11px 13px;border-radius:10px;border:1px solid var(--dsw-alias-border-l3);
-		  background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 3px rgba(0,0,0,.07);font-size:12.5px}
+		  background:var(--dsw-alias-bg-layer-1);font-size:12.5px}
 		.jh-plan-name{font-size:13.5px}
 
 		/* \u6309\u94AE\u6743\u91CD\uFF1A\u5371\u9669 / \u8B66\u793A\u3002\u4E3B\u64CD\u4F5C\u590D\u7528\u5DF2\u6709\u7684 .jh-btn-primary\u3002
@@ -12455,11 +12688,30 @@ window.__ModuleLoader__.load({
 		.jh-jobs-filter-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 		.jh-jobs-filters .jh-input,.jh-jobs-filters .jh-select{width:auto}
 		/* \u5BBD\u5EA6\u6863\u4F4D\u8981\u5728**\u540C\u4E00\u5C42\u9009\u62E9\u5668**\u4E0A\u91CD\u65B0\u88C1\u51B3\uFF1A\u4E0A\u9762\u90A3\u6761 width:auto \u662F (0,2,0)\uFF0C
-		   \u6BD4 .jh-input-sm / .jh-input-md \u7684 (0,1,0) \u9AD8 \u2014\u2014 \u4E0D\u5728\u8FD9\u91CC\u91CD\u5199\u4E00\u904D\uFF0C
-		   \u7B5B\u9009\u6761\u91CC\u7684\u63A7\u4EF6\u4F1A\u5168\u90E8\u9000\u56DE\u6D4F\u89C8\u5668\u9ED8\u8BA4\u5BBD\u5EA6\uFF08\u770B\u677F\u7684 .jh-filterbar .jh-input-sm \u540C\u7406\uFF09\u3002 */
-		.jh-jobs-filters .jh-input-sm{width:130px}
+		   \u6BD4 .jh-input-md \u7684 (0,1,0) \u9AD8 \u2014\u2014 \u4E0D\u5728\u8FD9\u91CC\u91CD\u5199\u4E00\u904D\uFF0C\u7B5B\u9009\u6761\u91CC\u7684\u63A7\u4EF6\u4F1A\u5168\u90E8\u9000\u56DE
+		   \u6D4F\u89C8\u5668\u9ED8\u8BA4\u5BBD\u5EA6\uFF08\u770B\u677F\u7684 .jh-filterbar .jh-input-sm \u540C\u7406\uFF09\u3002
+		   \uFF08\u539F\u5148\u8FD9\u91CC\u8FD8\u6709\u4E00\u6761 .jh-input-sm\uFF1A\u7B2C\u56DB\u8F6E\u7ED9\u4E24\u4E2A\u6587\u672C\u6846\u52A0\u4E0A\u53EF\u89C1\u6807\u7B7E\u540E\uFF0C
+		   \u5B83\u4EEC\u6539\u7531\u4E0B\u9762\u7684 .jh-jobs-filter-text \u5B9A\u5BBD\uFF0C\u90A3\u6761\u5DF2\u6210\u6B7B\u89C4\u5219\uFF0C\u5220\u6389\u3002\uFF09 */
 		/* \u4E2D\u7B49\u5BBD\u5EA6\uFF08\u57CE\u5E02 / \u72B6\u6001 / \u65B0\u589E\u65F6\u95F4\uFF09\uFF1A130px \u88C5\u4E0D\u4E0B\u300C\u5168\u90E8\u57CE\u5E02\u300D\u8FD9\u7C7B\u9009\u9879\u6587\u5B57 */
 		.jh-jobs-filters .jh-input-md{width:150px}
+		/* \u2500\u2500 \u5E26\u53EF\u89C1\u6807\u7B7E\u7684\u6587\u672C\u6846\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P1-4\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u5173\u952E\u8BCD\u4E0E\u6700\u4F4E\u6708\u85AA\u539F\u5148**\u53EA\u6709 placeholder \u5F53\u6807\u7B7E**\uFF08caption \u6863\uFF0C\u767D\u5E95\u4E0A 2.6:1\uFF09\uFF0C
+		   \u800C\u4E14\u4E00\u5F00\u59CB\u8F93\u5165\u8FD9\u6BB5\u6587\u5B57\u5C31\u6D88\u5931\u4E86\uFF0C\u7528\u6237\u6CA1\u6CD5\u56DE\u770B\u8FD9\u4E2A\u6846\u662F\u5E72\u4EC0\u4E48\u7684\u3002
+		   \u73B0\u5728\u6807\u7B7E\u56DE\u5230\u63A7\u4EF6\u65C1\u8FB9\uFF1Alabel-secondary\uFF085.80:1\uFF09\uFF0C\u4E0E\u6298\u53E0\u9762\u677F\u91CC\u90A3\u4E00\u5217 76px \u6807\u7B7E
+		   \u662F\u540C\u4E00\u4E2A\u8BED\u8A00\uFF0C\u53EA\u662F\u8FD9\u91CC\u6A2A\u6392 \u2014\u2014 \u5DE5\u5177\u6761\u4ECD\u7136\u662F\u4E00\u6761\u7EBF\uFF0C\u6CA1\u6709\u53D8\u9AD8\u3002 */
+		.jh-jobs-filter-text{display:flex;align-items:center;gap:6px;flex:1 1 220px;min-width:180px}
+		.jh-jobs-filter-text>span{flex:0 0 auto;font-size:12px;color:var(--dsw-alias-label-secondary);
+		  white-space:nowrap}
+		.jh-jobs-filter-text .jh-input{flex:1 1 auto;min-width:0;width:auto}
+		/* \u6700\u4F4E\u6708\u85AA\u662F\u7A84\u5B57\u6BB5\uFF0C\u4E0D\u53C2\u4E0E\u4F38\u5C55\u3002\u9009\u62E9\u5668\u5199\u6210\u4E24\u4E2A\u7C7B\uFF08(0,3,0)\uFF09\u800C\u4E0D\u662F\u4E00\u4E2A \u2014\u2014
+		   \u4E0A\u9762\u90A3\u6761 .jh-jobs-filter-text .jh-input{width:auto} \u4E0E\u5B83\u662F\u540C\u4E00\u6863\u7279\u5F02\u6027\uFF0C
+		   \u53EA\u9760\u5148\u540E\u6765\u88C1\u51B3\u592A\u8106\u5F31\uFF08\u672C\u9879\u76EE\u4E3A\u8FD9\u7C7B\u95EE\u9898\u8E29\u8FC7\u4E00\u6B21\uFF09\u3002 */
+		.jh-jobs-filter-text.jh-jobs-filter-text-narrow{flex:0 0 auto}
+		.jh-jobs-filter-text.jh-jobs-filter-text-narrow .jh-input{width:90px}
+		/* \u6761\u4EF6\u6539\u4E86\u4F46\u8FD8\u6CA1\u70B9\u300C\u7B5B\u9009\u300D\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P2-12\uFF09\uFF1A
+		   \u6298\u53E0\u5F00\u5173\u4E0A\u7684\u300C\u5DF2\u9009 N \u9879\u300D\u7B97\u7684\u662F**\u8349\u7A3F**\uFF0C\u5217\u8868\u5934\u680F\u90A3\u53E5\u7B97\u7684\u662F**\u5DF2\u751F\u6548**\u7684\u6761\u4EF6 \u2014\u2014
+		   \u4E24\u8005\u53EF\u4EE5\u4E0D\u4E00\u81F4\uFF0C\u8FD9\u884C\u5B57\u628A\u5DEE\u522B\u76F4\u63A5\u8BF4\u51FA\u6765\uFF0C\u514D\u5F97\u7528\u6237\u4EE5\u4E3A"\u5DF2\u7ECF\u7B5B\u8FC7\u4E86"\u3002 */
+		.jh-jobs-filter-pending{font-size:12px;font-weight:600;color:var(--jh-warn-fg)}
 		/* \u6298\u53E0\u5F00\u5173\uFF1A\u53EA\u6709\u4E00\u884C\u5C0F\u5B57\uFF0C\u56FE\u6807\u5728\u6700\u524D\u9762\u6307\u793A\u5C55\u5F00\u6001\u3002
 		   align-self \u8BA9\u5B83\u53EA\u5360\u6587\u5B57\u90A3\u70B9\u5BBD\u5EA6 \u2014\u2014 \u6574\u884C\u53EF\u70B9\u7684\u9690\u5F62\u5927\u6309\u94AE\u4F1A\u76D6\u4F4F\u4E0B\u9762\u7684\u9762\u677F\u8FB9\u7F18\u3002 */
 		.jh-jobs-filter-toggle{display:flex;align-items:center;gap:6px;align-self:flex-start;
@@ -12505,39 +12757,61 @@ window.__ModuleLoader__.load({
 		.jh-job-qk:hover:not(:disabled){border-color:var(--dsw-alias-border-l4);
 		  background:var(--dsw-alias-interactive-bg-hover)}
 		.jh-job-qk:disabled{opacity:.5;cursor:default}
-		/* \u5212\u6389\uFF08ignored\uFF09\u662F\u8FD9\u4E00\u5217\u552F\u4E00\u7684\u5904\u7F6E\u6001\u5F00\u5173\uFF0C\u9009\u4E2D\u540E\u67D3\u7EA2\uFF1A\u4E0E\u8BE6\u60C5\u91CC\u7684\u52A8\u4F5C\u6761\u540C\u4E00\u5957\u8BED\u4E49 */
-		.jh-job-qk-ign{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);
+		/* \u5212\u6389\uFF08ignored\uFF09\u662F\u8FD9\u4E00\u5217\u552F\u4E00\u7684\u5904\u7F6E\u6001\u5F00\u5173\uFF0C\u9009\u4E2D\u540E\u67D3\u7EA2\uFF1A\u4E0E\u8BE6\u60C5\u91CC\u7684\u52A8\u4F5C\u6761\u540C\u4E00\u5957\u8BED\u4E49\u3002
+		   \u2500\u2500 \u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF08\u5BA1\u6838 P1-3\uFF09\uFF1A\u8FD9\u91CC\u539F\u5148\u662F state-error-primary\uFF08\u6D45\u8272 #ec1313\uFF09\u2014\u2014
+		   \u540C\u4E00\u4EFD\u6837\u5F0F\u5728 .jh-btn-danger \u7684\u6CE8\u91CA\u91CC\u65E9\u5C31\u91CF\u8FC7"\u5B83\u5F53\u5C0F\u5B57\u538B\u5728\u6D45\u8272\u9762\u4E0A\u53EA\u6709 2.54:1"\uFF0C
+		   \u53EA\u662F\u6CA1\u63A8\u5E7F\u5230\u8FD9\u4E00\u5904\u3002\u5B57\u5F62\u4E0E\u63CF\u8FB9\u7EDF\u4E00\u6539\u8D70 --jh-error-fg\uFF08\u6DF1\u8272\u53D8\u4F53\uFF09\u3002 */
+		.jh-job-qk-ign{color:var(--jh-error-fg);border-color:var(--jh-error-fg);
 		  background:var(--dsw-alias-interactive-bg-active)}
-		/* \u5361\u7247\u5FC5\u987B\u6709\u8FB9\u754C\uFF1A\u767D\u5E95 + 4% \u63CF\u8FB9\u753B\u5728\u767D\u9875\u9762\u4E0A\u7B49\u4E8E\u6CA1\u6709\u5361\u7247\uFF0C\u6EDA\u52A8\u65F6\u5BB9\u6613\u770B\u4E32\u884C */
+		/* \u5361\u7247\u5FC5\u987B\u6709\u8FB9\u754C\uFF1A\u767D\u5E95 + 4% \u63CF\u8FB9\u753B\u5728\u767D\u9875\u9762\u4E0A\u7B49\u4E8E\u6CA1\u6709\u5361\u7247\uFF0C\u6EDA\u52A8\u65F6\u5BB9\u6613\u770B\u4E32\u884C\u3002
+		   \u9634\u5F71\u4E0D\u5199\u6B7B\u9ED1\u8272\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P2-10\uFF09\uFF1A\u989C\u8272\u4E00\u5F8B\u8D70\u4E3B\u9898\u53D8\u91CF\uFF0C\u8FD9\u91CC\u7528 label-primary
+		   \u7684\u6DF7\u8272 \u2014\u2014 \u6DF1\u8272\u4E3B\u9898\u4E0B\u5B83\u662F\u6D45\u8272\uFF0C\u9634\u5F71\u968F\u4E4B\u53D8\u6210\u4E00\u5C42\u6781\u6DE1\u7684\u6D45\u8272\u8FB9\u7F18\uFF0C\u4ECD\u7136\u8BFB\u4F5C"\u6D6E\u8D77"\uFF1B
+		   \u5199\u6B7B rgba(0,0,0,\xB7) \u7684\u8BDD\u5728\u6DF1\u8272\u5E95\u4E0A\u4F1A\u5F7B\u5E95\u6D88\u5931\uFF0C\u800C\u60AC\u6D6E\u4E0E\u9009\u4E2D\u6B63\u662F\u9760\u5B83\u8868\u8FBE\u62AC\u5347\u3002 */
 		.jh-job{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;cursor:pointer;
 		  box-sizing:border-box;padding:12px 14px;border-radius:10px;
 		  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
-		  box-shadow:0 1px 2px rgba(0,0,0,.04);
+		  box-shadow:0 1px 2px color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
 		  color:var(--dsw-alias-label-primary);transition:border-color .12s,box-shadow .12s}
-		.jh-job:hover{border-color:var(--dsw-alias-border-l4);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+		.jh-job:hover{border-color:var(--dsw-alias-border-l4);
+		  box-shadow:0 2px 8px color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent)}
 		/* \u9009\u4E2D\uFF1A\u52A0\u6DF1\u63CF\u8FB9 + \u66F4\u5B9E\u7684\u5E95\u3002
 		   \u4E0D\u518D\u7528 inset \u5DE6\u4FA7\u8272\u6761 \u2014\u2014 \u5361\u7247\u5DE6\u8FB9\u6302\u4E00\u6761\u7AD6\u7EBF\u5728\u5BC6\u96C6\u5217\u8868\u91CC\u5F88\u5435\uFF0C
 		   \u800C\u4E14\u548C"\u8FB9\u6846"\u91CD\u590D\u8868\u8FBE\u4E86\u4E24\u904D\u3002 */
 		.jh-job-active{border-color:var(--dsw-alias-brand-primary);
 		  background:var(--dsw-alias-interactive-bg-active);
-		  box-shadow:0 2px 8px rgba(0,0,0,.08)}
+		  box-shadow:0 2px 8px color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent)}
 		.jh-job-main{flex:1 1 auto;min-width:0}
-		.jh-job-title{font-size:14.5px;font-weight:600;margin:0 0 3px;line-height:1.5}
+		/* \u2500\u2500 \u6807\u9898\u4E0E\u85AA\u8D44\u7684\u5C42\u7EA7\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P2-13\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u4E0A\u4E00\u7248\u6807\u9898 14.5px\u3001\u85AA\u8D44 15px\uFF1A\u4E24\u4E2A\u6700\u8BE5\u88AB\u626B\u5230\u7684\u5B57\u6BB5\u53EA\u5DEE 0.5px\uFF0C\u800C\u4E14**\u85AA\u8D44\u66F4\u5927** \u2014\u2014
+		   \u4E0E\u540C\u6587\u4EF6\u91CC"13 \u4E0E 12.5 \u53EA\u5DEE 0.5px\uFF0C\u6807\u9898\u5C42\u7EA7\u7B49\u4E8E\u4E0D\u5B58\u5728"\u7684\u5224\u636E\u81EA\u76F8\u77DB\u76FE\u3002
+		   \u73B0\u5728\u628A\u987A\u5E8F\u6446\u6B63\u5E76\u62C9\u5F00\u4E00\u6574\u6863\uFF1A\u6807\u9898 15px\uFF08\u6BD4\u6B63\u6587 13px \u9AD8\u4E00\u6863\uFF0C\u662F\u8FD9\u5F20\u5361\u7684\u7B2C\u4E00\u773C\uFF09\uFF0C
+		   \u85AA\u8D44 14px/700 + \u4E1A\u52A1\u8272\uFF08\u9760\u5B57\u91CD\u4E0E\u989C\u8272\u4FDD\u6301\u9192\u76EE\uFF0C\u4E0D\u518D\u9760\u538B\u8FC7\u6807\u9898\u7684\u5B57\u53F7\uFF09\u3002 */
+		.jh-job-title{font-size:15px;font-weight:600;margin:0 0 3px;line-height:1.5}
 		.jh-job-meta{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;
 		  font-size:12px;color:var(--dsw-alias-label-secondary)}
-		/* \u85AA\u8D44\u662F\u51B3\u7B56\u7B2C\u4E00\u773C\u8981\u770B\u7684\u4E1C\u897F\uFF1A\u5B57\u53F7\u4E0E\u5B57\u91CD\u90FD\u63D0\u4E0A\u53BB\uFF0C\u4E0D\u518D\u548C\u5730\u70B9\u4E00\u4E2A\u91CF\u7EA7\u3002
-		   \u989C\u8272\u8D70 --jh-business-fg\uFF1Astate-business-primary \u76F4\u63A5\u5F53\u6587\u5B57\u8272\u5728\u767D\u8272\u5361\u7247\u4E0A\u53EA\u6709
-		   4.23:1\uFF0C\u800C 15px/700 \u591F\u4E0D\u4E0A"\u5927\u6587\u672C"\u95E8\u69DB\uFF08\u9700 \u226518.66px \u4E14 \u2265700\uFF09\u2192 \u5FC5\u987B 4.5:1\u3002
+		/* \u85AA\u8D44\u7684\u989C\u8272\u8D70 --jh-business-fg\uFF1Astate-business-primary \u76F4\u63A5\u5F53\u6587\u5B57\u8272\u5728\u767D\u8272\u5361\u7247\u4E0A\u53EA\u6709
+		   4.23:1\uFF0C\u800C 14px/700 \u4E5F\u591F\u4E0D\u4E0A"\u5927\u6587\u672C"\u95E8\u69DB\uFF08\u9700 \u226518.66px \u4E14 \u2265700\uFF09\u2192 \u5FC5\u987B 4.5:1\u3002
 		   \u6DF7\u8272\u540E\u5B9E\u6D4B\u6D45\u8272 4.51:1\u3001\u6DF1\u8272 8.78:1\u3002 */
-		.jh-salary{font-size:15px;font-weight:700;color:var(--jh-business-fg)}
+		.jh-salary{font-size:14px;font-weight:700;color:var(--jh-business-fg)}
 		/* \u516C\u53F8\u540D\u662F\u6B21\u8981\u4FE1\u606F\uFF0C\u4F46\u4E5F\u4E0D\u80FD\u6DE1\u5230\u8BFB\u4E0D\u51FA\uFF1A\u7528\u6B63\u6587\u8272 */
 		.jh-job-company{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;
 		  color:var(--dsw-alias-label-primary)}
 		/* \u6765\u6E90\uFF08\u5E73\u53F0\uFF09\u4E0E\u65B0\u9C9C\u5EA6\uFF1A\u5361\u7247\u4E0A\u7684\u7B2C\u4E09\u6863\u4FE1\u606F\uFF0C\u6392\u5728\u6807\u7B7E\u4E4B\u524D\u3001\u6BD4 meta \u66F4\u6DE1\u3002
-		   \u7528 tertiary \u800C\u4E0D\u662F caption \u2014\u2014 caption(#adb2b8) \u5728\u767D\u8272\u5361\u7247\u4E0A\u53EA\u6709 2.6:1\uFF0C
-		   \u90A3\u662F"\u88C5\u9970\u6027\u6587\u5B57"\u7684\u5BF9\u6BD4\u5EA6\uFF0C\u800C\u8FD9\u91CC\u5199\u7684\u662F\u7528\u6237\u8981\u8BFB\u7684"\u8FD9\u5C97\u591A\u4E45\u6CA1\u51FA\u73B0\u4E86"\u3002 */
+		   \u2500\u2500 \u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF08\u5BA1\u6838 P1-2\uFF09\uFF1A\u5B83\u539F\u5148\u662F label-tertiary\uFF0C\u6D45\u8272 #81858c \u914D\u767D\u53EA\u6709 3.71:1\u3002
+		   \u8FD9\u91CC\u5199\u7684\u4E0D\u662F\u88C5\u9970\uFF0C\u662F"\u8FD9\u5C97\u591A\u4E45\u6CA1\u51FA\u73B0\u4E86"\u8FD9\u79CD\u8981\u8BFB\u7684\u5224\u65AD\u4F9D\u636E\uFF0C\u800C\u4E14\u540C\u6587\u4EF6\u4E0B\u65B9\u7684
+		   PAGER_CONTRAST_FIX \u65E9\u5C31\u4E3A"\u9875\u7801\u7701\u7565\u53F7"\u4E0B\u8FC7\u540C\u6837\u7684\u7ED3\u8BBA \u2014\u2014 \u53EA\u662F\u6CA1\u63A8\u5E7F\u5230\u8FD9\u4E00\u6761\u3002
+		   \u7EDF\u4E00\u8D70 --jh-muted-fg\uFF1A\u6D45\u8272 5.22:1\u3001\u6DF1\u8272 6.76:1\u3002 */
 		.jh-job-origin{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 0;
-		  font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
+		  font-size:11.5px;color:var(--jh-muted-fg)}
+		/* \u6807\u7B7E\u884C\u5728\u5217\u8868\u5361\u91CC\u7684\u4E0A\u95F4\u8DDD\uFF08\u5BB9\u5668\u672C\u8EAB\u7684\u552F\u4E00\u5B9A\u4E49\u5728 primitives \u7684 .jh-tags\uFF09 */
+		.jh-job-main .jh-tags{margin-top:6px}
+		/* \u91CD\u53D6\u671F\u95F4\u7684\u63D0\u793A\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P2-6\uFF09\uFF1A\u5217\u8868\u4E0D\u518D\u6574\u5757\u6D88\u5931\uFF0C\u800C\u662F\u5C31\u5730\u8BF4\u660E\u5728\u66F4\u65B0 */
+		.jh-refreshing{font-size:12px;color:var(--jh-muted-fg)}
+		/* \u56DE\u6267\u884C\u9996\u7684\u5C0F\u6807\u8BB0\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P3\uFF09\uFF1A\u539F\u6765\u662F \u2705/\u274C emoji \u2014\u2014 \u4E0E
+		   "\u624B\u753B SVG \u662F\u56E0\u4E3A\u5B57\u5F62\u5728\u90E8\u5206\u4E2D\u6587\u5B57\u4F53\u91CC\u4F1A\u9000\u56DE\u8C46\u8150\u5757"\u90A3\u5957\u7406\u7531\u6B63\u597D\u76F8\u53CD\uFF0C
+		   \u800C\u4E14\u5404\u5E73\u53F0\u5B57\u5F62\u4E0D\u4E00\u81F4\u3002\u8FD9\u91CC\u7528\u5B83\u65C1\u8FB9\u90A3\u4E24\u679A SVG\uFF08\u89C1 jobs \u76EE\u5F55\u7684 icons.tsx\uFF09\u3002 */
+		.jh-receipt-mark{display:inline-flex;align-items:center;vertical-align:-3px;margin-right:4px}
+		.jh-receipt-mark svg{display:block}
 		`;
 		var JOBS_DEDUP = `
 		/* \u2500\u2500 \u8DE8\u5E73\u53F0\u53BB\u91CD\uFF08\u6279\u6B21 4\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -12614,6 +12888,17 @@ window.__ModuleLoader__.load({
 		  .jh-jobs-pane{overflow:visible;padding-right:0}
 		  .jh-detail-pane{overflow:visible;border-left:0;border-top:1px solid var(--dsw-alias-border-l1);
 		    padding-left:0;padding-top:12px;margin-top:12px}
+		}
+		/* \u2500\u2500 \u7A84\u9762\u677F / \u89E6\u5C4F\u6863\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P2-11 \u4E0E P3\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u4E24\u4EF6\u4E8B\u90FD\u8DDF\u7740**\u9762\u677F**\u5BBD\u5EA6\u8D70\uFF0C\u6240\u4EE5\u7528 container query\uFF0C\u800C\u4E0D\u662F max-width:480px \u90A3\u6761
+		   \u89C6\u53E3\u67E5\u8BE2\uFF1A\u9762\u677F\u88AB\u6324\u5230 400px \u65F6\u7A97\u53E3\u53EF\u80FD\u8FD8\u6709 1400px \u5BBD\uFF08responsive.ts \u91CC\u90A3\u7EC4
+		   .jh-col-hide-sm \u5C31\u662F\u6309\u89C6\u53E3\u7B97\u7684\uFF0C\u5728\u8FD9\u4E00\u5C4F\u4F1A\u5931\u7075 \u2014\u2014 \u660E\u7EC6\u8868\u4F1A\u6A2A\u5411\u6EA2\u51FA\u800C\u4E0D\u662F\u9690\u85CF\u5217\uFF09\u3002 */
+		@container (max-width: 520px){
+		  .jh-job-pick{padding:6px}
+		  .jh-job-pick input{width:24px;height:24px}
+		}
+		@container (max-width: 480px){
+		  .jh-dedup-pane .jh-col-hide-sm{display:none}
 		}
 		`;
 
@@ -13102,8 +13387,15 @@ window.__ModuleLoader__.load({
 		/* \u6279\u91CF\u5DE5\u5177\u6761\uFF1A\u4E0E"\u5DF2\u52FE\u9009\u7684\u884C"\u8D34\u5728\u4E00\u8D77\uFF08\u540C plan-editor \u7684\u8868\u683C\u5DE5\u5177\u6761\uFF09 */
 		.jh-picked{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;
 		  padding:6px 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px}
-		/* \u5C97\u4F4D\u884C\u524D\u7684\u52FE\u9009\u6846\uFF1A\u5355\u72EC\u4E00\u5217\uFF0C\u4E0D\u4E0E"\u70B9\u5F00\u8BE6\u60C5"\u62A2\u70B9\u51FB\u533A\u57DF */
-		.jh-job-pick{display:flex;align-items:center;padding:0 2px 0 6px}
+		/* \u5C97\u4F4D\u884C\u524D\u7684\u52FE\u9009\u6846\uFF1A\u5355\u72EC\u4E00\u5217\uFF0C\u4E0D\u4E0E"\u70B9\u5F00\u8BE6\u60C5"\u62A2\u70B9\u51FB\u533A\u57DF\u3002
+		   \u2500\u2500 \u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF08\u5BA1\u6838 P2-11\uFF09\uFF1A\u5B83\u539F\u5148\u662F\u4E2A**\u4E0D\u5305 label \u7684\u88F8 input**\uFF0C\u547D\u4E2D\u533A\u5C31\u662F\u63A7\u4EF6
+		   \u81EA\u8EAB\uFF08\u5B9E\u6D4B\u7EA6 13\xD713px\uFF09\uFF0C\u53C8\u548C\u76F8\u90BB\u7684\u5361\u7247\u6309\u94AE\u53EA\u9694 8px \u2014\u2014 \u89E6\u5C4F\u4E0A\u5F88\u5BB9\u6613\u70B9\u6210"\u6253\u5F00\u8BE6\u60C5"\uFF0C
+		   \u800C\u4E14\u4F4E\u4E8E WCAG 2.2 AA 2.5.8 \u7684 24\xD724\u3002\u73B0\u5728\u5305\u6210 label\uFF08\u6574\u5757\u90FD\u80FD\u52FE\uFF09\u3001\u63A7\u4EF6\u63D0\u5230 18px\u3001
+		   \u56DB\u5468\u7559 4\u20135px \u5185\u8FB9\u8DDD\uFF0C\u547D\u4E2D\u533A\u7EA6 26\xD726\uFF1B\u66F4\u5BBD\u7684\u76EE\u6807\u5728\u4E0B\u9762\u90A3\u7EC4\u5BB9\u5668\u67E5\u8BE2\u91CC\u7ED9\u89E6\u5C4F\u6863\u3002 */
+		.jh-job-pick{display:flex;align-items:center;justify-content:center;align-self:flex-start;
+		  margin-top:1px;padding:4px 5px;border-radius:6px;cursor:pointer}
+		.jh-job-pick:hover{background:var(--dsw-alias-interactive-bg-hover)}
+		.jh-job-pick input{width:18px;height:18px;margin:0;cursor:pointer}
 		/* \u9AD8\u5371\u52A8\u4F5C\u7684\u786E\u8BA4\u6587\u6848\uFF08\u5BBF\u4E3B renderApproval \u7ED9\u7684\u591A\u884C\u6587\u672C\uFF09\u3002
 		   \u5FC5\u987B\u539F\u6837\u4FDD\u7559\u6362\u884C\uFF1A\u90A3\u4E9B\u884C\u5404\u662F\u4E00\u4EF6\u4E8B\uFF08\u5E73\u53F0/\u5C97\u4F4D/\u7528\u4E86\u54EA\u7248\u7B80\u5386/\u540C\u65F6\u4F1A\u53D1\u751F\u4EC0\u4E48\uFF09\uFF0C
 		   \u6298\u6210\u4E00\u5768\u4E4B\u540E\u7528\u6237\u5C31\u6CA1\u6CD5\u9010\u884C\u6838\u5BF9\u4E86\u3002 */
@@ -13121,9 +13413,28 @@ window.__ModuleLoader__.load({
 		/* \u4E09\u7EA7\u52A8\u4F5C\uFF08"\u91CD\u7F6E"\uFF09\u8FDE\u8FB9\u6846\u90FD\u4E0D\u7ED9\uFF1A\u5B83\u4E0D\u8BE5\u548C\u4E3B\u6309\u94AE\u62A2\u6CE8\u610F\u529B */
 		.jh-btn-quiet{border-color:transparent;color:var(--dsw-alias-label-secondary)}
 		.jh-btn-quiet:hover:not(:disabled){color:var(--dsw-alias-label-primary)}
-		.jh-icon-btn{border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;
+		/* \u56FE\u6807\u6309\u94AE\uFF1A\u547D\u4E2D\u533A\u6709\u4E0B\u9650\u3002
+		   \u2500\u2500 \u539F\u6765 padding:2px 6px + font-size:18px + line-height:1 = **22\xD722px**\uFF0C
+		   WCAG 2.5.8\uFF08AA\uFF09\u8981\u6C42 24\xD724\u3002\u8FD9\u4E2A\u7C7B\u88AB\u6BCF\u4E2A\u5F39\u7A97\u7684\u5173\u95ED\u952E\u4E0E\u53CD\u9988\u6761\u5173\u95ED\u952E\u5171\u7528\uFF0C
+		   \u662F\u6574\u4E2A\u754C\u9762\u91CC\u6700\u5E38\u88AB\u70B9\u3001\u53C8\u6700\u5BB9\u6613\u88AB\u70B9\u6B6A\u7684\u4E24\u4E2A\u63A7\u4EF6\u4E4B\u4E00\u3002
+		   min-* \u53EA\u5728\u5185\u5BB9\u5C0F\u4E8E 24px \u65F6\u8D77\u4F5C\u7528\uFF0C\u6240\u4EE5\u4E0D\u4F1A\u628A\u672C\u6765\u5C31\u5927\u7684\u56FE\u6807\u6309\u94AE\u6491\u5F00\u3002 */
+		.jh-icon-btn{display:inline-flex;align-items:center;justify-content:center;
+		  min-width:24px;min-height:24px;
+		  border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;
 		  padding:2px 6px;border-radius:6px;color:var(--dsw-alias-label-secondary)}
 		.jh-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+
+		/* \u2500\u2500 \u952E\u76D8\u805A\u7126\u73AF\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P3\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u8F93\u5165\u7C7B\u63A7\u4EF6\u4E00\u76F4\u6709\u805A\u7126\u6837\u5F0F\uFF08\u89C1 .jh-input\uFF09\uFF0C\u4F46\u8FD9\u4E00\u6279**\u81EA\u7ED8\u6309\u94AE**\u6B64\u524D\u4E00\u5904\u90FD\u6CA1\u6709\uFF1A
+		   chip / \u5206\u9875 / \u5C97\u4F4D\u5361\u7247 / \u884C\u5185\u52A8\u4F5C / \u6298\u53E0\u5F00\u5173 / \u56FE\u6807\u6309\u94AE / \u6807\u7B7E\u9875\u5168\u9760 UA \u9ED8\u8BA4\u73AF \u2014\u2014
+		   \u5F62\u72B6\u4E0E\u53EF\u89C1\u5EA6\u4E0D\u7531\u6211\u4EEC\u63A7\u5236\uFF0C\u6DF1\u6D45\u4E24\u5957\u4E3B\u9898\u4E0B\u4E5F\u4E0D\u7EDF\u4E00\u3002
+		   \u8FD9\u91CC\u7EDF\u4E00\u6210\u4E0E\u8F93\u5165\u6846\u540C\u4E00\u5957\u8BED\u8A00\uFF1A2px \u4E3B\u9898\u8272\u63CF\u8FB9 + 2px \u504F\u79FB\uFF08\u4E0D\u5360\u5E03\u5C40\u3001\u4E0D\u5F15\u8D77\u91CD\u6392\uFF09\u3002
+		   \u6CE8\u610F\u53EA\u8986\u76D6\u771F\u6B63\u53EF\u805A\u7126\u7684\u5143\u7D20\uFF0C\u4E0D\u7ED9\u88C5\u9970\u6027\u7684 span \u52A0\u3002 */
+		.jh-btn:focus-visible,.jh-chip:focus-visible,.jh-pg:focus-visible,.jh-job:focus-visible,
+		.jh-job-qk:focus-visible,.jh-dedup-toggle:focus-visible,.jh-jobs-filter-toggle:focus-visible,
+		.jh-icon-btn:focus-visible,.jh-link:focus-visible,.jh-tab:focus-visible,.jh-seg:focus-visible,
+		.jh-err-chip:focus-visible,.jh-notice-close:focus-visible{
+		  outline:2px solid var(--dsw-alias-link);outline-offset:2px}
 
 		.jh-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
 		.jh-chip{padding:3px 9px;font-size:12px;line-height:18px;border-radius:999px;cursor:pointer;
@@ -13164,6 +13475,12 @@ window.__ModuleLoader__.load({
 		.jh-tag{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
 		  padding:0 8px;border-radius:4px;white-space:nowrap;
 		  background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-primary)}
+		/* \u2500\u2500 \u6807\u7B7E\u5BB9\u5668\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P1-1\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   .jh-tags \u8FD9\u4E2A\u7C7B\u540D\u5728\u5C97\u4F4D\u5E93\u4E0E\u5C97\u4F4D\u8BE6\u60C5\u91CC\u90FD\u7528\u4E86\uFF0C\u4F46**\u5168\u4ED3\u5E93\u6CA1\u6709\u5B9A\u4E49** \u2014\u2014
+		   \u5C11\u4E86\u5B83\uFF0C\u6807\u7B7E\u5C31\u662F\u4E00\u5806\u76F8\u90BB\u7684 inline-block\uFF1A.jh-tag \u81EA\u5DF1\u6CA1\u6709\u5916\u8FB9\u8DDD\uFF0C\u5BB9\u5668\u4E5F\u4E0D\u7ED9
+		   gap\uFF0C\u76F8\u90BB\u6807\u7B7E\u7684\u5E95\u8272\u76F4\u63A5\u8D34\u5728\u4E00\u8D77\uFF0C\u6574\u6392\u8BFB\u8D77\u6765\u662F\u4E00\u6761\u8FDE\u7EED\u7070\u6761\uFF08\u5706\u89D2\u53EA\u5728\u4E24\u7AEF\uFF09\uFF0C
+		   "\u5206\u7C7B\u6807\u8BB0"\u7684\u8BED\u4E49\u5C31\u4E22\u4E86\u3002\u8FD9\u91CC\u8865\u4E0A\u552F\u4E00\u4E00\u6761\u5B9A\u4E49\uFF08\u4E0D\u518D\u5404\u81EA\u590D\u5236\uFF09\u3002 */
+		.jh-tags{display:flex;flex-wrap:wrap;gap:5px}
 		/* \u72B6\u6001\u5FBD\u7AE0\u662F"\u8FD9\u4E2A\u5C97\u4F4D\u5F53\u524D\u7B97\u4EC0\u4E48"\uFF0C\u4E0D\u662F\u590D\u9009\u6846\uFF08\u9879\u76EE\u91CC\u6CA1\u6709\u6279\u91CF\u9009\u62E9\uFF09\u3002
 		   \u2500\u2500 \u7B2C\u4E8C\u8F6E\u4FEE\u590D\uFF1A\u5E95\u8272\u662F bg-overlay\uFF0C\u5B83\u5728\u6DF1\u8272\u4E3B\u9898\u4E0B\u662F**\u4E2D\u7070 #61666b**\uFF0C
 		   \u800C label-secondary \u5728\u6DF1\u8272\u4E0B\u4E5F\u662F\u6D45\u7070 \u2192 \u5B9E\u6D4B\u53EA\u6709 3.85:1\uFF08\u6D45\u8272\u4E0B 4.90:1 \u52C9\u5F3A\u591F\uFF09\u3002
@@ -13201,7 +13518,7 @@ window.__ModuleLoader__.load({
 		  background:color-mix(in srgb, var(--dsw-alias-label-primary) 28%, transparent)}
 		.jh-modal{position:relative;display:flex;flex-direction:column;max-height:calc(100% - 24px);
 		  width:100%;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
-		  background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.22);
+		  background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px var(--jh-shadow-ink);
 		  outline:none}
 		.jh-modal-md{max-width:520px}
 		.jh-modal-lg{max-width:720px}
@@ -13225,6 +13542,32 @@ window.__ModuleLoader__.load({
 		   \u6240\u4EE5\u7528 label-secondary\uFF085.80:1\uFF09\u3002 */
 		.jh-field-flag{font-style:normal;font-size:11px;padding:0 6px;border-radius:999px;
 		  background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
+
+		/* \u2500\u2500 \u53EF\u5C55\u5F00\u7684\u8BF4\u660E\uFF08FieldHint\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u95EE\u53F7\u73B0\u5728\u662F\u4E00\u4E2A\u771F\u6B63\u7684 <button>\uFF0C\u6298\u53E0\u65F6\u5B83\u5728\u7248\u9762\u4E0A\u4E0E\u6539\u4E4B\u524D**\u9010\u50CF\u7D20\u4E00\u81F4**
+		   \uFF08\u8BF4\u660E\u6587\u5B57\u843D\u5728 .jh-sr-only \u91CC\uFF0C\u4E0D\u5360\u4F4D\uFF09\uFF0C\u70B9\u5F00\u624D\u628A\u8BF4\u660E\u644A\u5728\u4E0B\u9762\u3002
+		   \u4E09\u4EF6\u4E8B\u5FC5\u987B\u663E\u5F0F\u5199\uFF0C\u5426\u5219 <button> \u4F1A\u5E26\u4E0A UA \u81EA\u5DF1\u7684\u76D2\u5B50\u6A21\u578B\uFF1A
+		     \xB7 font-family:inherit \u2014\u2014 UA \u7ED9 button \u7684\u662F\u7CFB\u7EDF UI \u5B57\u4F53\uFF0C\u4E0D\u662F\u7EE7\u627F\u7684\uFF1B
+		     \xB7 padding:0          \u2014\u2014 UA \u7ED9 button \u7684\u662F 1px 6px\uFF1B
+		     \xB7 box-sizing:content-box \u2014\u2014 \u6D4F\u89C8\u5668\u7ED9 button \u7684\u9ED8\u8BA4\u503C\u662F border-box\uFF0C
+		       \u800C\u539F\u6765\u90A3\u4E2A span \u662F content-box\uFF08\u5168\u4ED3\u5E93\u6CA1\u6709\u5168\u5C40\u91CD\u7F6E\uFF09\u3002\u4E0D\u6539\u56DE\u6765\u7684\u8BDD
+		       .jh-field-hint \u7684 14px \u4F1A\u8FDE\u8FB9\u6846\u4E00\u8D77\u7B97\uFF0C\u5706\u70B9\u6574\u4F53\u7F29\u6C34 2px\u3002
+		   vertical-align \u6302\u5728**\u5916\u5C42\u8FD9\u5C42**\u4E0A\uFF1A\u5185\u5C42\u6362\u6210 button \u4E4B\u540E\uFF0C\u53C2\u4E0E\u884C\u5185\u5BF9\u9F50\u7684
+		   \u662F\u5916\u5C42\u8FD9\u4E2A span\uFF0C\u800C\u4E0D\u662F\u91CC\u9762\u90A3\u4E2A\u5706\u70B9\uFF08inline \u53D8\u4F53\u5E38\u51FA\u73B0\u5728\u6B63\u6587\u6BB5\u843D\u91CC\uFF09\u3002 */
+		.jh-hint-wrap{position:relative;vertical-align:middle}
+		.jh-hint-wrap>.jh-field-hint,.jh-hint-wrap>.jh-hint{
+		  font-family:inherit;padding:0;cursor:pointer}
+		.jh-hint-wrap>.jh-field-hint{box-sizing:content-box}
+		/* inline \u53D8\u4F53\uFF08.jh-hint\uFF0C\u5B9A\u4E49\u5728 job-detail.ts\uFF09\u6CA1\u6709\u81EA\u5DF1\u7684\u8FB9\u6846\uFF0C
+		   \u4E0D\u52A0\u8FD9\u6761\u5C31\u4F1A\u9732\u51FA <button> \u7684 UA \u8FB9\u6846\u3002 */
+		.jh-hint-wrap>.jh-hint{border:0}
+		.jh-hint-wrap>.jh-field-hint:focus-visible,.jh-hint-wrap>.jh-hint:focus-visible{
+		  outline:2px solid var(--dsw-alias-link);outline-offset:1px}
+		/* \u5C55\u5F00\u540E\u7684\u8BF4\u660E\uFF1A\u5C31\u5730\u5360\u4E00\u884C\u3002\u4E0D\u7528\u7EDD\u5BF9\u5B9A\u4F4D \u2014\u2014 \u8FD9\u4E9B\u95EE\u53F7\u591A\u5728\u5F39\u7A97\u91CC\uFF0C
+		   \u800C .jh-modal-body \u662F overflow:auto\uFF0C\u6D6E\u5C42\u4F1A\u88AB\u88C1\u6389\u3002 */
+		.jh-hint-text{display:block;margin:5px 0 0;padding:0 2px;max-width:48ch;
+		  font-size:12px;line-height:1.6;text-align:left;color:var(--dsw-alias-label-secondary)}
+
 		.jh-field-row{display:flex;align-items:center;gap:6px}
 		.jh-field-row .jh-input{flex:1 1 auto;min-width:0}
 		.jh-section-title{font-size:12px;font-weight:600;margin:14px 0 8px;
@@ -13270,9 +13613,12 @@ window.__ModuleLoader__.load({
 		   \u2500\u2500 \u7B2C\u4E09\u8F6E\u4FEE\u590D\uFF1A\u5B83\u539F\u6765\u662F 999px \u80F6\u56CA + 1px \u8FB9\u6846 + 2px\xD79px \u5185\u8FB9\u8DDD\uFF08\u5B9E\u6D4B 26px \u9AD8\uFF09\uFF0C
 		   \u800C\u540C\u4E00\u5217\u7684"\u6210\u529F/\u5931\u8D25"\u6807\u7B7E\u662F 19px \u9AD8\u7684\u5C0F\u5706\u89D2\u77E9\u5F62 \u2014\u2014 \u540C\u4E00\u5F20\u8868\u91CC\u4E24\u79CD\u5F62\u72B6\uFF0C
 		   \u800C\u4E14\u9519\u8BEF\u90A3\u4E2A\u660E\u663E\u66F4"\u80D6"\uFF0C\u628A 158px \u7684\u72B6\u6001\u5217\u6491\u5230\u4E86 227px \u5BBD\u3002
-		   \u73B0\u5728\u7EDF\u4E00\u6210\u4E0E .jh-tag \u540C\u4E00\u6863\u7684\u5C0F\u5706\u89D2\u77E9\u5F62\uFF084px\uFF09\uFF0C\u9AD8\u5EA6\u4E5F\u5BF9\u9F50\u3002 */
+		   \u73B0\u5728\u7EDF\u4E00\u6210\u4E0E .jh-tag \u540C\u4E00\u6863\u7684\u5C0F\u5706\u89D2\u77E9\u5F62\uFF084px\uFF09\u3002
+		   \u2500\u2500 \u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF1A\u7EDF\u4E00\u4E4B\u540E\u5B83\u662F **19px \u9AD8**\uFF08line-height 17px + \u4E0A\u4E0B\u5404 1px \u8FB9\u6846\uFF09\uFF0C
+		   \u800C\u5B83\u662F**\u5931\u8D25\u8BE6\u60C5\u7684\u552F\u4E00\u5165\u53E3** \u2014\u2014 \u539F\u56E0\u3001\u6392\u67E5\u6B65\u9AA4\u3001\u539F\u59CB trace \u5168\u5728\u90A3\u6247\u95E8\u540E\u9762\u3002
+		   WCAG 2.5.8\uFF08AA\uFF09\u8981\u6C42 24\xD724\uFF0C\u6240\u4EE5\u8865 min-height\uFF08\u6A2A\u5411\u7531\u6587\u5B57\u957F\u5EA6\u5929\u7136\u8D85\u8FC7 24\uFF09\u3002 */
 		.jh-err-chip{display:inline-flex;align-items:center;gap:5px;cursor:pointer;font:inherit;
-		  font-size:11.5px;line-height:17px;padding:0 8px;border-radius:4px;
+		  font-size:11.5px;line-height:17px;min-height:24px;padding:0 8px;border-radius:4px;
 		  border:1px solid var(--dsw-alias-state-error-secondary);
 		  background:var(--jh-error-bg);color:var(--jh-error-fg)}
 		.jh-err-chip:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent)}
@@ -13286,6 +13632,14 @@ window.__ModuleLoader__.load({
 
 		/* Table \u7684\u5FC5\u67E5\u72B6\u6001\u91CC\u6709 row hover \u2014\u2014 \u539F\u6765\u6CA1\u6709\uFF0C\u626B\u884C\u65F6\u4F1A\u4E22\u5931"\u9F20\u6807\u5728\u54EA\u4E00\u884C"\u7684\u53CD\u9988 */
 		.jh-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover)}
+
+		/* \u2500\u2500 \u52A8\u6548\u964D\u7EA7\uFF08\u7B2C\u56DB\u8F6E\u4FEE\u590D\uFF0C\u5BA1\u6838 P3\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u5168\u9879\u76EE\u6B64\u524D\u6CA1\u6709\u4EFB\u4F55 prefers-reduced-motion \u5206\u652F\u3002\u8FD9\u91CC\u7684\u8FC7\u6E21\u90FD\u662F 120\u2013140ms \u7684\u989C\u8272 /
+		   \u8FB9\u6846 / \u4F4D\u79FB\uFF08\u6CA1\u6709\u89C6\u5DEE\u3001\u6CA1\u6709\u81EA\u52A8\u64AD\u653E\uFF09\uFF0C\u6240\u4EE5\u964D\u7EA7\u505A\u6CD5\u5C31\u662F\u628A\u65F6\u957F\u538B\u6389\uFF0C\u800C\u4E0D\u662F\u6362\u4E00\u5957\u52A8\u6548\u3002
+		   \u4F5C\u7528\u57DF**\u5FC5\u987B**\u9650\u5B9A\u5728 .jh-root \u4E4B\u5185\uFF1A\u6837\u5F0F\u662F\u6CE8\u5165\u5230 document \u7684\uFF0C\u5199\u88F8 * \u4F1A\u8BEF\u4F24\u5BBF\u4E3B\u754C\u9762\u3002 */
+		@media (prefers-reduced-motion: reduce){
+		  .jh-root *,.jh-root *::before,.jh-root *::after{
+		    transition-duration:.01ms !important;animation-duration:.01ms !important}}
 		`;
 		var EMPTY_AND_FEEDBACK = `
 		/* \u7A7A\u6001\uFF1A\u539F\u56E0 + \u4E0B\u4E00\u6B65\uFF08rules \xA74.3 / quality-gates \xA72 "\u7A7A\u6570\u636E\u65F6\u7ED9\u51FA\u539F\u56E0\u548C\u4E0B\u4E00\u6B65"\uFF09*/
@@ -13374,15 +13728,23 @@ window.__ModuleLoader__.load({
 		      \uFF08"\u53EA\u591F\u975E\u6587\u672C\u56FE\u5F62\uFF0C\u6240\u4EE5\u7528 label-secondary"\uFF09\uFF0C\u53EA\u662F\u6CA1\u63A8\u5E7F\u5230 .jh-board-age\u3002
 		      \u2192 --jh-muted-fg \u7528 45% \u6DF7\u8272\uFF1A\u6D45\u8272 5.22:1\u3001\u6DF1\u8272 6.76:1\u3002
 
-		   \u2463 **--jh-*-fg \u88AB\u5F53\u6210"\u5B9E\u5E95\u586B\u5145"\u590D\u7528** \u2014\u2014 \u53D8\u91CF\u540D\u672C\u8EAB\u6CA1\u6709\u533A\u5206\u5F00
+		   \u2463 **--jh-*-fg \u540C\u65F6\u88AB\u5F53\u6210"\u5B9E\u5E95\u586B\u5145"\u4E0E"\u6587\u5B57\u8272"\u7528** \u2014\u2014 \u53D8\u91CF\u540D\u672C\u8EAB\u6CA1\u6709\u533A\u5206\u5F00
 		      "\u5728\u6D45\u5E95\u4E0A\u5F53\u6587\u5B57"\u4E0E"\u5F53\u5B9E\u5E95\u914D\u767D\u5B57"\u4E24\u79CD\u89D2\u8272\u3002\u6DF1\u8272\u4E3B\u9898\u4E0B label-primary \u662F\u6D45\u8272\uFF0C
-		      \u6DF7\u51FA\u6765\u7684\u53D8\u4F53\u4E5F\u8DDF\u7740\u53D8\u6D45\uFF0C\u4E8E\u662F :161/:254/:844 \u90A3\u4E09\u5904"\u6DF7\u8272\u5F53\u5E95 +
-		      label-primary-foreground \u5F53\u524D\u666F"\u5728\u6DF1\u8272\u4E0B**\u6CA1\u6709\u53CD\u5411**\uFF08\u5B9E\u6D4B\u6DF1\u8272
-		      .jh-todo-level = 7.10:1 \u8FBE\u6807\uFF09\u2014\u2014 \u4F46\u4E24\u5957\u4E3B\u9898\u90FD\u5BF9\u540C\u4E00\u4E2A\u53D8\u91CF\u63D0\u51FA
-		      \u76F8\u53CD\u7684\u65B9\u5411\u8981\u6C42\uFF0C\u662F\u4E2A\u9690\u60A3\u3002\u672C\u8F6E\u628A\u89D2\u8272\u62C6\u5F00\u5E76\u5404\u5199\u5B9E\u6D4B\u503C\uFF1A
-		         --jh-*-fg   \uFF1A\u5F53**\u5B9E\u5E95\u586B\u5145**\u7684\u5E95\u8272\uFF08:161/:254/:844 \u7EE7\u7EED\u7528\u5B83\uFF09\uFF1B
-		         --jh-*-text \uFF1A\u5F53**\u6587\u5B57\u8272**\u538B\u5728\u4E24\u5957\u4E3B\u9898\u7684\u5361\u7247\u8868\u9762\u4E0A\u3002
-		      \u5F53\u524D\u4E24\u7EC4\u7684\u53D6\u503C\u6070\u597D\u76F8\u540C\uFF0C\u62C6\u5206\u662F\u4E3A\u4E86\u8BA9"\u4E0B\u6B21\u53EA\u8C03\u4E00\u5904"\u4E0D\u81F3\u4E8E\u8FDE\u5E26\u7834\u574F\u53E6\u4E00\u5904\u3002 */
+		      \u6DF7\u51FA\u6765\u7684\u53D8\u4F53\u4E5F\u8DDF\u7740\u53D8\u6D45\uFF0C\u4E8E\u662F"\u6DF7\u8272\u5F53\u5E95 + label-primary-foreground \u5F53\u524D\u666F"
+		      \u90A3\u51E0\u5904\uFF08.jh-todo-level / .jh-tag-* / .jh-chip-neg-on\u2026\uFF09\u5728\u6DF1\u8272\u4E0B\u65B9\u5411\u662F\u53CD\u7684\u3002
+
+		      \u2500\u2500 \u8FD9\u4E00\u6761**\u66FE\u7ECF**\u6253\u7B97\u9760\u62C6\u51FA\u4E00\u7EC4 --jh-*-text \u6765\u89E3\uFF0C\u4F46\u90A3\u6B21\u62C6\u5206\u6CA1\u6709\u843D\u5730\uFF1A
+		      \u5168\u4ED3\u5E93\u641C\u4E0D\u5230\u4EFB\u4F55 --jh-*-text \u7684\u5B9A\u4E49\u6216\u5F15\u7528\uFF0C\u4E24\u79CD\u89D2\u8272\u81F3\u4ECA\u5171\u7528\u540C\u4E00\u4E2A\u503C\u3002
+		      \u73B0\u5728\u628A\u7ED3\u8BBA\u5199\u6E05\u695A\uFF0C\u4E0D\u518D\u7559\u4E00\u53E5\u4E0E\u5B9E\u73B0\u4E0D\u7B26\u7684\u8BDD\uFF1A
+
+		      **\u4E00\u4E2A\u503C\u540C\u65F6\u670D\u52A1\u4E24\u79CD\u89D2\u8272\u662F\u6210\u7ACB\u7684\uFF0C\u524D\u63D0\u662F\u8FD9\u4E24\u6761\u4E0D\u53D8\u5F0F\u90FD\u5B88\u7740** \u2014\u2014
+		        \xB7 \u5F53**\u5B9E\u5E95**\u7528\u65F6\uFF0C\u524D\u666F\u5FC5\u987B\u53D6 label-primary-foreground\uFF08\u5B83\u4E0E label-primary
+		          \u6C38\u8FDC\u53CD\u5411\uFF0C\u6240\u4EE5\u5E95\u8272\u8DDF\u7740 label-primary \u8D70\u65F6\uFF0C\u524D\u666F\u81EA\u52A8\u662F\u5BF9\u7684\uFF09\uFF1B
+		        \xB7 \u5F53**\u6587\u5B57**\u7528\u65F6\uFF0C\u5FC5\u987B\u538B\u5728 bg-base / bg-layer-1 \u8FD9\u7C7B\u5361\u7247\u8868\u9762\u4E0A
+		          \uFF08\u4E0D\u8981\u538B\u5728 bg-overlay / interactive-* \u4E0A \u2014\u2014 \u90A3\u4E9B\u5E95\u8272\u7684\u53D6\u503C\u6CA1\u91CF\u8FC7\uFF09\u3002
+		      \u6DF7\u8272\u672C\u8EAB\u671D label-primary \u9760\u62E2\uFF0C\u800C label-primary \u5C31\u662F"\u5F53\u524D\u4E3B\u9898\u7684\u6B63\u6587\u8272"\uFF0C
+		      \u6240\u4EE5\u8FD9\u4E24\u6761\u4E0D\u53D8\u5F0F\u4E00\u65E6\u6210\u7ACB\uFF0C\u4E24\u5957\u4E3B\u9898\u90FD\u4F1A\u81EA\u52A8\u53CD\u5411\u3002
+		      \u5C06\u6765\u82E5\u8981\u771F\u7684\u62C6\u5F00\u8FD9\u4E24\u4E2A\u53D8\u91CF\uFF0C\u5148\u6309\u4E0A\u9762\u4E24\u6761\u628A\u7528\u6CD5\u5BA1\u4E00\u904D\uFF0C\u518D\u52A8\u503C\u3002 */
 		.jh-root{
 		  /* \u5B9E\u5E95\u586B\u5145\uFF08\u5F53\u5E95\u8272\uFF0C\u914D label-primary-foreground \u4F5C\u524D\u666F\uFF09*/
 		  --jh-ok-fg:color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary));
@@ -13393,7 +13755,13 @@ window.__ModuleLoader__.load({
 		  --jh-muted-fg:color-mix(in srgb, var(--dsw-alias-label-tertiary) 45%, var(--dsw-alias-label-primary));
 		  --jh-error-bg:color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent);
 		  --jh-warn-bg:var(--dsw-alias-state-warn-tertiary);
-		  --jh-ok-bg:var(--dsw-alias-state-success-tertiary)}
+		  --jh-ok-bg:var(--dsw-alias-state-success-tertiary);
+		  /* \u6295\u5F71\u8272\u3002**\u523B\u610F\u662F\u4E00\u4E2A\u5B57\u9762\u503C\uFF0C\u4E5F\u523B\u610F\u4E0D\u8DDF label-primary \u6DF7\u8272** \u2014\u2014
+		     \u6295\u5F71\u5728\u4E24\u5957\u4E3B\u9898\u4E0B\u90FD\u5FC5\u987B\u662F"\u6697\u7684"\uFF0C\u800C label-primary \u5728\u6DF1\u8272\u4E3B\u9898\u91CC\u662F\u6D45\u8272\uFF0C
+		     \u6DF7\u51FA\u6765\u7684\u4F1A\u662F\u53D1\u5149\uFF0C\u4E0D\u662F\u6295\u5F71\u3002\u6536\u6210\u4E00\u4E2A\u53D8\u91CF\u662F\u4E3A\u4E86\u8BA9"\u5F39\u7A97\u7684\u6295\u5F71"\u53EA\u6709\u4E00\u5904\u5B9A\u4E49
+		     \uFF08\u539F\u6765\u662F\u6563\u5728\u5404\u6587\u4EF6\u91CC\u7684 rgba(0,0,0,\u2026)\uFF09\uFF1B\u5C06\u6765\u5BBF\u4E3B\u4E3B\u9898\u82E5\u7ED9\u51FA elevation \u4EE4\u724C\uFF0C
+		     \u6539\u8FD9\u4E00\u884C\u5373\u53EF\u3002 */
+		  --jh-shadow-ink:rgba(0,0,0,.22)}
 		`;
 
 		// src/client/styles/screens/settings.ts
@@ -13567,6 +13935,12 @@ window.__ModuleLoader__.load({
 		   nowrap \u4F1A\u628A\u5B83\u538B\u6210\u4E00\u6761\u8BFB\u4E0D\u4E86\u7684\u6A2A\u7EBF\u3002\u5141\u8BB8\u6362\u884C\u3001\u7ED9\u4E00\u4E2A\u6700\u5C0F\u5BBD\u5EA6\u8BA9\u5B83\u6A2A\u5411\u6EDA\u52A8\u3002 */
 		.jh-table-caps{min-width:900px}
 		.jh-table-caps th,.jh-table-caps td{padding:7px 10px;vertical-align:top;text-align:left}
+		/* \u9996\u5217\u7C98\u4F4F\uFF1A\u4E0E\u300C\u5E73\u53F0\u72B6\u6001\u603B\u89C8\u300D\u540C\u4E00\u5957\u505A\u6CD5\uFF08\u89C1 PLATFORM_MATRIX \u90A3\u6BB5\uFF09\u3002
+		   900px \u7684\u8868\u5728\u7A84\u5C4F\u4E00\u5B9A\u4F1A\u6A2A\u6ED1\uFF0C\u800C\u6A2A\u6ED1\u5230\u53F3\u8FB9\u51E0\u5217\u65F6\uFF0C\u6CA1\u6709\u7C98\u6027\u9996\u5217\u5C31\u770B\u4E0D\u51FA
+		   \u8FD9\u4E00\u884C\u662F\u54EA\u4E2A\u5E73\u53F0 \u2014\u2014 "\u4FDD\u7559\u884C\u8EAB\u4EFD"\u662F\u672C\u9879\u76EE\u5141\u8BB8\u6A2A\u6ED1\u7684\u524D\u63D0\u3002
+		   \u53EA\u501F"\u7C98\u4F4F"\u8FD9\u4E00\u4EF6\u4E8B\uFF0C**\u4E0D\u501F** width:1% \u90A3\u5957\u5217\u5BBD\u7B56\u7565\uFF08\u539F\u56E0\u89C1\u4E0A\u9762\u90A3\u6761\u6CE8\u91CA\uFF09\u3002 */
+		.jh-table-caps th.jh-col-sticky,.jh-table-caps td.jh-col-sticky{
+		  position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
 		`;
 
 		// src/client/styles/responsive.ts
@@ -13604,6 +13978,17 @@ window.__ModuleLoader__.load({
 		  .jh-table-runs .jh-col-hide-sm{display:none}
 		  /* \u77E9\u9635\u540C\u7406\uFF1A\u5C0F\u5C4F\u5148\u8BA9\u300C\u6210\u719F\u5EA6\u300D\u300C\u4EA7\u91CF\u300D\u8BA9\u4F4D\uFF0C\u7559\u4E0B \u5E73\u53F0/\u4ECA\u5929\u80FD\u8DD1/\u767B\u5F55/\u5065\u5EB7/\u989D\u5EA6/\u6700\u8FD1\u4E00\u8F6E */
 		  .jh-table-matrix .jh-col-hide-sm{display:none}
+		  /* \u80FD\u529B\u77E9\u9635\uFF1A\u8BA9\u300C\u6210\u719F\u5EA6\u300D\u300C\u4E0A\u6B21\u9A8C\u8BC1\u300D\u4E24\u5217\u9000\u573A\uFF08\u5B83\u4EEC\u6700\u4E0D\u8BA9\u4F4D\uFF09\uFF0C
+		     \u5176\u4F59\u7167\u65E7\u6A2A\u6ED1 \u2014\u2014 \u9996\u5217\u5DF2\u7ECF\u7C98\u4F4F\uFF0C\u6A2A\u6ED1\u65F6\u4ECD\u8BA4\u5F97\u51FA\u662F\u54EA\u4E00\u884C */
+		  .jh-table-caps .jh-col-hide-sm{display:none}
+		  /* \u91C7\u96C6\u9875\u9876\u90E8\u5DE5\u5177\u6761\uFF1A\u8FD9\u91CC\u88C5\u7740 3 \u4E2A\u5206\u533A\u6309\u94AE + \u72B6\u6001 + 3 \u4E2A\u5168\u5C40\u6309\u94AE\uFF0C
+		     375px \u4E0B\u5FC5\u7136\u6298\u6210 2~3 \u884C\u3002\u5B83\u539F\u6765\u8FD8\u5E26 position:sticky \u2014\u2014
+		     \u7B49\u4E8E\u5E38\u9A7B\u5403\u6389\u89C6\u53E3\u9AD8\u5EA6\u7684 1/4~1/3\uFF0C\u800C\u5B83\u4E0B\u9762\u662F\u8FD9\u4E00\u9875\u771F\u6B63\u8981\u770B\u7684\u5185\u5BB9\u3002
+		     \u7A84\u5C4F\u6539\u56DE\u968F\u9875\u9762\u6EDA\u52A8\uFF1A"\u968F\u624B\u591F\u5F97\u7740"\u5728\u8FD9\u91CC\u4E0D\u5982"\u770B\u5F97\u89C1\u5185\u5BB9"\u91CD\u8981\u3002 */
+		  .jh-collect-bar{position:static}
+		  /* \u72B6\u6001\u53EA\u7559\u5706\u70B9\uFF08\u4E0E\u9876\u680F .jh-live \u540C\u4E00\u5957\u964D\u7EA7\uFF09\u3002\u5706\u70B9\u672C\u8EAB\u662F aria-hidden\uFF0C
+		     \u6240\u4EE5\u72B6\u6001\u5BF9\u8BFB\u5C4F\u4ECD\u7136\u5B8C\u6574 \u2014\u2014 \u9760\u7684\u5C31\u662F\u88AB\u9690\u6389\u7684\u8FD9\u4E00\u5C42\u6587\u5B57\u3002 */
+		  .jh-collect-switch-text{display:none}
 		  .jh-clip{max-width:11em}
 		  /* \u4E3B\u8981\u64CD\u4F5C\u5728\u5C0F\u5C4F\u4ECD\u7136\u627E\u5F97\u5230\uFF1A\u65B9\u6848\u5361\u7684\u52A8\u4F5C\u6362\u884C\u4E14\u5DE6\u5BF9\u9F50\uFF0C\u4E0D\u6324\u6210\u4E00\u6761 */
 		  .jh-plan-head{gap:4px}
@@ -13706,12 +14091,12 @@ window.__ModuleLoader__.load({
 		var CSS = [ENTRY_ICON, SEMANTIC_TEXT, SHELL, SCREEN, CARD_TITLE, CONTROLS, JOBS_FILTERS, TODAY, COLLECT_BUTTONS, JOBS, JOBS_DEDUP, TAG_AND_STATE, PAGER, PAGER_CONTRAST_FIX, JOBS_SPLIT, MATCH_AND_FLAGS, DETAIL, OVERLAY, TOOLVIEW_CARD, RESUMES, TAILOR_AND_FILE, PIPELINE_GROUP, PIPELINE, MESSAGES, FUNNEL, BOARD_FILTERS, CAMPUS, FRESHNESS, TODAY_HEALTH, LINK, PLANS, COMPANY_REVIEW_AND_SIBLINGS, SALARY_BOX, COLLECT_USABILITY, MODAL_SEG_TIMERANGE, PLAN_EDITOR_MODAL, DESTRUCTIVE_BUTTONS, QUALITY_GATES, RUNS_TABLE, PLATFORM_MATRIX, EMPTY_AND_FEEDBACK, SETTINGS, SWITCH_AND_NUMBER, SETTINGS_PURPOSES_AND_USAGE, SMALL_TOP, SMALL, BOARD_V2].join("\n");
 
 		// src/client/toolviews/greeting-card.tsx
-		var import_react40 = require("react");
+		var import_react41 = require("react");
 
 		// src/client/toolviews/parts.tsx
-		var import_react39 = require("react");
+		var import_react40 = require("react");
 
-		// src/shared/tool-format.ts
+		// src/shared/text/tool-format.ts
 		var JOB_LIST_LINE = /^#(\d+)\s+(.+)$/;
 		var LIST_FIELD_SEP = " \xB7 ";
 		function parseJobListLine(line) {
@@ -13772,28 +14157,28 @@ window.__ModuleLoader__.load({
 		}
 		function CardShell(props) {
 		  const { title, subtitle, tone = "normal", actions, inspect, children } = props;
-		  return (0, import_react39.createElement)(
+		  return (0, import_react40.createElement)(
 		    "div",
 		    { className: "jh-tv", "data-tone": tone },
-		    (0, import_react39.createElement)(
+		    (0, import_react40.createElement)(
 		      "div",
 		      { className: "jh-tv-head" },
-		      (0, import_react39.createElement)("span", { className: "jh-tv-title" }, title),
-		      subtitle === void 0 || subtitle === "" ? null : (0, import_react39.createElement)("span", { className: "jh-tv-sub" }, subtitle),
-		      (0, import_react39.createElement)("span", { className: "jh-spacer" }),
-		      actions === void 0 ? null : (0, import_react39.createElement)("span", { className: "jh-tv-actions" }, actions),
-		      inspect === void 0 ? null : (0, import_react39.createElement)(
+		      (0, import_react40.createElement)("span", { className: "jh-tv-title" }, title),
+		      subtitle === void 0 || subtitle === "" ? null : (0, import_react40.createElement)("span", { className: "jh-tv-sub" }, subtitle),
+		      (0, import_react40.createElement)("span", { className: "jh-spacer" }),
+		      actions === void 0 ? null : (0, import_react40.createElement)("span", { className: "jh-tv-actions" }, actions),
+		      inspect === void 0 ? null : (0, import_react40.createElement)(
 		        "button",
 		        { type: "button", className: "jh-tv-link", onClick: inspect },
 		        "\u67E5\u770B"
 		      )
 		    ),
-		    children === void 0 ? null : (0, import_react39.createElement)("div", { className: "jh-tv-body" }, children)
+		    children === void 0 ? null : (0, import_react40.createElement)("div", { className: "jh-tv-body" }, children)
 		  );
 		}
 		function JobRow2(props) {
 		  const { job, onOpen } = props;
-		  return (0, import_react39.createElement)(
+		  return (0, import_react40.createElement)(
 		    "button",
 		    {
 		      type: "button",
@@ -13801,18 +14186,18 @@ window.__ModuleLoader__.load({
 		      onClick: () => onOpen(job.id),
 		      title: "\u5728\u4E3B\u9762\u677F\u91CC\u6253\u5F00\u8FD9\u4E2A\u5C97\u4F4D"
 		    },
-		    (0, import_react39.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
-		    (0, import_react39.createElement)("span", { className: "jh-tv-job-title" }, job.title),
-		    (0, import_react39.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
-		    (0, import_react39.createElement)("span", { className: "jh-spacer" }),
-		    (0, import_react39.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
-		    (0, import_react39.createElement)("span", { className: "jh-tv-job-score" }, job.score)
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-title" }, job.title),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
+		    (0, import_react40.createElement)("span", { className: "jh-spacer" }),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-score" }, job.score)
 		  );
 		}
 		function useAction() {
-		  const [busy, setBusy] = (0, import_react39.useState)(false);
-		  const [error, setError] = (0, import_react39.useState)(null);
-		  const [result, setResult] = (0, import_react39.useState)(null);
+		  const [busy, setBusy] = (0, import_react40.useState)(false);
+		  const [error, setError] = (0, import_react40.useState)(null);
+		  const [result, setResult] = (0, import_react40.useState)(null);
 		  const run = async (fn) => {
 		    setBusy(true);
 		    setError(null);
@@ -13849,7 +14234,7 @@ window.__ModuleLoader__.load({
 		  const settled = isSettled(block);
 		  const text = textOf(block);
 		  const failed = block.isError === true;
-		  const [copied, setCopied] = (0, import_react40.useState)(false);
+		  const [copied, setCopied] = (0, import_react41.useState)(false);
 		  const parsed = splitDraft(text);
 		  const jobId = jobIdOf(props);
 		  return /* @__PURE__ */ (0, import_jsx_runtime89.jsxs)(
@@ -13919,7 +14304,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/toolviews/job-detail-card.tsx
-		var import_react41 = require("react");
+		var import_react42 = require("react");
 		var import_jsx_runtime90 = require("react/jsx-runtime");
 		function JobDetailCard(props) {
 		  const { block, inspect } = props;
@@ -13932,7 +14317,7 @@ window.__ModuleLoader__.load({
 		  const jobId = jobIdOf2(props);
 		  const mark = useAction();
 		  const draft = useAction();
-		  const [copied, setCopied] = (0, import_react41.useState)(false);
+		  const [copied, setCopied] = (0, import_react42.useState)(false);
 		  const onMark = () => {
 		    if (jobId === null) return;
 		    void mark.run(async () => {

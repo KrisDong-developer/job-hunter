@@ -5,7 +5,7 @@
  * 所以工具面把它们单独暴露出来 —— 硬截止必须能被模型主动查到并提醒，
  * 而不是等用户在界面上发现。
  */
-import type { ToolDefinition } from '../../shared/dsh.js';
+import type { ToolDefinition } from '../../shared/contract/dsh.js';
 import type { HostRuntime } from '../runtime.js';
 export declare function campusTools(runtime: HostRuntime): ToolDefinition[];
 //# sourceMappingURL=campus.d.ts.map

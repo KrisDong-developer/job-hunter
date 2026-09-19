@@ -1,8 +1,14 @@
 /**
  * 投递流水线与看板：投递 / 批量 / 漏斗 / 归因 / 薪资 / 简历版本对比。
  */
-import type { AnalyticsFilter, ApplicationBatchPlanDto, ApplicationBatchResultDto, ApplicationDto, AttributionDto, BoardDto, FunnelDto, ResumeCompareDto, SalaryBandDto, SalaryBaselineDto, SalaryBasis, SalaryBoxChartDto } from '../../shared/dto.js'
-import type { ApplicationChannel, ApplicationStage, DeliveryState } from '../../shared/enums.js'
+import type { AnalyticsFilter, AttributionDto, FunnelDto } from '../../shared/contract/dto/analytics.js'
+import type { ApplicationBatchPlanDto, ApplicationBatchResultDto } from '../../shared/contract/dto/batch.js'
+import type { SalaryBandDto, SalaryBaselineDto, SalaryBoxChartDto } from '../../shared/contract/dto/offer.js'
+import type { ApplicationDto, BoardDto } from '../../shared/contract/dto/pipeline.js'
+import type { ResumeCompareDto } from '../../shared/contract/dto/resume.js'
+import type { SalaryBasis } from '../../shared/contract/enums/analytics.js'
+import type { DeliveryState } from '../../shared/contract/enums/job.js'
+import type { ApplicationChannel, ApplicationStage } from '../../shared/contract/enums/pipeline.js'
 import { ApiError, NeedsConfirmError, request } from './client.js'
 
 export async function fetchBoard(signal?: AbortSignal): Promise<BoardDto> {

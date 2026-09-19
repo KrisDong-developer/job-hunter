@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { ResumeLanguage, ResumeState } from '../../../shared/enums.js';
-import type { ResumeContent, ResumeDto, ResumeFileDto, ResumeSummaryDto } from '../../../shared/resume.js';
+import type { ResumeLanguage, ResumeState } from '../../../shared/contract/enums/resume.js';
+import type { ResumeDto, ResumeFileDto, ResumeSummaryDto } from '../../../shared/contract/dto/resume.js';
+import type { ResumeContent } from '../../../shared/domain/resume-content.js';
 import { asTextOrNull } from '../row.js';
 /**
  * 简历仓储（§7 / §11.3）。

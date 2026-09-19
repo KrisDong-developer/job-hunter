@@ -12,8 +12,8 @@
  *
  * 本文件是**纯函数**：没有 IO、没有活对象，可被任意进程直接引。
  */
-import type { ResumeTemplate } from '../../shared/enums.js';
-import type { ResumeContent } from '../../shared/resume.js';
+import type { ResumeTemplate } from '../../shared/contract/enums/resume.js';
+import type { ResumeContent } from '../../shared/domain/resume-content.js';
 export interface RenderOptions {
     template?: ResumeTemplate;
     /** 页眉里是否显示照片/期望薪资等可选字段（R3：字段可开关）。 */

@@ -2,7 +2,7 @@
  * 跨平台去重：分组读取、全库复核、拆分与解散。
  */
 import { request } from './client.js'
-import type { DedupGroupDto, DedupSweepResultDto } from './types.js'
+import type { DedupGroupDto, DedupSweepResultDto } from '../../shared/contract/dto/dedup.js'
 
 export async function fetchDedupGroups(
   signal?: AbortSignal,

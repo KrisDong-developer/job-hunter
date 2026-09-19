@@ -9,9 +9,10 @@
  *   * **降级即暂停写入**：平台处于 degraded/broken 时只解析、不落主表（§4.2.4）；
  *   * **命中风控不硬重试**：detectBlock 一旦命中就记录、告警、结束本轮（C12 / P5）。
  */
-import { ADAPTER_FAIL_THRESHOLD, DETAIL_FETCH_MAX_PER_ROUND, REQUEST_DELAY_MAX_MS, REQUEST_DELAY_MIN_MS, WRITE_BATCH_SIZE } from '../../shared/constants.js'
-import type { CrawlRunDto, CrawlSummaryDto } from '../../shared/dto.js'
-import type { BlockKind, CoreField, CrawlState } from '../../shared/enums.js'
+import { ADAPTER_FAIL_THRESHOLD, DETAIL_FETCH_MAX_PER_ROUND, REQUEST_DELAY_MAX_MS, REQUEST_DELAY_MIN_MS, WRITE_BATCH_SIZE } from '../../shared/config/crawl.js'
+import type { CrawlRunDto, CrawlSummaryDto } from '../../shared/contract/dto/crawl.js'
+import type { BlockKind, CoreField, CrawlState } from '../../shared/contract/enums/crawl.js'
+import type { CrawlFailureCode } from '../../shared/contract/enums/error.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import { parseSalary } from '../util/salary.js'
 import { systemClock, type Clock } from '../util/time.js'
@@ -93,8 +94,8 @@ export interface RunCrawlOptions {
   deadlineAt?: string | null
 }
 
-/** 风控类型 → 领域错误码。 */
-function blockToCode(kind: BlockKind): string {
+/** 风控类型 → 失败码。 */
+function blockToCode(kind: BlockKind): CrawlFailureCode {
   if (kind === 'login-required') return 'NOT_LOGGED_IN'
   if (kind === 'quota-exhausted') return 'PLATFORM_QUOTA'
   return 'BLOCKED'
@@ -273,7 +274,7 @@ async function executeCrawl(
 
   const collected: RawJob[] = []
   let pages = 0
-  let failure: { code: string; message: string } | null = null
+  let failure: { code: CrawlFailureCode; message: string } | null = null
   /** SR-46：本轮的到点时刻（ms）。`null` = 没预算，跑满 `maxPages` 为止。 */
   const deadlineMs = toDeadlineMs(options.deadlineAt)
   /**

@@ -160,7 +160,8 @@
  *   `i.message-status.status-delivery`、会话行 `li[role=listitem]` 及其 `.time` / `.name-text` /
  *   `.name-box` / `.last-msg-text` —— 这些**不必再怀疑**。
  */
-import type { BlockKind, ContactStage, CoreField } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
+import type { ContactStage } from '../../../shared/contract/enums/pipeline.js'
 import { humanClick, humanType } from '../humanize.js'
 import { humanDelayMs } from '../pacing.js'
 import { platformFacts } from '../platform-facts.js'

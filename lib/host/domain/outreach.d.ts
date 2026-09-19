@@ -11,14 +11,13 @@
  */
 import type { AiService } from '../ai/client.js';
 import type { Store } from '../store/store.js';
-import type { GreetingDraftDto } from '../../shared/dto.js';
+import type { GreetingDraftDto } from '../../shared/contract/dto/pipeline.js';
+import { type GreetingTone } from '../../shared/contract/enums/pipeline.js';
 /** 话术长度约束：太短没内容，太长 HR 不会看。 */
 export declare const GREETING_MIN_CHARS = 15;
 export declare const GREETING_MAX_CHARS = 400;
 /** 只允许这些字段外发 —— 白名单，不是黑名单（§4.5 隐私闸门）。 */
 export declare const GREETING_ALLOW_FIELDS: readonly ["jobTitle", "companyName", "city", "salaryRaw", "expReq", "eduReq", "tags", "flagLabels", "tone", "highlights"];
-export type GreetingTone = 'formal' | 'warm' | 'concise';
-export declare const GREETING_TONE_LABEL: Record<GreetingTone, string>;
 export interface InjectionHit {
     name: string;
     /** 命中的片段（已截断），便于事后分析。 */

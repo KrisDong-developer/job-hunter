@@ -8,8 +8,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { inflateRawSync } from 'node:zlib'
-import type { ResumeContent } from '../../src/shared/resume.js'
-import { emptyResumeContent } from '../../src/shared/resume.js'
+import type { ResumeContent } from '../../src/shared/domain/resume-content.js'
+import { emptyResumeContent } from '../../src/shared/domain/resume-content.js'
 import { renderResumeDocx } from '../../src/host/render/docx.js'
 import { renderResumeHtml } from '../../src/host/render/resume-html.js'
 

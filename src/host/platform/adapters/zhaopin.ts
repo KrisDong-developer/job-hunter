@@ -46,8 +46,9 @@
  *      0 条 + `noJobTip`（"登录之后再搜索"）。**绝不要自己造 token。**
  *   2. path 的 `/p<N>` 会**覆盖** query 的 `p`，两种形式不要混用。
  */
-import type { BlockKind, ContactStage, CoreField } from '../../../shared/enums.js'
-import { CORE_FIELDS } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
+import type { ContactStage } from '../../../shared/contract/enums/pipeline.js'
+import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
 import { humanClick } from '../humanize.js'
 import { signalsOf, type BlockSignalSet } from '../block-signals.js'

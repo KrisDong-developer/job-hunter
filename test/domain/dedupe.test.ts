@@ -7,7 +7,7 @@ import {
   type DedupCandidate,
   type DedupDeps,
 } from '../../src/host/domain/dedupe.js'
-import type { JobDto } from '../../src/shared/dto.js'
+import type { JobDto } from '../../src/shared/contract/dto/job.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
 /**

@@ -1,7 +1,8 @@
-import type { GreetingDto, JobDto, StageEventDto } from '../../../../shared/dto.js'
-import type { ContactStage } from '../../../../shared/enums.js'
-import { CONTACT_STAGE_LABEL, MANUAL_CONTACT_STAGES } from '../../../../shared/enums.js'
-import { JOB_STATE_LABEL } from '../../../../shared/labels.js'
+import type { JobDto } from '../../../../shared/contract/dto/job.js'
+import type { GreetingDto, StageEventDto } from '../../../../shared/contract/dto/pipeline.js'
+import type { ContactStage } from '../../../../shared/contract/enums/pipeline.js'
+import { CONTACT_STAGE_LABEL, MANUAL_CONTACT_STAGES } from '../../../../shared/contract/enums/pipeline.js'
+import { JOB_STATE_LABEL } from '../../../../shared/contract/enums/job.js'
 
 /** 基本信息表：公司 / 地点 / 经验 / 学历 / 来源平台 / 发布 / 首次见到 / 最近见到 / 当前状态。 */
 export function JobFacts(props: { job: JobDto; /** 「最近见到」的显示串（相对时间，解析不出来时是 ISO）。 */ lastSeen: string }) {

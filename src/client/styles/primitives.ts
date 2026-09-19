@@ -59,8 +59,15 @@ a.jh-btn{display:inline-block;text-decoration:none;text-align:center}
 /* 批量工具条：与"已勾选的行"贴在一起（同 plan-editor 的表格工具条） */
 .jh-picked{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;
   padding:6px 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px}
-/* 岗位行前的勾选框：单独一列，不与"点开详情"抢点击区域 */
-.jh-job-pick{display:flex;align-items:center;padding:0 2px 0 6px}
+/* 岗位行前的勾选框：单独一列，不与"点开详情"抢点击区域。
+   ── 第四轮修复（审核 P2-11）：它原先是个**不包 label 的裸 input**，命中区就是控件
+   自身（实测约 13×13px），又和相邻的卡片按钮只隔 8px —— 触屏上很容易点成"打开详情"，
+   而且低于 WCAG 2.2 AA 2.5.8 的 24×24。现在包成 label（整块都能勾）、控件提到 18px、
+   四周留 4–5px 内边距，命中区约 26×26；更宽的目标在下面那组容器查询里给触屏档。 */
+.jh-job-pick{display:flex;align-items:center;justify-content:center;align-self:flex-start;
+  margin-top:1px;padding:4px 5px;border-radius:6px;cursor:pointer}
+.jh-job-pick:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.jh-job-pick input{width:18px;height:18px;margin:0;cursor:pointer}
 /* 高危动作的确认文案（宿主 renderApproval 给的多行文本）。
    必须原样保留换行：那些行各是一件事（平台/岗位/用了哪版简历/同时会发生什么），
    折成一坨之后用户就没法逐行核对了。 */
@@ -78,9 +85,28 @@ a.jh-btn{display:inline-block;text-decoration:none;text-align:center}
 /* 三级动作（"重置"）连边框都不给：它不该和主按钮抢注意力 */
 .jh-btn-quiet{border-color:transparent;color:var(--dsw-alias-label-secondary)}
 .jh-btn-quiet:hover:not(:disabled){color:var(--dsw-alias-label-primary)}
-.jh-icon-btn{border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;
+/* 图标按钮：命中区有下限。
+   ── 原来 padding:2px 6px + font-size:18px + line-height:1 = **22×22px**，
+   WCAG 2.5.8（AA）要求 24×24。这个类被每个弹窗的关闭键与反馈条关闭键共用，
+   是整个界面里最常被点、又最容易被点歪的两个控件之一。
+   min-* 只在内容小于 24px 时起作用，所以不会把本来就大的图标按钮撑开。 */
+.jh-icon-btn{display:inline-flex;align-items:center;justify-content:center;
+  min-width:24px;min-height:24px;
+  border:0;background:transparent;cursor:pointer;font-size:18px;line-height:1;
   padding:2px 6px;border-radius:6px;color:var(--dsw-alias-label-secondary)}
 .jh-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+
+/* ── 键盘聚焦环（第四轮修复，审核 P3）───────────────────────────────
+   输入类控件一直有聚焦样式（见 .jh-input），但这一批**自绘按钮**此前一处都没有：
+   chip / 分页 / 岗位卡片 / 行内动作 / 折叠开关 / 图标按钮 / 标签页全靠 UA 默认环 ——
+   形状与可见度不由我们控制，深浅两套主题下也不统一。
+   这里统一成与输入框同一套语言：2px 主题色描边 + 2px 偏移（不占布局、不引起重排）。
+   注意只覆盖真正可聚焦的元素，不给装饰性的 span 加。 */
+.jh-btn:focus-visible,.jh-chip:focus-visible,.jh-pg:focus-visible,.jh-job:focus-visible,
+.jh-job-qk:focus-visible,.jh-dedup-toggle:focus-visible,.jh-jobs-filter-toggle:focus-visible,
+.jh-icon-btn:focus-visible,.jh-link:focus-visible,.jh-tab:focus-visible,.jh-seg:focus-visible,
+.jh-err-chip:focus-visible,.jh-notice-close:focus-visible{
+  outline:2px solid var(--dsw-alias-link);outline-offset:2px}
 
 .jh-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
 .jh-chip{padding:3px 9px;font-size:12px;line-height:18px;border-radius:999px;cursor:pointer;
@@ -122,6 +148,12 @@ export const TAG_AND_STATE = `
 .jh-tag{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
   padding:0 8px;border-radius:4px;white-space:nowrap;
   background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-primary)}
+/* ── 标签容器（第四轮修复，审核 P1-1）────────────────────────────────
+   .jh-tags 这个类名在岗位库与岗位详情里都用了，但**全仓库没有定义** ——
+   少了它，标签就是一堆相邻的 inline-block：.jh-tag 自己没有外边距，容器也不给
+   gap，相邻标签的底色直接贴在一起，整排读起来是一条连续灰条（圆角只在两端），
+   "分类标记"的语义就丢了。这里补上唯一一条定义（不再各自复制）。 */
+.jh-tags{display:flex;flex-wrap:wrap;gap:5px}
 /* 状态徽章是"这个岗位当前算什么"，不是复选框（项目里没有批量选择）。
    ── 第二轮修复：底色是 bg-overlay，它在深色主题下是**中灰 #61666b**，
    而 label-secondary 在深色下也是浅灰 → 实测只有 3.85:1（浅色下 4.90:1 勉强够）。
@@ -161,7 +193,7 @@ export const MODAL_SEG_TIMERANGE = `
   background:color-mix(in srgb, var(--dsw-alias-label-primary) 28%, transparent)}
 .jh-modal{position:relative;display:flex;flex-direction:column;max-height:calc(100% - 24px);
   width:100%;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
-  background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px rgba(0,0,0,.22);
+  background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 40px var(--jh-shadow-ink);
   outline:none}
 .jh-modal-md{max-width:520px}
 .jh-modal-lg{max-width:720px}
@@ -185,6 +217,32 @@ export const MODAL_SEG_TIMERANGE = `
    所以用 label-secondary（5.80:1）。 */
 .jh-field-flag{font-style:normal;font-size:11px;padding:0 6px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-3);color:var(--dsw-alias-label-secondary)}
+
+/* ── 可展开的说明（FieldHint）──────────────────────────────────────────
+   问号现在是一个真正的 <button>，折叠时它在版面上与改之前**逐像素一致**
+   （说明文字落在 .jh-sr-only 里，不占位），点开才把说明摊在下面。
+   三件事必须显式写，否则 <button> 会带上 UA 自己的盒子模型：
+     · font-family:inherit —— UA 给 button 的是系统 UI 字体，不是继承的；
+     · padding:0          —— UA 给 button 的是 1px 6px；
+     · box-sizing:content-box —— 浏览器给 button 的默认值是 border-box，
+       而原来那个 span 是 content-box（全仓库没有全局重置）。不改回来的话
+       .jh-field-hint 的 14px 会连边框一起算，圆点整体缩水 2px。
+   vertical-align 挂在**外层这层**上：内层换成 button 之后，参与行内对齐的
+   是外层这个 span，而不是里面那个圆点（inline 变体常出现在正文段落里）。 */
+.jh-hint-wrap{position:relative;vertical-align:middle}
+.jh-hint-wrap>.jh-field-hint,.jh-hint-wrap>.jh-hint{
+  font-family:inherit;padding:0;cursor:pointer}
+.jh-hint-wrap>.jh-field-hint{box-sizing:content-box}
+/* inline 变体（.jh-hint，定义在 job-detail.ts）没有自己的边框，
+   不加这条就会露出 <button> 的 UA 边框。 */
+.jh-hint-wrap>.jh-hint{border:0}
+.jh-hint-wrap>.jh-field-hint:focus-visible,.jh-hint-wrap>.jh-hint:focus-visible{
+  outline:2px solid var(--dsw-alias-link);outline-offset:1px}
+/* 展开后的说明：就地占一行。不用绝对定位 —— 这些问号多在弹窗里，
+   而 .jh-modal-body 是 overflow:auto，浮层会被裁掉。 */
+.jh-hint-text{display:block;margin:5px 0 0;padding:0 2px;max-width:48ch;
+  font-size:12px;line-height:1.6;text-align:left;color:var(--dsw-alias-label-secondary)}
+
 .jh-field-row{display:flex;align-items:center;gap:6px}
 .jh-field-row .jh-input{flex:1 1 auto;min-width:0}
 .jh-section-title{font-size:12px;font-weight:600;margin:14px 0 8px;
@@ -231,9 +289,12 @@ export const DESTRUCTIVE_BUTTONS = `
    ── 第三轮修复：它原来是 999px 胶囊 + 1px 边框 + 2px×9px 内边距（实测 26px 高），
    而同一列的"成功/失败"标签是 19px 高的小圆角矩形 —— 同一张表里两种形状，
    而且错误那个明显更"胖"，把 158px 的状态列撑到了 227px 宽。
-   现在统一成与 .jh-tag 同一档的小圆角矩形（4px），高度也对齐。 */
+   现在统一成与 .jh-tag 同一档的小圆角矩形（4px）。
+   ── 第四轮修复：统一之后它是 **19px 高**（line-height 17px + 上下各 1px 边框），
+   而它是**失败详情的唯一入口** —— 原因、排查步骤、原始 trace 全在那扇门后面。
+   WCAG 2.5.8（AA）要求 24×24，所以补 min-height（横向由文字长度天然超过 24）。 */
 .jh-err-chip{display:inline-flex;align-items:center;gap:5px;cursor:pointer;font:inherit;
-  font-size:11.5px;line-height:17px;padding:0 8px;border-radius:4px;
+  font-size:11.5px;line-height:17px;min-height:24px;padding:0 8px;border-radius:4px;
   border:1px solid var(--dsw-alias-state-error-secondary);
   background:var(--jh-error-bg);color:var(--jh-error-fg)}
 .jh-err-chip:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent)}
@@ -248,6 +309,14 @@ export const QUALITY_GATES = `
 
 /* Table 的必查状态里有 row hover —— 原来没有，扫行时会丢失"鼠标在哪一行"的反馈 */
 .jh-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover)}
+
+/* ── 动效降级（第四轮修复，审核 P3）────────────────────────────────
+   全项目此前没有任何 prefers-reduced-motion 分支。这里的过渡都是 120–140ms 的颜色 /
+   边框 / 位移（没有视差、没有自动播放），所以降级做法就是把时长压掉，而不是换一套动效。
+   作用域**必须**限定在 .jh-root 之内：样式是注入到 document 的，写裸 * 会误伤宿主界面。 */
+@media (prefers-reduced-motion: reduce){
+  .jh-root *,.jh-root *::before,.jh-root *::after{
+    transition-duration:.01ms !important;animation-duration:.01ms !important}}
 `
 
 export const EMPTY_AND_FEEDBACK = `

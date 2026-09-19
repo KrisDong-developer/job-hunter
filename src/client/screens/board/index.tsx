@@ -1,8 +1,11 @@
-import type { AnalyticsFilter, ResumeCompareRowDto, SalaryBasis } from '../../../shared/dto.js'
-import { SALARY_BASES, SALARY_BASIS_LABEL } from '../../../shared/dto.js'
+import type { AnalyticsFilter } from '../../../shared/contract/dto/analytics.js'
+import type { ResumeCompareRowDto } from '../../../shared/contract/dto/resume.js'
+import type { SalaryBasis } from '../../../shared/contract/enums/analytics.js'
+import { SALARY_BASES, SALARY_BASIS_LABEL } from '../../../shared/contract/enums/analytics.js'
 import { useAsync } from '../../hooks/use-async.js'
-import { fetchAttribution, fetchFunnel, fetchResumeCompare, fetchSalaryBand, fetchSalaryBaseline, fetchSalaryBox } from '../../net/pipeline.js'
+import { fetchAttribution, fetchFunnel, fetchResumeCompare, fetchSalaryBaseline, fetchSalaryBox } from '../../net/pipeline.js'
 import { fetchResumes } from '../../net/resumes.js'
+import { ErrorLine, LoadingLine } from '../../ui/async-view.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { AttributionTable } from './attribution-table.js'
 import { FunnelChart } from './funnel-chart.js'
@@ -21,7 +24,35 @@ import { useEffect, useState } from 'react'
 const FILTER_SCOPE_HINT =
   '方向与简历版本只作用于投递段 —— 打招呼没有记录用过哪版简历／什么方向，' +
   '接触段（打招呼/送达/已读/回复）不受这两项影响。' +
-  '薪资分位来自岗位库，它的时间窗是岗位抓取时间，不是你的投递时间。'
+  '薪资来自岗位库，它的时间窗是岗位抓取时间，不是你的投递时间。'
+
+
+/**
+ * 日期框里的「起 / 止」指的是**本地的哪一天**，不是 UTC 的哪一天。
+ *
+ * `new Date('2026-09-01T00:00:00')`（不带 Z）按本地时区解析，`toISOString()` 再落成 UTC ——
+ * 直接拼 `T00:00:00.000Z` 会把东八区用户的当天 0–8 点整段切掉，而落库的
+ * `sent_at` / `first_seen_at` 都是 `toISOString()`，同格式字符串比较是一致的。
+ */
+function localDayStart(date: string): string {
+  return new Date(`${date}T00:00:00`).toISOString()
+}
+
+function localDayEnd(date: string): string {
+  return new Date(`${date}T23:59:59.999`).toISOString()
+}
+
+/**
+ * 反过来：草稿里存的是 UTC ISO，日期框要显示**本地**那一天。
+ * 少了这一步，东八区用户选了 9/1 会在框里看到 8/31（因为 9/1 本地零点 = 8/31 16:00Z）。
+ */
+function localDayOf(iso: string | undefined): string {
+  if (iso === undefined || iso === '') return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
 
 
 /** 去掉空值：空字符串等于"取消这一项"，别把它当成筛选条件发出去。 */
@@ -60,6 +91,15 @@ function filterSignature(input: AnalyticsFilter): string {
  *   * 每块数据一个**面板卡**：标题 16px、右上角挂样本徽章，长口径说明收进
  *     「口径说明」展开项或问号 —— 首屏只留结论，依据按需展开。
  *   * 表格数值列右对齐、表头有底、样本够的行才给高亮（判断全部来自 host）。
+ *
+ * 第八轮（2026-09-20，UI 审核 P1–P3 修复）改了五件事：
+ *   * **六个数据块补齐三态**：此前只有"正在统计…"和成功两条分支，接口一挂就永远
+ *     转圈（基准那块直接整块消失）。现在失败给 `PanelFailure`（错误 + hint + 重试）。
+ *   * 「薪资分位」卡片**并进**「薪资分布」：不设日期时两块是同一组数字，重复印刷；
+ *     并入后它的五数概括成为箱线图的**常驻读数**，极值不再只能靠悬停拿到。
+ *   * 起/止 按**本地日**构造（原来拼 `T00:00:00.000Z`，东八区用户会丢掉当天 0–8 点）。
+ *   * 口径开关补 `role="group"` + `aria-pressed`：选中态此前只体现在底色上。
+ *   * 简历对比的空态不再画空表壳。
  */
 export function BoardScreen(props: { revision: number; onDrillDown: (step: string) => void }) {
   // 草稿态与已生效态分开：输入先落草稿，点「查询」（或在字段里回车）才重算。
@@ -85,19 +125,14 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
 
   const funnel = useAsync((signal) => fetchFunnel(applied, signal), [props.revision, applied])
   const attribution = useAsync((signal) => fetchAttribution(applied, signal), [props.revision, applied])
-  const salary = useAsync((signal) => fetchSalaryBand(applied, signal), [props.revision, applied])
   const salaryBox = useAsync((signal) => fetchSalaryBox(applied, basis, signal), [props.revision, applied, basis])
   // F2：基准来自**自己抓到的岗位库**（不联网、不编行业数据）
   const baseline = useAsync((signal) => fetchSalaryBaseline(applied, signal), [props.revision, applied])
   // F3：简历 A/B 对比（每格带样本量，不做显著性）
   const resumeCompare = useAsync((signal) => fetchResumeCompare(applied, signal), [props.revision, applied])
-  // 提前取出数据：TS 不会把 `status === 'ok'` 的收窄带进回调里
-  const funnelData = funnel.state.status === 'ok' ? funnel.state.data : null
-  const attributionData = attribution.state.status === 'ok' ? attribution.state.data : null
-  const salaryData = salary.state.status === 'ok' ? salary.state.data : null
-  const resumeCompareData = resumeCompare.state.status === 'ok' ? resumeCompare.state.data : null
   /** 表现最好的一行在这里算一次，不在 map 里逐行重算（那也是 O(n²)）。 */
-  const bestResume = resumeCompareData === null ? null : bestResumeKey(resumeCompareData.rows)
+  const bestResume =
+    resumeCompare.state.status === 'ok' ? bestResumeKey(resumeCompare.state.data.rows) : null
 
   const activeCount = Object.keys(applied).length
   const dirty = filterSignature(draft) !== filterSignature(applied)
@@ -147,9 +182,9 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
             <input
               className="jh-input"
               type="date"
-              value={(draft.from ?? '').slice(0, 10)}
+              value={localDayOf(draft.from)}
               onChange={(event) =>
-                patch({ from: event.target.value === '' ? '' : `${event.target.value}T00:00:00.000Z` })
+                patch({ from: event.target.value === '' ? '' : localDayStart(event.target.value) })
               }
             />
           </label>
@@ -158,9 +193,9 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
             <input
               className="jh-input"
               type="date"
-              value={(draft.to ?? '').slice(0, 10)}
+              value={localDayOf(draft.to)}
               onChange={(event) =>
-                patch({ to: event.target.value === '' ? '' : `${event.target.value}T23:59:59.999Z` })
+                patch({ to: event.target.value === '' ? '' : localDayEnd(event.target.value) })
               }
             />
           </label>
@@ -233,14 +268,20 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
           <h3 className="jh-panel-title">漏斗</h3>
           <span className="jh-muted">接触段与投递段分开画 —— 它们是两个不可比的总体。</span>
           <span className="jh-spacer" />
-          {funnelData === null ? null : (
-            <SampleBadge sample={funnelData.sampleSize} enough={funnelData.enoughSample} hint={funnelData.note} />
+          {funnel.state.status !== 'ok' ? null : (
+            <SampleBadge
+              sample={funnel.state.data.sampleSize}
+              enough={funnel.state.data.enoughSample}
+              hint={funnel.state.data.note}
+            />
           )}
         </div>
-        {funnelData === null ? (
-          <p className="jh-muted">正在统计…</p>
+        {funnel.state.status === 'loading' ? (
+          <LoadingLine busy live="polite">正在统计…</LoadingLine>
+        ) : funnel.state.status === 'error' ? (
+          <PanelFailure message={funnel.state.message} hint={funnel.state.hint} onRetry={funnel.reload} />
         ) : (
-          <FunnelChart steps={funnelData.steps} onDrillDown={props.onDrillDown} />
+          <FunnelChart steps={funnel.state.data.steps} onDrillDown={props.onDrillDown} />
         )}
       </section>
 
@@ -250,22 +291,24 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
           <h3 className="jh-panel-title">归因</h3>
           <span className="jh-muted">这些投递是哪条渠道、哪版简历换来的。</span>
           <span className="jh-spacer" />
-          {attributionData === null ? null : (
+          {attribution.state.status !== 'ok' ? null : (
             <SampleBadge
-              sample={attributionData.sampleSize}
-              enough={attributionData.enoughSample}
-              hint={attributionData.note}
+              sample={attribution.state.data.sampleSize}
+              enough={attribution.state.data.enoughSample}
+              hint={attribution.state.data.note}
             />
           )}
         </div>
-        {attributionData === null ? (
-          <p className="jh-muted">正在统计…</p>
+        {attribution.state.status === 'loading' ? (
+          <LoadingLine busy live="polite">正在统计…</LoadingLine>
+        ) : attribution.state.status === 'error' ? (
+          <PanelFailure message={attribution.state.message} hint={attribution.state.hint} onRetry={attribution.reload} />
         ) : (
           <>
             <h4 className="jh-panel-sub">按渠道</h4>
-            <AttributionTable rows={attributionData.byChannel} />
+            <AttributionTable rows={attribution.state.data.byChannel} />
             <h4 className="jh-panel-sub">按简历版本</h4>
-            <AttributionTable rows={attributionData.byResume} />
+            <AttributionTable rows={attribution.state.data.byResume} />
           </>
         )}
       </section>
@@ -274,16 +317,21 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
       <section className="jh-card jh-panel">
         <div className="jh-panel-head">
           <h3 className="jh-panel-title">薪资分布</h3>
-          <span className="jh-muted">箱线图 · 基准只来自你自己抓到的岗位库。</span>
+          <span className="jh-muted">箱线图 + 五数概括 · 只来自你自己抓到的岗位库。</span>
+          {/* 这一块与投递段**不同轴**，不写出来就会被误读 */}
+          <FieldHint text="城市与关键词在这里筛的是岗位库；时间窗是岗位抓取时间，不是你的投递时间。" />
           <span className="jh-spacer" />
-          {/* F1：口径切换。**必须显式**：两个口径算出来的中位数可以差好几成 */}
+          {/* F1：口径切换。**必须显式**：两个口径算出来的中位数可以差好几成。
+              它是一个二选一的开关（不是分区导航），所以用 role=group + aria-pressed，
+              而不是 tablist —— 选中态不能只靠 `.jh-mode-active` 的底色说给读屏听。 */}
           <span className="jh-muted">口径</span>
-          <div className="jh-modes">
+          <div className="jh-modes" role="group" aria-label="薪资统计口径">
             {SALARY_BASES.map((value) => (
               <button
                 key={value}
                 type="button"
                 className={`jh-mode${value === basis ? ' jh-mode-active' : ''}`}
+                aria-pressed={value === basis}
                 onClick={() => setBasis(value)}
               >
                 {SALARY_BASIS_LABEL[value]}
@@ -299,17 +347,30 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
           ) : null}
         </div>
 
-        {salaryBox.state.status !== 'ok' ? (
-          <p className="jh-muted">正在统计…</p>
+        {salaryBox.state.status === 'loading' ? (
+          <LoadingLine busy live="polite">正在统计…</LoadingLine>
+        ) : salaryBox.state.status === 'error' ? (
+          <PanelFailure message={salaryBox.state.message} hint={salaryBox.state.hint} onRetry={salaryBox.reload} />
         ) : salaryBox.state.data.box.count === 0 ? (
           <p className="jh-muted">这个范围里没有符合该口径的岗位。</p>
         ) : (
           <>
             <SalaryBoxChart box={salaryBox.state.data.box} />
-            {/* 样本量留在明面上（它是结论的一部分），算法与口径收进右下角的展开项 */}
+            {/* 五个数**常驻**（这一块就是原来重复的那张「薪资分位」卡片，现在并进来了）：
+                图上只标 P25/中位/P75 三个刻度，窄面板还会把刻度收掉，极值更是只有悬停
+                才看得到 —— 写成文字之后，键盘与触屏用户拿到的和鼠标用户一样多。 */}
+            <div className="jh-metric-row">
+              <div className="jh-metric"><span>最低</span><b>{salaryBox.state.data.box.min}</b></div>
+              <div className="jh-metric"><span>P25</span><b>{salaryBox.state.data.box.p25}</b></div>
+              {/* 中位数是这一块的结论，所以它是唯一带色的数字 */}
+              <div className="jh-metric jh-metric-key"><span>中位</span><b>{salaryBox.state.data.box.median}</b></div>
+              <div className="jh-metric"><span>P75</span><b>{salaryBox.state.data.box.p75}</b></div>
+              <div className="jh-metric"><span>最高</span><b>{salaryBox.state.data.box.max}</b></div>
+            </div>
+            {/* 样本量与口径留在明面上（它们是结论的一部分），算法收进右下角的展开项 */}
             <div className="jh-panel-foot">
               <span className="jh-muted">
-                样本 {salaryBox.state.data.box.count} 条 · 箱体（P25–P75）里装了{' '}
+                口径 {salaryBox.state.data.box.basisLabel} · 样本 {salaryBox.state.data.box.count} 条 · 箱体（P25–P75）里装了{' '}
                 {salaryBox.state.data.box.withinBox} 条
               </span>
               <span className="jh-spacer" />
@@ -322,7 +383,11 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
         )}
 
         {/* F2：本地基准对比 —— 基准只能是自己的岗位库 */}
-        {baseline.state.status === 'ok' && (
+        {baseline.state.status === 'loading' ? (
+          <LoadingLine busy live="polite">正在统计基准…</LoadingLine>
+        ) : baseline.state.status === 'error' ? (
+          <PanelFailure message={baseline.state.message} hint={baseline.state.hint} onRetry={baseline.reload} />
+        ) : (
           <div className="jh-baseline">
             <h4 className="jh-panel-sub">我投递过的 vs 全部在库（同一口径：月薪下限）</h4>
             {baseline.state.data.all.count === 0 ? (
@@ -392,8 +457,17 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
             />
           ) : null}
         </div>
-          {resumeCompareData === null ? (
-            <p className="jh-muted">正在统计…</p>
+          {resumeCompare.state.status === 'loading' ? (
+            <LoadingLine busy live="polite">正在统计…</LoadingLine>
+          ) : resumeCompare.state.status === 'error' ? (
+            <PanelFailure
+              message={resumeCompare.state.message}
+              hint={resumeCompare.state.hint}
+              onRetry={resumeCompare.reload}
+            />
+          ) : resumeCompare.state.data.rows.length === 0 ? (
+            /* 空态就是一句话，不画空表壳 —— 与同屏的 AttributionTable 同一个写法 */
+            <p className="jh-muted">还没有投递记录。</p>
           ) : (
             <>
               <div className="jh-table-scroll">
@@ -402,13 +476,13 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
                     <tr>
                       <th scope="col">简历版本</th>
                       <th scope="col" className="jh-num">投递数</th>
-                      {resumeCompareData.stages.map((stage) => (
+                      {resumeCompare.state.data.stages.map((stage) => (
                         <th scope="col" className="jh-num" key={stage.stage}>{stage.label}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {resumeCompareData.rows.map((row) => {
+                    {resumeCompare.state.data.rows.map((row) => {
                       const rowKey = String(row.resumeId)
                       const best = rowKey === bestResume
                       return (
@@ -440,46 +514,37 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
                   </tbody>
                 </table>
               </div>
-              {resumeCompareData.rows.length === 0 && <p className="jh-muted">还没有投递记录。</p>}
               <div className="jh-panel-foot">
                 <span className="jh-muted">每格是「分子/分母」；带颜色的格子样本不足 5，只看数字别下结论。</span>
                 <span className="jh-spacer" />
                 <details className="jh-details jh-details-inline">
                   <summary>口径说明</summary>
-                  <p className="jh-note">{resumeCompareData.note}</p>
+                  <p className="jh-note">{resumeCompare.state.data.note}</p>
                 </details>
               </div>
             </>
           )}
       </section>
-
-      <section className="jh-card jh-panel">
-        <div className="jh-panel-head">
-          <h3 className="jh-panel-title">薪资分位</h3>
-          <span className="jh-muted">
-            {salaryData === null ? '岗位库口径' : `${salaryData.scope} · 只统计薪资下限`}
-          </span>
-          <span className="jh-spacer" />
-          {/* 口径标注：这一块与上面两块**不同轴**，不写出来就会被误读 */}
-          <FieldHint text="城市与关键词在这里筛的是岗位库；时间窗是岗位抓取时间，不是你的投递时间。" />
-        </div>
-        {salaryData === null ? (
-          <p className="jh-muted">正在统计…</p>
-        ) : salaryData.count === 0 ? (
-          <p className="jh-muted">这个范围里没有带薪资下限的岗位。</p>
-        ) : (
-          <div className="jh-metric-row">
-            <div className="jh-metric"><span>样本</span><b>{salaryData.count}</b></div>
-            <div className="jh-metric"><span>最低</span><b>{salaryData.min}</b></div>
-            <div className="jh-metric"><span>P25</span><b>{salaryData.p25}</b></div>
-            {/* 中位数是这一块的结论，所以它是唯一带色的数字 */}
-            <div className="jh-metric jh-metric-key"><span>中位</span><b>{salaryData.median}</b></div>
-            <div className="jh-metric"><span>P75</span><b>{salaryData.p75}</b></div>
-            <div className="jh-metric"><span>最高</span><b>{salaryData.max}</b></div>
-          </div>
-        )}
-      </section>
     </div>
+  )
+}
+
+
+/**
+ * 面板级的失败态：错误 + 宿主的 hint + 一个重试。
+ *
+ * 六个数据块原来只有"正在统计…"和成功两条分支 —— 接口一挂就永远停在
+ * 「正在统计…」上（基准那块更彻底：整块**消失**），既没有错误也没有重试入口。
+ * 写法沿用 campus 那屏的失败卡，只是不再套一层 `.jh-card`：
+ * 面板本身已经是卡片，卡片套卡片是噪音。
+ */
+function PanelFailure(props: { message: string; hint: string | undefined; onRetry: () => void }) {
+  return (
+    <>
+      <ErrorLine>{props.message}</ErrorLine>
+      {props.hint === undefined ? null : <p className="jh-muted">{props.hint}</p>}
+      <button type="button" className="jh-btn" onClick={props.onRetry}>重试</button>
+    </>
   )
 }
 

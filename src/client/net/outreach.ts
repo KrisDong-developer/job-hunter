@@ -1,10 +1,11 @@
 /**
  * 外发与接触态：打招呼（单条 / 批量 / 预览）、话术模板、跟进建议。
  */
-import type { FollowUpDto, GreetingBatchPlanDto, GreetingBatchResultDto, GreetingDraftDto, GreetingDto } from '../../shared/dto.js'
-import type { ContactStage } from '../../shared/enums.js'
+import type { GreetingBatchPlanDto, GreetingBatchResultDto } from '../../shared/contract/dto/batch.js'
+import type { FollowUpDto, GreetingDraftDto, GreetingDto } from '../../shared/contract/dto/pipeline.js'
+import type { ContactStage } from '../../shared/contract/enums/pipeline.js'
 import { ApiError, NeedsConfirmError, request } from './client.js'
-import type { ContactStageUpdateDto } from './types.js'
+import type { ContactStageUpdateDto } from '../../shared/contract/dto/pipeline.js'
 
 /** 生成打招呼话术（**不发送**）。 */
 export async function draftGreeting(

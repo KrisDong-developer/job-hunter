@@ -2,9 +2,9 @@
 // 负责 PlanForm 类型、方案 ↔ 表单的转换、空白表单、以及表单 → 写入体的收敛。
 // 关键词文本的拆分清洗、时间解析、覆盖项收敛都集中在这里，是这些规则的单一事实源。
 
-import type { PlanDto, PlanSchedule } from '../../../shared/dto.js'
-import type { PlanWriteInput } from '../../net/types.js'
-import { clockValueOf, parseClockValue } from '../../../shared/time-format.js'
+import type { PlanDto, PlanSchedule } from '../../../shared/contract/dto/plan.js'
+import type { PlanWriteInput } from '../../../shared/contract/dto/plan.js'
+import { clockValueOf, parseClockValue } from '../../../shared/text/time-format.js'
 
 /** 表单的本地形状：条件在这里是字符串，提交前才收敛。 */
 export interface PlanForm {

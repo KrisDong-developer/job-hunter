@@ -1,8 +1,10 @@
 /**
  * 消息与面试：收件箱同步、人工录入、回复、面试记录与准备。
  */
-import type { InboxDto, InterviewConflictDto, InterviewDto, InterviewPrepDto, InterviewSuggestionDto, MessageDto, ReplyDraftDto } from '../../shared/dto.js'
-import type { InterviewKind, InterviewState, MessageDirection, ReplyScenario } from '../../shared/enums.js'
+import type { InterviewConflictDto, InterviewDto, InterviewPrepDto, InterviewSuggestionDto } from '../../shared/contract/dto/interview.js'
+import type { InboxDto, MessageDto, ReplyDraftDto } from '../../shared/contract/dto/message.js'
+import type { InterviewKind, InterviewState } from '../../shared/contract/enums/interview.js'
+import type { MessageDirection, ReplyScenario } from '../../shared/contract/enums/message.js'
 import { request } from './client.js'
 
 /**

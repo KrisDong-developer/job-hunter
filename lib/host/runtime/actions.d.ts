@@ -1,4 +1,5 @@
-import type { ApplicationBatchPlanDto, ApplicationBatchResultDto, GreetingBatchPlanDto, GreetingBatchResultDto, GreetingDraftDto } from '../../shared/dto.js';
+import type { ApplicationBatchPlanDto, ApplicationBatchResultDto, GreetingBatchPlanDto, GreetingBatchResultDto } from '../../shared/contract/dto/batch.js';
+import type { GreetingDraftDto } from '../../shared/contract/dto/pipeline.js';
 import type { OutreachService } from '../domain/outreach.js';
 import type { PipelineService } from '../domain/pipeline.js';
 import type { MessageService } from '../domain/messages.js';
@@ -8,7 +9,7 @@ import { type InboxSyncResult } from '../guard/actions/inbox.js';
 import { type ReplySendResult } from '../guard/actions/reply.js';
 import { type StageProbeResult } from '../guard/actions/stage.js';
 import type { Guard } from '../guard/index.js';
-import type { Actor } from '../guard/types.js';
+import type { Actor } from '../../shared/contract/enums/guard.js';
 import type { EventBus } from '../http/sse.js';
 import type { BrowserManager } from '../platform/browser.js';
 import type { AdapterRegistry } from '../platform/registry.js';

@@ -17,7 +17,8 @@ import type { ApprovalDecision, ApprovalPort, ApprovalRequest } from './approval
 import { renderApproval } from './approval.js'
 import { runRuleChain, readGuardConfig, toDomainError, type GuardConfig, type RuleVerdict } from './rules.js'
 import { guardAuthority, type GuardAuthority, type GuardToken } from './token.js'
-import type { Actor, GuardInput } from './types.js'
+import { ACTOR_LABEL, type Actor } from '../../shared/contract/enums/guard.js'
+import type { GuardInput } from './types.js'
 
 /**
  * 「这一步需要用户确认，但还没问」的安全闸门错误。
@@ -43,13 +44,6 @@ export class ConfirmRequiredError extends Error {
   text(): string {
     return renderApproval(this.request)
   }
-}
-
-const ACTOR_LABEL: Record<Actor, string> = {
-  gui: '界面上的你',
-  model: '模型（对话里发起）',
-  schedule: '定时任务',
-  user: '用户',
 }
 
 /** 危险动作是否要问用户。

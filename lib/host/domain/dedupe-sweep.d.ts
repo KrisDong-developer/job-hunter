@@ -1,3 +1,30 @@
+/**
+ * 全库去重复核（批次 4）。
+ *
+ * ## 为什么需要"独立触发"
+ *
+ * 去重以前**只在抓取的后处理里**发生（`crawl.ts` 的 `postProcess.dedup`）。于是有两件事
+ * 用户做不到：
+ *
+ *   * **补做**：刚打开了去重开关（或者刚把某个平台加进方案），库里已有的重复不会被合并
+ *     —— 只有"再抓一轮"才会碰到它们，而那一轮本来可能一条新岗位都没有；
+ *   * **重判**：去重规则改过（例如 R25 修掉"薪资未锚定不当门槛"之后），
+ *     老数据里那些**本该合并却漏了**的仍然散着 —— 没有任何入口能重跑一遍。
+ *
+ * ## 它和抓取里那一半的关系
+ *
+ * **同一份判断**：共用 `applyDedup`（`domain/dedupe.ts`）与同一个候选构造器
+ * （`dedupDepsOf`）。差别只在**输入集合**：抓取只看这一轮写进去的岗位，
+ * 复核看全库。判断逻辑有第二份实现才是最坏的情况 —— 那意味着"抓取时合并、
+ * 复核时不合并"这类自相矛盾的行为。
+ *
+ * ## 保守规则一条都不放松
+ *
+ * 复核**不改变**任何门槛（跨平台、公司/城市硬相等、薪资只在两边都锚定时才比、
+ * 标题相似度 ≥0.9）。它只是把同一把尺子拿到整个库上再量一遍：
+ * 宁可不合并 —— 合并之后投递记录会串，而且用户很难发现。
+ */
+import type { DedupSweepResultDto } from '../../shared/contract/dto/dedup.js';
 import type { Store } from '../store/store.js';
 import { type DedupDeps } from './dedupe.js';
 /**
@@ -7,20 +34,13 @@ import { type DedupDeps } from './dedupe.js';
  * 迟早一份按公司取候选、另一份按城市取 —— 而那种差异不会报错，只会少合并。
  */
 export declare function dedupDepsOf(store: Store): DedupDeps;
-export interface DedupSweepResult {
-    /** 真的送去判定的岗位数（跳过已分组、没公司名的）。 */
-    scanned: number;
-    /** 已经**在某个分组里**、这一轮没再判的岗位数。 */
-    skippedGrouped: number;
-    /** 这一轮**进入分组**的岗位数（新建组时两条都算 —— 它们确实都被合并了）。 */
-    merged: number;
-    /** 新建的分组数。 */
-    newGroups: number;
-    /** 疑似重复但**未自动合并**的数量（要人工看一眼）。 */
-    candidates: number;
-    /** 复核之后库里一共有多少个分组。 */
-    groups: number;
-}
+/**
+ * 复核的计数结果。
+ *
+ * 六个计数字段的权威定义在 `shared/contract/dto/dedup.ts`（响应里还多一份 `items`），
+ * 这里只是**去掉界面那一项**的投影 —— 曾经仓库里有两处同名同字段的接口。
+ */
+export type DedupSweepResult = Omit<DedupSweepResultDto, 'items'>;
 /**
  * 跑一遍全库复核。
  *

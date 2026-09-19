@@ -1,4 +1,4 @@
-import type { FollowUpDto } from '../../../shared/dto.js'
+import type { FollowUpDto } from '../../../shared/contract/dto/pipeline.js'
 
 export function FollowUpRow(props: { item: FollowUpDto; onOpen: (id: number) => void }) {
   const { item } = props

@@ -9,7 +9,7 @@
  * `PATCH|DELETE /questions/:id`。放在本模块的理由：`prep` 已经在读它
  * （准备包里那一段"之前记过的错题"），读写同一个域放一起才不会两处漂移。
  */
-import type { InterviewKind, InterviewState } from '../../../shared/enums.js'
+import type { InterviewKind, InterviewState } from '../../../shared/contract/enums/interview.js'
 import { DomainError } from '../../util/errors.js'
 import { json, parsePositiveInt, parseRecordId, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'

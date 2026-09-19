@@ -1,9 +1,10 @@
 import type { FormEvent } from 'react'
-import { JOB_FLAG_LABEL, JOB_FLAG_TYPES, JOB_STATES, type JobFlagType } from '../../../shared/enums.js'
-import type { ExpChip } from '../../../shared/facets.js'
-import { JOB_STATE_LABEL } from '../../../shared/labels.js'
+import { JOB_FLAG_LABEL, JOB_FLAG_TYPES, JOB_STATES, type JobFlagType } from '../../../shared/contract/enums/job.js'
+import type { ExpChip } from '../../../shared/domain/job-facets.js'
+import { JOB_STATE_LABEL } from '../../../shared/contract/enums/job.js'
 import { FieldHint } from '../../ui/field-hint.js'
-import { NEW_JOB_WINDOWS, type Filters } from './filters.js'
+import { JOB_NEW_WINDOWS } from '../../../shared/contract/enums/job.js'
+import type { Filters } from './filters.js'
 
 /**
  * 筛选区：**一条朴素的常规工具条 + 一个「高级筛选」折叠**（2026-09-18 重做）。
@@ -15,6 +16,11 @@ import { NEW_JOB_WINDOWS, type Filters } from './filters.js'
  * 所以新增时间回到原生单选下拉（原生 select 天然不可多选），
  * 跨平台折叠用项目里既有的复选框（.jh-check），形状只在**颜色**上做区分。
  *
+ * ── 第四轮（审核 P1-4 / P2-12）：两处补丁
+ *   * 关键词与最低月薪加上**可见标签**（原先只有 placeholder，2.6:1 且输入后消失）；
+ *   * 草稿与已生效条件不一致时，工具条尾部说明"点筛选才生效"（两类条件各有出处，
+ *     不说明的话用户会以为列表已经按新条件筛过了）。
+ *
  * 筛选草稿（`Filters`）与"展开 / 收起"都留在 `JobsScreen` ——
  * 这里只负责画，条件本身怎么算不归它管。
  */
@@ -25,6 +31,8 @@ export function FilterBar(props: {
   expChips: ExpChip[]
   advancedOpen: boolean
   advancedCount: number
+  /** 草稿与已生效条件不一致 —— 工具条尾部要说明"还没生效"（第四轮，审核 P2-12）。 */
+  pending: boolean
   onSubmit: (event: FormEvent) => void
   onReset: () => void
   onToggleAdvanced: () => void
@@ -47,13 +55,19 @@ export function FilterBar(props: {
   return (
     <form className="jh-jobs-filters" onSubmit={props.onSubmit}>
       <div className="jh-jobs-filter-line">
-        <input
-          className="jh-input jh-input-grow"
-          placeholder="关键词（岗位名）"
-          aria-label="关键词"
-          value={draft.q}
-          onChange={(event) => props.onKeyword(event.target.value)}
-        />
+        {/* 关键词 / 最低月薪：**带可见标签**（第四轮修复，审核 P1-4）。
+            它们原先只有 placeholder 当标签 —— 一是对比度只有 2.6:1（caption 档），
+            二是开始输入后标签就没了，用户没法回看这个框是什么。现在标签在控件旁边，
+            placeholder 一并去掉：有了标签就不需要它，留着只是多一处低对比度文字。
+            城市 / 状态下拉不在此列：它们的当前值（「全部城市」「全部状态」）本身就是说明。 */}
+        <label className="jh-jobs-filter-text">
+          <span>关键词</span>
+          <input
+            className="jh-input"
+            value={draft.q}
+            onChange={(event) => props.onKeyword(event.target.value)}
+          />
+        </label>
         <select
           className="jh-select jh-input-md"
           aria-label="城市"
@@ -80,19 +94,26 @@ export function FilterBar(props: {
             </option>
           ))}
         </select>
-        <input
-          className="jh-input jh-input-sm"
-          placeholder="最低月薪"
-          aria-label="最低月薪"
-          inputMode="numeric"
-          value={draft.minSalary}
-          onChange={(event) => props.onMinSalary(event.target.value)}
-        />
+        <label className="jh-jobs-filter-text jh-jobs-filter-text-narrow">
+          <span>最低月薪</span>
+          <input
+            className="jh-input"
+            inputMode="numeric"
+            value={draft.minSalary}
+            onChange={(event) => props.onMinSalary(event.target.value)}
+          />
+        </label>
         {/* 主次分明：筛选是主操作（实心），重置是三级动作（无边框）。
             贴在最后一个控件后面 —— 筛选条是一句话，按钮是这句话的句号，
             不该飘到屏幕另一头（那是上一版最刺眼的毛病）。 */}
         <button type="submit" className="jh-btn jh-btn-inline jh-btn-primary">筛选</button>
         <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={props.onReset}>重置</button>
+        {/* 条件改了但还没提交（第四轮修复，审核 P2-12）：折叠开关上的「已选 N 项」
+            算的是草稿，列表头栏那句算的是已生效的条件 —— 两者可以不一致。
+            这行字把差别说出来，免得用户以为列表已经按新条件筛过了。 */}
+        {props.pending ? (
+          <span className="jh-jobs-filter-pending">条件已改动，点「筛选」生效</span>
+        ) : null}
       </div>
 
       {/* 折叠开关：一整行只有一行小字，不抢视线 */}
@@ -172,7 +193,7 @@ export function FilterBar(props: {
               onChange={(event) => props.onNewWindow(event.target.value)}
             >
               <option value="">不限</option>
-              {NEW_JOB_WINDOWS.map((option) => (
+              {JOB_NEW_WINDOWS.map((option) => (
                 <option key={option.value} value={option.value} title={option.label}>
                   {option.label}
                 </option>

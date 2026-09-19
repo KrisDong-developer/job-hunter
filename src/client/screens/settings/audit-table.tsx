@@ -1,4 +1,5 @@
-import type { AuditRecordDto } from '../../net/types.js'
+import type { AuditRecordDto } from '../../../shared/contract/dto/settings.js'
+import { actorLabel } from '../../../shared/contract/enums/guard.js'
 import { ErrorLine } from '../../ui/async-view.js'
 import type { AuditState } from './logs-panel.js'
 
@@ -32,7 +33,7 @@ export function AuditTable(props: { audit: AuditState }) {
                 {props.audit.data.items.map((record: AuditRecordDto) => (
                   <tr key={record.id}>
                     <td>{record.at.slice(5, 16).replace('T', ' ')}</td>
-                    <td>{record.actor}</td>
+                    <td>{actorLabel(record.actor)}</td>
                     <td>
                       <code>{record.action}</code>
                     </td>

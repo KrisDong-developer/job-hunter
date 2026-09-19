@@ -4,7 +4,7 @@
  * 只聚合**现在真有数据**的东西。待跟进 / 面试 / 额度分别属于 P7 与 P5（guard），
  * 这里刻意不返回恒为 0 的占位字段 —— 界面上显示一个假的「0 个面试」比不显示更误导。
  */
-import type { TodayDto } from '../../shared/dto.js';
+import type { TodayDto } from '../../shared/contract/dto/today.js';
 import type { Store } from '../store/store.js';
 import type { OfferService } from './offers.js';
 import type { AdapterRegistry } from '../platform/registry.js';

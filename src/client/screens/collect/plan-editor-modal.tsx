@@ -4,23 +4,13 @@
 // 表单形状与换算（PlanForm / parseKeywordsText / writeOf）来自同目录的 plan-form。
 
 import { Fragment, useEffect, useRef, useState } from 'react'
-import {
-  AUTH_REQUIREMENT_LABEL,
-  MATURITY_LEVEL_LABEL,
-  MATURITY_LEVEL_SHORT,
-  MATURITY_LEVEL_TONE,
-} from '../../../shared/enums.js'
-import { PLAN_KEYWORDS_MAX } from '../../../shared/constants.js'
-import {
-  WEEKDAY_PRESETS,
-  formatWeekdays,
-  formatWindow,
-  parseClockValue,
-} from '../../../shared/time-format.js'
+import { AUTH_REQUIREMENT_LABEL, MATURITY_LEVEL_LABEL, MATURITY_LEVEL_SHORT, MATURITY_LEVEL_TONE } from '../../../shared/contract/enums/platform.js'
+import { PLAN_KEYWORDS_MAX } from '../../../shared/config/crawl.js'
+import { WEEKDAY_PRESETS, formatWeekdays, formatWindow, parseClockValue } from '../../../shared/text/time-format.js'
 import { ApiError } from '../../net/client.js'
 import { fetchCriteriaDimensions } from '../../net/collect/plans.js'
-import type { CriteriaDimensionDto, PlanDuplicateDto } from '../../net/types.js'
-import type { PlatformOverviewDto } from '../../../shared/dto.js'
+import type { CriteriaDimensionDto, PlanDuplicateDto } from '../../../shared/contract/dto/plan.js'
+import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { Modal } from '../../ui/modal.js'
@@ -369,6 +359,14 @@ export function PlanEditorModal(props: {
   const renderDimension = (dimension: CriteriaDimensionDto) => {
     const value = form.criteria[dimension.key] ?? ''
     const hint = dimension.supported ? dimension.hint : (dimension.disabledReason ?? dimension.hint)
+    /**
+     * 控件一律写**显式** `aria-label`，不靠外层 `<label>` 的隐式关联。
+     *
+     * 因为 `FieldHint` 折叠时把说明文字放在 `.jh-sr-only` 里（仍然在无障碍树里，
+     * 否则读屏拿不到全文），而那些文字是 `<label>` 的文本内容的一部分 ——
+     * 隐式关联会把字段名变成「城市 + 当前平台不支持 + 说明全文」，
+     * 读屏要念一大段才轮到"编辑框"。显式命名把可访问名收回成维度自己的名字。
+     */
     return (
       <label className="jh-field" key={dimension.key}>
         <span className="jh-field-label">
@@ -384,6 +382,7 @@ export function PlanEditorModal(props: {
             max={dimension.max ?? undefined}
             disabled={!dimension.supported}
             value={value}
+            aria-label={dimension.label}
             placeholder={dimension.supported ? '不限' : '不支持'}
             onChange={(event) => setCriteria(dimension.key, event.target.value)}
           />
@@ -392,6 +391,7 @@ export function PlanEditorModal(props: {
             className="jh-input"
             disabled={!dimension.supported}
             value={value}
+            aria-label={dimension.label}
             placeholder={dimension.supported ? '不限' : '不支持'}
             onChange={(event) => setCriteria(dimension.key, event.target.value)}
           />
@@ -400,6 +400,7 @@ export function PlanEditorModal(props: {
             className="jh-select"
             disabled={!dimension.supported}
             value={value}
+            aria-label={dimension.label}
             onChange={(event) => setCriteria(dimension.key, event.target.value)}
           >
             <option value="">不限</option>
@@ -592,9 +593,15 @@ export function PlanEditorModal(props: {
           <>
             {/* 方案名 + 检查：它校验的就是"这份配置是否重复"，所以贴成输入框的**后缀按钮** */}
             <div className="jh-field">
-              <span className="jh-field-label">方案名</span>
+              {/* 用 <label htmlFor> 而不是旁边的 <span>：本屏只有这一个字段是**必填**的
+                  （空名字会被 `validatePlanConfig` 直接拒），而原来它没有可访问名 ——
+                  读屏聚焦到这个框只会念"编辑框"，不知道要填什么。 */}
+              <label className="jh-field-label" htmlFor="jh-plan-name">
+                方案名
+              </label>
               <div className="jh-affix">
                 <input
+                  id="jh-plan-name"
                   className="jh-input"
                   value={form.name}
                   aria-invalid={nameMissing}

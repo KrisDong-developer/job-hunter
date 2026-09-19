@@ -1,15 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  DETAIL_KEYS,
-  formatDetailLine,
-  formatJobDetailTitle,
-  formatJobListLine,
-  JD_SUMMARY_CHARS,
-  parseDetailLines,
-  parseJobListLine,
-  summarizeJd,
-} from '../../src/shared/tool-format.js'
+import { DETAIL_KEYS, JD_SUMMARY_CHARS, formatDetailLine, formatJobDetailTitle, formatJobListLine, parseDetailLines, parseJobListLine, summarizeJd } from '../../src/shared/text/tool-format.js'
 
 const job = {
   id: 12,

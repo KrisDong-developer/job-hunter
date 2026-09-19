@@ -3,8 +3,8 @@
 // 「重新检测」已移到顶部工具条，这里只留与租约强相关的「接管调度」。纯展示组件。
 import { InlineMd } from '../../ui/inline-md.js'
 import { Term } from '../../ui/terms.js'
-import { formatRelative } from '../../../shared/time-format.js'
-import type { SchedulerStatusDto } from '../../../shared/dto.js'
+import { formatRelative } from '../../../shared/text/time-format.js'
+import type { SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
 
 /**
  * 租约面板（R20）。把"死胡同"提示换成带动作的面板。
@@ -49,11 +49,13 @@ export function LeasePanel(props: {
             className="jh-btn jh-btn-inline jh-btn-tiny"
             disabled={props.running || !takeoverPossible}
             title={
+              /* 置灰时那句解释原来是**一整段**（含"先把它关掉，关掉后最多 90 秒会
+                 自动接管"）塞在 title 里。而"怎么办"下面那段 .jh-note 已经逐条写全了
+                 （而且是**看得见**的文字，不用悬停）—— 这里只需要说清"为什么不行"，
+                 再把用户指过去。 */
               takeoverPossible
                 ? '对方的心跳已经过期（很可能已被强杀）。点这里把采集权拿过来。'
-                : `另一个窗口（进程 ${String(lease.pid ?? '?')}）还活着，不能抢它的采集权 —— ` +
-                  '两个窗口同时采集会抢同一份浏览器登录态。请在那个窗口里操作，或先把它关掉，' +
-                  '然后点上面的「重新检测系统」（关掉后最多 90 秒会自动接管，不需要重启）。'
+                : '另一个窗口还活着，不能抢它的采集权 —— 两个窗口同时采集会抢同一份浏览器登录态。怎么办见下面。'
             }
             onClick={props.onTakeover}
           >

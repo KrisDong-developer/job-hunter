@@ -15,17 +15,11 @@
  * 所以这里的原则是：**同一份事实只映射一次**，谁需要谁来调。
  * 投影不做任何判定（判定在 `gate.ts`），也不改任何状态。
  */
-import { PHASE, PLUGIN_ID, ROUTE_PREFIX } from '../../shared/constants.js'
-import type {
-  AdapterHealthDto,
-  CrawlStatusDto,
-  FieldHealthDto,
-  HealthDto,
-  LoginStatusDto,
-  PlatformOverviewDto,
-  SchedulerStatusDto,
-} from '../../shared/dto.js'
-import type { HealthState } from '../../shared/enums.js'
+import { PHASE, PLUGIN_ID, ROUTE_PREFIX } from '../../shared/config/plugin.js'
+import type { AdapterHealthDto, CrawlStatusDto, FieldHealthDto, HealthDto } from '../../shared/contract/dto/crawl.js'
+import type { SchedulerStatusDto } from '../../shared/contract/dto/plan.js'
+import type { LoginStatusDto, PlatformOverviewDto } from '../../shared/contract/dto/platform.js'
+import type { HealthState } from '../../shared/contract/enums/crawl.js'
 import { readAdapterHealth } from '../platform/health.js'
 import { readPlatformRiskPause } from '../platform/risk-pause.js'
 import type { AdapterRegistry } from '../platform/registry.js'

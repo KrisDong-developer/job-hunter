@@ -8,7 +8,7 @@
  *   runtime.ts  → tools/types.ts
  *   tools/*.ts  → runtime.ts
  */
-import type { Disposer } from '../../shared/dsh.js';
+import type { Disposer } from '../../shared/contract/dsh.js';
 /** 一次注册的结果。**失败必须能被看到**，不能只写进日志就完事。 */
 export interface ToolRegistrationReport {
     registered: string[];

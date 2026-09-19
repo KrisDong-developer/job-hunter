@@ -10,9 +10,9 @@
  * 而不是 jobs.ts 里的岗位读写。
  */
 import { dataNotReady } from '../../runtime/contract.js'
-import { CONTACT_STAGES, MANUAL_CONTACT_STAGES } from '../../../shared/enums.js'
-import type { ContactStage, ManualContactStage } from '../../../shared/enums.js'
-import { TONE_LABEL } from '../../../shared/labels.js'
+import { CONTACT_STAGES, MANUAL_CONTACT_STAGES } from '../../../shared/contract/enums/pipeline.js'
+import type { ContactStage, ManualContactStage } from '../../../shared/contract/enums/pipeline.js'
+import { GREETING_TONE_LABEL } from '../../../shared/contract/enums/pipeline.js'
 import { DomainError } from '../../util/errors.js'
 import { json, parsePositiveInt, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'
@@ -31,9 +31,9 @@ export async function greetingDraft(ctx: RouteContext): Promise<RouteResult | un
     if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法岗位 id：${segments[1] ?? ''}`)
     const body = await readObject(req)
     const tone = body['tone']
-    if (tone !== undefined && (typeof tone !== 'string' || !(tone in TONE_LABEL))) {
+    if (tone !== undefined && (typeof tone !== 'string' || !(tone in GREETING_TONE_LABEL))) {
       throw new DomainError('INVALID_INPUT', 'tone 取值不合法', {
-        hint: `合法取值：${Object.keys(TONE_LABEL).join(' / ')}`,
+        hint: `合法取值：${Object.keys(GREETING_TONE_LABEL).join(' / ')}`,
       })
     }
     const highlights = Array.isArray(body['highlights'])

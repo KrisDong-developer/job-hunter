@@ -13,8 +13,8 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../src/shared/constants.js'
-import type { GreetingDraftDto } from '../../src/shared/dto.js'
+import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../src/shared/config/batch.js'
+import type { GreetingDraftDto } from '../../src/shared/contract/dto/pipeline.js'
 import type { GreetingSendResult } from '../../src/host/guard/actions/greeting.js'
 import { previewGreetingBatch, sendGreetingBatch, type GreetingBatchDeps } from '../../src/host/runtime/greeting-batch.js'
 import type { Store } from '../../src/host/store/store.js'

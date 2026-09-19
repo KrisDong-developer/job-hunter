@@ -18,12 +18,14 @@
 import { useEffect, useState } from 'react'
 import { ApiError } from '../../net/client.js'
 import { previewApplicationBatch, sendApplicationBatch } from '../../net/pipeline.js'
-import type { ApplicationBatchPlanDto, ApplicationBatchReceiptDto } from '../../../shared/dto.js'
-import { DELIVERY_STATE_LABEL, DELIVERY_STATE_TONE } from '../../../shared/enums.js'
+import type { ApplicationBatchPlanDto, ApplicationBatchReceiptDto } from '../../../shared/contract/dto/batch.js'
+import { DELIVERY_STATE_LABEL, DELIVERY_STATE_TONE } from '../../../shared/contract/enums/job.js'
+import { localDateTime } from '../../format/job.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { Modal } from '../../ui/modal.js'
 import { ResumeFilePicker } from '../../views/resume-file-picker.js'
+import { IconCheck, IconCross } from './icons.js'
 
 function reasonOf(error: unknown): string {
   return error instanceof ApiError ? error.display : String(error)
@@ -60,7 +62,7 @@ function receiptClass(receipt: ApplicationBatchReceiptDto): string {
 export function BatchDeliverModal(props: {
   jobIds: number[]
   onClose: () => void
-  /** 每批发完通知外层刷新（投递记录/看板/岗位状态都可能变了）。 */
+  /** 整轮投递结束后通知外层刷新一次（投递记录/看板/岗位状态都可能变了）。 */
   onBatchDone: (sent: number, failed: number) => void
   notify: (tone: 'ok' | 'error', text: string) => void
 }) {
@@ -78,6 +80,17 @@ export function BatchDeliverModal(props: {
   const [receipts, setReceipts] = useState<ApplicationBatchReceiptDto[]>([])
   const [sending, setSending] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  /**
+   * 本轮投递的汇总（第四轮，审核 P2-5）。
+   *
+   * 同一句话要给两处：**弹窗内**（用户正看着这里，而列表栏那句被遮罩盖着，看不到）
+   * 与**外层列表页**（关掉弹窗后的留痕）。所以这里存一份，`note` 同时往外传一份。
+   */
+  const [summary, setSummary] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const note = (tone: 'ok' | 'error', text: string): void => {
+    setSummary({ tone, text })
+    props.notify(tone, text)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -115,7 +128,7 @@ export function BatchDeliverModal(props: {
     const already = new Set(receipts.map((receipt) => receipt.jobId))
     const pending = deliverable.filter((item) => !already.has(item.jobId))
     if (pending.length === 0) {
-      props.notify('ok', '这一批都投过了')
+      note('ok', '这一批都投过了')
       return
     }
 
@@ -136,14 +149,19 @@ export function BatchDeliverModal(props: {
         failed += result.failed
         setReceipts((current) => [...current, ...result.receipts])
         setProgress({ done: Math.min(start + chunk.length, pending.length), total: pending.length })
-        props.onBatchDone(result.sent, result.failed)
+        // ⚠️ 这里**不再**逐批通知外层（第四轮，审核 P2-7）：外层收到就会重取岗位列表，
+        // 而它此刻正被遮罩盖着 —— 用户看不到任何变化，代价却是一轮轮重取重绘。
+        // 改为整轮结束后（finally）通知一次。
       }
-      props.notify('ok', `批量投递完成：成功 ${String(sent)} 条、失败 ${String(failed)} 条`)
+      note('ok', `批量投递完成：成功 ${String(sent)} 条、失败 ${String(failed)} 条`)
     } catch (caught) {
       // 已经投出去的那些**不会**被撤销，所以文案只说"剩下的没投成"
-      props.notify('error', `投递中断：${reasonOf(caught)}（前面已经投出去的不会撤回）`)
+      note('error', `投递中断：${reasonOf(caught)}（前面已经投出去的不会撤回）`)
     } finally {
       setSending(false)
+      // 有实际投递动作才通知外层刷新（投递记录 / 看板 / 岗位状态可能都变了）；
+      // 一条都没动过时不必让外层白重取一次。
+      if (sent + failed > 0) props.onBatchDone(sent, failed)
     }
   }
 
@@ -168,6 +186,16 @@ export function BatchDeliverModal(props: {
               正在投递 {progress.done}/{progress.total}（每条之间会等 {intervalSec}，分批之间也一样，慢是故意的）
             </span>
           ) : null}
+          {/* 本轮汇总就地显示（第四轮，审核 P2-5）：它同时也写给了外层列表栏，
+              但那一层正被弹窗遮罩盖着 —— 用户在这里就该看到结果，不必先关弹窗。 */}
+          {summary === null ? null : (
+            <span
+              className={`jh-modal-foot-note ${summary.tone === 'ok' ? 'jh-ok' : 'jh-error'}`}
+              role={summary.tone === 'ok' ? 'status' : 'alert'}
+            >
+              {summary.text}
+            </span>
+          )}
           <span className="jh-spacer" />
           <button type="button" className="jh-btn jh-btn-inline" disabled={sending} onClick={props.onClose}>
             关闭
@@ -295,10 +323,14 @@ export function BatchDeliverModal(props: {
               <ul className="jh-tailor-notes">
                 {receipts.map((receipt) => (
                   <li key={receipt.jobId} className={receiptClass(receipt)}>
-                    {receipt.ok ? '✅' : '❌'} {receipt.company || receipt.title}：
+                    {/* 手画 SVG 而不是 ✅/❌ emoji（第四轮，审核 P3）；状态与送达态另有文字说明 */}
+                    <span className="jh-receipt-mark">
+                      {receipt.ok ? <IconCheck /> : <IconCross />}
+                    </span>
+                    {receipt.company || receipt.title}：
                     {receipt.ok
                       ? `已投递（${DELIVERY_STATE_LABEL[receipt.delivery ?? 'missing']}，` +
-                        `${receipt.sentAt?.slice(0, 19).replace('T', ' ') ?? ''}）`
+                        `${receipt.sentAt === null ? '' : localDateTime(receipt.sentAt)}）`
                       : `${receipt.message ?? '失败'}${receipt.hint === null ? '' : ` —— ${receipt.hint}`}`}
                   </li>
                 ))}

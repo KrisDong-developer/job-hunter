@@ -13,9 +13,9 @@
  *
  * 外加 M2 Cover Letter 与 M5 远程筛选。
  */
-import type { CoverLetterLanguage, RemoteKind, VisaStance } from '../../shared/enums.js'
-import { VISA_STANCES, REMOTE_KINDS } from '../../shared/enums.js'
-import type { CoverLetterDto, TimezoneDisplayDto, VisaRequirementDto } from '../../shared/dto.js'
+import type { CoverLetterLanguage, RemoteKind, VisaStance } from '../../shared/contract/enums/overseas.js'
+import { REMOTE_KINDS, VISA_STANCES } from '../../shared/contract/enums/overseas.js'
+import type { CoverLetterDto, TimezoneDisplayDto, VisaRequirementDto } from '../../shared/contract/dto/overseas.js'
 import type { AiService } from '../ai/client.js'
 import { extractJson } from '../ai/prompts.js'
 import type { Store } from '../store/store.js'

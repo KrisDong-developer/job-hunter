@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import type { LlmCallDto } from '../../../shared/contract/dto/settings.js'
 import { asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 /**
@@ -7,21 +8,11 @@ import { asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
  * 这张表存在的唯一目的：**用户必须能查到「我的哪些数据被发给了模型」**。
  * 所以 `fields` 记的是**外发字段清单**（字段名 + 摘要），不是原始内容；
  * 原始内容留在业务表里，需要核对时按 `ref` 回查。
+ *
+ * 形状的权威定义在 `shared/contract/dto/settings.ts`（它同时是 HTTP 响应形状），
+ * 这里直接取那一份 —— 曾经仓库里有两处同名同字段的接口。
  */
-export interface LlmCallRecord {
-  id: number
-  at: string
-  purpose: string
-  provider: string | null
-  model: string | null
-  fields: string[]
-  promptTokens: number
-  completionTokens: number
-  ref: Record<string, unknown>
-  ok: boolean
-  errorCode: string | null
-  durationMs: number
-}
+export type LlmCallRecord = LlmCallDto
 
 export interface LlmCallInput {
   purpose: string

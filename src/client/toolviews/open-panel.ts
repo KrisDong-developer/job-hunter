@@ -1,4 +1,4 @@
-import { PANEL_KEY } from '../../shared/constants.js'
+import { PANEL_KEY } from '../../shared/config/plugin.js'
 import { requestPanelIntent } from '../app/intent.js'
 import { showPanel } from '../app/runtime.js'
 

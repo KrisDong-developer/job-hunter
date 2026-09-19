@@ -1,5 +1,6 @@
-import type { ContactStage, JobState } from '../../../shared/enums.js'
-import { DELIVERY_STATE_LABEL } from '../../../shared/enums.js'
+import type { JobState } from '../../../shared/contract/enums/job.js'
+import type { ContactStage } from '../../../shared/contract/enums/pipeline.js'
+import { DELIVERY_STATE_LABEL } from '../../../shared/contract/enums/job.js'
 import { JOB_ACTION_LABEL, relativeTime, salaryDetail, splitJobTags } from '../../format/job.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { ApiError, NeedsConfirmError } from '../../net/client.js'

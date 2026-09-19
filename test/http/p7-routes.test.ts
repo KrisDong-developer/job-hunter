@@ -13,20 +13,12 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync } from 'node:fs'
 import { test } from 'node:test'
-import { APPLICATION_STAGES } from '../../src/shared/enums.js'
-import type {
-  ApplicationDto,
-  AttributionDto,
-  BoardDto,
-  FollowUpDto,
-  FunnelDto,
-  InboxDto,
-  InterviewConflictDto,
-  InterviewDto,
-  InterviewPrepDto,
-  MessageDto,
-  SalaryBandDto,
-} from '../../src/shared/dto.js'
+import { APPLICATION_STAGES } from '../../src/shared/contract/enums/pipeline.js'
+import type { AttributionDto, FunnelDto } from '../../src/shared/contract/dto/analytics.js'
+import type { InterviewConflictDto, InterviewDto, InterviewPrepDto } from '../../src/shared/contract/dto/interview.js'
+import type { InboxDto, MessageDto } from '../../src/shared/contract/dto/message.js'
+import type { SalaryBandDto } from '../../src/shared/contract/dto/offer.js'
+import type { ApplicationDto, BoardDto, FollowUpDto } from '../../src/shared/contract/dto/pipeline.js'
 import type { RouteRequest, RouteResult } from '../../src/host/http/router.js'
 import { routeRequest } from '../../src/host/http/router.js'
 import { writeGuardConfig } from '../../src/host/guard/rules.js'

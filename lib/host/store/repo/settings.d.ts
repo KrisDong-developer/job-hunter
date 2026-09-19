@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { SettingScope } from '../../../shared/enums.js';
+import type { SettingScope } from '../../../shared/contract/enums/plan.js';
 /**
  * 配置仓储（ADR-19 / D-18：**DB 为权威**，支持导入导出，明确不支持远程加载）。
  *

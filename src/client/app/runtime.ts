@@ -1,5 +1,5 @@
-import type { LayoutService, PluginContext } from '../../shared/dsh.js'
-import { serviceOf } from '../../shared/dsh.js'
+import type { LayoutService, PluginContext } from '../../shared/contract/dsh.js'
+import { serviceOf } from '../../shared/contract/dsh.js'
 
 /**
  * 面板里的按钮需要一个能力（回到对话区），但组件是纯函数，不该拿到活的 cordis 上下文

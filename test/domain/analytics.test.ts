@@ -13,8 +13,8 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { APPLICATION_CHANNEL_LABEL } from '../../src/shared/enums.js'
-import type { ApplicationChannel, ApplicationStage, ContactStage } from '../../src/shared/enums.js'
+import { APPLICATION_CHANNEL_LABEL } from '../../src/shared/contract/enums/pipeline.js'
+import type { ApplicationChannel, ApplicationStage, ContactStage } from '../../src/shared/contract/enums/pipeline.js'
 import { createAnalyticsService, MIN_SAMPLE } from '../../src/host/domain/analytics.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import type { Store } from '../../src/host/store/store.js'

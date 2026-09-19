@@ -11,7 +11,7 @@ import { test } from 'node:test'
 import { PLATFORM_FACTS, platformFacts } from '../../src/host/platform/platform-facts.js'
 import { createHostRuntime } from '../../src/host/runtime.js'
 import { adapterImplementationOf, type SiteAdapter } from '../../src/host/platform/types.js'
-import { MATURITY_LEVELS } from '../../src/shared/enums.js'
+import { MATURITY_LEVELS } from '../../src/shared/contract/enums/platform.js'
 import { cleanup, tempDataDir } from '../support/store.js'
 
 async function withRuntime(fn: (runtime: ReturnType<typeof createHostRuntime>) => void | Promise<void>) {

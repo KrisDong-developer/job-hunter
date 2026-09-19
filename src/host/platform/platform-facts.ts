@@ -18,7 +18,7 @@
  *   * `notes` 写**已知缺口/陷阱**，写到人看了就知道该怎么办的程度
  *     （"详情页需 securityId" 比 "部分未实现" 有用）。
  */
-import type { AuthRequirementValue } from '../../shared/enums.js'
+import type { AuthRequirementValue } from '../../shared/contract/enums/platform.js'
 import type { AdapterMaturityFact, AuthRequirementFact } from './types.js'
 
 export interface PlatformFacts {

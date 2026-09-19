@@ -1,4 +1,4 @@
-import type { ResumeContent } from '../../../../shared/resume.js'
+import type { ResumeContent } from '../../../../shared/domain/resume-content.js'
 import { InlineMd } from '../../../ui/inline-md.js'
 import { ChipsEditor } from '../editors.js'
 

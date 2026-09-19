@@ -65,7 +65,11 @@ export const COLLECT_USABILITY = `
 .jh-lease{margin:8px 0;padding:8px 10px;border-radius:9px;
   border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
 .jh-lease-warn{border-color:var(--dsw-alias-state-warn-secondary)}
-.jh-lease-ok{border-color:var(--dsw-alias-state-success-secondary)}
+/* 正常态（本窗口负责采集）**不给框也不给底**。
+   它本来就长在「运行状态」那张 .jh-card 里面，再套一层边框+填充就是
+   "卡片套卡片" —— 本页最多的地方叠了三层（.jh-card → .jh-lease → 内层说明）。
+   只有异常态（本窗口只读）才用边框把它抬出来，因为那时它才真的需要被看见。 */
+.jh-lease-ok{border-color:transparent;background:transparent}
 .jh-lease-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px}
 
 /* 明细折叠（原来的堆栈直出改成一句人话 + 可展开的原始信息）*/
@@ -169,16 +173,25 @@ export const PLAN_EDITOR_MODAL = `
 .jh-schedule-row .jh-field{margin:0}
 .jh-schedule-row .jh-timerange{margin:0}
 
-/* 卡片内的警告 Banner（把"连续失败 N 次"这类核心风险抬出来）*/
-.jh-banner{display:flex;flex-direction:column;gap:2px;margin-top:8px;padding:7px 10px;
-  border-radius:8px;font-size:12.5px;line-height:1.6}
+/* 卡片内的警告 Banner（把"连续失败 N 次"这类核心风险抬出来）。
+   ── 用**左侧色条**而不是填充底色：它长在 .jh-plan-card 里面，而那张卡自己
+   已经有边框和背景，再叠一块实心色就是"卡片套卡片套色块"（三层边界，
+   每层的视觉落点都被重置一次）。
+   左边框取 currentColor，颜色仍然只由下面两条的 color 决定 —— 加一个色调
+   不必同时改两处，也不会出现"底色是黄、文字是红"的不一致。 */
+.jh-banner{display:flex;flex-direction:column;gap:2px;margin-top:8px;
+  padding:2px 0 2px 10px;border-left:3px solid currentColor;
+  font-size:12.5px;line-height:1.6}
 .jh-banner-title{font-weight:600}
-.jh-banner-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
-.jh-banner-error{background:var(--jh-error-bg);color:var(--jh-error-fg)}
+.jh-banner-warn{color:var(--jh-warn-fg)}
+.jh-banner-error{color:var(--jh-error-fg)}
 
-/* 方案卡片：明确边框 + 阴影，与卡片背景拉开层次 */
+/* 方案卡片：明确边框，与卡片背景拉开层次。
+   ── 去掉了原来那层 box-shadow:0 1px 3px rgba(0,0,0,.07)：它压在
+   .jh-card 的背景上，浅色主题里几乎看不出，深色主题里完全消失，
+   而它带来的"这是卡片里的卡片"那层暗示却是实实在在的 —— 留边框就够。 */
 .jh-plan-card{padding:11px 13px;border-radius:10px;border:1px solid var(--dsw-alias-border-l3);
-  background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 3px rgba(0,0,0,.07);font-size:12.5px}
+  background:var(--dsw-alias-bg-layer-1);font-size:12.5px}
 .jh-plan-name{font-size:13.5px}
 
 /* 按钮权重：危险 / 警示。主操作复用已有的 .jh-btn-primary。

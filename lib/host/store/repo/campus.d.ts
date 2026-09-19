@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, CoverLetterLanguage, RemoteKind, TripartiteState, VisaStance } from '../../../shared/enums.js';
+import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../../shared/contract/enums/campus.js';
+import type { CoverLetterLanguage, RemoteKind, VisaStance } from '../../../shared/contract/enums/overseas.js';
 /**
  * 校招与海外支线仓储（P8，§4.L / §4.M / §11.5）。
  *

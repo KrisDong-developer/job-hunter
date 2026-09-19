@@ -6,13 +6,10 @@
  * `auth.*` 登录态、`guard.selfTest`）在 P2~P5 逐个补上 —— 这里**不放假实现**，
  * 缺什么就明确是可选的、还没做。
  */
-import type { BlockKind, ContactStage, CoreField, DeliveryState, HealthState } from '../../shared/enums.js'
-import type {
-  AdapterCapabilitiesDto,
-  AdapterImplementationDto,
-  AdapterMaturityDto,
-  AuthRequirementDto,
-} from '../../shared/dto.js'
+import type { BlockKind, CoreField, HealthState } from '../../shared/contract/enums/crawl.js'
+import type { DeliveryState } from '../../shared/contract/enums/job.js'
+import type { ContactStage } from '../../shared/contract/enums/pipeline.js'
+import type { AdapterCapabilitiesDto, AdapterImplementationDto, AdapterMaturityDto, AuthRequirementDto } from '../../shared/contract/dto/platform.js'
 import type { HumanKeyboard, HumanMouse } from './humanize.js'
 
 /** 一页列表里的一条原始岗位。**只含标量**，字段名与核心字段对齐（§4.3 P7）。 */
@@ -132,7 +129,7 @@ export interface HealthResult {
 /**
  * 平台**客观能力**（"这个平台有什么"，不是"我们实现了什么"）。
  *
- * 与 `AdapterImplementation` 的分工见后者；正身定义在 `shared/dto.ts`（跨层共享形状）。
+ * 与 `AdapterImplementation` 的分工见后者；正身定义在 `shared/contract/dto/platform.ts`（跨层共享形状）。
  */
 export type AdapterCapabilitiesFact = AdapterCapabilitiesDto
 
@@ -148,7 +145,7 @@ export type AdapterImplementation = AdapterImplementationDto
 
 /**
  * 登录需求与成熟度是**跨层共享的形状**（host 声明、client 展示），
- * 所以正身定义在 `shared/dto.ts`，这里只做别名。
+ * 所以正身定义在 `shared/contract/dto/platform.ts`，这里只做别名。
  */
 export type AuthRequirementFact = AuthRequirementDto
 export type AdapterMaturityFact = AdapterMaturityDto
@@ -160,7 +157,7 @@ export type AdapterMaturityFact = AdapterMaturityDto
  * 「点了按钮」与「消息真的进了对方会话」是两件事，而这是本系统最不能猜的问题。
  * 只用 `ok: boolean` 无法区分两者 —— 于是"发出去了吗"只能靠猜。
  *
- * `DeliveryState` 的定义在 `shared/enums.ts`（界面也要按同一套取值渲染回执）。
+ * `DeliveryState` 的定义在 `shared/contract/enums/job.ts`（界面也要按同一套取值渲染回执）。
  */
 export interface ActionResult {
   ok: boolean

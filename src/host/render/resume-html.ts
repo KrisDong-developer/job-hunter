@@ -12,15 +12,8 @@
  *
  * 本文件是**纯函数**：没有 IO、没有活对象，可被任意进程直接引。
  */
-import type { ResumeTemplate } from '../../shared/enums.js'
-import type {
-  ResumeBasics,
-  ResumeContent,
-  ResumeEducation,
-  ResumeExperience,
-  ResumeProject,
-  ResumeSkill,
-} from '../../shared/resume.js'
+import type { ResumeTemplate } from '../../shared/contract/enums/resume.js'
+import type { ResumeBasics, ResumeContent, ResumeEducation, ResumeExperience, ResumeProject, ResumeSkill } from '../../shared/domain/resume-content.js'
 
 export interface RenderOptions {
   template?: ResumeTemplate

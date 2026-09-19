@@ -6,7 +6,7 @@
  * 更要紧的是 `resume_tailor`：它会把简历正文发给模型，所以那条路径上
  * 用途开关（默认关）+ 隐私闸门 + 防编造检查三样缺一不可。
  */
-import type { ToolDefinition } from '../../shared/dsh.js';
+import type { ToolDefinition } from '../../shared/contract/dsh.js';
 import type { HostRuntime } from '../runtime.js';
 export declare function resumesTools(runtime: HostRuntime): ToolDefinition[];
 //# sourceMappingURL=resumes.d.ts.map

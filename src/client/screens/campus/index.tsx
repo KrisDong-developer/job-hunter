@@ -1,6 +1,6 @@
-import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../../shared/enums.js'
-import { ASSESSMENT_KIND_LABEL, ASSESSMENT_STATE_LABEL, CAMPUS_BATCHES, CAMPUS_BATCH_LABEL, CAMPUS_STAGES, CAMPUS_STAGE_LABEL, TRIPARTITE_STATE_LABEL } from '../../../shared/enums.js'
-import { formatLocalMoment } from '../../../shared/time-format.js'
+import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../../shared/contract/enums/campus.js'
+import { ASSESSMENT_KIND_LABEL, ASSESSMENT_STATE_LABEL, CAMPUS_BATCHES, CAMPUS_BATCH_LABEL, CAMPUS_STAGES, CAMPUS_STAGE_LABEL, TRIPARTITE_STATE_LABEL } from '../../../shared/contract/enums/campus.js'
+import { formatLocalMoment } from '../../../shared/text/time-format.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { advanceCampus, createAssessment, createCampus, createTripartite, fetchCampus, fetchDeadlines, fetchTripartite, setAssessmentState, setTripartiteState } from '../../net/campus.js'
 import { ApiError } from '../../net/client.js'
@@ -28,7 +28,7 @@ export function CampusScreen(props: { revision: number; onChanged: () => void })
   const [dueAt, setDueAt] = useState('')
   const [dueFor, setDueFor] = useState<number | null>(null)
   // 时间一律按**本地**渲染（`formatLocalMoment`）：`iso.slice(0, 16)` 印出来的是 UTC 墙钟，
-  // 用户填 18:00 会看到 10:00 —— shared/time-format.ts 开头专门记着这个坑。
+  // 用户填 18:00 会看到 10:00 —— shared/text/time-format.ts 开头专门记着这个坑。
   const now = new Date()
 
   /**

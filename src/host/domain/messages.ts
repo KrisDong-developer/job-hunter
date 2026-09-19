@@ -14,9 +14,11 @@
  * 而状态一旦被误改，用户就会漏掉一个真正在推进的岗位。
  * 所以这里只产出 `inviteSignal`，改状态是另一次显式动作（并且会写 `stage_event`）。
  */
-import type { InterviewKind, MessageDirection, ReplyScenario } from '../../shared/enums.js'
-import { REPLY_SCENARIOS } from '../../shared/enums.js'
-import type { InboxDto, InterviewSuggestionDto, MessageDto, ReplyDraftDto } from '../../shared/dto.js'
+import type { InterviewKind } from '../../shared/contract/enums/interview.js'
+import type { MessageDirection, ReplyScenario } from '../../shared/contract/enums/message.js'
+import { REPLY_SCENARIOS } from '../../shared/contract/enums/message.js'
+import type { InterviewSuggestionDto } from '../../shared/contract/dto/interview.js'
+import type { InboxDto, MessageDto, ReplyDraftDto } from '../../shared/contract/dto/message.js'
 import type { AiService } from '../ai/client.js'
 import { extractJson } from '../ai/prompts.js'
 import type { Store } from '../store/store.js'

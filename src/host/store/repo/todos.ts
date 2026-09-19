@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { TodoKind, TodoLevel } from '../../../shared/enums.js'
+import type { TodoKind, TodoLevel } from '../../../shared/contract/enums/today.js'
 import { asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 /** 一条待办。 */

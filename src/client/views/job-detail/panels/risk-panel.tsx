@@ -1,5 +1,5 @@
-import type { JobFlagDto } from '../../../../shared/dto.js'
-import { JOB_FLAG_LABEL } from '../../../../shared/enums.js'
+import type { JobFlagDto } from '../../../../shared/contract/dto/job.js'
+import { JOB_FLAG_LABEL } from '../../../../shared/contract/enums/job.js'
 import { FieldHint } from '../../../ui/field-hint.js'
 import { InlineMd } from '../../../ui/inline-md.js'
 

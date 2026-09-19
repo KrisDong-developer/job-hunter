@@ -1,6 +1,6 @@
 import { createElement, useState, type ReactNode } from 'react'
-import type { ContentBlock, ToolCallBlockView } from '../../shared/dsh.js'
-import { parseJobListLine, type JobListLine } from '../../shared/tool-format.js'
+import type { ContentBlock, ToolCallBlockView } from '../../shared/contract/dsh.js'
+import { parseJobListLine, type JobListLine } from '../../shared/text/tool-format.js'
 
 /**
  * toolview 卡片的共用零件。

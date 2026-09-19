@@ -2,12 +2,8 @@
 // CapabilityMatrix 把"哪个平台支持打招呼而我们没写"这类横向可比的事实摊成一列列，
 // CapabilityCell / DoneCell 是格子里的三态 / 两态徽标，LEVEL_SHORT 是高中低三档的中文短标签。
 
-import {
-  AUTH_REQUIREMENT_LABEL,
-  MATURITY_LEVEL_SHORT,
-  MATURITY_LEVEL_TONE,
-} from '../../../shared/enums.js'
-import type { PlatformOverviewDto } from '../../../shared/dto.js'
+import { AUTH_REQUIREMENT_LABEL, MATURITY_LEVEL_SHORT, MATURITY_LEVEL_TONE } from '../../../shared/contract/enums/platform.js'
+import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
 
 /** 「高/中/低」三档的短标签（平台事实里没有中文名可取，这里只是把枚举翻成人话）。 */
 const LEVEL_SHORT: Record<'high' | 'medium' | 'low', string> = {
@@ -55,9 +51,13 @@ export function CapabilityMatrix(props: { items: PlatformOverviewDto[] }) {
       <table className="jh-table jh-table-caps">
         <thead>
           <tr>
-            <th scope="col">平台</th>
-            <th scope="col">成熟度</th>
-            <th scope="col">上次验证</th>
+            {/* 首列粘住：这张表 12 列、min-width 900px，窄屏一定会横滑 ——
+                横滑到右边几列时，没有粘性首列就看不出这一行是哪个平台，
+                而"保留行身份"正是本项目允许横滑的前提（见 RUNS_TABLE 那段注释）。
+                与「平台状态总览」的矩阵同一套做法。 */}
+            <th scope="col" className="jh-col-sticky">平台</th>
+            <th scope="col" className="jh-col-hide-sm">成熟度</th>
+            <th scope="col" className="jh-col-hide-sm">上次验证</th>
             <th scope="col">列表采集</th>
             <th scope="col">详情页</th>
             <th scope="col">打招呼</th>
@@ -72,11 +72,11 @@ export function CapabilityMatrix(props: { items: PlatformOverviewDto[] }) {
         <tbody>
           {props.items.map((item) => (
             <tr key={item.id}>
-              <td>
+              <td className="jh-col-sticky">
                 <code>{item.id}</code>
                 <div className="jh-muted">{item.displayName}</div>
               </td>
-              <td>
+              <td className="jh-col-hide-sm">
                 <span className={`jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`}>
                   {MATURITY_LEVEL_SHORT[item.maturity.level]}
                 </span>
@@ -84,7 +84,7 @@ export function CapabilityMatrix(props: { items: PlatformOverviewDto[] }) {
                   <div className="jh-muted">{item.maturity.notes}</div>
                 )}
               </td>
-              <td>{item.maturity.verifiedAt ?? '—'}</td>
+              <td className="jh-col-hide-sm">{item.maturity.verifiedAt ?? '—'}</td>
               <td>
                 <DoneCell done={item.implementation.crawl} />
               </td>

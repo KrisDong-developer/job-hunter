@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { RawJob } from '../../src/host/platform/types.js'
 import { isFieldMiss, partitionByRequiredFields } from '../../src/host/platform/validate.js'
-import { CORE_FIELDS } from '../../src/shared/enums.js'
+import { CORE_FIELDS } from '../../src/shared/contract/enums/crawl.js'
 
 function job(overrides: Partial<RawJob> = {}): RawJob {
   return {

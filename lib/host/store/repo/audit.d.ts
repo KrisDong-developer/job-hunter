@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { AuditRecordDto } from '../../../shared/contract/dto/settings.js';
 /**
  * 审计表（§4.4.3 / §4.1 审计表隐私策略）。
  *
@@ -6,19 +7,11 @@ import type { DatabaseSync } from 'node:sqlite';
  * 话术全文、简历全文这类内容如果原样写进审计，审计表自己就成了隐私黑洞 ——
  * 而审计的保留期通常比业务数据长得多。
  * 所以 `detail` 走 `summarize()` 收口，只留"有哪些字段、各多长、哈希前 8 位"。
+ *
+ * 形状的权威定义在 `shared/contract/dto/settings.ts`：它同时是 HTTP 响应形状，
+ * 所以这里直接取那一份 —— 曾经仓库里有两处同名同字段的接口，靠人眼保持同步。
  */
-export interface AuditRecord {
-    id: number;
-    at: string;
-    actor: string;
-    action: string;
-    target: Record<string, unknown>;
-    detail: Record<string, unknown>;
-    result: string;
-    reason: string | null;
-    approval: unknown;
-    durationMs: number | null;
-}
+export type AuditRecord = AuditRecordDto;
 export interface AuditInput {
     actor: string;
     action: string;

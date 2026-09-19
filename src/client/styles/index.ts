@@ -1,4 +1,4 @@
-import { PLUGIN_ID } from '../../shared/constants.js'
+import { PLUGIN_ID } from '../../shared/config/plugin.js'
 import { CAMPUS } from './screens/campus.js'
 import { COLLECT_BUTTONS, PLANS, COLLECT_USABILITY, PLAN_EDITOR_MODAL, RUNS_TABLE, PLATFORM_MATRIX } from './screens/collect.js'
 import { ENTRY_ICON, SHELL, OVERLAY } from './shell.js'

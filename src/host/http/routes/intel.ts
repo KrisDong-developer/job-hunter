@@ -5,7 +5,7 @@
  * `dictionary` 内部再按 GET / POST 分派；`recompute` 只接 POST，且是单次有上限的重算。
  */
 import { dataNotReady } from '../../runtime/contract.js'
-import { PAGE_SIZE_MAX } from '../../../shared/constants.js'
+import { PAGE_SIZE_MAX } from '../../../shared/config/limits.js'
 import { DomainError } from '../../util/errors.js'
 import { DICTIONARY_KINDS } from '../../store/repo/dictionary.js'
 import { json, readObject, requireData, type RouteContext } from './kit.js'

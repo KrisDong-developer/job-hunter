@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ApiError, NeedsConfirmError, request } from '../../src/client/net/client.js'
-import { ROUTE_PREFIX } from '../../src/shared/constants.js'
+import { ROUTE_PREFIX } from '../../src/shared/config/plugin.js'
 
 /**
  * 客户端与宿主之间**唯一**的 HTTP 出口。

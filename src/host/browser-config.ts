@@ -10,13 +10,7 @@
  * 也没有复用它自己的 `ai` 通道：那是模型用途开关，同样不是一类东西。
  * 所以单独一个键 + 单独一个读写器，走 setting 表的 `scope='global'`。
  */
-import {
-  BROWSER_CLOSE_AFTER_RUN_MS,
-  BROWSER_IDLE_DEFAULT_MIN,
-  BROWSER_IDLE_KEY,
-  BROWSER_IDLE_MAX_MIN,
-  BROWSER_IDLE_MIN_MIN,
-} from '../shared/constants.js'
+import { BROWSER_CLOSE_AFTER_RUN_MS, BROWSER_IDLE_DEFAULT_MIN, BROWSER_IDLE_KEY, BROWSER_IDLE_MAX_MIN, BROWSER_IDLE_MIN_MIN } from '../shared/config/browser.js'
 import type { BrowserEngine } from './platform/browser.js'
 import type { Store } from './store/store.js'
 

@@ -2,7 +2,7 @@
  * 与宿主 HTTP 的唯一出口：URL 拼装、统一错误类型、唯一 fetch。
  * 界面层不该直接用 `request` —— 它是给本目录其它域模块复用的内网工具。
  */
-import { ROUTE_PREFIX } from '../../shared/constants.js'
+import { ROUTE_PREFIX } from '../../shared/config/plugin.js'
 
 /**
  * 客户端调用宿主 API 失败时的统一错误类型。

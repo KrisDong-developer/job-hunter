@@ -1,7 +1,7 @@
 /**
  * 触发一次采集与查看"跑到哪了"：抓取状态、运行历史、跳过原因。
  */
-import type { CrawlSummaryDto } from '../../../shared/dto.js'
+import type { CrawlSummaryDto } from '../../../shared/contract/dto/crawl.js'
 import { request } from '../client.js'
 
 export async function runCrawl(input: {

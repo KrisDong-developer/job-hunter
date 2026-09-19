@@ -20,33 +20,18 @@
  */
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import {
-  EXPORTS_DIR_NAME,
-  PLUGIN_ID,
-} from '../shared/constants.js'
-import type {
-  AdapterConfigDto,
-  CleanupPlanDto,
-  CleanupResultDto,
-  CrawlStatusDto,
-  CrawlSummaryDto,
-  DataExportFormat,
-  DataExportEntryDto,
-  DataImportResultDto,
-  DeadlineDto,
-  ApplicationBatchPlanDto,
-  ApplicationBatchResultDto,
-  GreetingBatchPlanDto,
-  GreetingBatchResultDto,
-  GreetingDraftDto,
-  GuardUsageDto,
-  HealthDto,
-  LoginStatusDto,
-  PlatformOverviewDto,
-  SchedulerStatusDto,
-  StorageUsageDto,
-  TodayDto,
-} from '../shared/dto.js'
+import { PLUGIN_ID } from '../shared/config/plugin.js'
+import { EXPORTS_DIR_NAME } from '../shared/config/retention.js'
+import type { ApplicationBatchPlanDto, ApplicationBatchResultDto, GreetingBatchPlanDto, GreetingBatchResultDto } from '../shared/contract/dto/batch.js'
+import type { DeadlineDto } from '../shared/contract/dto/campus.js'
+import type { CrawlStatusDto, CrawlSummaryDto, HealthDto } from '../shared/contract/dto/crawl.js'
+import type { GreetingDraftDto } from '../shared/contract/dto/pipeline.js'
+import type { SchedulerStatusDto } from '../shared/contract/dto/plan.js'
+import type { LoginStatusDto, PlatformOverviewDto } from '../shared/contract/dto/platform.js'
+import type { AdapterConfigDto } from '../shared/contract/dto/settings.js'
+import type { CleanupPlanDto, CleanupResultDto, DataExportEntryDto, DataImportResultDto, StorageUsageDto } from '../shared/contract/dto/storage.js'
+import type { GuardUsageDto, TodayDto } from '../shared/contract/dto/today.js'
+import type { DataExportFormat } from '../shared/contract/enums/storage.js'
 import type { AiService } from './ai/client.js'
 import { createAiService } from './ai/client.js'
 import type { LlmSourceLike, ModelSelectorLike } from './ai/llm-port.js'
@@ -101,7 +86,7 @@ import type { StageProbeResult } from './guard/actions/stage.js'
 import type { Guard } from './guard/index.js'
 import { createGuard } from './guard/index.js'
 import type { GuardToken } from './guard/token.js'
-import type { Actor } from './guard/types.js'
+import type { Actor } from '../shared/contract/enums/guard.js'
 import { createEventBus, type EventBus } from './http/sse.js'
 import type { BrowserManager } from './platform/browser.js'
 import { browserPageSource, createBrowserManager } from './platform/browser.js'

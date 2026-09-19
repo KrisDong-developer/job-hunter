@@ -63,7 +63,7 @@ import * as todos from './routes/todos.js'
 import type { RouteRequest, RouteResult } from './routes/types.js'
 
 export type { RouteRequest, RouteResult } from './routes/types.js'
-export type { CrawlStatusDto } from '../../shared/dto.js'
+export type { CrawlStatusDto } from '../../shared/contract/dto/crawl.js'
 
 /**
  * 路由表。**一个 handler = 一个精确形状**，这里就是全部 HTTP 端点。

@@ -156,7 +156,7 @@ export declare const SCHEMA_V9 = "\nALTER TABLE plan ADD COLUMN platform_overrid
  *
  * 明细有 20 项、且随时可能加项（谈薪的坑只会越踩越多），逐项建列意味着每加一项
  * 都要一次迁移；而对比表**不靠 SQL 聚合**（它是在内存里逐项渲染的，见
- * `shared/offer.ts` 的字段清单），所以 JSON 足够。
+ * `shared/domain/offer-comp.ts` 的字段清单），所以 JSON 足够。
  *
  * 但有三样**必须能查**，所以留成真列：
  *   * `annual_cash` —— 排序与"谁给得多"要靠它（也是 U0 与今日提醒的入口）；

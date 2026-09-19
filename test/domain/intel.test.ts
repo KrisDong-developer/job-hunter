@@ -11,7 +11,7 @@ import {
   type JobIntelInput,
 } from '../../src/host/domain/intel.js'
 import type { ResumeService } from '../../src/host/domain/resumes.js'
-import { emptyResumeContent, type ResumeContent } from '../../src/shared/resume.js'
+import { emptyResumeContent, type ResumeContent } from '../../src/shared/domain/resume-content.js'
 import type { DictionaryEntry } from '../../src/host/store/repo/dictionary.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import { cleanup, openTestStore, tempDataDir } from '../support/store.js'

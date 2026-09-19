@@ -5,10 +5,10 @@
  * 方案的写入校验与界面完全同一套（SR-45）—— 工具塞非法条件与界面报同样的错，
  * 这里不做第二套判断。
  */
-import { formatCriteriaLine } from '../../shared/criteria-label.js'
-import type { ToolDefinition } from '../../shared/dsh.js'
-import type { SchedulerStatusDto } from '../../shared/dto.js'
-import { formatWeekdays } from '../../shared/time-format.js'
+import { formatCriteriaLine } from '../../shared/text/criteria-label.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import type { SchedulerStatusDto } from '../../shared/contract/dto/plan.js'
+import { formatWeekdays } from '../../shared/text/time-format.js'
 import type { PlanService } from '../domain/plans.js'
 import type { HostRuntime } from '../runtime.js'
 import { describeWindow } from '../scheduler/schedule.js'

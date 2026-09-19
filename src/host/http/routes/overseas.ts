@@ -5,7 +5,7 @@
  * 路径挂在 `/resumes` 前缀下，但按**行为**归属海外，调用 runtime.overseas().inspectEnglish）；
  * 求职信（/cover-letters）。
  */
-import type { CoverLetterLanguage, RemoteKind, VisaStance } from '../../../shared/enums.js'
+import type { CoverLetterLanguage, RemoteKind, VisaStance } from '../../../shared/contract/enums/overseas.js'
 import { DomainError } from '../../util/errors.js'
 import { json, parseRecordId, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'

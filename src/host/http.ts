@@ -10,9 +10,10 @@
  * 以及把 SSE 流挂上。所有路由与业务判断在 `router.ts`（可离线单测）里。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { ATTACHMENT_BODY_MAX_BYTES, MAX_BODY_BYTES, ROUTE_PREFIX } from '../shared/constants.js'
-import type { Disposer, PluginContext, WebServerService } from '../shared/dsh.js'
-import { serviceOf } from '../shared/dsh.js'
+import { ATTACHMENT_BODY_MAX_BYTES, MAX_BODY_BYTES } from '../shared/config/limits.js'
+import { ROUTE_PREFIX } from '../shared/config/plugin.js'
+import type { Disposer, PluginContext, WebServerService } from '../shared/contract/dsh.js'
+import { serviceOf } from '../shared/contract/dsh.js'
 import type { HostRuntime } from './runtime.js'
 import { routeRequest, type RouteResult } from './http/router.js'
 import { formatSseFrame, SSE_HEARTBEAT_FRAME, SSE_HEARTBEAT_MS, type EventBus } from './http/sse.js'

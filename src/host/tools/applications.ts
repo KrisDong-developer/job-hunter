@@ -5,22 +5,10 @@
  * `application_update` / `interview_manage` / `interview_questions`（写操作）是**中危**（模型发起时审批），
  * `interview_prep` / `interview_questions`（查询）是只读。分级不是我们这个文件说了算 —— 由 `runtime` 上那层 guard 判。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import {
-  APPLICATION_CHANNELS,
-  APPLICATION_CHANNEL_LABEL,
-  APPLICATION_STAGES,
-  APPLICATION_STAGE_LABEL,
-  DELIVERY_STATE_LABEL,
-  INTERVIEW_KINDS,
-  INTERVIEW_KIND_LABEL,
-  INTERVIEW_STATES,
-  INTERVIEW_STATE_LABEL,
-  type ApplicationChannel,
-  type ApplicationStage,
-  type InterviewKind,
-  type InterviewState,
-} from '../../shared/enums.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import { INTERVIEW_KINDS, INTERVIEW_KIND_LABEL, INTERVIEW_STATES, INTERVIEW_STATE_LABEL, type InterviewKind, type InterviewState } from '../../shared/contract/enums/interview.js'
+import { DELIVERY_STATE_LABEL } from '../../shared/contract/enums/job.js'
+import { APPLICATION_CHANNELS, APPLICATION_CHANNEL_LABEL, APPLICATION_STAGES, APPLICATION_STAGE_LABEL, type ApplicationChannel, type ApplicationStage } from '../../shared/contract/enums/pipeline.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import {

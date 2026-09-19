@@ -1,5 +1,5 @@
-import type { InterviewKind, InterviewState } from '../../../shared/enums.js'
-import { INTERVIEW_KIND_LABEL, INTERVIEW_STATE_LABEL } from '../../../shared/enums.js'
+import type { InterviewKind, InterviewState } from '../../../shared/contract/enums/interview.js'
+import { INTERVIEW_KIND_LABEL, INTERVIEW_STATE_LABEL } from '../../../shared/contract/enums/interview.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { ApiError } from '../../net/client.js'
 import { createInterview, deleteInterview, fetchInterviews, setInterviewState } from '../../net/inbox.js'

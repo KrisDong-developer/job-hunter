@@ -11,6 +11,7 @@ import type { Store } from '../store/store.js'
 import { platformFacts } from '../platform/platform-facts.js'
 import type { SessionService } from '../platform/session.js'
 import { stableRatio } from '../scheduler/schedule.js'
+import { parseClockWindow } from '../../shared/text/time-format.js'
 import { DomainError } from '../util/errors.js'
 import { systemClock, type Clock } from '../util/time.js'
 import type { GuardDeniedReason, GuardInput } from './types.js'
@@ -155,15 +156,14 @@ export interface SendWindow {
 
 /** 解析窗口串。非法返回 `null`（调用方决定 fail-closed 还是修配置）。 */
 export function parseSendWindow(raw: string): SendWindow | null {
-  const match = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(raw.trim())
-  if (match === null) return null
-  const [, sh, sm, eh, em] = match
-  const startH = Number(sh)
-  const startM = Number(sm)
-  const endH = Number(eh)
-  const endM = Number(em)
-  if (startH > 23 || endH > 23 || startM > 59 || endM > 59) return null
-  return { startMin: startH * 60 + startM, endMin: endH * 60 + endM }
+  // 格式与范围的判定**不在这里**：唯一解析点是 shared 的 `parseClockWindow`，
+  // 界面（设置页 / 风险提示）取的是同一份。这里只把"时+分"折成分钟。
+  const window = parseClockWindow(raw)
+  if (window === null) return null
+  return {
+    startMin: window.startHour * 60 + window.startMinute,
+    endMin: window.endHour * 60 + window.endMinute,
+  }
 }
 
 /** `minuteOfDay`（0–1439）是否落在窗口内。跨午夜窗口（`start > end`）按两侧并集算。 */

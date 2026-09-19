@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { HealthDto } from '../../../shared/dto.js'
+import type { HealthDto } from '../../../shared/contract/dto/crawl.js'
 import type { AsyncState } from '../../hooks/use-async.js'
 import { ApiError } from '../../net/client.js'
 import { revealDataDir } from '../../net/ops.js'

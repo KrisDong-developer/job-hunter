@@ -48,7 +48,7 @@
  * 因此与站点声明一致。详情页链接仍然会写进 `source_url`（那是给**人**点的），
  * 但采集链路不会去自动打开它。
  */
-import type { BlockKind } from '../../../shared/enums.js';
+import type { BlockKind } from '../../../shared/contract/enums/crawl.js';
 import { type BlockSignalSet } from '../block-signals.js';
 import type { RawJob, SearchCriteria, SiteAdapter } from '../types.js';
 /** 页面外壳地址（人看的入口）。 */

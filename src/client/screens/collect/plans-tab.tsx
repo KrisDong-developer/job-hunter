@@ -1,8 +1,9 @@
 // 分区二「方案管理」：方案卡片列表 + 编辑/删除/确认恢复 + 新建。
 // 纯展示组件：数据与动作全部由 CollectScreen 通过 props 传入，本文件不持有任何状态。
-import { formatClock, formatWeekdays, formatWindow } from '../../../shared/time-format.js'
-import type { PlanDto, PlatformOverviewDto, SchedulerStatusDto } from '../../../shared/dto.js'
-import type { CriteriaDimensionDto } from '../../net/types.js'
+import { formatClock, formatWeekdays, formatWindow } from '../../../shared/text/time-format.js'
+import type { PlanDto, SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
+import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
+import type { CriteriaDimensionDto } from '../../../shared/contract/dto/plan.js'
 import { Term } from '../../ui/terms.js'
 import { FreshnessBadge } from '../../views/freshness.js'
 import { CriteriaLine } from './criteria-line.js'

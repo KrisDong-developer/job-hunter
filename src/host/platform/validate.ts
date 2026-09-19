@@ -9,7 +9,7 @@
  *   1. **逐条**：缺任一必需字段 → 该条**不写主表**，进 `pending_repair`；
  *   2. **逐轮**：某个字段整轮 0 命中 → 该字段的连续缺失 +1，达阈值即适配器降级。
  */
-import type { CoreField } from '../../shared/enums.js'
+import type { CoreField } from '../../shared/contract/enums/crawl.js'
 import type { RawJob } from './types.js'
 
 /** 某个核心字段在本轮的命中统计。 */

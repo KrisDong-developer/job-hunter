@@ -3,10 +3,10 @@
 // RunLogCard 只列没跑成的轮次（失败或有 skipReason），排障时不必在成功行里找失败。
 // 两处都把失败收成"状态胶囊 + 一句人话 + 详情"，完整 trace 交给外层弹窗。
 
-import { runReasonLabel } from '../../../shared/enums.js'
-import { humanizeFailure, type FailureText } from '../../../shared/error-text.js'
-import { formatDuration, formatLocalMoment, formatRelative } from '../../../shared/time-format.js'
-import type { RecentRunDto } from '../../../shared/dto.js'
+import { runReasonLabel } from '../../../shared/contract/enums/plan.js'
+import { humanizeFailure, type FailureText } from '../../../shared/text/error-text.js'
+import { formatDuration, formatLocalMoment, formatRelative } from '../../../shared/text/time-format.js'
+import type { RecentRunDto } from '../../../shared/contract/dto/crawl.js'
 import { LoadingLine } from '../../ui/async-view.js'
 import { StateTag } from './state-tag.js'
 

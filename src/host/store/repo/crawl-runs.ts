@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { CrawlState } from '../../../shared/enums.js'
-import type { CrawlRunDto } from '../../../shared/dto.js'
+import type { CrawlState } from '../../../shared/contract/enums/crawl.js'
+import type { CrawlFailureCode } from '../../../shared/contract/enums/error.js'
+import type { CrawlRunDto } from '../../../shared/contract/dto/crawl.js'
 import { asId, asInt, asText, asTextOrNull, type Row } from '../row.js'
 
 /**
@@ -21,7 +22,8 @@ export interface CrawlRunPatch {
   updated?: number
   skipped?: number
   quarantined?: number
-  errorCode?: string | null
+  /** 失败码。取值域见 shared 的 `CRAWL_FAILURE_CODES`（写错了编译不过）。 */
+  errorCode?: CrawlFailureCode | null
   errorMsg?: string | null
   logRef?: string | null
   /** SR-28/29：触发原因（schedule / manual / catch-up）。 */
@@ -68,7 +70,9 @@ function toDto(row: Row): CrawlRunDto {
     updated: asInt(row['updated']),
     skipped: asInt(row['skipped']),
     quarantined: asInt(row['quarantined']),
-    errorCode: asTextOrNull(row['error_code']),
+    // 读出来时收窄一次：库里可能留着旧版本写的码（取值域见 CRAWL_FAILURE_CODES）。
+    // 这是**唯一**的收窄点 —— 写入侧由类型保证，读侧只此一处，所以不会有第三份口径。
+    errorCode: asTextOrNull(row['error_code']) as CrawlFailureCode | null,
     errorMsg: asTextOrNull(row['error_msg']),
     // SR-28/29：触发原因与跳过原因都随记录落库 —— 否则运行历史表回答不了"这次是谁触发的"
     reason: asTextOrNull(row['reason']),

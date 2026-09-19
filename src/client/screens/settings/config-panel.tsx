@@ -2,7 +2,7 @@
 
 import { riskStory } from '../../format/risk-story.js'
 import type { updateSettings } from '../../net/ops.js'
-import type { SettingsDto } from '../../net/types.js'
+import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import { GuardPanel } from './guard-panel.js'
 import { PurposesPanel } from './purposes-panel.js'
 

@@ -1,0 +1,44 @@
+import type { JobState } from '../enums/job.js';
+/**
+ * dedup 域的对外 DTO —— 领域层与 HTTP / 工具之间的 JSON 边界（§4.3 字段级铁律 P7）。
+ *
+ * **只允许标量 JSON**：禁止 page / session / Cordis service / 任何活对象穿越这一层。
+ */
+export interface DedupGroupDto {
+    id: number;
+    primaryJobId: number | null;
+    basis: string;
+    score: number;
+    createdAt: string;
+    members: Array<{
+        id: number;
+        platformId: string;
+        /** 平台显示名（服务端 JOIN 出来的；平台被卸载时为 null，界面退回显示 id）。 */
+        platformName: string | null;
+        title: string;
+        companyName: string | null;
+        city: string;
+        salaryRaw: string;
+        sourceUrl: string;
+        state: JobState;
+        isPrimary: boolean;
+    }>;
+}
+/** 全库去重复核的结果（批次 4）。 */
+export interface DedupSweepResultDto {
+    /** 真的送去判定的岗位数（跳过已分组、没公司名的）。 */
+    scanned: number;
+    /** 已经**在某个分组里**、这一轮没再判的岗位数。 */
+    skippedGrouped: number;
+    /** 这一轮**进入分组**的岗位数（新建组时两条都算 —— 它们确实都被合并了）。 */
+    merged: number;
+    /** 新建的分组数。 */
+    newGroups: number;
+    /** 疑似重复但**未自动合并**的数量（要人工看一眼）。 */
+    candidates: number;
+    /** 复核之后库里一共有多少个分组。 */
+    groups: number;
+    /** 复核之后的分组列表（界面直接重渲染，不用再请求一次）。 */
+    items: DedupGroupDto[];
+}
+//# sourceMappingURL=dedup.d.ts.map

@@ -32,8 +32,9 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { EXPORT_ARCHIVE_MAX_BYTES, IMPORT_MAX_ROWS } from '../../shared/constants.js'
-import type { DataExportEntryDto, DataExportFormat, DataImportResultDto } from '../../shared/dto.js'
+import { EXPORT_ARCHIVE_MAX_BYTES, IMPORT_MAX_ROWS } from '../../shared/config/limits.js'
+import type { DataExportEntryDto, DataImportResultDto } from '../../shared/contract/dto/storage.js'
+import type { DataExportFormat } from '../../shared/contract/enums/storage.js'
 import { buildZip, type ZipEntry } from '../render/zip.js'
 import type { Store } from '../store/store.js'
 import { asRealOrNull, asText, type Row } from '../store/row.js'

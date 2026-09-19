@@ -5,8 +5,8 @@ import { createFiftyOneAdapter, DEFAULT_FIFTYONE_CONFIG } from '../../src/host/p
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { keywordsOfPlan } from '../../src/host/store/repo/plans.js'
 import { DomainError } from '../../src/host/util/errors.js'
-import { PLAN_KEYWORDS_MAX } from '../../src/shared/constants.js'
-import type { PlanDto } from '../../src/shared/dto.js'
+import { PLAN_KEYWORDS_MAX } from '../../src/shared/config/crawl.js'
+import type { PlanDto } from '../../src/shared/contract/dto/plan.js'
 import { cleanup, fixedClock, openTestStore } from '../support/store.js'
 
 /**

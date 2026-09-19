@@ -15,7 +15,7 @@
 import type { AdapterRegistry } from '../../platform/registry.js';
 import type { SessionService } from '../../platform/session.js';
 import type { PageSource } from '../../platform/types.js';
-import type { ContactStage } from '../../../shared/enums.js';
+import type { ContactStage } from '../../../shared/contract/enums/pipeline.js';
 import type { Store } from '../../store/store.js';
 import { type Clock } from '../../util/time.js';
 import { type GuardToken } from '../token.js';

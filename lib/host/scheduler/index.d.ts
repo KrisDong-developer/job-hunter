@@ -1,4 +1,7 @@
-import type { CrawlSummaryDto, FreshnessDto, PlanDto, SchedulerStatusDto, SkipReason } from '../../shared/dto.js';
+import type { CrawlSummaryDto } from '../../shared/contract/dto/crawl.js';
+import type { FreshnessDto } from '../../shared/contract/dto/job.js';
+import type { PlanDto, SchedulerStatusDto } from '../../shared/contract/dto/plan.js';
+import type { SkipReason } from '../../shared/contract/enums/plan.js';
 import type { PlanService } from '../domain/plans.js';
 import type { EventBus } from '../http/sse.js';
 import type { Store } from '../store/store.js';
@@ -109,8 +112,6 @@ export interface RoundBudget {
 export declare function startRoundBudget(startedAtMs: number, budgetMs?: number): RoundBudget;
 /** 到点了吗。**只在平台之间问** —— 平台内部由抓取侧自己问同一个终点。 */
 export declare function budgetExhausted(budget: RoundBudget, nowMs: number): boolean;
-/** 跳过原因 → 人话（SR-17：界面显示人话，不显示枚举键）。 */
-export declare const SKIP_REASON_LABEL: Record<SkipReason, string>;
 /** SR-8：新鲜度阈值。随计划频率变：每天跑一次的计划 18 小时就算旧了。 */
 export declare function freshThresholdsFor(plan: PlanDto): {
     freshHours: number;

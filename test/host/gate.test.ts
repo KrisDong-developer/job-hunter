@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
-import { DAILY_CRAWL_LIMIT } from '../../src/shared/constants.js'
+import { DAILY_CRAWL_LIMIT } from '../../src/shared/config/crawl.js'
 import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job.js'
 import { createGuopinAdapter } from '../../src/host/platform/adapters/guopin.js'
 import { createAdapterRegistry, type AdapterRegistry } from '../../src/host/platform/registry.js'

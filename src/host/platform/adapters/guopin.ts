@@ -52,7 +52,7 @@
  * `detectBlock` 走通用文案判定：验证控件 → 频控 → 登录墙 → 空页。列表页未登录可看
  * （投递才要登录），所以 `searchWithoutLogin: true`；antiBot 如实定 `low`。
  */
-import type { BlockKind, CoreField } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'

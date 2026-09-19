@@ -1,4 +1,4 @@
-import type { PluginContext } from '../../shared/dsh.js';
+import type { PluginContext } from '../../shared/contract/dsh.js';
 import type { HostRuntime } from '../runtime.js';
 import type { ToolRegistration, ToolRegistrationReport } from './types.js';
 export { TOOL_BATCH_MAX } from './kit.js';

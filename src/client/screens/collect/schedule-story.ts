@@ -1,8 +1,8 @@
 // 调度归属的唯一说法：把调度器状态收敛成「谁在调度 + 下次何时跑 + 补充说明」。
 // 供采集页顶部 `.jh-story` 使用，避免同一句"定时已暂停"在页面里重复出现。
 
-import type { SchedulerStatusDto } from '../../../shared/dto.js'
-import { formatClock, formatJitter, formatRelative } from '../../../shared/time-format.js'
+import type { SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
+import { formatClock, formatJitter, formatRelative } from '../../../shared/text/time-format.js'
 
 /**
  * 调度归属的**唯一说法**。
@@ -34,8 +34,16 @@ export function scheduleStoryOf(status: SchedulerStatusDto, now: Date): Schedule
           .join(' / ')
 
   if (status.paused) {
-    // 暂停时"下次运行"是**条件句**：不写"还有 9 小时"那种肯定口径
-    return { owner: '定时已暂停', tone: 'warn', nextRun, detail: null }
+    // 暂停时"下次运行"是**条件句**：不写"还有 9 小时"那种肯定口径。
+    // 这里**只说归属**，不再写"定时已暂停" —— 那几个字由顶部那条 Alert 说
+    // （它还带着「恢复定时」按钮，是这句话的动作落点）。改之前这一屏有三处
+    // 同时说"定时已暂停"：工具条的圆点、那条 Alert、还有这里的 owner。
+    return {
+      owner: status.readOnly ? '由另一个窗口负责调度' : '本窗口负责调度',
+      tone: 'warn',
+      nextRun,
+      detail: '「到点自动跑」已关掉；手动「立即采集」不受影响。',
+    }
   }
   if (status.readOnly) {
     return {

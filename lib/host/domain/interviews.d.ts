@@ -9,8 +9,9 @@
  * 状态机（§12.6）：`待确认 → 已确认 → 已完成 → 已复盘`，任意 → `已取消 / 已改期`。
  * 这条链是**单向**的：改期要显式传 `allowReschedule`，否则就是把别人的日程当草稿。
  */
-import type { InterviewKind, InterviewState, StageSource } from '../../shared/enums.js';
-import type { InterviewConflictDto, InterviewDto, InterviewPrepDto, QuestionNoteDto } from '../../shared/dto.js';
+import type { InterviewKind, InterviewState } from '../../shared/contract/enums/interview.js';
+import type { StageSource } from '../../shared/contract/enums/pipeline.js';
+import type { InterviewConflictDto, InterviewDto, InterviewPrepDto, QuestionNoteDto } from '../../shared/contract/dto/interview.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';
 /** 撞车判定的时间窗：两场面试在这段时间内即算冲突（含前后缓冲）。 */

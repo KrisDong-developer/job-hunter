@@ -6,10 +6,10 @@
  *   · 真的对外发东西（`greeting_send`、`message_reply`）→ 高危，必然过闸门 + 用户审批。
  * 工具层**没有**绕过闸门的能力：它只调用 `runtime` 上那几个已经接了 guard 的方法。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import { CONTACT_STAGE_LABEL, MANUAL_CONTACT_STAGES } from '../../shared/enums.js'
-import type { ManualContactStage } from '../../shared/enums.js'
-import { TONE_LABEL } from '../../shared/labels.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import { CONTACT_STAGE_LABEL, MANUAL_CONTACT_STAGES } from '../../shared/contract/enums/pipeline.js'
+import type { ManualContactStage } from '../../shared/contract/enums/pipeline.js'
+import { GREETING_TONE_LABEL } from '../../shared/contract/enums/pipeline.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import {
@@ -52,9 +52,9 @@ export function outreachTools(runtime: HostRuntime): ToolDefinition[] {
         requireData(runtime)
         const id = positiveId(args.jobId, 'jobId')
         const tone = asString(args['tone'])
-        if (tone !== undefined && !(tone in TONE_LABEL)) {
+        if (tone !== undefined && !(tone in GREETING_TONE_LABEL)) {
           throw new DomainError('INVALID_INPUT', `tone 取值不合法：${tone}`, {
-            hint: `合法取值：${Object.keys(TONE_LABEL).join(' / ')}`,
+            hint: `合法取值：${Object.keys(GREETING_TONE_LABEL).join(' / ')}`,
           })
         }
         const highlights = Array.isArray(args['highlights'])

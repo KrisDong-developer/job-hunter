@@ -174,4 +174,10 @@ export const SETTINGS_PURPOSES_AND_USAGE = `
    nowrap 会把它压成一条读不了的横线。允许换行、给一个最小宽度让它横向滚动。 */
 .jh-table-caps{min-width:900px}
 .jh-table-caps th,.jh-table-caps td{padding:7px 10px;vertical-align:top;text-align:left}
+/* 首列粘住：与「平台状态总览」同一套做法（见 PLATFORM_MATRIX 那段）。
+   900px 的表在窄屏一定会横滑，而横滑到右边几列时，没有粘性首列就看不出
+   这一行是哪个平台 —— "保留行身份"是本项目允许横滑的前提。
+   只借"粘住"这一件事，**不借** width:1% 那套列宽策略（原因见上面那条注释）。 */
+.jh-table-caps th.jh-col-sticky,.jh-table-caps td.jh-col-sticky{
+  position:sticky;left:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
 `

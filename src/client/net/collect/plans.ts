@@ -1,9 +1,9 @@
 /**
  * 采集方案的读写：CRUD、保存前校验、筛选维度声明。
  */
-import type { PlanDto } from '../../../shared/dto.js'
+import type { PlanDto } from '../../../shared/contract/dto/plan.js'
 import { request } from '../client.js'
-import type { CriteriaDimensionsDto, PlanDuplicateDto, PlanValidationDto, PlanWriteInput } from '../types.js'
+import type { CriteriaDimensionsDto, PlanDuplicateDto, PlanValidationDto, PlanWriteInput } from '../../../shared/contract/dto/plan.js'
 
 export async function fetchPlans(signal?: AbortSignal): Promise<{ items: PlanDto[] }> {
   return await request<{ items: PlanDto[] }>('/plans', signal === undefined ? {} : { signal })

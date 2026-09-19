@@ -1,10 +1,5 @@
-import {
-  BROWSER_CLOSE_AFTER_RUN_MS,
-  BROWSER_IDLE_DEFAULT_MIN,
-  BROWSER_IDLE_MAX_MIN,
-  BROWSER_IDLE_MIN_MIN,
-} from '../../../shared/constants.js'
-import type { SettingsDto } from '../../net/types.js'
+import { BROWSER_CLOSE_AFTER_RUN_MS, BROWSER_IDLE_DEFAULT_MIN, BROWSER_IDLE_MAX_MIN, BROWSER_IDLE_MIN_MIN } from '../../../shared/config/browser.js'
+import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { NumberField } from '../../ui/number-field.js'
 import { Switch } from '../../ui/switch.js'

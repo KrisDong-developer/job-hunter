@@ -21,19 +21,14 @@
  * ⚠️ 与打招呼同一条纪律：这里**不放行任何东西**。真正的判定在每一条的
  * `sendOne` → `guard.run()` 里（开关 / 隐身 / 窗口 / 休息日 / 额度 / 冷却 / 批量上限 / 审批）。
  */
-import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../shared/constants.js'
-import type {
-  ApplicationBatchBlockerDto,
-  ApplicationBatchItemDto,
-  ApplicationBatchPlanDto,
-  ApplicationBatchReceiptDto,
-  ApplicationBatchResultDto,
-} from '../../shared/dto.js'
-import { DELIVERY_STATE_LABEL } from '../../shared/enums.js'
+import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../shared/config/batch.js'
+import type { ApplicationBatchBlockerDto, ApplicationBatchItemDto, ApplicationBatchPlanDto, ApplicationBatchReceiptDto, ApplicationBatchResultDto } from '../../shared/contract/dto/batch.js'
+import { DELIVERY_STATE_LABEL } from '../../shared/contract/enums/job.js'
 import type { ApplicationSendResult } from '../guard/actions/application.js'
 import { APPLICATION_SEND_ACTION, resumeVersionTextOf } from '../guard/actions/application.js'
 import type { GuardPreview } from '../guard/index.js'
-import type { Actor, GuardInput } from '../guard/types.js'
+import type { Actor } from '../../shared/contract/enums/guard.js'
+import type { GuardInput } from '../guard/types.js'
 import type { Store } from '../store/store.js'
 import { DomainError } from '../util/errors.js'
 import type { Clock } from '../util/time.js'

@@ -10,7 +10,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BATCH_MAX_ITEMS } from '../../src/shared/constants.js'
+import { BATCH_MAX_ITEMS } from '../../src/shared/config/batch.js'
 import type { RouteRequest, RouteResult } from '../../src/host/http/router.js'
 import { routeRequest } from '../../src/host/http/router.js'
 import { createHostRuntime, type HostRuntime } from '../../src/host/runtime.js'

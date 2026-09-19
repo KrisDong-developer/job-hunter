@@ -13,8 +13,9 @@ import type { AiService } from '../ai/client.js'
 import { HARD_BLOCKED_PATTERNS } from '../ai/privacy.js'
 import { extractJson } from '../ai/prompts.js'
 import type { Store } from '../store/store.js'
-import { JOB_FLAG_LABEL } from '../../shared/enums.js'
-import type { GreetingDraftDto } from '../../shared/dto.js'
+import type { GreetingDraftDto } from '../../shared/contract/dto/pipeline.js'
+import { JOB_FLAG_LABEL } from '../../shared/contract/enums/job.js'
+import { GREETING_TONE_LABEL, type GreetingTone } from '../../shared/contract/enums/pipeline.js'
 import { DomainError } from '../util/errors.js'
 
 /** 话术长度约束：太短没内容，太长 HR 不会看。 */
@@ -34,14 +35,6 @@ export const GREETING_ALLOW_FIELDS = [
   'tone',
   'highlights',
 ] as const
-
-export type GreetingTone = 'formal' | 'warm' | 'concise'
-
-export const GREETING_TONE_LABEL: Record<GreetingTone, string> = {
-  formal: '正式',
-  warm: '热情',
-  concise: '简短',
-}
 
 /** JD/HR 消息里值得记录的注入样本（记录后仍然继续，不做"内容过滤"）。 */
 const INJECTION_MARKERS: Array<{ name: string; pattern: RegExp }> = [

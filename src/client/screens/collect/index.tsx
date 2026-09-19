@@ -9,21 +9,18 @@
  * 改动要连带看 `test/shared/collect-form.test.ts`）。
  */
 import { useMemo, useState } from 'react'
-import { CRAWL_STATE_LABEL } from '../../../shared/enums.js'
-import { FAILURE_KIND_LABEL, type FailureText } from '../../../shared/error-text.js'
-import type {
-  PlanDto,
-  PlatformOverviewDto,
-  RecentRunDto,
-  SchedulerStatusDto,
-} from '../../../shared/dto.js'
+import { CRAWL_STATE_LABEL } from '../../../shared/contract/enums/crawl.js'
+import { FAILURE_KIND_LABEL, type FailureText } from '../../../shared/text/error-text.js'
+import type { RecentRunDto } from '../../../shared/contract/dto/crawl.js'
+import type { PlanDto, SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
+import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
 import { ApiError } from '../../net/client.js'
 import { createPlan, deletePlan, fetchCriteriaDimensions, fetchPlans, updatePlan, validatePlan, validatePlanDraft } from '../../net/collect/plans.js'
 import { fetchPlatforms, startLogin } from '../../net/collect/platforms.js'
 import { fetchSkipReasons, runPlan } from '../../net/collect/runs.js'
 import { fetchSchedulerStatus, recheckLease, resumePlanRisk, setSchedulePaused, takeoverLease } from '../../net/collect/schedule.js'
 import { runDedupSweep } from '../../net/dedup.js'
-import type { CriteriaDimensionDto, PlanDuplicateDto } from '../../net/types.js'
+import type { CriteriaDimensionDto, PlanDuplicateDto } from '../../../shared/contract/dto/plan.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { IDLE, type Feedback } from '../../ui/feedback.js'
 import { InlineMd } from '../../ui/inline-md.js'
@@ -324,14 +321,23 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
               className={`jh-status-dot ${status.paused ? 'jh-status-dot-warn' : 'jh-status-dot-on'}`}
               aria-hidden="true"
             />
-            {status.paused ? '定时已暂停' : '定时运行中'}
+            {/* 文字单独包一层：窄屏只留圆点（文字让位给右边的操作按钮，
+                与顶栏 .jh-live 同一套降级）。圆点带了 aria-hidden，
+                所以窄屏下这段状态对读屏仍然是完整的 —— 靠的是这一层文字，
+                而不是那个点。 */}
+            <span className="jh-collect-switch-text">
+              {status.paused ? '定时已暂停' : '定时运行中'}
+            </span>
           </span>
         )}
         <button
           type="button"
           className="jh-btn jh-btn-inline jh-btn-primary"
           disabled={status === null || feedback.running}
-          aria-pressed={status === null ? undefined : !status.paused}
+          /* 刻意**不写** aria-pressed：这个按钮的文案本身就在说动作
+             （"暂停调度"/"启动调度"），读到的是"暂停调度，已按下"时，
+             "已按下"说的是"定时正在运行"，与文案正好相反 —— 读屏用户只会更糊涂。
+             当前状态由左边那个圆点 + 文字（以及那条 Alert）负责说。 */
           title={
             status?.paused === true
               ? '恢复「到点自动跑」。手动「立即采集」一直都能用。'
@@ -354,7 +360,11 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           type="button"
           className="jh-btn jh-btn-inline"
           disabled={feedback.running}
-          title="把全库岗位按同一套门槛复核一遍（跨平台 + 同公司同城 + 薪资不冲突 + 标题相似）。用在「刚打开去重开关」或「刚改过抓取范围」之后补做一次 —— 否则要干等下一轮抓取，而那一轮可能一条新岗位都没有。合并是可逆的。"
+          /* 原来这里是**一整段**（含"否则要干等下一轮抓取，而那一轮可能一条新岗位都没有"）
+             塞进 title。桌面端 title 只能悬停看、读不到一半就消失，触屏根本出不来，
+             而它说的正是"什么时候该点这个按钮"。现在只留一句，完整规则在
+             「方案管理 · 跨平台去重」那张卡片的问号里。 */
+          title="按同一套门槛把全库岗位复核一遍。用在刚打开去重开关、或刚改过抓取范围之后。"
           onClick={sweep}
         >
           运行全库去重
@@ -377,8 +387,13 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
       {feedback.message === null ? null : (
         <div
           className={`jh-card jh-card-tight jh-feedback ${feedback.tone === 'error' ? 'jh-card-error' : ''}`}
-          role="status"
-          aria-live="polite"
+          /* 失败要**打断**读屏，成功只是告知 —— 所以 role 分两种。
+             原来一律用 role="status" + polite：动作失败时读屏还在慢悠悠念上一条，
+             用户等不到那句"没成"，而这条卡片正是唯一的失败反馈。
+             aria-live 必须跟着一起写：role="alert" 隐含 assertive，
+             但显式写着的 polite 会把它盖回去。 */
+          role={feedback.tone === 'error' ? 'alert' : 'status'}
+          aria-live={feedback.tone === 'error' ? 'assertive' : 'polite'}
         >
           <p className={feedback.tone === 'error' ? 'jh-error' : 'jh-muted'}>
             <InlineMd text={feedback.message} />

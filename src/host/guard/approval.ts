@@ -12,7 +12,8 @@
  * 一句话：**除了明确同意，其余一切路径都是拒绝。**
  * 默认放行是不可接受的，"无人时危险动作永久阻塞"也不可接受。
  */
-import type { Actor, Danger } from './types.js'
+import type { Actor } from '../../shared/contract/enums/guard.js'
+import type { Danger } from './types.js'
 
 export interface ApprovalRequest {
   action: string

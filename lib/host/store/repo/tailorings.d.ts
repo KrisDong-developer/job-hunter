@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { ResumeContent } from '../../../shared/resume.js';
+import type { ResumeContent } from '../../../shared/domain/resume-content.js';
 /**
  * 简历定制仓储（§11.3 `ResumeTailoring`）。
  *

@@ -53,7 +53,17 @@ export function DedupComparePane(props: { groupId: number; onSelect: (id: number
                 <td className="jh-num">{member.salaryRaw}</td>
                 <td className="jh-col-hide-sm">{member.city}</td>
                 <td>
-                  <a className="jh-link" href={member.sourceUrl} target="_blank" rel="noreferrer">
+                  {/* 第四轮（审核 P3）：同一张表里每一行都是"打开"，四个同名链接对读屏
+                      没有区分度，也没说会在新窗口打开（WCAG 3.2.5 的建议）。
+                      可见文字保持短，名称里带上标题与"新窗口"。 */}
+                  <a
+                    className="jh-link"
+                    href={member.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="在新窗口打开原页面"
+                    aria-label={`打开原页面（新窗口）：${member.title}`}
+                  >
                     打开
                   </a>
                 </td>

@@ -1,4 +1,4 @@
-import type { SalaryBoxDto } from '../../../shared/dto.js'
+import type { SalaryBoxDto } from '../../../shared/contract/dto/offer.js'
 import { useState } from 'react'
 
 /**

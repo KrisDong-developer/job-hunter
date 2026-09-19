@@ -15,9 +15,11 @@ import {
   type SchedulerRunInput,
 } from '../../src/host/scheduler/index.js'
 import { createManualTimer } from '../../src/host/scheduler/timer-port.js'
-import { ADAPTER_FAIL_THRESHOLD, ROUND_BUDGET_MS } from '../../src/shared/constants.js'
-import type { CrawlSummaryDto, PlanSchedule } from '../../src/shared/dto.js'
-import type { CrawlState } from '../../src/shared/enums.js'
+import { ADAPTER_FAIL_THRESHOLD, ROUND_BUDGET_MS } from '../../src/shared/config/crawl.js'
+import type { CrawlSummaryDto } from '../../src/shared/contract/dto/crawl.js'
+import type { PlanSchedule } from '../../src/shared/contract/dto/plan.js'
+import type { CrawlState } from '../../src/shared/contract/enums/crawl.js'
+import type { CrawlFailureCode } from '../../src/shared/contract/enums/error.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
@@ -40,7 +42,7 @@ function makeClock(start: Date) {
   }
 }
 
-function summaryOf(state: CrawlState, errorCode: string | null = null): CrawlSummaryDto {
+function summaryOf(state: CrawlState, errorCode: CrawlFailureCode | null = null): CrawlSummaryDto {
   return {
     run: {
       id: 1,

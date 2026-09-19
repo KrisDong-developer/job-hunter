@@ -1,12 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  buildExpChips,
-  EDU_RANK_UNKNOWN,
-  expBucketOf,
-  eduRankOf,
-  sortEduValues,
-} from '../../src/shared/facets.js'
+import { EDU_RANK_UNKNOWN, buildExpChips, eduRankOf, expBucketOf, sortEduValues } from '../../src/shared/domain/job-facets.js'
 
 /**
  * 经验梯队与学历梯度的归一化。

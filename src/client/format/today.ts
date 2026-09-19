@@ -1,4 +1,4 @@
-import { TODO_KIND_LABEL, TODO_LEVEL_LABEL } from '../../shared/enums.js'
+import { TODO_KIND_LABEL, TODO_LEVEL_LABEL } from '../../shared/contract/enums/today.js'
 
 /** 待办里能直接动手的类型 → 动作。 */
 export function planIdOf(todo: { detail: unknown }): number | null {

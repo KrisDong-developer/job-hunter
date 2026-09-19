@@ -6,7 +6,7 @@
  * 是另一条独立路径，靠 `segments.length === 1` 与前者区分。维度接口在 `/criteria/dimensions`。
  */
 import { dataNotReady } from '../../runtime/contract.js'
-import type { CrawlSummaryDto } from '../../../shared/dto.js'
+import type { CrawlSummaryDto } from '../../../shared/contract/dto/crawl.js'
 import { DomainError } from '../../util/errors.js'
 import { criteriaDimensionsFor } from '../../domain/plan-config.js'
 import type { SearchCriteria } from '../../platform/types.js'

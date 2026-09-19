@@ -12,30 +12,14 @@
  * "哪版简历/哪个渠道转化好"必须以**每一次投递**为单位：
  * 同一个岗位可能投了两次、用了不同简历；按岗位聚合会把它们糊在一起。
  */
-import type {
-  AnalyticsFilter,
-  AttributionDto,
-  AttributionRowDto,
-  FunnelDto,
-  FunnelStepDto,
-  ResumeCompareDto,
-  ResumeCompareRowDto,
-  SalaryBandDto,
-  SalaryBaselineDto,
-  SalaryBasis,
-  SalaryBoxChartDto,
-  SalaryBoxDto,
-} from '../../shared/dto.js'
-import {
-  RESUME_COMPARE_CAVEAT,
-  SALARY_BASIS_LABEL,
-} from '../../shared/dto.js'
-import {
-  APPLICATION_CHANNEL_LABEL,
-  APPLICATION_STAGE_LABEL,
-  CONTACT_STAGE_LABEL,
-} from '../../shared/enums.js'
-import type { ApplicationStage, ContactStage } from '../../shared/enums.js'
+import type { AnalyticsFilter, AttributionDto, AttributionRowDto, FunnelDto, FunnelStepDto } from '../../shared/contract/dto/analytics.js'
+import type { SalaryBandDto, SalaryBaselineDto, SalaryBoxChartDto, SalaryBoxDto } from '../../shared/contract/dto/offer.js'
+import type { ResumeCompareDto, ResumeCompareRowDto } from '../../shared/contract/dto/resume.js'
+import type { SalaryBasis } from '../../shared/contract/enums/analytics.js'
+import { SALARY_BASIS_LABEL } from '../../shared/contract/enums/analytics.js'
+import { RESUME_COMPARE_CAVEAT } from '../../shared/contract/dto/resume.js'
+import { APPLICATION_CHANNEL_LABEL, APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../shared/contract/enums/pipeline.js'
+import type { ApplicationStage, ContactStage } from '../../shared/contract/enums/pipeline.js'
 import type { Store } from '../store/store.js'
 import type { ApplicationRecord } from '../store/repo/pipeline.js'
 

@@ -12,11 +12,10 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { APPLICATION_STAGES } from '../../src/shared/enums.js'
-import type { ResumeContent } from '../../src/shared/resume.js'
+import { APPLICATION_STAGES, NO_PROGRESS_DAYS } from '../../src/shared/contract/enums/pipeline.js'
+import type { ResumeContent } from '../../src/shared/domain/resume-content.js'
 import {
   createPipelineService,
-  NO_PROGRESS_DAYS,
   READ_TIMEOUT_HOURS,
   UNREAD_TIMEOUT_HOURS,
   type PipelineDeps,

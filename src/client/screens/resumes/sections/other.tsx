@@ -1,4 +1,4 @@
-import type { ResumeContent } from '../../../../shared/resume.js'
+import type { ResumeContent } from '../../../../shared/domain/resume-content.js'
 import { BlockCard, move } from '../editors.js'
 
 export function OtherSection(props: {

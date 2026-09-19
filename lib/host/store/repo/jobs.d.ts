@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { JobDto } from '../../../shared/dto.js';
-import { type JobFlagType, type JobState } from '../../../shared/enums.js';
+import type { JobDto } from '../../../shared/contract/dto/job.js';
+import { type JobFlagType, type JobOrderValue, type JobState } from '../../../shared/contract/enums/job.js';
 /** 岗位写入/筛选所需的标量字段（活对象已被适配器剥掉，§4.3 P7）。 */
 export interface JobUpsertInput {
     platformId: string;
@@ -63,7 +63,8 @@ export interface JobQuery {
      * 不叫"新出现了多少岗位"。
      */
     firstSeenSince?: string;
-    orderBy?: 'crawled_at' | 'salary_min' | 'title' | 'last_seen_at' | 'first_seen_at';
+    /** 排序字段。取值域见 `JOB_ORDER_VALUES`（与路由校验、界面下拉同一份）。 */
+    orderBy?: JobOrderValue;
     descending?: boolean;
     /**
      * 屏蔽这些标注类型的岗位：命中任意一个标注的岗位一律不显示（`NOT EXISTS`）。

@@ -13,7 +13,7 @@
  * 所以判定与读数集中在这里：一条算法一份实现，读者按需 import。
  * 门的**判定顺序**钉在 `test/host/gate.test.ts`（越根本、越不可能自愈的原因越先报）。
  */
-import { DAILY_CRAWL_LIMIT } from '../../shared/constants.js'
+import { DAILY_CRAWL_LIMIT } from '../../shared/config/crawl.js'
 import { citySupportOf } from '../platform/cities.js'
 import { readAdapterHealth } from '../platform/health.js'
 import { readPlatformRiskPause } from '../platform/risk-pause.js'

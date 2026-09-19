@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { CoreField } from '../../../shared/enums.js'
+import type { CoreField } from '../../../shared/contract/enums/crawl.js'
 import { asInt, asText, asTextOrNull, type Row } from '../row.js'
 
 /** 一个核心字段的健康计数（§4.2.4）。 */

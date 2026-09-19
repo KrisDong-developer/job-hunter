@@ -2,7 +2,7 @@ import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'reac
 import { ApiError } from '../../net/client.js'
 import { fetchAudit, fetchLlmCalls, fetchSettings, updateSettings } from '../../net/ops.js'
 import { fetchHealth } from '../../net/overview.js'
-import type { SettingsDto } from '../../net/types.js'
+import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { ConfigPanel, type SettingsPatch } from './config-panel.js'
 import { DataPanel } from './data-panel.js'

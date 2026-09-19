@@ -14,7 +14,7 @@
  * 所以这里会先把现值读出来合并再写 —— 否则"把公积金比例补上"会顺手清掉
  * 用户先前填的月 base。这条差异是有意的，也是这一层唯一替调用方做的决定。
  */
-import type { ToolDefinition } from '../../shared/dsh.js';
+import type { ToolDefinition } from '../../shared/contract/dsh.js';
 import type { HostRuntime } from '../runtime.js';
 export declare function offersTools(runtime: HostRuntime): ToolDefinition[];
 //# sourceMappingURL=offers.d.ts.map

@@ -24,3 +24,29 @@ export function IconSend() {
     </svg>
   )
 }
+
+/**
+ * 批量回执行首的成功 / 失败标记（第四轮，审核 P3）。
+ *
+ * 原先是 ✅ / ❌ 两个 emoji —— 与上面这段"字形在部分中文字体里会退回豆腐块，
+ * 所以手画 SVG"的理由正好相反，而且 emoji 的字形与配色各平台都不一样。
+ * 尺寸取 13px：回执行是 12px 正文，13px 的墨迹刚好与文字同高、不把行高撑开。
+ * 状态另外由文字说明（"已投递（已送达…）" / 失败原因），所以图标对读屏隐藏。
+ */
+export function IconCheck() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+      <path d="M2.5 8.6 6.3 12.4 13.5 3.8" />
+    </svg>
+  )
+}
+
+export function IconCross() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" />
+    </svg>
+  )
+}

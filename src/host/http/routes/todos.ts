@@ -3,7 +3,7 @@
  * 管 GET /todos（列表 + kind/level 筛选）、GET /todos/:id（单条，含 detail）、
  * POST /todos/:id/confirm-actions/resume（把待确认动作意图交回界面重发）、POST /todos/:id/close。
  */
-import { TODO_KINDS, TODO_LEVELS, type TodoKind, type TodoLevel } from '../../../shared/enums.js'
+import { TODO_KINDS, TODO_LEVELS, type TodoKind, type TodoLevel } from '../../../shared/contract/enums/today.js'
 import { dataNotReady } from '../../runtime/contract.js'
 import { DomainError } from '../../util/errors.js'
 import { json, parsePositiveInt, requireData, type RouteContext } from './kit.js'

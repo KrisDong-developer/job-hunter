@@ -17,21 +17,10 @@
  *    默认关闭；关掉时对比表照常可用（`facts` 是规则算的）。"该签哪个"这件事
  *    牵扯薪资、家庭、通勤、成长，谁也不该替用户拍板。
  */
-import type { OfferState } from '../../shared/enums.js'
-import { OFFER_OPEN_STATES, OFFER_STATES } from '../../shared/enums.js'
-import type {
-  OfferCompareDto,
-  OfferCompareRowDto,
-  OfferDeadlineDto,
-  OfferDto,
-} from '../../shared/dto.js'
-import {
-  annualCashOf,
-  formatMoney,
-  isOfferCompEmpty,
-  OFFER_COMP_FIELDS,
-  offerCompDisplay,
-} from '../../shared/offer.js'
+import type { OfferState } from '../../shared/contract/enums/offer.js'
+import { OFFER_OPEN_STATES, OFFER_STATES } from '../../shared/contract/enums/offer.js'
+import type { OfferCompareDto, OfferCompareRowDto, OfferDeadlineDto, OfferDto } from '../../shared/contract/dto/offer.js'
+import { OFFER_COMP_FIELDS, annualCashOf, formatMoney, isOfferCompEmpty, offerCompDisplay } from '../../shared/domain/offer-comp.js'
 import type { AiService } from '../ai/client.js'
 import { extractJson } from '../ai/prompts.js'
 import type { OfferRecord } from '../store/repo/offers.js'

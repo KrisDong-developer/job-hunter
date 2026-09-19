@@ -10,7 +10,7 @@
  *    GUI / 模型工具 / HTTP 三条入口共用**同一份**校验，报错完全一致。
  * 2. **重复方案只提示，不合并**（SR-43）—— 合并会替用户抹掉他的两个意图。
  */
-import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js'
+import type { PlanDto, PlanPostProcess, PlanSchedule } from '../../shared/contract/dto/plan.js'
 import { activePlatformsOf, normalizePlatformOverrides } from '../store/repo/plans.js'
 import type { PlanRepo, PlanUpsertInput } from '../store/repo/plans.js'
 import type { Store } from '../store/store.js'
@@ -18,10 +18,10 @@ import type { AdapterRegistry } from '../platform/registry.js'
 import { DomainError } from '../util/errors.js'
 import type { Clock } from '../util/time.js'
 import { systemClock } from '../util/time.js'
+import type { CriteriaDimensionDto } from '../../shared/contract/dto/plan.js'
 import {
   criteriaDimensionsFor,
   validatePlanConfig,
-  type CriteriaDimensionDto,
   type PlanConfigInput,
   type ValidatedPlanConfig,
 } from './plan-config.js'

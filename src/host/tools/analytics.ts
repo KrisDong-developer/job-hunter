@@ -4,7 +4,7 @@
  * 一条硬规矩（写进工具描述，也体现在返回文案里）：**样本不足不给结论**。
  * `MIN_SAMPLE = 5` 的原则不许绕过 —— 宁可说"别看差额"，也不硬给一个百分比。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
 import type { HostRuntime } from '../runtime.js'
 import { asString, enumStr, requireData, schema, str, textResult, toolDefiner } from './kit.js'
 

@@ -1,5 +1,7 @@
-import type { AdapterHealthDto, CrawlStatusDto, FieldHealthDto, HealthDto, LoginStatusDto, PlatformOverviewDto, SchedulerStatusDto } from '../../shared/dto.js';
-import type { HealthState } from '../../shared/enums.js';
+import type { AdapterHealthDto, CrawlStatusDto, FieldHealthDto, HealthDto } from '../../shared/contract/dto/crawl.js';
+import type { SchedulerStatusDto } from '../../shared/contract/dto/plan.js';
+import type { LoginStatusDto, PlatformOverviewDto } from '../../shared/contract/dto/platform.js';
+import type { HealthState } from '../../shared/contract/enums/crawl.js';
 import type { AdapterRegistry } from '../platform/registry.js';
 import { type LoginFlow, type SessionService } from '../platform/session.js';
 import type { PlatformGate } from '../scheduler/index.js';

@@ -9,9 +9,9 @@
  *   * **降级即暂停写入**：该平台只保留读取与人工修复入口，不再往主表写；
  *   * **告警必须主动**：降级要产生待办（`createOnce` 去重，避免每轮刷屏）。
  */
-import { CORE_FIELD_MISS_THRESHOLD } from '../../shared/constants.js'
-import type { FieldHealthDto } from '../../shared/dto.js'
-import type { CoreField, HealthState } from '../../shared/enums.js'
+import { CORE_FIELD_MISS_THRESHOLD } from '../../shared/config/crawl.js'
+import type { FieldHealthDto } from '../../shared/contract/dto/crawl.js'
+import type { CoreField, HealthState } from '../../shared/contract/enums/crawl.js'
 import type { Store } from '../store/store.js'
 import { isFieldMiss, type FieldPresence } from './validate.js'
 

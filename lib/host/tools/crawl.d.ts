@@ -4,7 +4,7 @@
  * 与 `plans.ts` 的分工：方案怎么配是那边的事；这里只负责"现在抓一次"与"现在什么状态"。
  * 真正的抓取一律经 `runtime.crawl` / `runtime.runPlan` —— 工具层不自己开浏览器。
  */
-import type { ToolDefinition } from '../../shared/dsh.js';
+import type { ToolDefinition } from '../../shared/contract/dsh.js';
 import type { HostRuntime } from '../runtime.js';
 export declare function crawlTools(runtime: HostRuntime): ToolDefinition[];
 //# sourceMappingURL=crawl.d.ts.map

@@ -18,7 +18,7 @@
  * 对话里没有二进制通道。导出写进 `<dataDir>/exports/`，返回**文件路径**；
  * 用户拿着路径就能找到文件。导入反过来：读 `exports/` 下一个**文件名**（不接受任意路径）。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import { asString, enumStr, requireData, schema, str, textResult, toolDefiner } from './kit.js'

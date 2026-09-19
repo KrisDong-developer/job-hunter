@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { JOB_FLAG_TYPES, type JobFlagType } from '../../../shared/enums.js';
+import { JOB_FLAG_TYPES, type JobFlagType } from '../../../shared/contract/enums/job.js';
 export { JOB_FLAG_TYPES };
 export type { JobFlagType };
 /** 一条标注。`evidence` 是**可读依据**的数组 —— 没有依据的结论不允许落库。 */

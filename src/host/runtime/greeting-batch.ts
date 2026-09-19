@@ -23,19 +23,14 @@
  * ⚠️ 这里**不**放行任何东西：真正的判定仍在每一条的 `sendOne` → `guard.run()` 里。
  * 预览只是"提前把话说明白"。
  */
-import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../shared/constants.js'
-import type {
-  GreetingBatchBlockerDto,
-  GreetingBatchItemDto,
-  GreetingBatchPlanDto,
-  GreetingBatchReceiptDto,
-  GreetingBatchResultDto,
-  GreetingDraftDto,
-} from '../../shared/dto.js'
+import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../shared/config/batch.js'
+import type { GreetingBatchBlockerDto, GreetingBatchItemDto, GreetingBatchPlanDto, GreetingBatchReceiptDto, GreetingBatchResultDto } from '../../shared/contract/dto/batch.js'
+import type { GreetingDraftDto } from '../../shared/contract/dto/pipeline.js'
 import type { GreetingSendResult } from '../guard/actions/greeting.js'
 import { GREETING_SEND_ACTION } from '../guard/actions/greeting.js'
 import type { GuardPreview } from '../guard/index.js'
-import type { Actor, GuardInput } from '../guard/types.js'
+import type { Actor } from '../../shared/contract/enums/guard.js'
+import type { GuardInput } from '../guard/types.js'
 import type { Store } from '../store/store.js'
 import { messageOf } from '../util/errors.js'
 import type { Clock } from '../util/time.js'

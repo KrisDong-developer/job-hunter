@@ -4,10 +4,11 @@
  * 与 `plans.ts` 的分工：方案怎么配是那边的事；这里只负责"现在抓一次"与"现在什么状态"。
  * 真正的抓取一律经 `runtime.crawl` / `runtime.runPlan` —— 工具层不自己开浏览器。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import { CRAWL_STATE_LABEL, HEALTH_STATE_LABEL, runReasonLabel } from '../../shared/enums.js'
-import { humanizeFailure } from '../../shared/error-text.js'
-import { formatLocalMoment } from '../../shared/time-format.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import { CRAWL_STATE_LABEL, HEALTH_STATE_LABEL } from '../../shared/contract/enums/crawl.js'
+import { runReasonLabel } from '../../shared/contract/enums/plan.js'
+import { humanizeFailure } from '../../shared/text/error-text.js'
+import { formatLocalMoment } from '../../shared/text/time-format.js'
 import type { HostRuntime } from '../runtime.js'
 import { asString, int, requireData, schema, str, textResult, toolDefiner } from './kit.js'
 

@@ -26,7 +26,7 @@
  * 而"一键清空全部平台"既不对应任何真实场景，又会让一个手滑抹掉所有平台的诊断线索。
  * 要清多个平台就多按几次 —— 代价远小于一个误触的全局清空。
  */
-import type { RepairDto, RepairListDto } from '../../../shared/dto.js'
+import type { RepairDto, RepairListDto } from '../../../shared/contract/dto/platform.js'
 import type { RepairRecord } from '../../store/repo/repairs.js'
 import { dataNotReady } from '../../runtime/contract.js'
 import { DomainError } from '../../util/errors.js'

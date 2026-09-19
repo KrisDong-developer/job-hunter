@@ -3,7 +3,7 @@
  * 管 GET/POST /plans、POST /plans/validate、POST|PATCH|DELETE /plans/:id，
  * 以及 POST /plans/:id/validate（只校验不写库）、/run（manual 或 catch-up）、/resume（人工恢复风控暂停）。
  */
-import type { PlanDto, PlanPlatformOverrideDto, PlanSchedule } from '../../../shared/dto.js'
+import type { PlanDto, PlanPlatformOverrideDto, PlanSchedule } from '../../../shared/contract/dto/plan.js'
 import type { PlanConfigInput } from '../../domain/plans.js'
 import { normalizePlatformOverrides } from '../../store/repo/plans.js'
 import { DomainError } from '../../util/errors.js'

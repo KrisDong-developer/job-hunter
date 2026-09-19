@@ -14,7 +14,8 @@
  * 效果：绕过 guard 从"可能发生的人为疏忽"变成"必须刻意改写代码才能做到"。
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Actor, Danger } from './types.js'
+import type { Actor } from '../../shared/contract/enums/guard.js'
+import type { Danger } from './types.js'
 import { DomainError } from '../util/errors.js'
 
 /**

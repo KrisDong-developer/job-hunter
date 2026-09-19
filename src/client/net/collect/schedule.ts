@@ -1,7 +1,7 @@
 /**
  * 排程与租约：当前排程状态、全局暂停、风控恢复、实例接管。
  */
-import type { PlanDto, SchedulerStatusDto } from '../../../shared/dto.js'
+import type { PlanDto, SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
 import { request } from '../client.js'
 
 /** B3/SR-30：全局一键暂停（**只停定时**，手动仍然可用）。 */

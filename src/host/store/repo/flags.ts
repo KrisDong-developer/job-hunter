@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { JOB_FLAG_TYPES, type JobFlagType } from '../../../shared/enums.js'
+import { JOB_FLAG_TYPES, type JobFlagType } from '../../../shared/contract/enums/job.js'
 import { asInt, asJson, asReal, asText, type Row } from '../row.js'
 
 export { JOB_FLAG_TYPES }

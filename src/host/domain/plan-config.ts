@@ -13,9 +13,15 @@
  *
  * 还有一件**不报错但要说出来**的事：重复方案（SR-43）只提示、不合并。
  */
-import { PLAN_KEYWORDS_MAX } from '../../shared/constants.js'
-import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../shared/dto.js'
-import { MATURITY_LEVEL_LABEL, maturityNeedsWarning } from '../../shared/enums.js'
+import { PLAN_KEYWORDS_MAX } from '../../shared/config/crawl.js'
+import type {
+  CriteriaDimensionDto,
+  PlanDto,
+  PlanPlatformOverrideDto,
+  PlanPostProcess,
+  PlanSchedule,
+} from '../../shared/contract/dto/plan.js'
+import { MATURITY_LEVEL_LABEL, maturityNeedsWarning } from '../../shared/contract/enums/platform.js'
 import { canonicalCityOf, citySupportOf, orderCities, type CitySupport } from '../platform/cities.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import type { SearchCriteria } from '../platform/types.js'
@@ -510,22 +516,9 @@ export function sameCriteria(
 /**
  * 给界面用的一份"这个平台能筛什么"的快照（SR-41）。
  *
- * 界面据它渲染筛选器：**不支持的维度禁用而非隐藏**，并把 `hint` 显示出来
- * —— 隐藏会让用户以为功能坏了（§5.5 能力驱动的 UI）。
+ * 形状的权威定义在 `shared/contract/dto/plan.ts` —— 宿主生产、界面消费，
+ * 声明只能有一份（这里曾经另写了一遍同名同字段的接口）。
  */
-export interface CriteriaDimensionDto {
-  key: string
-  label: string
-  values: Array<{ value: string; label: string }>
-  max: number | null
-  hint: string
-  /** 当前方案是否支持它。false = 界面上禁用 + 说明原因。 */
-  supported: boolean
-  /** 不支持的原因。 */
-  disabledReason: string | null
-  /** 数值型维度（界面渲染成数字输入而不是下拉）。 */
-  numeric: boolean
-}
 
 /** 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。 */
 /**

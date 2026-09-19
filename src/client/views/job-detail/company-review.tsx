@@ -1,4 +1,4 @@
-import type { CompanyProfileDto } from '../../../shared/dto.js'
+import type { CompanyProfileDto } from '../../../shared/contract/dto/job.js'
 import { ApiError } from '../../net/client.js'
 import { updateCompanyReview } from '../../net/companies.js'
 import type { FormEvent } from 'react'

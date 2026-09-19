@@ -1,5 +1,5 @@
-import type { PlanScheduleStatusDto, SchedulerStatusDto, WeeklyTriggerDto } from '../../../shared/dto.js'
-import { formatClock, formatJitter, formatRelative } from '../../../shared/time-format.js'
+import type { PlanScheduleStatusDto, SchedulerStatusDto, WeeklyTriggerDto } from '../../../shared/contract/dto/plan.js'
+import { formatClock, formatJitter, formatRelative } from '../../../shared/text/time-format.js'
 import type { Feedback } from '../../ui/feedback.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { FreshnessBadge } from '../../views/freshness.js'

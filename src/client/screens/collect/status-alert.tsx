@@ -2,7 +2,7 @@
 // 优先展示「定时已手动暂停」，其次是「数据偏旧」；同一时刻只说一件最需要处理的事。
 // 两者都不满足时返回 null。纯展示组件，动作由外部通过 props 传入。
 import { InlineMd } from '../../ui/inline-md.js'
-import type { SchedulerStatusDto } from '../../../shared/dto.js'
+import type { SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
 
 /**
  * 一条 Alert 说清"现在需要你处理什么"，并**自带该做的动作**。

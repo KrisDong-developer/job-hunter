@@ -18,7 +18,7 @@
  * Excel 的 `.xlsx` 二进制不支持（解析它要解包 + 解析 XML，做错了会把脏数据写进岗位库）。
  * 检测到就直接拒收，并给出可执行的下一步：另存为 CSV UTF-8。见 `domain/portability.ts`。
  */
-import type { DataExportFormat } from '../../../shared/dto.js'
+import { DATA_EXPORT_FORMATS, type DataExportFormat } from '../../../shared/contract/enums/storage.js'
 import { DomainError } from '../../util/errors.js'
 import { json, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'
@@ -31,7 +31,7 @@ const CONTENT_TYPES: Record<DataExportFormat, string> = {
 
 function parseFormat(raw: string | null): DataExportFormat {
   if (raw === null || raw === '') return 'json'
-  if (raw === 'json' || raw === 'csv' || raw === 'archive') return raw
+  if ((DATA_EXPORT_FORMATS as readonly string[]).includes(raw)) return raw as DataExportFormat
   throw new DomainError('INVALID_INPUT', `不支持的导出格式：${raw}`, {
     hint: '合法取值：json（全量备份）/ csv（分表 CSV，Excel 可读）/ archive（含简历附件的 zip）。',
   })

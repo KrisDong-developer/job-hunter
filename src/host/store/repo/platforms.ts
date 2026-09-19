@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { HealthState } from '../../../shared/enums.js'
+import type { HealthState } from '../../../shared/contract/enums/crawl.js'
 import { asBool, asInt, asIntOrNull, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 /** 一个平台的运行记录。 */

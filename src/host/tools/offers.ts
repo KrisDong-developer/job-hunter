@@ -14,11 +14,11 @@
  * 所以这里会先把现值读出来合并再写 —— 否则"把公积金比例补上"会顺手清掉
  * 用户先前填的月 base。这条差异是有意的，也是这一层唯一替调用方做的决定。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import { OFFER_STATES } from '../../shared/enums.js'
-import type { OfferComp } from '../../shared/offer.js'
-import { formatMoney, OFFER_COMP_FIELDS } from '../../shared/offer.js'
-import type { OfferState } from '../../shared/enums.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import { OFFER_STATES } from '../../shared/contract/enums/offer.js'
+import type { OfferComp } from '../../shared/domain/offer-comp.js'
+import { OFFER_COMP_FIELDS, formatMoney } from '../../shared/domain/offer-comp.js'
+import type { OfferState } from '../../shared/contract/enums/offer.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import { asString, enumStr, int, num, positiveId, requireData, schema, str, textResult, toolDefiner } from './kit.js'

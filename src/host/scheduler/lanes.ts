@@ -19,7 +19,7 @@
  * 同平台串行不在这里管 —— 那是 platform/locks.ts 的事；这里的输入
  * （一个方案的平台列表）本身就不含重复。
  */
-import { MAX_CONCURRENT_PLATFORMS } from '../../shared/constants.js'
+import { MAX_CONCURRENT_PLATFORMS } from '../../shared/config/crawl.js'
 
 export interface LaneOutcome<T> {
   platformId: string

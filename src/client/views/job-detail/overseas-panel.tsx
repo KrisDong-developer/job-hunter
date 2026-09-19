@@ -1,4 +1,4 @@
-import { REMOTE_KIND_LABEL, VISA_STANCE_LABEL } from '../../../shared/enums.js'
+import { REMOTE_KIND_LABEL, VISA_STANCE_LABEL } from '../../../shared/contract/enums/overseas.js'
 import { ApiError } from '../../net/client.js'
 import { analyzeOverseas, draftCoverLetter, fetchTimezone } from '../../net/overseas.js'
 import { createElement, useState } from 'react'

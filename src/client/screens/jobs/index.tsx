@@ -1,6 +1,13 @@
-import { useState, type FormEvent } from 'react'
-import { type JobFlagType, type JobState } from '../../../shared/enums.js'
-import { buildExpChips, sortEduValues, type ExpChip } from '../../../shared/facets.js'
+import { useEffect, useState, type FormEvent } from 'react'
+import { PAGE_SIZE_DEFAULT } from '../../../shared/config/limits.js'
+import {
+  JOB_NEW_WINDOWS,
+  JOB_ORDER_OPTIONS,
+  type JobFlagType,
+  type JobOrderValue,
+  type JobState,
+} from '../../../shared/contract/enums/job.js'
+import { buildExpChips, sortEduValues, type ExpChip } from '../../../shared/domain/job-facets.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { fetchJobFacets, fetchJobs, markJob } from '../../net/jobs.js'
 import { LoadingLine } from '../../ui/async-view.js'
@@ -11,11 +18,9 @@ import { BatchToolbar } from './batch-toolbar.js'
 import { FilterBar } from './filter-bar.js'
 import {
   EMPTY_FILTERS,
-  NEW_JOB_WINDOWS,
-  ORDER_OPTIONS,
-  PAGE_SIZE,
   expandExpBuckets,
   firstSeenSinceOf,
+  sameFilters,
   toggleValue,
   type Filters,
 } from './filters.js'
@@ -81,7 +86,7 @@ export function JobsScreen(props: {
   /** 已选梯队展开成的原始取值 —— 它才是传给查询的东西。 */
   const appliedExpReqs = expandExpBuckets(applied.expBuckets, expChips)
 
-  const { state, reload } = useAsync(
+  const { state, reload, refreshing } = useAsync(
     (signal) =>
       fetchJobs(
         {
@@ -98,14 +103,33 @@ export function JobsScreen(props: {
           orderBy: applied.orderBy,
           descending: applied.descending,
           page,
-          pageSize: PAGE_SIZE,
+          pageSize: PAGE_SIZE_DEFAULT,
         },
         signal,
       ),
     // `appliedExpReqs` 是 facet 的函数，而 facet 比首屏查询晚到 ——
     // 不把展开结果算进依赖，梯队就会"选了没反应"（第一次查询根本没带上它）。
     [props.revision, applied, page, appliedExpReqs.join(',')],
+    // keepPrevious（第四轮，审核 P2-6）：翻页 / 改筛选 / 外部刷新时列表不再整块消失 ——
+    // 这一屏是"左列表 + 右详情"的对照阅读，整列闪一下正好打断它。
+    // 重取期间沿用上一次结果，界面另用 refreshing 说明"这是旧数据，正在更新"。
+    { keepPrevious: true },
   )
+
+  /**
+   * 页码越界时自动回到最后一页（第四轮，审核 P2-8）。
+   *
+   * 结果集会在两次重取之间缩小（例如当前筛着「只看新增」，在第 5 页把某条行内"划掉"，
+   * 它随即离开结果集），而宿主**不夹页码**（routes/jobs.ts 直接按 (page-1)*pageSize 取）。
+   * 不处理的话左栏会印出"没有符合条件的岗位／共 12 条"这种自相矛盾的一屏，
+   * 分页器上也找不到当前页。夹回去之后 page 变化会触发一次正常重取。
+   */
+  useEffect(() => {
+    if (state.status !== 'ok') return
+    if (state.data.total === 0 || state.data.items.length > 0) return
+    const lastPage = Math.max(1, Math.ceil(state.data.total / PAGE_SIZE_DEFAULT))
+    if (page > lastPage) setPage(lastPage)
+  }, [state, page])
 
   /** 城市：下拉单选。底层仍传数组（见 `Filters.cities` 的注释）。 */
   const setCity = (city: string): void => {
@@ -172,7 +196,7 @@ export function JobsScreen(props: {
    * 改完之后还要再点一次「筛选」才生效，是把这个控件放在了错误的语义位置上。
    * 现在它在列表头栏（用户正看着的那个列表），点完当场重排。
    */
-  const changeOrder = (orderBy: string): void => {
+  const changeOrder = (orderBy: JobOrderValue): void => {
     setDraft((current) => ({ ...current, orderBy }))
     setApplied((current) => ({ ...current, orderBy }))
     setPage(1)
@@ -230,10 +254,26 @@ export function JobsScreen(props: {
   }
 
   const total = state.status === 'ok' ? state.data.total : 0
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE_DEFAULT))
+  /**
+   * 草稿与已生效条件不一致（第四轮，审核 P2-12）。
+   *
+   * 折叠开关上的「已选 N 项」算的是**草稿**，列表头栏那句算的是**已生效**的条件，
+   * 两者可以同时成立却互相矛盾（"已选 2 项" + 列表根本没筛过）。
+   * 判断交给 `sameFilters`（按语义比，不看多选顺序）。
+   */
+  const pendingChanges = !sameFilters(draft, applied)
+  /** 已生效的条件里有没有"筛过"的东西 —— 空结果时用它决定要不要给「清除筛选」。 */
+  const hasFilters = !sameFilters(applied, EMPTY_FILTERS)
+  /**
+   * 页码已经越界（第四轮，审核 P2-8）：0 条 + 非零 total。
+   * 这一帧先别印"没有符合条件的岗位"（那是假话）—— 上面的 effect 正在把页码夹回去。
+   */
+  const beyondLastPage =
+    state.status === 'ok' && state.data.items.length === 0 && total > 0 && page > pages
   /** 已生效的「只看新增」窗口名（用于列表头说明，避免用户困惑"怎么这么少"）。 */
   const appliedWindowLabel =
-    NEW_JOB_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null
+    JOB_NEW_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null
   /**
    * 高级筛选里选中的条件条数。
    *
@@ -261,6 +301,7 @@ export function JobsScreen(props: {
         expChips={expChips}
         advancedOpen={advancedOpen}
         advancedCount={advancedCount}
+        pending={pendingChanges}
         onSubmit={submit}
         onReset={reset}
         onToggleAdvanced={toggleAdvanced}
@@ -276,8 +317,13 @@ export function JobsScreen(props: {
       />
 
       <div className="jh-jobs-cols">
-        <div className="jh-jobs-pane" data-job-hunter="job-list">
-          {state.status === 'loading' && <LoadingLine>正在查询岗位…</LoadingLine>}
+        {/* aria-busy：重取期间列表还是上一次的结果（keepPrevious），读屏要知道"这是旧的" */}
+        <div className="jh-jobs-pane" data-job-hunter="job-list" aria-busy={refreshing ? true : undefined}>
+          {/* 只在**首次**加载时出现：后续重取由 useAsync 的 keepPrevious 保留旧列表，
+              这里改成列表头栏那行「更新中…」。加载态给 live + busy，否则读屏全程静默。 */}
+          {state.status === 'loading' && (
+            <LoadingLine busy live="polite">正在查询岗位…</LoadingLine>
+          )}
 
           {state.status === 'error' && (
             <div className="jh-card">
@@ -288,12 +334,20 @@ export function JobsScreen(props: {
             </div>
           )}
 
-          {state.status === 'ok' && state.data.items.length === 0 && (
+          {beyondLastPage && (
+            <LoadingLine busy live="polite">这一页已经没有条目了，正在回到最后一页…</LoadingLine>
+          )}
+
+          {state.status === 'ok' && state.data.items.length === 0 && !beyondLastPage && (
             <div className="jh-card">
               <h2 className="jh-card-title">没有符合条件的岗位</h2>
               <p className="jh-muted">
                 共 {state.data.total} 条。换个关键词或放宽筛选条件试试；也可以回到「今日」手动抓取一次。
               </p>
+              {/* 空态要给下一步（rules §4.3）：条件筛空了就地一键复原，不用自己回想改过哪些 */}
+              {hasFilters ? (
+                <button type="button" className="jh-btn" onClick={reset}>清除筛选条件</button>
+              ) : null}
             </div>
           )}
 
@@ -306,6 +360,11 @@ export function JobsScreen(props: {
                   {appliedWindowLabel === null ? '' : `（只看${appliedWindowLabel}的新增）`} · 第{' '}
                   {state.data.page} / {pages} 页
                 </span>
+                {/* 重取期间的提示（第四轮，审核 P2-6）：列表不再消失，所以必须说明
+                    "现在看到的是上一次的结果"。role=status 让读屏也知道在更新。 */}
+                {refreshing ? (
+                  <span className="jh-refreshing" role="status">更新中…</span>
+                ) : null}
                 {/* 排序在列表头栏（2026-09-18）：它决定"结果**怎么排**"，不是"结果有哪些"。
                     留在筛选条里，用户改完还得再点一次「筛选」才生效 —— 那是把它放在了错误的语义位置上。
                     这里改完当场重排（跨平台折叠不在这儿：它改的是"结果有哪些"，属于筛选条件，
@@ -334,12 +393,14 @@ export function JobsScreen(props: {
                   )}
                   <label className="jh-sort">
                     <span className="jh-sort-label">排序</span>
+                    {/* select 的值只能从元素上拿到 string；取值域由 JOB_ORDER_OPTIONS 锁住，
+                        这里按项目既有写法（如面试形式那个 select）在边界上收窄一次。 */}
                     <select
                       className="jh-select jh-sort-select"
                       value={applied.orderBy}
-                      onChange={(event) => changeOrder(event.target.value)}
+                      onChange={(event) => changeOrder(event.target.value as JobOrderValue)}
                     >
-                      {ORDER_OPTIONS.map((option) => (
+                      {JOB_ORDER_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
@@ -350,8 +411,17 @@ export function JobsScreen(props: {
                 </span>
               </div>
 
+              {/* 批量结果提示（第四轮，审核 P2-5）。两件事：
+                  ① role=status / alert —— 这是外面唯一的汇总反馈，之前是个无角色的 p，读屏全程静默；
+                  ② 它渲染在列表栏里，而弹窗遮罩（z-index 40）盖着这一层 —— 所以弹窗自己也
+                     显示同一句汇总（见两个弹窗的 footer），用户不必先关弹窗才看得到结果。 */}
               {batchNote === null ? null : (
-                <p className={batchNote.tone === 'ok' ? 'jh-ok' : 'jh-error'}>{batchNote.text}</p>
+                <p
+                  className={batchNote.tone === 'ok' ? 'jh-ok' : 'jh-error'}
+                  role={batchNote.tone === 'ok' ? 'status' : 'alert'}
+                >
+                  {batchNote.text}
+                </p>
               )}
 
               {/* 批量工具条：只在有勾选时出现（没勾选时它占的那一行是纯粹的噪音） */}
@@ -401,7 +471,8 @@ export function JobsScreen(props: {
           jobIds={greetTargets}
           onClose={() => setGreetTargets(null)}
           onBatchDone={() => {
-            // 每批发完刷一次：接触态与列表里的状态可能都变了
+            // 整轮发送结束后刷一次（第四轮，审核 P2-7）：弹窗只在分批循环跑完（或被中断）
+            // 之后才调它。按批调的话，背后的列表会一次次重取重绘 —— 而它当时正被遮罩盖着。
             reload()
             props.onChanged()
           }}
@@ -415,7 +486,7 @@ export function JobsScreen(props: {
           jobIds={deliverTargets}
           onClose={() => setDeliverTargets(null)}
           onBatchDone={() => {
-            // 每批发完刷一次：投递记录、看板与岗位状态都可能变了
+            // 同上：投递记录 / 看板 / 岗位状态都可能变，但只在这一轮结束后刷一次
             reload()
             props.onChanged()
           }}

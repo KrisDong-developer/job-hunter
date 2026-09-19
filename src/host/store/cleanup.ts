@@ -28,22 +28,8 @@
  */
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  EXPORTS_DIR_NAME,
-  RETENTION_AUTO_CLEAN_DEFAULT,
-  RETENTION_DEFAULTS,
-  RETENTION_KEY,
-  RETENTION_MAX_DAYS,
-  RETENTION_MIN_DAYS,
-} from '../../shared/constants.js'
-import type {
-  CleanupPlanDto,
-  CleanupPlanItemDto,
-  CleanupResultDto,
-  RetentionPolicy,
-  StorageTypeDto,
-  StorageUsageDto,
-} from '../../shared/dto.js'
+import { EXPORTS_DIR_NAME, RETENTION_AUTO_CLEAN_DEFAULT, RETENTION_DEFAULTS, RETENTION_KEY, RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from '../../shared/config/retention.js'
+import type { CleanupPlanDto, CleanupPlanItemDto, CleanupResultDto, RetentionPolicy, StorageTypeDto, StorageUsageDto } from '../../shared/contract/dto/storage.js'
 import { systemClock, type Clock } from '../util/time.js'
 import { asInt, asText, type Row } from './row.js'
 import type { Store } from './store.js'

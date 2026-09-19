@@ -12,9 +12,12 @@
  * "哪版简历/哪个渠道转化好"必须以**每一次投递**为单位：
  * 同一个岗位可能投了两次、用了不同简历；按岗位聚合会把它们糊在一起。
  */
-import type { AnalyticsFilter, AttributionDto, FunnelDto, ResumeCompareDto, SalaryBandDto, SalaryBaselineDto, SalaryBasis, SalaryBoxChartDto, SalaryBoxDto } from '../../shared/dto.js';
-import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../shared/enums.js';
-import type { ApplicationStage } from '../../shared/enums.js';
+import type { AnalyticsFilter, AttributionDto, FunnelDto } from '../../shared/contract/dto/analytics.js';
+import type { SalaryBandDto, SalaryBaselineDto, SalaryBoxChartDto, SalaryBoxDto } from '../../shared/contract/dto/offer.js';
+import type { ResumeCompareDto } from '../../shared/contract/dto/resume.js';
+import type { SalaryBasis } from '../../shared/contract/enums/analytics.js';
+import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../shared/contract/enums/pipeline.js';
+import type { ApplicationStage } from '../../shared/contract/enums/pipeline.js';
 import type { Store } from '../store/store.js';
 /** 低于这个样本量就不下结论。 */
 export declare const MIN_SAMPLE = 5;

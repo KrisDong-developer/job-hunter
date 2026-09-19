@@ -1,11 +1,12 @@
 /**
  * 简历中心：版本 CRUD、附件、导出与预览 URL、岗位定制。
  */
-import { ROUTE_PREFIX } from '../../shared/constants.js'
-import type { ResumeFormat, ResumeTemplate } from '../../shared/enums.js'
-import type { ResumeContent, ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/resume.js'
+import { ROUTE_PREFIX } from '../../shared/config/plugin.js'
+import type { ResumeFormat, ResumeTemplate } from '../../shared/contract/enums/resume.js'
+import type { ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js'
+import type { ResumeContent } from '../../shared/domain/resume-content.js'
 import { request } from './client.js'
-import type { ResumeDetailDto } from './types.js'
+import type { ResumeDetailDto } from '../../shared/contract/dto/resume.js'
 
 export async function fetchResumes(
   signal?: AbortSignal,

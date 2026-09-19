@@ -10,7 +10,7 @@
  * 归属说明：`GET /jobs/:id/offers` 挂在 `/jobs` 前缀下，但按**行为**归在本模块 ——
  * 它调的是 `runtime.offers().byJob`，与 `outreach.ts` 收留 `/jobs/:id/greeting/draft` 同理。
  */
-import { OFFER_STATES, type OfferState } from '../../../shared/enums.js'
+import { OFFER_STATES, type OfferState } from '../../../shared/contract/enums/offer.js'
 import type { OfferWriteInput } from '../../domain/offers.js'
 import { DomainError } from '../../util/errors.js'
 import { json, parsePositiveInt, parseRecordId, readObject, requireData, type RouteContext } from './kit.js'

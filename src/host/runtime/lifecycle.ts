@@ -12,7 +12,7 @@
  * 三遍的差别只在日志文案 —— 而这类抄写最危险的漏项是**广播**：
  * 少了 `lease.acquired` 事件，界面就不会重渲染，用户看到的还是"另一个实例正在运行"。
  */
-import { PLUGIN_ID } from '../../shared/constants.js'
+import { PLUGIN_ID } from '../../shared/config/plugin.js'
 import type { EventBus } from '../http/sse.js'
 import type { LeaseManager, LeaseVerdict } from '../platform/lease.js'
 import type { TimerPort } from '../scheduler/timer-port.js'

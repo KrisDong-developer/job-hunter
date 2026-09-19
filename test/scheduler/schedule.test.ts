@@ -12,7 +12,7 @@ import {
   windowOffsetMin,
 } from '../../src/host/scheduler/schedule.js'
 import { DEFAULT_SCHEDULE } from '../../src/host/store/repo/plans.js'
-import type { PlanSchedule } from '../../src/shared/dto.js'
+import type { PlanSchedule } from '../../src/shared/contract/dto/plan.js'
 
 /**
  * 全部用**本地时间分量**构造日期（`new Date(y, m, d, h, min)`），

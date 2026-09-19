@@ -1,4 +1,4 @@
-import type { LlmCallDto } from '../../net/types.js'
+import type { LlmCallDto } from '../../../shared/contract/dto/settings.js'
 import { ErrorLine } from '../../ui/async-view.js'
 import type { LlmState } from './logs-panel.js'
 

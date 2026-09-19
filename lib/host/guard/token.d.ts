@@ -1,4 +1,5 @@
-import type { Actor, Danger } from './types.js';
+import type { Actor } from '../../shared/contract/enums/guard.js';
+import type { Danger } from './types.js';
 /**
  * 进程内共享的令牌权威。
  *

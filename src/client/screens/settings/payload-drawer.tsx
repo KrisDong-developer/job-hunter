@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { useDialogA11y } from '../../hooks/use-dialog-a11y.js'
-import type { LlmCallDto } from '../../net/types.js'
+import type { LlmCallDto } from '../../../shared/contract/dto/settings.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { copyToClipboard } from './clipboard.js'
 

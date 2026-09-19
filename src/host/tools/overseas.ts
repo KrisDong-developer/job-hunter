@@ -5,17 +5,8 @@
  *   · 英文体检**只检查，不翻译** —— 机翻简历是海外求职最致命的错误；
  *   · filter 的结果**只包含识别过的岗位**，"没识别"不等于"不符合"。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import {
-  COVER_LETTER_LANGUAGES,
-  REMOTE_KINDS,
-  REMOTE_KIND_LABEL,
-  VISA_STANCES,
-  VISA_STANCE_LABEL,
-  type CoverLetterLanguage,
-  type RemoteKind,
-  type VisaStance,
-} from '../../shared/enums.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import { COVER_LETTER_LANGUAGES, REMOTE_KINDS, REMOTE_KIND_LABEL, VISA_STANCES, VISA_STANCE_LABEL, type CoverLetterLanguage, type RemoteKind, type VisaStance } from '../../shared/contract/enums/overseas.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import {

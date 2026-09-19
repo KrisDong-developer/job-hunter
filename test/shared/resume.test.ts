@@ -10,17 +10,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  checkNoFabrication,
-  emptyResumeContent,
-  factAtoms,
-  inspectResume,
-  isResumeContentUsable,
-  normalizeResumeContent,
-  resumeFileName,
-  techTokensOf,
-  type ResumeContent,
-} from '../../src/shared/resume.js'
+import { checkNoFabrication, emptyResumeContent, factAtoms, inspectResume, isResumeContentUsable, normalizeResumeContent, resumeFileName, techTokensOf, type ResumeContent } from '../../src/shared/domain/resume-content.js'
 
 // ─────────────────────────────────────────────────────────────────────
 // 夹具

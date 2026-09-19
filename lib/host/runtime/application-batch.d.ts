@@ -1,7 +1,8 @@
-import type { ApplicationBatchBlockerDto, ApplicationBatchPlanDto, ApplicationBatchResultDto } from '../../shared/dto.js';
+import type { ApplicationBatchBlockerDto, ApplicationBatchPlanDto, ApplicationBatchResultDto } from '../../shared/contract/dto/batch.js';
 import type { ApplicationSendResult } from '../guard/actions/application.js';
 import type { GuardPreview } from '../guard/index.js';
-import type { Actor, GuardInput } from '../guard/types.js';
+import type { Actor } from '../../shared/contract/enums/guard.js';
+import type { GuardInput } from '../guard/types.js';
 import type { Store } from '../store/store.js';
 import type { Clock } from '../util/time.js';
 import { type QuotaReadout } from './batch.js';

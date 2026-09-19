@@ -81,7 +81,12 @@ export function DedupGroupsCard(props: { revision: number }) {
               <ul className="jh-tailor-notes">
                 {group.members.map((member) => (
                   <li key={member.id}>
-                    · {member.isPrimary ? '主' : '从'}｜{member.platformId}｜{member.title}
+                    {/* 平台一律显示**名字**：DTO 里的 `platformName` 就是服务端 JOIN 出来
+                        给人看的（平台被卸载时为 null），本页其它地方（平台总览、运行表）
+                        也都显示"前程无忧 / BOSS直聘"。这里原来直接印 `platformId`，
+                        于是同一屏里同一批平台有两套叫法（51job / zhipin）。 */}
+                    · {member.isPrimary ? '主' : '从'}｜{member.platformName ?? member.platformId}｜
+                    {member.title}
                     {member.companyName === null ? '' : `｜${member.companyName}`}
                     {'　'}({member.city})
                     {member.isPrimary ? null : (

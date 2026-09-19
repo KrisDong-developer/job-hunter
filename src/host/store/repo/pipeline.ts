@@ -1,13 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type {
-  ApplicationChannel,
-  ApplicationStage,
-  ContactStage,
-  InterviewKind,
-  InterviewState,
-  MessageDirection,
-  StageSource,
-} from '../../../shared/enums.js'
+import type { InterviewKind, InterviewState } from '../../../shared/contract/enums/interview.js'
+import type { MessageDirection } from '../../../shared/contract/enums/message.js'
+import type { ApplicationChannel, ApplicationStage, ContactStage, StageSource } from '../../../shared/contract/enums/pipeline.js'
 import { asId, asInt, asIntOrNull, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 /**

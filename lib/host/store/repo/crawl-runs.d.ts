@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { CrawlState } from '../../../shared/enums.js';
-import type { CrawlRunDto } from '../../../shared/dto.js';
+import type { CrawlState } from '../../../shared/contract/enums/crawl.js';
+import type { CrawlFailureCode } from '../../../shared/contract/enums/error.js';
+import type { CrawlRunDto } from '../../../shared/contract/dto/crawl.js';
 /**
  * 悬挂 `running` 的收敛阈值（SR-15 / A3）。
  *
@@ -18,7 +19,8 @@ export interface CrawlRunPatch {
     updated?: number;
     skipped?: number;
     quarantined?: number;
-    errorCode?: string | null;
+    /** 失败码。取值域见 shared 的 `CRAWL_FAILURE_CODES`（写错了编译不过）。 */
+    errorCode?: CrawlFailureCode | null;
     errorMsg?: string | null;
     logRef?: string | null;
     /** SR-28/29：触发原因（schedule / manual / catch-up）。 */

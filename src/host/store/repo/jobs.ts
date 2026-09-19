@@ -1,7 +1,8 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
-import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/constants.js'
-import type { JobDto } from '../../../shared/dto.js'
-import { APPLICATION_STAGES, CONTACT_STAGES, JOB_STATES, type JobFlagType, type JobState } from '../../../shared/enums.js'
+import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/config/limits.js'
+import type { JobDto } from '../../../shared/contract/dto/job.js'
+import { JOB_STATES, type JobFlagType, type JobOrderValue, type JobState } from '../../../shared/contract/enums/job.js'
+import { APPLICATION_STAGES, CONTACT_STAGES } from '../../../shared/contract/enums/pipeline.js'
 import { asId, asInt, asIntOrNull, asJson, asRealOrNull, asText, asTextOrNull, type Row, type SqlValue } from '../row.js'
 
 /** 岗位写入/筛选所需的标量字段（活对象已被适配器剥掉，§4.3 P7）。 */
@@ -67,7 +68,8 @@ export interface JobQuery {  state?: JobState
    * 不叫"新出现了多少岗位"。
    */
   firstSeenSince?: string
-  orderBy?: 'crawled_at' | 'salary_min' | 'title' | 'last_seen_at' | 'first_seen_at'
+  /** 排序字段。取值域见 `JOB_ORDER_VALUES`（与路由校验、界面下拉同一份）。 */
+  orderBy?: JobOrderValue
   descending?: boolean
   /**
    * 屏蔽这些标注类型的岗位：命中任意一个标注的岗位一律不显示（`NOT EXISTS`）。
@@ -137,7 +139,7 @@ LEFT JOIN company c ON c.id = j.company_id
 LEFT JOIN platform p ON p.id = j.platform_id`
 
 /** 排序列白名单 —— 绝不把入参拼进 SQL。 */
-const ORDER_COLUMNS: Record<NonNullable<JobQuery['orderBy']>, string> = {
+const ORDER_COLUMNS: Record<JobOrderValue, string> = {
   crawled_at: 'j.crawled_at',
   salary_min: 'j.salary_min',
   title: 'j.title',

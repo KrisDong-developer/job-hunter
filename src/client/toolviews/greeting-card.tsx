@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ToolCallOwnerProps } from '../../shared/dsh.js'
+import type { ToolCallOwnerProps } from '../../shared/contract/dsh.js'
 import { CardShell, isSettled, textOf } from './parts.js'
 import { openJobInPanel } from './open-panel.js'
 

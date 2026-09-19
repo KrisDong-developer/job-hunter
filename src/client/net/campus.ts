@@ -1,10 +1,10 @@
 /**
  * 校招支线：批次推进、笔试测评、三方协议、硬截止。
  */
-import type { AssessmentDto, CampusApplicationDto, DeadlineDto, TripartiteDto } from '../../shared/dto.js'
-import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../shared/enums.js'
+import type { AssessmentDto, CampusApplicationDto, DeadlineDto, TripartiteDto } from '../../shared/contract/dto/campus.js'
+import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../shared/contract/enums/campus.js'
 import { request } from './client.js'
-import type { CampusWindowsDto } from './types.js'
+import type { CampusWindowsDto } from '../../shared/contract/dto/campus.js'
 
 export async function fetchCampus(signal?: AbortSignal): Promise<CampusWindowsDto> {
   return await request<CampusWindowsDto>('/campus', signal === undefined ? {} : { signal })

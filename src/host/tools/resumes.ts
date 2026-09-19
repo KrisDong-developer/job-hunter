@@ -6,10 +6,10 @@
  * 更要紧的是 `resume_tailor`：它会把简历正文发给模型，所以那条路径上
  * 用途开关（默认关）+ 隐私闸门 + 防编造检查三样缺一不可。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
-import { RESUME_FORMATS, RESUME_LANGUAGES, RESUME_TEMPLATES } from '../../shared/enums.js'
-import { RESUME_LANGUAGE_LABEL } from '../../shared/labels.js'
-import { normalizeResumeContent } from '../../shared/resume.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
+import { RESUME_FORMATS, RESUME_LANGUAGES, RESUME_TEMPLATES } from '../../shared/contract/enums/resume.js'
+import { RESUME_LANGUAGE_LABEL } from '../../shared/contract/enums/resume.js'
+import { normalizeResumeContent } from '../../shared/domain/resume-content.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import {

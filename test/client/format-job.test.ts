@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { JOB_ACTION_LABEL, relativeTime, salaryDetail, splitJobTags } from '../../src/client/format/job.js'
-import type { JobDto } from '../../src/shared/dto.js'
+import type { JobDto } from '../../src/shared/contract/dto/job.js'
 
 /**
  * 岗位展示口径的纯函数 —— 客户端第一批离线测试。

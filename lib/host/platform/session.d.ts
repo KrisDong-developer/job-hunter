@@ -7,7 +7,7 @@
  *   2. 主动产生待办告警（P8：失败必须可见）；
  *   3. 登录引导：打开登录页 → 轮询 → 成功即回写状态并关掉告警。
  */
-import type { AccountStateDto, LoginStatusDto } from '../../shared/dto.js';
+import type { AccountStateDto, LoginStatusDto } from '../../shared/contract/dto/platform.js';
 import type { EventBus } from '../http/sse.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';

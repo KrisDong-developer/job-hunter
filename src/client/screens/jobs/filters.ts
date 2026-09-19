@@ -1,5 +1,6 @@
-import type { JobFlagType } from '../../../shared/enums.js'
-import type { ExpChip } from '../../../shared/facets.js'
+import type { JobFlagType, JobOrderValue } from '../../../shared/contract/enums/job.js'
+import { JOB_NEW_WINDOWS } from '../../../shared/contract/enums/job.js'
+import type { ExpChip } from '../../../shared/domain/job-facets.js'
 
 export interface Filters {
   q: string
@@ -26,9 +27,10 @@ export interface Filters {
   excludeFlags: JobFlagType[]
   /** 批次 4：按跨平台去重分组折叠（同一条岗位在多个平台各抓一条时只占一行）。 */
   groupDuplicates: boolean
-  /** 只看新增的时间窗（'' = 全部）。见 `NEW_JOB_WINDOWS`。 */
+  /** 只看新增的时间窗（'' = 全部）。见 `JOB_NEW_WINDOWS`。 */
   newWindow: string
-  orderBy: string
+  /** 排序字段。取值受 `JOB_ORDER_VALUES` 约束（与宿主校验同一个集合）。 */
+  orderBy: JobOrderValue
   descending: boolean
 }
 
@@ -52,6 +54,33 @@ export function toggleValue(list: string[], value: string): string[] {
 }
 
 /**
+ * 两组筛选条件是否**语义相同**（第四轮修复，审核 P2-12）。
+ *
+ * 两个用处：① 判断"草稿改了但还没点筛选"；② 判断空结果时到底有没有生效条件
+ * （没有的话就别提"清除筛选"）。
+ *
+ * 不能用 JSON.stringify 比：多选的顺序由用户点击顺序决定，[A,B] 与 [B,A]
+ * 是同一组条件，串化后却不同 —— 那会让"未应用"提示在条件其实没变时也亮着。
+ */
+export function sameFilters(left: Filters, right: Filters): boolean {
+  const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+    a.length === b.length && a.every((item) => b.includes(item))
+  return (
+    left.q === right.q &&
+    left.state === right.state &&
+    left.minSalary === right.minSalary &&
+    left.newWindow === right.newWindow &&
+    left.groupDuplicates === right.groupDuplicates &&
+    left.orderBy === right.orderBy &&
+    left.descending === right.descending &&
+    sameList(left.cities, right.cities) &&
+    sameList(left.expBuckets, right.expBuckets) &&
+    sameList(left.eduReqs, right.eduReqs) &&
+    sameList(left.excludeFlags, right.excludeFlags)
+  )
+}
+
+/**
  * 已选梯队 → 传给查询的原始取值。
  *
  * 这一步是"标准梯队"能成立的关键：界面按梯队选，查询按库里的原始串查，
@@ -62,35 +91,18 @@ export function expandExpBuckets(ids: string[], chips: ExpChip[]): string[] {
   return chips.filter((chip) => wanted.has(chip.id)).flatMap((chip) => chip.values)
 }
 
-export const ORDER_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'crawled_at', label: '按抓取时间' },
-  { value: 'salary_min', label: '按月薪' },
-  { value: 'last_seen_at', label: '按最近出现' },
-  { value: 'first_seen_at', label: '按首次出现' },
-  { value: 'title', label: '按标题' },
-]
-
 /**
- * 「只看新增」的时间窗。
- *
- * 24 小时这一档**必须与首屏「今日新增」同口径**（`domain/today.ts` 的
- * `NEW_JOB_WINDOW_MS` 就是 24 小时）—— 写成"今天零点"会让首屏说 12 条、列表筛出 3 条，
- * 而两者看的是同一列 `first_seen_at`，用户只会以为其中之一坏了。
+ * 「只看新增」的时间窗（`JOB_NEW_WINDOWS`）与排序选项（`JOB_ORDER_OPTIONS`）
+ * 都住在 `shared/contract/enums/job.ts` —— 它们是与宿主共用的取值域，
+ * 不是界面细节（24 小时那一档必须与首屏「今日新增」同口径）。
  */
-export const NEW_JOB_WINDOWS: Array<{ value: string; label: string; hours: number }> = [
-  { value: '1d', label: '近 24 小时', hours: 24 },
-  { value: '3d', label: '近 3 天', hours: 72 },
-  { value: '7d', label: '近 7 天', hours: 168 },
-]
 
 /** 时间窗 → ISO 起始时刻。空窗（'' = 全部）返回 `undefined`。 */
 export function firstSeenSinceOf(window: string, now: number = Date.now()): string | undefined {
-  const found = NEW_JOB_WINDOWS.find((item) => item.value === window)
+  const found = JOB_NEW_WINDOWS.find((item) => item.value === window)
   if (found === undefined) return undefined
   return new Date(now - found.hours * 60 * 60 * 1000).toISOString()
 }
-
-export const PAGE_SIZE = 20
 
 /**
  * 页码列表：页数少就全列；多了只留首尾与当前附近，中间用 … 收。

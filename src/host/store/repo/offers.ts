@@ -10,8 +10,8 @@
  *      它是用户资产，也是谈过什么的唯一记录。
  */
 import type { DatabaseSync } from 'node:sqlite'
-import type { OfferState } from '../../../shared/enums.js'
-import { annualCashOf, normalizeOfferComp, type OfferComp } from '../../../shared/offer.js'
+import type { OfferState } from '../../../shared/contract/enums/offer.js'
+import { annualCashOf, normalizeOfferComp, type OfferComp } from '../../../shared/domain/offer-comp.js'
 import { asId, asInt, asIntOrNull, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 export interface OfferRecord {

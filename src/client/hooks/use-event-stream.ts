@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ROUTE_PREFIX } from '../../shared/constants.js'
+import { ROUTE_PREFIX } from '../../shared/config/plugin.js'
 
 export type StreamStatus = 'connecting' | 'open' | 'closed'
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { TailoringDto } from '../../../shared/resume.js'
+import type { TailoringDto } from '../../../shared/contract/dto/resume.js'
 import { ApiError } from '../../net/client.js'
 import { adoptTailoring, exportResume, fetchTailorings, tailorResume } from '../../net/resumes.js'
 import { InlineMd } from '../../ui/inline-md.js'

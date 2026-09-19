@@ -21,9 +21,9 @@
  * 这不是"降低要求"，而是把依赖的**真实必要性**说清楚：
  * 主力能力（模型工具 + 数据层）不依赖 webServer，只有 GUI 这一个入口依赖它。
  */
-import { PLUGIN_ID } from '../shared/constants.js'
-import type { ApprovalService, Disposer, PluginContext, ToolsService } from '../shared/dsh.js'
-import { serviceOf } from '../shared/dsh.js'
+import { PLUGIN_ID } from '../shared/config/plugin.js'
+import type { ApprovalService, Disposer, PluginContext, ToolsService } from '../shared/contract/dsh.js'
+import { serviceOf } from '../shared/contract/dsh.js'
 import { registerHttpRoutes } from './http.js'
 import { createHostRuntime } from './runtime.js'
 import { registerJobHunterTools } from './tools/index.js'

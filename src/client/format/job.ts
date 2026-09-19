@@ -1,12 +1,13 @@
-import type { JobState } from '../../shared/enums.js'
-import type { JobDto } from '../../shared/dto.js'
+import type { JobState } from '../../shared/contract/enums/job.js'
+import type { JobDto } from '../../shared/contract/dto/job.js'
 
 /**
  * 岗位的展示口径：动作文案、薪资明细、"多久以前"、标签分组。
  *
  * 纯函数与常量 —— 不认识 cordis、不发请求，所以可以直接被单测引用。
  *
- * 岗位**状态**文案（新 / 已读 / 已收藏…）不在这里：它的权威定义在 `shared/labels.js`，
+ * 岗位**状态**文案（新 / 已读 / 已收藏…）不在这里：它的权威定义在
+ * `shared/contract/enums/job.ts` 的 `JOB_STATE_LABEL`（与取值域同住），
  * 因为模型工具的返回文本也要用同一套词（客户端直接引那一个）。
  */
 
@@ -56,6 +57,25 @@ export function relativeTime(iso: string, now: Date = new Date()): string | null
   const days = Math.floor(hours / 24)
   if (days <= 30) return `${String(days)} 天前`
   return iso.slice(0, 10)
+}
+
+/**
+ * ISO 串 → **本地**时间的可读写法（`MM-DD HH:mm`，跨年才带年份）。
+ *
+ * 为什么必须有它（第四轮修复，审核 P2-9）：宿主给的时间戳是 UTC 的 ISO
+ * （`isoNow()`），而项目里多处直接 `sentAt.slice(0, 19).replace('T', ' ')` ——
+ * 那是把 **UTC 墙钟**当本地时间印出来：东八区用户看到的回执时间差 8 小时，
+ * 而回执恰恰是用来和平台侧核对的（"这条到底是什么时候发出去的"）。
+ * 悬停提示里的 `title` 同理：`2026-09-20T05:33:00.000Z` 对人不构成一个时刻。
+ *
+ * 解析不出来就原样返回（与 `relativeTime` 一致：不硬凑一个"未知时间"）。
+ */
+export function localDateTime(iso: string, now: Date = new Date()): string {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return iso
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  const date = `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`
+  return at.getFullYear() === now.getFullYear() ? date : `${String(at.getFullYear())}-${date}`
 }
 
 /**

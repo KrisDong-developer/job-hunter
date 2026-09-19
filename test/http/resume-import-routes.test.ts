@@ -20,7 +20,7 @@ import type { LlmSourceLike } from '../../src/host/ai/llm-port.js'
 import type { RouteRequest, RouteResult } from '../../src/host/http/router.js'
 import { routeRequest } from '../../src/host/http/router.js'
 import { createHostRuntime, type HostRuntime } from '../../src/host/runtime.js'
-import { ATTACHMENT_MAX_BYTES } from '../../src/shared/constants.js'
+import { ATTACHMENT_MAX_BYTES } from '../../src/shared/config/limits.js'
 import { cleanup, tempDataDir } from '../support/store.js'
 
 /** 一段"从 PDF 里复制出来"的简历文本。 */

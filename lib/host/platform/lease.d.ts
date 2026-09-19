@@ -1,4 +1,4 @@
-import type { LeaseStatusDto } from '../../shared/dto.js';
+import type { LeaseStatusDto } from '../../shared/contract/dto/plan.js';
 import { type Clock } from '../util/time.js';
 export interface LeaseRecord {
     pid: number;

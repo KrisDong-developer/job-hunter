@@ -44,7 +44,7 @@
  * `indexAjaxPage.html`）与详情页 `/Recruitment/content.html` 都在允许范围内。
  * 投递要登录（`/UserCenter/resumeShow.html`），采集链路**不碰**投递与任何 Ucenter 路径。
  */
-import type { BlockKind } from '../../../shared/enums.js';
+import type { BlockKind } from '../../../shared/contract/enums/crawl.js';
 import { type BlockSignalSet } from '../block-signals.js';
 import type { RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js';
 /** 页面外壳地址（人看的入口；筛选条件不在 URL 里，见 `buildSinoJobsSearchUrl`）。 */

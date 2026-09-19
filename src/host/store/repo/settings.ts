@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { SettingScope } from '../../../shared/enums.js'
+import type { SettingScope } from '../../../shared/contract/enums/plan.js'
 import { asJson, asText, type Row } from '../row.js'
 
 /**

@@ -17,8 +17,8 @@
  *    默认关闭；关掉时对比表照常可用（`facts` 是规则算的）。"该签哪个"这件事
  *    牵扯薪资、家庭、通勤、成长，谁也不该替用户拍板。
  */
-import type { OfferState } from '../../shared/enums.js';
-import type { OfferCompareDto, OfferDeadlineDto, OfferDto } from '../../shared/dto.js';
+import type { OfferState } from '../../shared/contract/enums/offer.js';
+import type { OfferCompareDto, OfferDeadlineDto, OfferDto } from '../../shared/contract/dto/offer.js';
 import type { AiService } from '../ai/client.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';

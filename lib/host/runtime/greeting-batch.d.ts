@@ -1,7 +1,9 @@
-import type { GreetingBatchBlockerDto, GreetingBatchPlanDto, GreetingBatchResultDto, GreetingDraftDto } from '../../shared/dto.js';
+import type { GreetingBatchBlockerDto, GreetingBatchPlanDto, GreetingBatchResultDto } from '../../shared/contract/dto/batch.js';
+import type { GreetingDraftDto } from '../../shared/contract/dto/pipeline.js';
 import type { GreetingSendResult } from '../guard/actions/greeting.js';
 import type { GuardPreview } from '../guard/index.js';
-import type { Actor, GuardInput } from '../guard/types.js';
+import type { Actor } from '../../shared/contract/enums/guard.js';
+import type { GuardInput } from '../guard/types.js';
 import type { Store } from '../store/store.js';
 import type { Clock } from '../util/time.js';
 import { type QuotaReadout } from './batch.js';

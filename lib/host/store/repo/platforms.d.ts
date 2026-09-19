@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { HealthState } from '../../../shared/enums.js';
+import type { HealthState } from '../../../shared/contract/enums/crawl.js';
 /** 一个平台的运行记录。 */
 export interface PlatformRecord {
     id: string;

@@ -1,7 +1,8 @@
 /**
  * 平台侧运维：平台总览、登录引导、适配器配置覆盖、待修复队列。
  */
-import type { AdapterConfigDto, LoginStatusDto, PlatformOverviewDto, RepairListDto } from '../../../shared/dto.js'
+import type { LoginStatusDto, PlatformOverviewDto, RepairListDto } from '../../../shared/contract/dto/platform.js'
+import type { AdapterConfigDto } from '../../../shared/contract/dto/settings.js'
 import { request } from '../client.js'
 
 export async function fetchPlatforms(signal?: AbortSignal): Promise<{ items: PlatformOverviewDto[] }> {

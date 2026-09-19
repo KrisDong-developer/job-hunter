@@ -1,19 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  WEEKDAY_PRESETS,
-  clockValueOf,
-  formatDuration,
-  formatWindow,
-  parseClockValue,
-} from '../../src/shared/time-format.js'
+import { WEEKDAY_PRESETS, clockValueOf, formatDuration, formatWindow, parseClockValue } from '../../src/shared/text/time-format.js'
 import {
   emptyForm,
   formOf,
   parseKeywordsText,
   writeOf,
 } from '../../src/client/screens/collect/plan-form.js'
-import type { PlanDto } from '../../src/shared/dto.js'
+import type { PlanDto } from '../../src/shared/contract/dto/plan.js'
 
 /**
  * 偏好时段的时间选择器（界面评审：四个数字框 → 两个原生 time 输入）。

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { CRAWL_STATE_LABEL, HEALTH_STATE_LABEL } from '../../../shared/enums.js'
-import type { GuardUsageDto, TodayDto } from '../../../shared/dto.js'
+import { CRAWL_STATE_LABEL, HEALTH_STATE_LABEL } from '../../../shared/contract/enums/crawl.js'
+import type { GuardUsageDto, TodayDto } from '../../../shared/contract/dto/today.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { useSticky } from '../../hooks/use-sticky.js'
 import { ApiError } from '../../net/client.js'

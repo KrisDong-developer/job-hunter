@@ -1,6 +1,7 @@
-import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../shared/enums.js';
-import type { ResumeContent, ResumeDto, ResumeFileDto, ResumeIssue, ResumeSummaryDto, TailoringDto } from '../../shared/resume.js';
-import { emptyResumeContent } from '../../shared/resume.js';
+import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../shared/contract/enums/resume.js';
+import type { ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js';
+import type { ResumeContent, ResumeIssue } from '../../shared/domain/resume-content.js';
+import { emptyResumeContent } from '../../shared/domain/resume-content.js';
 import type { AiService } from '../ai/client.js';
 import type { Store } from '../store/store.js';
 import { isoNow, type Clock } from '../util/time.js';

@@ -19,7 +19,7 @@ import { openDatabase, resolveDbPath } from '../../src/host/store/db.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import { currentVersion, MIGRATIONS } from '../../src/host/store/migrate.js'
 import { SCHEMA_V1 } from '../../src/host/store/schema.js'
-import type { ResumeContent } from '../../src/shared/resume.js'
+import type { ResumeContent } from '../../src/shared/domain/resume-content.js'
 import { cleanup, openTestStore, tempDataDir } from '../support/store.js'
 
 const T = '2026-09-16T10:00:00.000Z'

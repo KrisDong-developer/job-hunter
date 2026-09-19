@@ -1,4 +1,4 @@
-import type { CompanyProfileDto } from '../../../../shared/dto.js'
+import type { CompanyProfileDto } from '../../../../shared/contract/dto/job.js'
 import { CompanyReview } from '../company-review.js'
 
 /** 公司画像 + 人工复核（§4.3 / D-16）。公司为 `null`（没归一化出来）时由父组件整块跳过。 */

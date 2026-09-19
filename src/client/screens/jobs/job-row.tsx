@@ -1,7 +1,8 @@
-import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL, JOB_FLAG_LABEL, type JobState } from '../../../shared/enums.js'
-import { JOB_STATE_LABEL } from '../../../shared/labels.js'
-import type { JobDto } from '../../../shared/dto.js'
-import { relativeTime } from '../../format/job.js'
+import { JOB_FLAG_LABEL, type JobState } from '../../../shared/contract/enums/job.js'
+import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../../shared/contract/enums/pipeline.js'
+import { JOB_STATE_LABEL } from '../../../shared/contract/enums/job.js'
+import type { JobDto } from '../../../shared/contract/dto/job.js'
+import { relativeTime, localDateTime } from '../../format/job.js'
 import { DedupComparePane } from './dedup-compare-pane.js'
 import { IconChat, IconSend } from './icons.js'
 
@@ -35,20 +36,35 @@ export function JobRow(props: {
   const seen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt
   /** 落成局部 const 再判空：`job.dedupGroupId` 的属性收窄传不进箭头函数，展开开关的回调要用它。 */
   const dedupGroupId = job.dedupGroupId
+  /**
+   * 卡片可访问名称里的"信号"（第四轮修复，审核 P3）。
+   *
+   * 卡片正文整体 `aria-hidden`（否则读屏会把六类文本顺成一长串当按钮名），
+   * 代价是粗筛分与风险标注也一起被藏了 —— 而"外包 / 高风险 / 僵尸岗"恰恰是
+   * 决定要不要看这条的依据。所以把它们补回名称里；标签（tags）仍然不进，
+   * 它们不是决策依据，只会把名称再撑长。
+   */
+  const signals = [
+    job.matchScore === null ? '' : `粗筛 ${String(job.matchScore)}`,
+    job.flagTypes.map((type) => JOB_FLAG_LABEL[type]).join('、'),
+  ].filter((item) => item !== '').join('，')
   return (
     <li>
       <div className="jh-job-row">
         {/* 勾选框：单独一列，不嵌在"点开详情"的按钮里
             （按钮嵌控件是无效 HTML，读屏与键盘都会乱）。
-            它的存在只为一件事：批量打招呼（D3 / U1）。 */}
-        <span className="jh-job-pick">
+            它的存在只为一件事：批量打招呼（D3 / U1）。
+            ── 第四轮（审核 P2-11）：外面包一层 label —— 裸 input 的命中区只有
+            控件自身（约 13×13px），触屏上很容易点成"打开详情"。包成 label 之后
+            整块都能勾，尺寸与内边距见 .jh-job-pick。 */}
+        <label className="jh-job-pick">
           <input
             type="checkbox"
             checked={props.picked}
             aria-label={`选中「${job.title}」（用于批量打招呼）`}
             onChange={(event) => props.onTogglePick(job.id, event.target.checked)}
           />
-        </span>
+        </label>
         <button
           type="button"
           className={`jh-job${active ? ' jh-job-active' : ''}`}
@@ -57,7 +73,7 @@ export function JobRow(props: {
           /* 卡片里塞着标题/薪资/城市/公司/标签/分数/状态，读屏会把这一长串
              当成按钮名念完（实测约 60 字）。给一个**短而完整**的名称，
              卡内文本对读屏隐藏 —— 视觉完全不变。 */
-          aria-label={`岗位：${job.title}，${job.salaryRaw}，${job.city}${job.district === '' ? '' : `·${job.district}`}，${JOB_STATE_LABEL[job.state]}`}
+          aria-label={`岗位：${job.title}，${job.salaryRaw}，${job.city}${job.district === '' ? '' : `·${job.district}`}，${JOB_STATE_LABEL[job.state]}${signals === '' ? '' : `，${signals}`}`}
           onClick={() => props.onSelect(job.id)}
         >
           <span className="jh-job-main" aria-hidden="true">
@@ -74,11 +90,14 @@ export function JobRow(props: {
                 最近一次见到它是什么时候。抓取时间正是列表默认排序用的那一列
                 （`crawled_at`），可它在界面上从来没露过面 —— 用户按"抓取时间"
                 排完了，却指不出哪一列是它。两个都写 `title` 给出精确时刻：
-                相对时间好读，绝对时间才是事实。 */}
+                相对时间好读，绝对时间才是事实。
+                ── 第四轮（审核 P2-9）：title 里原来直接放原始 ISO
+                （2026-09-20T05:33:00.000Z，还是 UTC）—— 那对人不是一个时刻。
+                改走 localDateTime：本地时间、跨年才带年份。 */}
             <span className="jh-job-origin">
               <span>{job.platformName ?? job.platformId}</span>
-              <span title={job.crawledAt}>抓取 {crawled}</span>
-              <span title={job.lastSeenAt}>最近见到 {seen}</span>
+              <span title={localDateTime(job.crawledAt)}>抓取 {crawled}</span>
+              <span title={localDateTime(job.lastSeenAt)}>最近见到 {seen}</span>
               {/* 批次 4：这条岗位在别的平台也在招（同一组）。
                   徽章只是**读数**；"展开对照"是卡片下面那枚开关。 */}
               {dedupGroupId === null ? null : (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NOTICE_TTL_MS, PLUGIN_ID } from '../../shared/constants.js'
+import { NOTICE_TTL_MS, PLUGIN_ID } from '../../shared/config/plugin.js'
 
 const SEEN_KEY = `${PLUGIN_ID}:notice-seen`
 

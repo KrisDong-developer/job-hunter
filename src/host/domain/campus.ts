@@ -9,21 +9,9 @@
  * 把"再不做就来不及了"这件事单独挑出来。它们会被 U0 与待办系统当 **urgent** 处理，
  * 而不是普通通知 —— 这类错误没有第二次机会（决策记录第 3 条）。
  */
-import type {
-  AssessmentKind,
-  AssessmentState,
-  CampusBatch,
-  CampusStage,
-  TripartiteState,
-} from '../../shared/enums.js'
-import {
-  ASSESSMENT_KINDS,
-  ASSESSMENT_STATES,
-  CAMPUS_BATCHES,
-  CAMPUS_STAGES,
-  TRIPARTITE_STATES,
-} from '../../shared/enums.js'
-import type { CampusApplicationDto, AssessmentDto, DeadlineDto, TalkSessionDto, TripartiteDto } from '../../shared/dto.js'
+import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../shared/contract/enums/campus.js'
+import { ASSESSMENT_KINDS, ASSESSMENT_STATES, CAMPUS_BATCHES, CAMPUS_STAGES, TRIPARTITE_STATES } from '../../shared/contract/enums/campus.js'
+import type { AssessmentDto, CampusApplicationDto, DeadlineDto, TalkSessionDto, TripartiteDto } from '../../shared/contract/dto/campus.js'
 import type { BranchDeadline } from '../store/repo/campus.js'
 import type { Store } from '../store/store.js'
 import { systemClock, type Clock } from '../util/time.js'

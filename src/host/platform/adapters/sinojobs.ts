@@ -44,8 +44,8 @@
  * `indexAjaxPage.html`）与详情页 `/Recruitment/content.html` 都在允许范围内。
  * 投递要登录（`/UserCenter/resumeShow.html`），采集链路**不碰**投递与任何 Ucenter 路径。
  */
-import type { BlockKind, CoreField } from '../../../shared/enums.js'
-import { CORE_FIELDS } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
+import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
 import { signalsOf, type BlockSignalSet } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'

@@ -1,4 +1,4 @@
-import type { ResumeContent } from '../../../../shared/resume.js'
+import type { ResumeContent } from '../../../../shared/domain/resume-content.js'
 import { BlockCard, ChipsEditor, LinesEditor, move } from '../editors.js'
 
 export function ProjectsSection(props: {

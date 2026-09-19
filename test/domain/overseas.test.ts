@@ -31,9 +31,9 @@ import {
   VISA_NO_SPONSORSHIP_PATTERNS,
   VISA_PROVIDES_PATTERNS,
 } from '../../src/host/domain/overseas.js'
-import { VISA_STANCES } from '../../src/shared/enums.js'
-import type { VisaStance } from '../../src/shared/enums.js'
-import type { ResumeContent } from '../../src/shared/resume.js'
+import { VISA_STANCES } from '../../src/shared/contract/enums/overseas.js'
+import type { VisaStance } from '../../src/shared/contract/enums/overseas.js'
+import type { ResumeContent } from '../../src/shared/domain/resume-content.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import type { Store } from '../../src/host/store/store.js'
 import { DomainError } from '../../src/host/util/errors.js'

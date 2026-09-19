@@ -5,7 +5,7 @@
  * 领域相关的（岗位谓词、岗位行格式化、简历逐条拼装…）一律留在各自的领域文件里 ——
  * 否则这个文件会慢慢长成第二个 `index.ts`。
  */
-import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } from '../../shared/dsh.js'
+import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } from '../../shared/contract/dsh.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
 import { toolExec } from './exec-context.js'
@@ -32,7 +32,7 @@ export const int = (description: string): JsonSchemaNode => ({ type: 'integer', 
 /**
  * 枚举型字符串参数。
  *
- * 值的集合与顺序由调用方给（通常直接是 `shared/enums.ts` 的常量），
+ * 值的集合与顺序由调用方给（通常直接是 `shared/contract/enums/` 里声明的取值域），
  * **不在这里重排、改写或补默认值** —— 它必须与领域层的校验用同一份清单。
  */
 export function enumStr(values: readonly string[], description: string): JsonSchemaNode {

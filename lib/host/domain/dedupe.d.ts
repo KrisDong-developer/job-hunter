@@ -16,7 +16,7 @@
  * * 判不出来就**不合并**，留给人看。
  */
 import type { DedupGroupRepo } from '../store/repo/dedup-groups.js';
-import type { JobDto } from '../../shared/dto.js';
+import type { JobDto } from '../../shared/contract/dto/job.js';
 import { type JobDedupeVerdict } from '../util/dedupe.js';
 export interface DedupCandidate {
     id: number;

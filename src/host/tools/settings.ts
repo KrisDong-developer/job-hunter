@@ -5,7 +5,7 @@
  * 模型一律不能改。真正拦住的不是这里 —— 是 `runtime.updateSettings` 背后的 guard；
  * 这里只是把"能改什么、不能改什么"如实念给模型听（配置里本来就有这两份清单）。
  */
-import type { ToolDefinition } from '../../shared/dsh.js'
+import type { ToolDefinition } from '../../shared/contract/dsh.js'
 import type { HostRuntime } from '../runtime.js'
 import type { SettingsSnapshot } from '../settings.js'
 import { DomainError } from '../util/errors.js'

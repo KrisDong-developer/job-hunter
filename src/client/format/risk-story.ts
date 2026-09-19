@@ -1,5 +1,5 @@
-import type { SettingsDto } from '../net/types.js'
-import { parseWindow } from './settings-window.js'
+import type { SettingsDto } from '../../shared/contract/dto/settings.js'
+import { parseWindow } from '../../shared/text/time-format.js'
 
 /**
  * 「当前风控态势」一句话 —— 与采集页 `.jh-story` 同一个定位（同一件事只有一个说法）。

@@ -12,8 +12,8 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { INTERVIEW_KINDS, INTERVIEW_STATES } from '../../src/shared/enums.js'
-import type { ResumeContent } from '../../src/shared/resume.js'
+import { INTERVIEW_KINDS, INTERVIEW_STATES } from '../../src/shared/contract/enums/interview.js'
+import type { ResumeContent } from '../../src/shared/domain/resume-content.js'
 import {
   CONFLICT_WINDOW_MIN,
   createInterviewService,

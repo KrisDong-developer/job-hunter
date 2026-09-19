@@ -1,10 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type {
-  PlanDto,
-  PlanPlatformOverrideDto,
-  PlanPostProcess,
-  PlanSchedule,
-} from '../../../shared/dto.js'
+import type { PlanDto, PlanPlatformOverrideDto, PlanPostProcess, PlanSchedule } from '../../../shared/contract/dto/plan.js'
 import { detectTimezone } from '../../util/time.js'
 import { asBool, asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
 

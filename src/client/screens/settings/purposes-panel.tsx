@@ -1,4 +1,4 @@
-import type { SettingsDto } from '../../net/types.js'
+import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { Switch } from '../../ui/switch.js'

@@ -5,7 +5,7 @@
  * 三方协议（GET/POST /tripartite、POST /tripartite/:id/state）；
  * 宣讲会（GET/POST /talks）与硬截止（GET /deadlines）。
  */
-import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../../shared/enums.js'
+import type { AssessmentKind, AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../../shared/contract/enums/campus.js'
 import { DomainError } from '../../util/errors.js'
 import { json, parseRecordId, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'

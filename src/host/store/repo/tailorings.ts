@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { ResumeContent } from '../../../shared/resume.js'
-import { normalizeResumeContent } from '../../../shared/resume.js'
+import type { ResumeContent } from '../../../shared/domain/resume-content.js'
+import { normalizeResumeContent } from '../../../shared/domain/resume-content.js'
 import { asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 /**

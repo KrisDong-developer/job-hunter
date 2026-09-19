@@ -1,4 +1,4 @@
-import type { CleanupPlanDto, CleanupResultDto, RetentionPolicy, StorageUsageDto } from '../../shared/dto.js';
+import type { CleanupPlanDto, CleanupResultDto, RetentionPolicy, StorageUsageDto } from '../../shared/contract/dto/storage.js';
 import { type Clock } from '../util/time.js';
 import type { Store } from './store.js';
 export type RetentionDaysKey = Exclude<keyof RetentionPolicy, 'autoCleanEnabled'>;

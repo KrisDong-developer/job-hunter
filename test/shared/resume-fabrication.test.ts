@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { checkNoFabrication, normalizeResumeContent, type ResumeContent } from '../../src/shared/resume.js'
+import { checkNoFabrication, normalizeResumeContent, type ResumeContent } from '../../src/shared/domain/resume-content.js'
 
 /**
  * 防编造检查的**回归测试**。
@@ -174,7 +174,7 @@ test('【回归】中文技能也拦得住 —— 词表匹配看不见的那一
 })
 
 test('提示词层与检查层用同一个投影：允许的岗位词来自 techTokensOf', async () => {
-  const { techTokensOf } = await import('../../src/shared/resume.js')
+  const { techTokensOf } = await import('../../src/shared/domain/resume-content.js')
   const tokens = techTokensOf('高级 Java 工程师（微服务 / Kubernetes）')
   assert.ok(tokens.includes('java'))
   assert.ok(tokens.includes('kubernetes'))

@@ -7,8 +7,8 @@
  * P4 起 `query` / `detail` 会带上**标注类型**与**匹配分**，
  * `detailFull` 还会带出完整依据 —— 界面上任何一个分数与徽章都要能回答「凭什么」。
  */
-import type { CompanyProfileDto, JobDetailDto, JobDto, JobFacetsDto, JobFlagDto } from '../../shared/dto.js'
-import { JOB_STATES, type JobFlagType, type JobState } from '../../shared/enums.js'
+import type { CompanyProfileDto, JobDetailDto, JobDto, JobFacetsDto, JobFlagDto } from '../../shared/contract/dto/job.js'
+import { JOB_STATES, type JobFlagType, type JobState } from '../../shared/contract/enums/job.js'
 import type { JobQuery, JobUpsertInput, MatchStamp } from '../store/repo/jobs.js'
 import type { Store } from '../store/store.js'
 import { DomainError } from '../util/errors.js'

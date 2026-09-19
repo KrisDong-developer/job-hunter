@@ -2,8 +2,8 @@
 // 多关键词方案把关键词排在最前 —— 它们是一轮里要逐个跑的任务清单；
 // 其余条件照旧翻人话，两者都没有才写"不限"。纯展示组件。
 import type { ReactNode } from 'react'
-import { describeCriteria, type CriteriaDimensionLike } from '../../../shared/criteria-label.js'
-import type { PlanDto } from '../../../shared/dto.js'
+import { describeCriteria, type CriteriaDimensionLike } from '../../../shared/text/criteria-label.js'
+import type { PlanDto } from '../../../shared/contract/dto/plan.js'
 
 /**
  * 条件的一行中文呈现（不是源码 JSON）。

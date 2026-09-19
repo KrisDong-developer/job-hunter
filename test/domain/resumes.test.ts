@@ -19,14 +19,7 @@ import { createResumeService, ruleTailor, stripContacts } from '../../src/host/d
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import type { Store } from '../../src/host/store/store.js'
 import { DomainError } from '../../src/host/util/errors.js'
-import {
-  checkNoFabrication,
-  emptyResumeContent,
-  factAtoms,
-  inspectResume,
-  techTokensOf,
-  type ResumeContent,
-} from '../../src/shared/resume.js'
+import { checkNoFabrication, emptyResumeContent, factAtoms, inspectResume, techTokensOf, type ResumeContent } from '../../src/shared/domain/resume-content.js'
 import { cleanup, openTestStore, tempDataDir } from '../support/store.js'
 
 const T = '2026-09-16T10:00:00.000Z'

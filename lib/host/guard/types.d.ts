@@ -1,6 +1,5 @@
 /** guard 的公共类型（§4.4）。 */
-/** 谁发起的。审计与审批策略都看它。 */
-export type Actor = 'gui' | 'model' | 'schedule' | 'user';
+import type { Actor } from '../../shared/contract/enums/guard.js';
 /** 危险级。`high` 或 `actor==='model'` 必过审批（§4.4 检查链第 5 项）。 */
 export type Danger = 'low' | 'mid' | 'high';
 /** 被拒绝的原因分类（对应 §9 的 `GUARD_DENIED.reason`）。 */

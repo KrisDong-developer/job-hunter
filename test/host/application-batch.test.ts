@@ -15,9 +15,9 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../src/shared/constants.js'
-import type { ApplicationBatchBlockerDto } from '../../src/shared/dto.js'
-import type { DeliveryState } from '../../src/shared/enums.js'
+import { BATCH_ITEM_INTERVAL_MS, BATCH_MAX_ITEMS } from '../../src/shared/config/batch.js'
+import type { ApplicationBatchBlockerDto } from '../../src/shared/contract/dto/batch.js'
+import type { DeliveryState } from '../../src/shared/contract/enums/job.js'
 import type { ApplicationSendResult } from '../../src/host/guard/actions/application.js'
 import {
   previewApplicationBatch,

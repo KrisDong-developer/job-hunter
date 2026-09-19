@@ -11,13 +11,11 @@
  * 3. **状态只能往前走，但允许人工回退**：回退要显式传 `allowBackward`，
  *    免得手滑把"已 Offer"点回"已投递"而没人知道为什么。
  */
-import type { ApplicationChannel, ApplicationStage, ContactStage, StageSource } from '../../shared/enums.js';
-import { NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank } from '../../shared/enums.js';
-import type { ApplicationDto, BoardDto, GreetingDto, StageEventDto } from '../../shared/dto.js';
+import type { ApplicationChannel, ApplicationStage, ContactStage, StageSource } from '../../shared/contract/enums/pipeline.js';
+import type { ApplicationDto, BoardDto, GreetingDto, StageEventDto } from '../../shared/contract/dto/pipeline.js';
 import type { Store } from '../store/store.js';
 import type { GreetingRecord } from '../store/repo/pipeline.js';
 import { type Clock } from '../util/time.js';
-export { NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank };
 export interface PipelineService {
     /** 记一次投递。`actor` 决定审计归属（gui / model）。 */
     recordApplication(input: {
@@ -137,7 +135,7 @@ export interface FollowUpSuggestion {
 export declare const UNREAD_TIMEOUT_HOURS = 72;
 /** 已读未回超时阈值（小时）——超过就建议改简历/话术，而不是继续加量（§3.3 / §3.2）。 */
 export declare const READ_TIMEOUT_HOURS: number;
-/** 投递后完全没进展的阈值（天）现在也在 shared/enums.ts（客户端要用来判断"该催了"）。 */
+/** 投递后完全没进展的阈值（天）现在也在 shared/contract/enums/pipeline.ts（客户端要用来判断"该催了"）。 */
 export interface PipelineDeps {
     store: Store;
     clock?: Clock;

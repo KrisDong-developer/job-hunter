@@ -15,56 +15,21 @@ import type { SettingsWriteDeps } from './guard/actions/settings.js'
 import { writeGuardSettings } from './guard/actions/settings.js'
 import type { GuardToken } from './guard/token.js'
 import { DEFAULT_GUARD_CONFIG, readGuardConfig, type GuardConfig } from './guard/rules.js'
-import type { RetentionPolicy } from '../shared/dto.js'
-import { RETENTION_AUTO_CLEAN_DEFAULT, RETENTION_DEFAULTS } from '../shared/constants.js'
+import type { SettingsDto } from '../shared/contract/dto/settings.js'
+import type { RetentionPolicy } from '../shared/contract/dto/storage.js'
+import { RETENTION_AUTO_CLEAN_DEFAULT, RETENTION_DEFAULTS } from '../shared/config/retention.js'
 import type { Store } from './store/store.js'
 import type { CrawlConfig } from './crawl-config.js'
 
-export interface SettingsSnapshot {
-  ai: AiConfig
-  guard: GuardConfig
-  /** 浏览器运行期设置（目前只有空闲自关）。**不是**闸门配置。 */
-  browser: BrowserConfig
-  /** 采集运行期设置（单轮预算）。资源/节奏设置，**不是**闸门配置。 */
-  crawl: CrawlConfig
-  /**
-   * 数据保留策略（§18 / §15 的「保留」一栏）。同样是资源设置，**不是**闸门。
-   *
-   * 放在这里而不是塞进 GuardConfig：额度/冷却/审批是"能不能发出去"，
-   * 保留期是"留多久"—— 混在一起会让"模型能不能改"这件事变得含糊
-   * （模型的禁止项清单里有额度，但没有保留期）。
-   */
-  retention: RetentionPolicy
-  /** 供界面展示"这些开关现在是什么状态"的派生信息。 */
-  derived: {
-    /** 每个用途是否真的可用（总开关 + 用途开关）。 */
-    purposes: Array<{ purpose: AiPurpose; label: string; enabled: boolean }>
-    /** 模型能改哪些、不能改哪些，直接告诉用户。 */
-    modelEditable: string[]
-    modelForbidden: string[]
-    /**
-     * 出厂默认值。
-     *
-     * 为什么由宿主下发而不是客户端写死：默认值的事实来源是
-     * `DEFAULT_GUARD_CONFIG` 与 `AI_PURPOSE_DEFAULT_ENABLED`，客户端再抄一份迟早会漂移
-     * （本项目已经在"同名规则各写一份"上吃过亏）。界面只拿它做两件事：
-     * 问号说明里的"默认是多少"，以及发送时段被清空（不限）后输入框该显示什么。
-     */
-    defaults: {
-      /** 每个用途的出厂默认开关。 */
-      purposes: Record<string, boolean>
-      guard: {
-        dailyLimits: { greeting: number; application: number; reply: number }
-        cooldownMinutes: number
-        batchLimit: number
-        sendWindow: string
-        dayOffProbability: number
-      }
-      /** 保留期的出厂默认（界面用它显示"恢复默认"该填什么）。 */
-      retention: RetentionPolicy
-    }
-  }
-}
+/**
+ * 设置快照 —— 也**就是** HTTP 响应形状。
+ *
+ * 形状的权威定义在 `shared/contract/dto/settings.ts`，这里直接 extends 那一份：
+ * 曾经宿主与客户端各写一遍同名形状，界面只声明"自己用得到的键"，
+ * 于是宿主加一个键、客户端就悄悄少了它（`engine` / `stealthInit` 就是这么丢的）。
+ * 宿主侧更窄的类型（`BrowserConfig` / `GuardConfig`）都结构兼容于 DTO 的对应字段。
+ */
+export interface SettingsSnapshot extends SettingsDto {}
 
 export interface SettingsPatch {
   ai?: AiConfigPatch

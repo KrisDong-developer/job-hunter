@@ -1,4 +1,4 @@
-import type { PluginContext } from '../shared/dsh.js';
+import type { PluginContext } from '../shared/contract/dsh.js';
 /** cordis 插件名。 */
 export declare const name = "dsh-job-hunter";
 /**

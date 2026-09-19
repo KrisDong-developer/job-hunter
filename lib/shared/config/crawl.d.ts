@@ -1,0 +1,80 @@
+/**
+ * 采集节奏、阈值与单轮预算。
+ */
+/**
+ * crawl 相关常量（host 与 client 共享）。只放标量，不放运行时对象（§4.3）。
+ */
+/** 任一核心字段连续缺失达到这个次数 → 适配器降级 + 主动告警。 */
+export declare const CORE_FIELD_MISS_THRESHOLD = 3;
+/** 连续运行级失败达到这个次数 → 失效（broken）。 */
+export declare const ADAPTER_FAIL_THRESHOLD = 3;
+/** 一批写入的行数（§4.1：抓取批量写入按 200 行一个事务分批）。 */
+export declare const WRITE_BATCH_SIZE = 200;
+/** 抓取请求之间的随机延时区间（ms）——保守优先于效率（P5）。 */
+export declare const REQUEST_DELAY_MIN_MS = 1200;
+export declare const REQUEST_DELAY_MAX_MS = 3200;
+/**
+ * 每个平台每天最多自动跑几轮（SR-3 的每日上限）。
+ *
+ * 为什么要有：窗口 + 随机点已经避免了"每天同一分钟"，但一个坏掉的适配器
+ * 或者一个刚恢复的平台可能在一小时内被反复触发。上限是最后一道闸。
+ * 默认给得很松（8 次）：这不是节流阀，是"防止失控"的保险丝。
+ */
+export declare const DAILY_CRAWL_LIMIT = 8;
+/**
+ * **单轮预算**（SR-46 / NFR-7）：一个方案的一次运行最多占用多久。
+ *
+ * "一轮" = 一个方案的一次运行，可能覆盖多个平台。预算用完时两处会停：
+ *   * **平台之间**：还没开始的平台不再开始（如实报 `round_budget`，不假装跑过）；
+ *   * **平台之内**：正在跑的那一轮在**页与页之间**停下（`crawl_run.state='aborted'`），
+ *     已经解析出来的记录照常入库。
+ *
+ * 为什么给到 20 分钟这么松：它不是节流阀（节流是每日上限与平台额度的事），
+ * 而是**保险丝** —— 一个卡住的页面、一个不返回的站点不该把整轮拖到天亮。
+ * 给紧了只会让正常但慢的站点被腰斩，那比失控常见得多。
+ *
+ * 为什么只在页与页之间停：请求中途打断会留下一个状态未知的页面，
+ * 同一个浏览器上下文的下一次使用行为不可预期 —— 宁可将就跑完当前这一页。
+ */
+export declare const ROUND_BUDGET_MS: number;
+/**
+ * 一轮里**同时**在跑的平台数上限（跨平台并发 / 同平台串行）。
+ *
+ * 为什么是 3 而不是"全部一起"：
+ *   * 风控是**按站点**看的 —— 不同平台互不相干，并发不增加任何一个站点的请求速率；
+ *     但 10 个 tab 同时开页对**本机**是实打实的内存与解析压力（headful Chromium）；
+ *   * 3 条泳道已把"等页间延时"的时间重叠掉大半（延时是高斯的，本来就不密集），
+ *     再加泳道的边际收益递减；
+ *   * 留出余量给登录引导（它也从这个页面池拿页，不占平台锁）。
+ *
+ * 同一平台绝不并发：`platform/locks.ts` 保证（两个方案打同一个站点仍串行）。
+ * 这是把原 §4.2.1「全局互斥」收窄成「按平台互斥」—— 收窄的依据是
+ * 互斥真正要保护的共享资源只有两类：**同一站点的请求节奏**与**页面**，
+ * 而这两类都可以按平台切分（页面池见 browser.ts 的 createPagePool）。
+ */
+export declare const MAX_CONCURRENT_PLATFORMS = 3;
+/**
+ * 一个方案最多多少个关键词。
+ *
+ * 上限不是随意的：自动调度的每日抓取上限按**站点访问次数**计（`DAILY_CRAWL_LIMIT=8`），
+ * N 个关键词的一轮就是 N 次访问 —— 10 是"一轮还能留下额度跑补跑"与"够覆盖一组
+ * 目标岗位"之间的平衡点。需要更多就拆成两个方案（各自的额度与时段独立）。
+ */
+export declare const PLAN_KEYWORDS_MAX = 10;
+/**
+ * 一轮里**最多逐条点进多少个新岗位的详情页**（P2 详情补抓）。
+ *
+ * 只对本轮**新增**的岗位做（老岗位已有 JD 或已被判定），所以日常轮次接近零开销；
+ * 上限防的是"首轮 + 多关键词"的极端量（3 词 × 3 页 ≈ 120 新增）一次全点进去 ——
+ * 那既是风控灾难，也会把任何预算吃光。超出的新岗位**这一轮拿不到 JD**
+ * （列表字段照常入库；打分/标注按无 JD 口径降级），它们在下一轮已是"老岗位"。
+ */
+export declare const DETAIL_FETCH_MAX_PER_ROUND = 20;
+/** 设置表里"一轮采集最多跑多少分钟"的键（scope='global'）。 */
+export declare const CRAWL_ROUND_BUDGET_KEY = "crawlRoundBudgetMinutes";
+/** 默认 20 分钟（沿用原 ROUND_BUDGET_MS 的值）。 */
+export declare const CRAWL_ROUND_BUDGET_DEFAULT_MIN = 20;
+/** 允许范围 5–240 分钟。下限防"设成 1 分钟等于每轮都截断"；上限与浏览器空闲档对齐。 */
+export declare const CRAWL_ROUND_BUDGET_MIN_MIN = 5;
+export declare const CRAWL_ROUND_BUDGET_MAX_MIN = 240;
+//# sourceMappingURL=crawl.d.ts.map

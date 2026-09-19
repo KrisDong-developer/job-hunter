@@ -1,4 +1,4 @@
-import type { ToolCallOwnerProps } from '../../shared/dsh.js'
+import type { ToolCallOwnerProps } from '../../shared/contract/dsh.js'
 import { headlineOf, isSettled, JobRow, jobLinesOf, textOf, CardShell } from './parts.js'
 import { openJobInPanel } from './open-panel.js'
 

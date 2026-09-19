@@ -36,7 +36,7 @@
 import type { HostRuntime } from '../runtime.js';
 import type { RouteRequest, RouteResult } from './routes/types.js';
 export type { RouteRequest, RouteResult } from './routes/types.js';
-export type { CrawlStatusDto } from '../../shared/dto.js';
+export type { CrawlStatusDto } from '../../shared/contract/dto/crawl.js';
 /**
  * 唯一入口。所有领域错误在这里翻译成 HTTP（§9 映射表）。
  */

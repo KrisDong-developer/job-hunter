@@ -1,7 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { ResumeLanguage, ResumeState } from '../../../shared/enums.js'
-import type { ResumeContent, ResumeDto, ResumeFileDto, ResumeSummaryDto } from '../../../shared/resume.js'
-import { inspectResume, normalizeResumeContent } from '../../../shared/resume.js'
+import type { ResumeLanguage, ResumeState } from '../../../shared/contract/enums/resume.js'
+import type { ResumeDto, ResumeFileDto, ResumeSummaryDto } from '../../../shared/contract/dto/resume.js'
+import type { ResumeContent } from '../../../shared/domain/resume-content.js'
+import { inspectResume, normalizeResumeContent } from '../../../shared/domain/resume-content.js'
 import { asId, asInt, asJson, asText, asTextOrNull, type Row } from '../row.js'
 
 /**

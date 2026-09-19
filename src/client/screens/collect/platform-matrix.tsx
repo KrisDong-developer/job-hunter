@@ -3,17 +3,11 @@
 // 展开行里的 PlatformDetail 只回答"它现在为什么是这样"（被什么挡住、登录态、连续缺失、产量掉没掉）。
 // cooldownActive 是这两个组件共用的冷却判定，只在模块内使用。
 
-import { Fragment } from 'react'
-import {
-  CRAWL_STATE_LABEL,
-  HEALTH_STATE_LABEL,
-  MATURITY_LEVEL_LABEL,
-  MATURITY_LEVEL_SHORT,
-  MATURITY_LEVEL_TONE,
-  maturityNeedsWarning,
-} from '../../../shared/enums.js'
-import { formatClock } from '../../../shared/time-format.js'
-import type { PlatformOverviewDto } from '../../../shared/dto.js'
+import { Fragment, type ReactNode } from 'react'
+import { CRAWL_STATE_LABEL, HEALTH_STATE_LABEL } from '../../../shared/contract/enums/crawl.js'
+import { MATURITY_LEVEL_LABEL, MATURITY_LEVEL_SHORT, MATURITY_LEVEL_TONE, maturityNeedsWarning } from '../../../shared/contract/enums/platform.js'
+import { formatClock } from '../../../shared/text/time-format.js'
+import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
 import { Term } from '../../ui/terms.js'
 import { StateTag } from './state-tag.js'
 
@@ -22,6 +16,25 @@ function cooldownActive(until: string | null, now: Date): Date | null {
   const at = new Date(until)
   return Number.isNaN(at.getTime()) || at.getTime() <= now.getTime() ? null : at
 }
+
+/**
+ * 矩阵的列。**表头与展开行的 `colSpan` 共用这一份**。
+ *
+ * 改之前表头手写 9 个 `<th>`、展开行的 `colSpan` 也写死成 9 —— 加一列就得记住
+ * 同时改两个地方才能对齐。而 ≤480px 还会有两列被 `.jh-col-hide-sm` 隐掉
+ * （见 `styles/responsive.ts`），于是"表头的列数"与"明细占几列"成了两个
+ * 靠人记的常数。现在只有这一份。 */
+const MATRIX_COLUMNS: ReadonlyArray<{ key: string; label: ReactNode; className?: string }> = [
+  { key: 'platform', label: '平台', className: 'jh-col-sticky' },
+  { key: 'runnable', label: '今天能跑' },
+  { key: 'login', label: '登录' },
+  { key: 'health', label: '健康', className: 'jh-cell-status' },
+  { key: 'maturity', label: '成熟度', className: 'jh-col-hide-sm' },
+  { key: 'quota', label: '今日额度', className: 'jh-num' },
+  { key: 'yield', label: '产量', className: 'jh-num jh-col-hide-sm' },
+  { key: 'lastRun', label: '最近一轮' },
+  { key: 'detail', label: <span className="jh-sr-only">明细</span> },
+]
 
 /**
  * 平台总览**矩阵**（批次 5）—— 现在是**主从结构**：一行一个平台，
@@ -61,15 +74,11 @@ export function PlatformMatrix(props: {
       <table className="jh-table jh-table-matrix">
         <thead>
           <tr>
-            <th scope="col" className="jh-col-sticky">平台</th>
-            <th scope="col">今天能跑</th>
-            <th scope="col">登录</th>
-            <th scope="col" className="jh-cell-status">健康</th>
-            <th scope="col" className="jh-col-hide-sm">成熟度</th>
-            <th scope="col" className="jh-num">今日额度</th>
-            <th scope="col" className="jh-num jh-col-hide-sm">产量</th>
-            <th scope="col">最近一轮</th>
-            <th scope="col"><span className="jh-sr-only">明细</span></th>
+            {MATRIX_COLUMNS.map((column) => (
+              <th key={column.key} scope="col" className={column.className}>
+                {column.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -209,7 +218,7 @@ export function PlatformMatrix(props: {
                     不是另起一段与表格并列的内容。 */}
                 {open ? (
                   <tr className="jh-row-detail">
-                    <td colSpan={9} id={detailId}>
+                    <td colSpan={MATRIX_COLUMNS.length} id={detailId}>
                       <PlatformDetail
                         item={item}
                         reasonText={props.reasonText}
@@ -357,13 +366,17 @@ export function PlatformDetail(props: {
       )}
 
       <div className="jh-plat-detail-actions">
+        {/* 文案改成「去设置看诊断」：原来说的是「排查方案」，而这一页的「方案」
+            一律指**采集方案** —— 这个按钮其实是要跳去设置页。同一屏里同一个词
+            指两件事，用户会以为它去编辑这个平台的采集方案。
+            措辞与「运行失败」弹窗底栏那颗同名按钮保持一致。 */}
         <button
           type="button"
           className="jh-btn jh-btn-inline jh-btn-tiny"
           onClick={props.onGoSettings}
           title="看诊断信息（版本、数据路径、计数、工具注册结果）"
         >
-          排查方案
+          去设置看诊断
         </button>
       </div>
     </div>

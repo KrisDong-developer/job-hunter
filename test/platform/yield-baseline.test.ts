@@ -15,7 +15,7 @@ import {
   readYieldSnapshot,
   YIELD_MIN_BASELINE,
 } from '../../src/host/platform/yield-baseline.js'
-import type { CrawlState } from '../../src/shared/enums.js'
+import type { CrawlState } from '../../src/shared/contract/enums/crawl.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
 type Store = ReturnType<typeof openTestStore>

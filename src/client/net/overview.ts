@@ -1,7 +1,8 @@
 /**
  * 总览类读数：健康、今日概况、闸门额度余量。
  */
-import type { GuardUsageDto, HealthDto, TodayDto } from '../../shared/dto.js'
+import type { HealthDto } from '../../shared/contract/dto/crawl.js'
+import type { GuardUsageDto, TodayDto } from '../../shared/contract/dto/today.js'
 import { request } from './client.js'
 
 export async function fetchHealth(signal?: AbortSignal): Promise<HealthDto> {

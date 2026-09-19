@@ -18,13 +18,8 @@
  * 保证"调用那一刻"拿到的是当前那一个 —— 与 `gate.ts` 的 `storeOf` 同一个理由。
  */
 import { join } from 'node:path'
-import type {
-  ApplicationBatchPlanDto,
-  ApplicationBatchResultDto,
-  GreetingBatchPlanDto,
-  GreetingBatchResultDto,
-  GreetingDraftDto,
-} from '../../shared/dto.js'
+import type { ApplicationBatchPlanDto, ApplicationBatchResultDto, GreetingBatchPlanDto, GreetingBatchResultDto } from '../../shared/contract/dto/batch.js'
+import type { GreetingDraftDto } from '../../shared/contract/dto/pipeline.js'
 import type { OutreachService } from '../domain/outreach.js'
 import type { PipelineService } from '../domain/pipeline.js'
 import type { MessageService } from '../domain/messages.js'
@@ -48,7 +43,7 @@ import { SETTINGS_WRITE_ACTION } from '../guard/actions/settings.js'
 import { STAGE_PROBE_ACTION, probeContactStage, type StageProbeResult } from '../guard/actions/stage.js'
 import type { Guard } from '../guard/index.js'
 import { guardUsageOf, readGuardConfig } from '../guard/rules.js'
-import type { Actor } from '../guard/types.js'
+import type { Actor } from '../../shared/contract/enums/guard.js'
 import type { EventBus } from '../http/sse.js'
 import type { BrowserManager } from '../platform/browser.js'
 import { browserPageSource } from '../platform/browser.js'

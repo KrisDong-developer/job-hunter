@@ -25,7 +25,7 @@
  * 平台特有的判据（indeed 的 host 校验、sinojobs 的卡片数、waiqi 的载荷错误码）
  * 不塞进来 —— 它们各自留在自己的适配器里，只把**通用的那一半**领走。
  */
-import type { BlockKind } from '../../shared/enums.js'
+import type { BlockKind } from '../../shared/contract/enums/crawl.js'
 
 /**
  * 平台无关的通用信号。

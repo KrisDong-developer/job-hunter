@@ -1,4 +1,4 @@
-import type { FreshnessLevel } from '../../shared/dto.js'
+import type { FreshnessLevel } from '../../shared/contract/enums/job.js'
 
 /**
  * 新鲜度徽章（SR-8 / SR-27）。

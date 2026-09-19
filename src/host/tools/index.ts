@@ -28,9 +28,9 @@
  *   offers.ts       offer_manage（Offer） analytics.ts    job_report
  *   settings.ts     job_settings         data.ts         data_transfer（导出 / 导入 / 占用 / 清理预览，§18 / J8）
  */
-import { PLUGIN_ID } from '../../shared/constants.js'
-import type { Disposer, PluginContext, ToolDefinition, ToolsService } from '../../shared/dsh.js'
-import { serviceOf } from '../../shared/dsh.js'
+import { PLUGIN_ID } from '../../shared/config/plugin.js'
+import type { Disposer, PluginContext, ToolDefinition, ToolsService } from '../../shared/contract/dsh.js'
+import { serviceOf } from '../../shared/contract/dsh.js'
 import type { HostRuntime } from '../runtime.js'
 import { messageOf } from '../util/errors.js'
 import { analyticsTools } from './analytics.js'

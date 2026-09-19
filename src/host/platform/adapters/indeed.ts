@@ -45,8 +45,8 @@
  * 以上锚点**只是实现依据，不是验证证据**（拿不到中国大陆夹具）。锚不中就留空，
  * 靠 `pp()` 架构里已有的字段级断言隔离，绝不假装抓到。
  */
-import type { BlockKind, CoreField } from '../../../shared/enums.js'
-import { CORE_FIELDS } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
+import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'

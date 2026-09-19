@@ -16,7 +16,7 @@ import { test } from 'node:test'
 import type { LlmSourceLike } from '../../src/host/ai/llm-port.js'
 import { createHostRuntime } from '../../src/host/runtime.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
-import { emptyResumeContent, type ResumeContent } from '../../src/shared/resume.js'
+import { emptyResumeContent, type ResumeContent } from '../../src/shared/domain/resume-content.js'
 import { cleanup, tempDataDir } from '../support/store.js'
 
 const T1 = '2026-09-19T01:00:00.000Z'

@@ -24,7 +24,8 @@
  * 标题相似度 ≥0.9）。它只是把同一把尺子拿到整个库上再量一遍：
  * 宁可不合并 —— 合并之后投递记录会串，而且用户很难发现。
  */
-import type { JobDto } from '../../shared/dto.js'
+import type { DedupSweepResultDto } from '../../shared/contract/dto/dedup.js'
+import type { JobDto } from '../../shared/contract/dto/job.js'
 import type { Store } from '../store/store.js'
 import { applyDedup, dedupCandidateOf, type DedupCandidate, type DedupDeps } from './dedupe.js'
 
@@ -48,20 +49,13 @@ export function dedupDepsOf(store: Store): DedupDeps {
   }
 }
 
-export interface DedupSweepResult {
-  /** 真的送去判定的岗位数（跳过已分组、没公司名的）。 */
-  scanned: number
-  /** 已经**在某个分组里**、这一轮没再判的岗位数。 */
-  skippedGrouped: number
-  /** 这一轮**进入分组**的岗位数（新建组时两条都算 —— 它们确实都被合并了）。 */
-  merged: number
-  /** 新建的分组数。 */
-  newGroups: number
-  /** 疑似重复但**未自动合并**的数量（要人工看一眼）。 */
-  candidates: number
-  /** 复核之后库里一共有多少个分组。 */
-  groups: number
-}
+/**
+ * 复核的计数结果。
+ *
+ * 六个计数字段的权威定义在 `shared/contract/dto/dedup.ts`（响应里还多一份 `items`），
+ * 这里只是**去掉界面那一项**的投影 —— 曾经仓库里有两处同名同字段的接口。
+ */
+export type DedupSweepResult = Omit<DedupSweepResultDto, 'items'>
 
 /**
  * 跑一遍全库复核。

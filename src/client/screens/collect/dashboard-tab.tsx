@@ -1,9 +1,11 @@
 // 分区一「运行仪表盘」：顶部 Alert（需要你处理的事）+ 最近运行日志 + 平台状态总览（主从表格）+ 适配器维护。
 // 纯展示组件：数据与动作全部由 CollectScreen 通过 props 传入，本文件不持有任何状态。
-import { formatClock, formatRelative, formatWeekdays, formatWindow } from '../../../shared/time-format.js'
-import type { PlanDto, PlatformOverviewDto, RecentRunDto, SchedulerStatusDto } from '../../../shared/dto.js'
-import type { FailureText } from '../../../shared/error-text.js'
-import type { CriteriaDimensionDto } from '../../net/types.js'
+import { formatClock, formatRelative, formatWeekdays, formatWindow } from '../../../shared/text/time-format.js'
+import type { RecentRunDto } from '../../../shared/contract/dto/crawl.js'
+import type { PlanDto, SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
+import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
+import type { FailureText } from '../../../shared/text/error-text.js'
+import type { CriteriaDimensionDto } from '../../../shared/contract/dto/plan.js'
 import { LoadingLine } from '../../ui/async-view.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { Term } from '../../ui/terms.js'

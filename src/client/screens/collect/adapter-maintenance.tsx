@@ -17,7 +17,7 @@
  * 改配置（热生效）→ 重跑一轮 → **丢弃 / 清空这一队**。
  */
 import { useEffect, useState } from 'react'
-import type { AdapterConfigDto } from '../../../shared/dto.js'
+import type { AdapterConfigDto } from '../../../shared/contract/dto/settings.js'
 import { ApiError } from '../../net/client.js'
 import { clearRepairs, discardRepair, fetchAdapterConfig, fetchRepairs, updateAdapterConfig } from '../../net/collect/platforms.js'
 import { ErrorLine, LoadingLine } from '../../ui/async-view.js'

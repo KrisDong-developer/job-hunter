@@ -1,4 +1,4 @@
-import type { FunnelStepDto } from '../../../shared/dto.js'
+import type { FunnelStepDto } from '../../../shared/contract/dto/analytics.js'
 import { formatRate } from './format.js'
 
 /**
@@ -56,13 +56,21 @@ export function FunnelChart(props: { steps: FunnelStepDto[]; onDrillDown: (step:
                 type="button"
                 className="jh-funnel-count"
                 title="点开看这一段的明细"
+                /* 可访问名必须带上层名：按钮里只有一个数字，读屏会连读七个"12 按钮"，
+                   用户只能靠位置猜这是哪一层。名字里保留那个数字，2.5.3 也才对得上。 */
+                aria-label={`${step.label} ${String(step.count)} 条，点开看这一段的明细`}
                 onClick={() => props.onDrillDown(step.key)}
               >
                 {step.count}
               </button>
               <span className="jh-funnel-rate">
                 {step.rate === null ? (
-                  <span className="jh-cell-empty" title="跨总体（接触 → 投递）没有转化率">—</span>
+                  /* 破折号本身没有含义，解释不能只挂在 title 上（键盘与触屏都读不到）——
+                     与 SampleBadge 同一个做法：正文之外再给读屏一份。 */
+                  <span className="jh-cell-empty">
+                    —
+                    <span className="jh-sr-only">跨总体（接触 → 投递）没有转化率</span>
+                  </span>
                 ) : (
                   formatRate(step.rate)
                 )}

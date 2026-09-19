@@ -1,4 +1,4 @@
-import type { TodoDto } from '../../../shared/dto.js'
+import type { TodoDto } from '../../../shared/contract/dto/today.js'
 import { confirmTargetJobIdOf, planIdOf, todoKindLabel, todoLevelLabel } from '../../format/today.js'
 
 /**

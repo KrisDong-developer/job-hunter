@@ -14,13 +14,8 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  ASSESSMENT_STATES,
-  CAMPUS_BATCHES,
-  CAMPUS_STAGES,
-  TRIPARTITE_STATES,
-} from '../../src/shared/enums.js'
-import type { AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../src/shared/enums.js'
+import { ASSESSMENT_STATES, CAMPUS_BATCHES, CAMPUS_STAGES, TRIPARTITE_STATES } from '../../src/shared/contract/enums/campus.js'
+import type { AssessmentState, CampusBatch, CampusStage, TripartiteState } from '../../src/shared/contract/enums/campus.js'
 import { createCampusService, URGENT_WITHIN_HOURS, WARN_WITHIN_HOURS } from '../../src/host/domain/campus.js'
 import { currentVersion, MIGRATIONS } from '../../src/host/store/migrate.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'

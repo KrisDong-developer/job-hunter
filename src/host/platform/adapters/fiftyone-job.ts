@@ -12,8 +12,8 @@
  *    绝不引用模块作用域的自由变量 —— 否则真路径会 ReferenceError。
  *    离线测试用 jsdom 提供同一个 `document`，于是**同一份代码**在两条路径上跑。
  */
-import type { BlockKind, CoreField } from '../../../shared/enums.js'
-import { CORE_FIELDS } from '../../../shared/enums.js'
+import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
+import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { mergeAdapterConfig } from '../config-merge.js'
 import { humanDelayMs } from '../pacing.js'
