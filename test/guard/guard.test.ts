@@ -68,8 +68,6 @@ function withStore(fn: (store: Store) => Promise<void> | void): Promise<void> {
   })
 }
 
-const lowInput: GuardInput = { action: 'job.list', actor: 'model', danger: 'low' }
-
 test('审批规则：高危一律问，模型发起的中危也要问，低危不打扰', () => {
   const config = DEFAULT_GUARD_CONFIG
   for (const actor of ['gui', 'model', 'schedule'] as const) {

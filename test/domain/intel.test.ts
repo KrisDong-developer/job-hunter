@@ -6,9 +6,12 @@ import {
   ZOMBIE_PUBLISH_DAYS,
   createIntelService,
   evaluateJobFlags,
+  resumeProfileOf,
   scoreJobMatch,
   type JobIntelInput,
 } from '../../src/host/domain/intel.js'
+import type { ResumeService } from '../../src/host/domain/resumes.js'
+import { emptyResumeContent, type ResumeContent } from '../../src/shared/resume.js'
 import type { DictionaryEntry } from '../../src/host/store/repo/dictionary.js'
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import { cleanup, openTestStore, tempDataDir } from '../support/store.js'
@@ -42,6 +45,63 @@ function intelInput(overrides: Partial<JobIntelInput['job']> = {}, extra: Partia
     ...extra,
   }
 }
+
+// ── 匹配偏好：从简历派生（§4.5.1）──────────────────────────────────
+
+/**
+ * 结构化的假 ResumeService：`resumeProfileOf` 只读 `list()` 与 `get()`。
+ *
+ * 用假件而不是真简历库：这条规则的输入就是"当前那份简历的内容"，
+ * 为它建一份真简历（还要 filesDir / pdf / ai）只会让测试变慢，
+ * 并把真正的输入（内容）埋进一堆无关的构造里。
+ */
+function fakeResumes(current: { isDefault: boolean; state: string; content: ResumeContent } | null): ResumeService {
+  return {
+    list: () => (current === null ? [] : [{ id: 1, isDefault: current.isDefault, state: current.state }]),
+    get: () => ({ content: current?.content }),
+  } as unknown as ResumeService
+}
+
+function resumeContent(overrides: Partial<ResumeContent> = {}): ResumeContent {
+  return {
+    ...emptyResumeContent(),
+    basics: { name: '张三', title: '前端/Node', city: '深圳' },
+    skills: [{ name: 'react' }, { name: 'node' }, { name: 'react' }],
+    ...overrides,
+  }
+}
+
+test('resumeProfileOf：从当前启用简历派生关键词与城市（去重、有上限）', () => {
+  const active = { isDefault: true, state: 'active', content: resumeContent() }
+  const profile = resumeProfileOf(fakeResumes(active))
+  assert.ok(profile !== undefined)
+  // 技能去重后在前，标题按分隔符拆词在后；大小写不同的词**不合并**（Node ≠ node）
+  assert.deepEqual(profile.keywords, ['react', 'node', '前端', 'Node'])
+  assert.deepEqual(profile.cities, ['深圳'])
+})
+
+test('resumeProfileOf：没有"当前简历"时返回 undefined（不是抛错）', () => {
+  // 三种"没有"都要安静地退回"没有偏好"，否则岗位列表会跟着挂掉
+  assert.equal(resumeProfileOf(fakeResumes(null)), undefined, '一份简历都没有')
+  assert.equal(
+    resumeProfileOf(fakeResumes({ isDefault: false, state: 'active', content: resumeContent() })),
+    undefined,
+    '非默认的那份不算当前简历',
+  )
+  assert.equal(
+    resumeProfileOf(fakeResumes({ isDefault: true, state: 'archived', content: resumeContent() })),
+    undefined,
+    '归档的那份不算当前简历',
+  )
+})
+
+test('resumeProfileOf：没填城市 = 不限城市（空数组，不是 null）', () => {
+  const content = resumeContent({ basics: { name: '张三', title: '前端' } })
+  const profile = resumeProfileOf(fakeResumes({ isDefault: true, state: 'active', content }))
+  assert.ok(profile !== undefined)
+  assert.deepEqual(profile.cities, [])
+  assert.deepEqual(profile.keywords, ['react', 'node', '前端'])
+})
 
 // ── 标注：每条结论都必须有依据 ───────────────────────────────────────
 

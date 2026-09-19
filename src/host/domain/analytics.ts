@@ -38,7 +38,6 @@ import {
 import type { ApplicationStage, ContactStage } from '../../shared/enums.js'
 import type { Store } from '../store/store.js'
 import type { ApplicationRecord } from '../store/repo/pipeline.js'
-import { systemClock, type Clock } from '../util/time.js'
 
 /** 低于这个样本量就不下结论。 */
 export const MIN_SAMPLE = 5
@@ -64,12 +63,10 @@ export interface AnalyticsService {
 
 export interface AnalyticsDeps {
   store: Store
-  clock?: Clock
 }
 
 export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
   const { store } = deps
-  const clock = deps.clock ?? systemClock
 
   /**
    * 这次投递**有没有走到过**某一层。

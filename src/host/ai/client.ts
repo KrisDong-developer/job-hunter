@@ -221,7 +221,6 @@ export function createAiService(deps: AiDeps): AiService {
       return degrade(`模型调用失败（${reason}），使用模板结果`, true)
     }
 
-    const elapsed = Date.now() - startedAt
     let parsed = options.parse(completion.text)
     let attemptNote: string | undefined
 

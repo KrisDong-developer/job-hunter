@@ -163,7 +163,7 @@ test('折叠：同一组的岗位只留一行，且 total 也按折叠后算', (
     const now = '2026-09-16T01:00:00.000Z'
     const a = upsert(store, { title: 'A', city: '深圳', platformId: 'zhilian', key: 'a' }, now)
     const b = upsert(store, { title: 'A', city: '深圳', platformId: 'zhipin', key: 'b' }, now)
-    const c = upsert(store, { title: 'C', city: '深圳', platformId: 'p3', key: 'c' }, now)
+    upsert(store, { title: 'C', city: '深圳', platformId: 'p3', key: 'c' }, now)
     upsert(store, { title: 'D', city: '北京', platformId: 'p1', key: 'd' }, now)
     // 直接建组（去重引擎自己那部分在 dedupe-sweep.test.ts 里验）
     const groupId = store.dedupGroup.create(

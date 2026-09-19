@@ -16,7 +16,6 @@ import type { AnalyticsFilter, AttributionDto, FunnelDto, ResumeCompareDto, Sala
 import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../shared/enums.js';
 import type { ApplicationStage } from '../../shared/enums.js';
 import type { Store } from '../store/store.js';
-import { type Clock } from '../util/time.js';
 /** 低于这个样本量就不下结论。 */
 export declare const MIN_SAMPLE = 5;
 export interface AnalyticsService {
@@ -46,7 +45,6 @@ export interface AnalyticsService {
 }
 export interface AnalyticsDeps {
     store: Store;
-    clock?: Clock;
 }
 export declare function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService;
 /** F1：一个口径下的箱体（含"箱里装了多少条"）。 */

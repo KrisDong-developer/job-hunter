@@ -1,4 +1,4 @@
-import type { CrawlStatusDto, CrawlSummaryDto, DeadlineDto, GreetingDraftDto, HealthDto, LoginStatusDto, PlanDto, PlatformOverviewDto, SchedulerStatusDto, TodayDto } from '../shared/dto.js';
+import type { CrawlStatusDto, CrawlSummaryDto, DeadlineDto, GreetingDraftDto, HealthDto, LoginStatusDto, PlatformOverviewDto, SchedulerStatusDto, TodayDto } from '../shared/dto.js';
 import type { AiService } from './ai/client.js';
 import type { CompanyService } from './domain/companies.js';
 import type { DedupSweepResult } from './domain/dedupe-sweep.js';
@@ -13,11 +13,11 @@ import type { OutreachService } from './domain/outreach.js';
 import type { ResumeService } from './domain/resumes.js';
 import type { PlanService } from './domain/plans.js';
 import type { IntelService } from './domain/intel.js';
-import { type GreetingSendResult } from './guard/actions/greeting.js';
-import { type ApplicationSendResult } from './guard/actions/application.js';
-import { type InboxSyncResult } from './guard/actions/inbox.js';
-import { type ReplySendResult } from './guard/actions/reply.js';
-import { type StageProbeResult } from './guard/actions/stage.js';
+import type { ApplicationSendResult } from './guard/actions/application.js';
+import type { GreetingSendResult } from './guard/actions/greeting.js';
+import type { InboxSyncResult } from './guard/actions/inbox.js';
+import type { ReplySendResult } from './guard/actions/reply.js';
+import type { StageProbeResult } from './guard/actions/stage.js';
 import type { Guard } from './guard/index.js';
 import type { Actor } from './guard/types.js';
 import { type EventBus } from './http/sse.js';
@@ -25,12 +25,12 @@ import type { BrowserManager } from './platform/browser.js';
 import type { PlatformLocks } from './platform/locks.js';
 import type { AdapterRegistry } from './platform/registry.js';
 import type { SearchCriteria } from './platform/types.js';
+import type { RuntimeFailure } from './runtime/contract.js';
 import { type RunReason } from './scheduler/index.js';
 import { type TimerLike } from './scheduler/timer-port.js';
 import type { SettingsPatch, SettingsService, SettingsSnapshot } from './settings.js';
 import type { Store } from './store/store.js';
-import type { ToolRegistrationReport } from './tools/index.js';
-import { DomainError } from './util/errors.js';
+import type { ToolRegistrationReport } from './tools/types.js';
 export interface RuntimeLogger {
     info(message: string): void;
     warn(message: string): void;
@@ -52,11 +52,6 @@ export interface HostRuntimeOptions {
      * 缺失时审批端口一律 fail-closed（拒绝）。
      */
     approval?: unknown;
-}
-export interface RuntimeFailure {
-    code: string;
-    message: string;
-    hint?: string;
 }
 export interface HostRuntime {
     /** 异步就绪。幂等；失败不 reject（失败信息进 `failure()`）。 */
@@ -242,8 +237,7 @@ export interface HostRuntime {
     /** 同步收尾：停调度、关库、放租约、发起关闭浏览器（不阻塞调用方）。 */
     close(): void;
 }
-/** 数据层未就绪时的统一错误。 */
-export declare function dataNotReady(runtime: HostRuntime): DomainError;
+export { dataNotReady } from './runtime/contract.js';
+export type { RuntimeFailure } from './runtime/contract.js';
 export declare function createHostRuntime(options?: HostRuntimeOptions): HostRuntime;
-export type { PlanDto };
 //# sourceMappingURL=runtime.d.ts.map

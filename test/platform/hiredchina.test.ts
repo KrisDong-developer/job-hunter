@@ -236,7 +236,6 @@ test('详情页 extract：h1 / 渐变卡片薪资 / 徽章行归一 / prose JD �
 })
 
 test('hasNextPage：当前页已是末页时返回 false', async () => {
-  const adapter = createHiredChinaAdapter()
   const lastPageHtml = `<!doctype html><html><body>${card(
     '555bb318-bce8-4bf5-9678-7f58097751fa',
     'x',

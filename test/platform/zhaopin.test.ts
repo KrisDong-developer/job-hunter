@@ -13,7 +13,6 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import {
   buildTalkListUrl,
-  buildZhaopinSearchUrl,
   createZhaopinAdapter,
   DEFAULT_ZHAOPIN_CONFIG,
   extractJobDetailInPage,

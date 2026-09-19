@@ -76,7 +76,6 @@ export interface ApprovalPortOptions {
    */
   available?: () => boolean
   timeoutMs?: number
-  clock?: () => number
 }
 
 /** 默认超时 5 分钟（§4.4.2）。 */
@@ -84,7 +83,6 @@ export const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000
 
 export function createApprovalPort(options: ApprovalPortOptions = {}): ApprovalPort {
   const timeoutMs = options.timeoutMs ?? APPROVAL_TIMEOUT_MS
-  const now = options.clock ?? (() => Date.now())
 
   return {
     available(): boolean {

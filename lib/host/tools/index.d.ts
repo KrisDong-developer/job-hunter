@@ -1,24 +1,8 @@
-import type { Disposer, PluginContext, ToolDefinition } from '../../shared/dsh.js';
+import type { PluginContext } from '../../shared/dsh.js';
 import type { HostRuntime } from '../runtime.js';
-/** 工具单次返回的岗位条数上限：模型上下文不该被一张长列表挤满（§22.5）。 */
-export declare const TOOL_LIST_MAX = 20;
-/** 批量类工具（模型发起）的岗位数上限，与 §22.4「≤5」一致。 */
-export declare const TOOL_BATCH_MAX = 5;
-declare function buildTools(runtime: HostRuntime): ToolDefinition[];
-/** 一次注册的结果。**失败必须能被看到**，不能只写进日志就完事。 */
-export interface ToolRegistrationReport {
-    registered: string[];
-    failed: Array<{
-        name: string;
-        reason: string;
-    }>;
-    /** 注册前就已经被别的插件占用的名字（我们没去抢）。 */
-    conflicts: string[];
-}
-export interface ToolRegistration {
-    report: ToolRegistrationReport;
-    dispose: Disposer;
-}
+import type { ToolRegistration, ToolRegistrationReport } from './types.js';
+export { TOOL_BATCH_MAX } from './kit.js';
+export type { ToolRegistration, ToolRegistrationReport };
 /**
  * 注册全部工具。
  *
@@ -27,5 +11,4 @@ export interface ToolRegistration {
  * 「工具静默少了一个」是模型能力缺失里最难查的一类问题，所以这里把它变成可见状态。
  */
 export declare function registerJobHunterTools(ctx: PluginContext, runtime: HostRuntime): ToolRegistration;
-export { buildTools };
 //# sourceMappingURL=index.d.ts.map

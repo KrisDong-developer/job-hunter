@@ -70,7 +70,6 @@ export interface ApprovalPortOptions {
      */
     available?: () => boolean;
     timeoutMs?: number;
-    clock?: () => number;
 }
 /** 默认超时 5 分钟（§4.4.2）。 */
 export declare const APPROVAL_TIMEOUT_MS: number;

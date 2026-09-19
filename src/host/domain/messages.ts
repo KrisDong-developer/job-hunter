@@ -15,7 +15,7 @@
  * 所以这里只产出 `inviteSignal`，改状态是另一次显式动作（并且会写 `stage_event`）。
  */
 import type { InterviewKind, MessageDirection, ReplyScenario } from '../../shared/enums.js'
-import { REPLY_SCENARIOS, REPLY_SCENARIO_LABEL } from '../../shared/enums.js'
+import { REPLY_SCENARIOS } from '../../shared/enums.js'
 import type { InboxDto, InterviewSuggestionDto, MessageDto, ReplyDraftDto } from '../../shared/dto.js'
 import type { AiService } from '../ai/client.js'
 import { extractJson } from '../ai/prompts.js'

@@ -36,7 +36,6 @@ export function InboxScreen(props: { revision: number; onChanged: () => void; on
     [props.revision, unreadOnly],
   )
   const [draft, setDraft] = useState('')
-  const [encoding, setEncoding] = useState(false)
   const [replyTo, setReplyTo] = useState<number | null>(null)
   const [replyText, setReplyText] = useState('')
   const [draftingScenario, setDraftingScenario] = useState<ReplyScenario | null>(null)

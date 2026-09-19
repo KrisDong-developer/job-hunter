@@ -16,7 +16,6 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import {
   buildWaiqiRequestBody,
-  buildWaiqiSearchUrl,
   createWaiqiAdapter,
   DEFAULT_WAIQI_CONFIG,
   mergeWaiqiConfig,

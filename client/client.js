@@ -139,7 +139,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/panel.tsx
-		var import_react16 = require("react");
+		var import_react19 = require("react");
 
 		// src/client/intent.ts
 		var pending = null;
@@ -3082,7 +3082,6 @@ window.__ModuleLoader__.load({
 		    [props.revision, unreadOnly]
 		  );
 		  const [draft, setDraft] = (0, import_react8.useState)("");
-		  const [encoding, setEncoding] = (0, import_react8.useState)(false);
 		  const [replyTo, setReplyTo] = (0, import_react8.useState)(null);
 		  const [replyText, setReplyText] = (0, import_react8.useState)("");
 		  const [draftingScenario, setDraftingScenario] = (0, import_react8.useState)(null);
@@ -4459,7 +4458,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect.tsx
-		var import_react11 = require("react");
+		var import_react14 = require("react");
 
 		// src/shared/error-text.ts
 		var TECHNICAL_PATTERNS = [
@@ -4550,52 +4549,6 @@ window.__ModuleLoader__.load({
 		  unknown: "\u672A\u77E5\u539F\u56E0"
 		};
 
-		// src/shared/criteria-label.ts
-		var FALLBACK_LABEL = {
-		  keyword: "\u5173\u952E\u8BCD",
-		  city: "\u57CE\u5E02",
-		  sort: "\u6392\u5E8F\u65B9\u5F0F",
-		  postedWithinDays: "\u53D1\u5E03\u65F6\u95F4",
-		  maxPages: "\u6293\u53D6\u9875\u6570\u4E0A\u9650",
-		  scrollRounds: "\u52A0\u8F7D\u8F6E\u6570",
-		  // 平台特有维度：只有部分平台声明（如神仙外企），但方案可能引用了它们，
-		  // 而平台刚被取消勾选 —— 那时候界面不该退回去印 `workExp`。
-		  workExp: "\u5DE5\u4F5C\u7ECF\u9A8C",
-		  education: "\u5B66\u5386",
-		  type: "\u804C\u4F4D\u8303\u56F4"
-		};
-		var NUMERIC_SUFFIX = {
-		  postedWithinDays: " \u5929\u5185",
-		  maxPages: " \u9875",
-		  scrollRounds: " \u8F6E"
-		};
-		function describeCriteria(criteria, dimensions = []) {
-		  const declared = new Map(dimensions.map((dimension) => [dimension.key, dimension]));
-		  const order = [
-		    ...dimensions.map((dimension) => dimension.key).filter((key) => key in criteria),
-		    ...Object.keys(criteria).filter((key) => !declared.has(key))
-		  ];
-		  const seen = /* @__PURE__ */ new Set();
-		  const items = [];
-		  for (const key of order) {
-		    if (seen.has(key)) continue;
-		    seen.add(key);
-		    const value = criteria[key];
-		    if (value === void 0 || value === "") continue;
-		    const spec = declared.get(key);
-		    const suffix = NUMERIC_SUFFIX[key] ?? "";
-		    const inDomain = spec?.values.find((option) => option.value === value);
-		    items.push({
-		      key,
-		      label: spec?.label ?? FALLBACK_LABEL[key] ?? key,
-		      value,
-		      display: inDomain === void 0 ? `${value}${suffix}` : inDomain.label,
-		      declared: spec !== void 0
-		    });
-		  }
-		  return items;
-		}
-
 		// src/client/modal.tsx
 		var import_react10 = require("react");
 		var import_jsx_runtime11 = require("react/jsx-runtime");
@@ -4685,14 +4638,41 @@ window.__ModuleLoader__.load({
 		  );
 		}
 
-		// src/client/screens/collect.tsx
-		var import_jsx_runtime14 = require("react/jsx-runtime");
-		var IDLE = { running: false, tone: "ok", message: null };
-		var COLLECT_TABS = [
-		  { key: "dashboard", label: "\u8FD0\u884C\u4EEA\u8868\u76D8" },
-		  { key: "plans", label: "\u65B9\u6848\u7BA1\u7406" },
-		  { key: "diagnostics", label: "\u8BCA\u65AD\u4E0E\u660E\u7EC6" }
-		];
+		// src/client/screens/collect/schedule-story.ts
+		function scheduleStoryOf(status, now) {
+		  const nextRun = status.triggers.length === 0 ? null : status.triggers.map((trigger) => {
+		    const at = new Date(trigger.nextRunAt);
+		    const jitter = formatJitter(trigger.jitterMs);
+		    return `${trigger.planName} ${formatClock(at)}\uFF08${formatRelative(at, now)}${jitter === null ? "" : ` \xB7 ${jitter}`}\uFF09`;
+		  }).join(" / ");
+		  if (status.paused) {
+		    return { owner: "\u5B9A\u65F6\u5DF2\u6682\u505C", tone: "warn", nextRun, detail: null };
+		  }
+		  if (status.readOnly) {
+		    return {
+		      owner: "\u7531\u53E6\u4E00\u4E2A\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6",
+		      tone: "warn",
+		      nextRun: nextRun === null ? null : `\u90A3\u4E2A\u7A97\u53E3\u4F1A\u5728 ${nextRun} \u81EA\u52A8\u91C7\u96C6`,
+		      detail: "\u540C\u4E00\u53F0\u7535\u8111\u53EA\u5141\u8BB8\u4E00\u4E2A\u7A97\u53E3\u771F\u6B63\u53BB\u91C7\u96C6\uFF08\u5426\u5219\u4F1A\u62A2\u540C\u4E00\u4EFD\u6D4F\u89C8\u5668\u767B\u5F55\u6001\uFF09\u3002\u672C\u7A97\u53E3\u53EF\u4EE5\u770B\uFF0C\u4F46\u4E0D\u80FD\u89E6\u53D1\u91C7\u96C6\u3002"
+		    };
+		  }
+		  if (!status.scheduling) {
+		    return {
+		      owner: "\u672C\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6\uFF0C\u4F46\u8FD8\u6CA1\u542F\u52A8",
+		      tone: "warn",
+		      nextRun,
+		      detail: status.readOnlyReason ?? "\u6570\u636E\u5C42\u53EF\u80FD\u8FD8\u6CA1\u5C31\u7EEA\uFF0C\u7A0D\u7B49\u51E0\u79D2\u4F1A\u81EA\u52A8\u5F00\u59CB\u3002"
+		    };
+		  }
+		  return {
+		    owner: status.armed ? "\u672C\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6\uFF0C\u5DF2\u6392\u597D\u4E0B\u4E00\u6B21" : "\u672C\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6",
+		    tone: "ok",
+		    nextRun,
+		    detail: status.armed ? null : "\u5F53\u524D\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848 \u2014\u2014 \u53EA\u4F1A\u5728\u4F60\u70B9\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u65F6\u8DD1\u3002"
+		  };
+		}
+
+		// src/client/screens/collect/plan-form.ts
 		function overridesOf(platforms, source) {
 		  const out = {};
 		  for (const id of platforms) {
@@ -4784,709 +4764,9 @@ window.__ModuleLoader__.load({
 		    postProcess: { score: form.score, flag: form.flag, dedup: form.dedup }
 		  };
 		}
-		function StateTag(props) {
-		  const label = props.kind === "run" ? CRAWL_STATE_LABEL[props.state] : HEALTH_STATE_LABEL[props.state];
-		  const tone = props.kind === "run" ? CRAWL_STATE_TONE[props.state] : HEALTH_STATE_TONE[props.state];
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: `jh-tag jh-tone-${tone}`, children: label });
-		}
-		function scheduleStoryOf(status, now) {
-		  const nextRun = status.triggers.length === 0 ? null : status.triggers.map((trigger) => {
-		    const at = new Date(trigger.nextRunAt);
-		    const jitter = formatJitter(trigger.jitterMs);
-		    return `${trigger.planName} ${formatClock(at)}\uFF08${formatRelative(at, now)}${jitter === null ? "" : ` \xB7 ${jitter}`}\uFF09`;
-		  }).join(" / ");
-		  if (status.paused) {
-		    return { owner: "\u5B9A\u65F6\u5DF2\u6682\u505C", tone: "warn", nextRun, detail: null };
-		  }
-		  if (status.readOnly) {
-		    return {
-		      owner: "\u7531\u53E6\u4E00\u4E2A\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6",
-		      tone: "warn",
-		      nextRun: nextRun === null ? null : `\u90A3\u4E2A\u7A97\u53E3\u4F1A\u5728 ${nextRun} \u81EA\u52A8\u91C7\u96C6`,
-		      detail: "\u540C\u4E00\u53F0\u7535\u8111\u53EA\u5141\u8BB8\u4E00\u4E2A\u7A97\u53E3\u771F\u6B63\u53BB\u91C7\u96C6\uFF08\u5426\u5219\u4F1A\u62A2\u540C\u4E00\u4EFD\u6D4F\u89C8\u5668\u767B\u5F55\u6001\uFF09\u3002\u672C\u7A97\u53E3\u53EF\u4EE5\u770B\uFF0C\u4F46\u4E0D\u80FD\u89E6\u53D1\u91C7\u96C6\u3002"
-		    };
-		  }
-		  if (!status.scheduling) {
-		    return {
-		      owner: "\u672C\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6\uFF0C\u4F46\u8FD8\u6CA1\u542F\u52A8",
-		      tone: "warn",
-		      nextRun,
-		      detail: status.readOnlyReason ?? "\u6570\u636E\u5C42\u53EF\u80FD\u8FD8\u6CA1\u5C31\u7EEA\uFF0C\u7A0D\u7B49\u51E0\u79D2\u4F1A\u81EA\u52A8\u5F00\u59CB\u3002"
-		    };
-		  }
-		  return {
-		    owner: status.armed ? "\u672C\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6\uFF0C\u5DF2\u6392\u597D\u4E0B\u4E00\u6B21" : "\u672C\u7A97\u53E3\u8D1F\u8D23\u8C03\u5EA6",
-		    tone: "ok",
-		    nextRun,
-		    detail: status.armed ? null : "\u5F53\u524D\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848 \u2014\u2014 \u53EA\u4F1A\u5728\u4F60\u70B9\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u65F6\u8DD1\u3002"
-		  };
-		}
-		function CollectScreen(props) {
-		  const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision]);
-		  const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision]);
-		  const plans = useAsync((signal) => fetchPlans(signal), [props.revision]);
-		  const reasons = useAsync((signal) => fetchSkipReasons(signal), [props.revision]);
-		  const dimensions = useAsync((signal) => fetchCriteriaDimensions([], signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react11.useState)(IDLE);
-		  const [editing, setEditing] = (0, import_react11.useState)(null);
-		  const [duplicates, setDuplicates] = (0, import_react11.useState)([]);
-		  const [notices, setNotices] = (0, import_react11.useState)([]);
-		  const [errorDetail, setErrorDetail] = (0, import_react11.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react11.useState)(null);
-		  const [tab, setTab] = (0, import_react11.useState)("dashboard");
-		  const [expandedPlatform, setExpandedPlatform] = (0, import_react11.useState)(null);
-		  const [focusPlanId, setFocusPlanId] = (0, import_react11.useState)(null);
-		  const [dedupRevision, setDedupRevision] = (0, import_react11.useState)(0);
-		  const report = (error) => {
-		    setFeedback({
-		      running: false,
-		      tone: "error",
-		      message: error instanceof ApiError ? error.display : String(error)
-		    });
-		  };
-		  const reload = () => {
-		    scheduler.reload();
-		    platforms.reload();
-		    plans.reload();
-		    dimensions.reload();
-		  };
-		  const act = async (pending2, run) => {
-		    setFeedback({ running: true, tone: "ok", message: pending2 });
-		    try {
-		      const done = await run();
-		      setFeedback({ running: false, tone: "ok", message: done });
-		      reload();
-		    } catch (error) {
-		      report(error);
-		    }
-		  };
-		  const status = scheduler.state.status === "ok" ? scheduler.state.data : null;
-		  const planList = plans.state.status === "ok" ? plans.state.data.items : [];
-		  const platformList = platforms.state.status === "ok" ? platforms.state.data.items : [];
-		  const plansLoading = plans.state.status === "loading";
-		  const platformsLoading = platforms.state.status === "loading";
-		  const runsLoading = scheduler.state.status === "loading";
-		  const reasonText = reasons.state.status === "ok" ? reasons.state.data.items : {};
-		  const dimensionList = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
-		  const now = (0, import_react11.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
-		  const story = status === null ? null : scheduleStoryOf(status, now);
-		  const login = (platformId) => act("\u5DF2\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u8BF7\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\uFF08\u6BCF 3 \u79D2\u68C0\u6D4B\u4E00\u6B21\uFF09", async () => {
-		    const result = await startLogin(platformId);
-		    return result.message ?? "\u767B\u5F55\u5F15\u5BFC\u5DF2\u542F\u52A8";
-		  });
-		  const trigger = (plan) => act("\u6B63\u5728\u6309\u65B9\u6848\u91C7\u96C6\u2026\uFF08\u4F1A\u6253\u5F00\u4E00\u4E2A\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09", async () => {
-		    const summary = await runPlan(plan.id);
-		    return `\u65B9\u6848\u300C${plan.name}\u300D\u672C\u8F6E ${CRAWL_STATE_LABEL[summary.run.state]}\uFF1A\u547D\u4E2D ${String(summary.run.found)} \xB7 \u65B0\u589E ${String(summary.run.inserted)} \xB7 \u66F4\u65B0 ${String(summary.run.updated)} \xB7 \u9694\u79BB ${String(summary.run.quarantined)}`;
-		  });
-		  const reasonFor = (skipReason) => skipReason === null ? null : reasonText[skipReason] ?? skipReason;
-		  const platformNameOf = (id) => platformList.find((item) => item.id === id)?.displayName ?? null;
-		  const confirmDelete = async (plan) => {
-		    setPendingDelete(null);
-		    await act("\u6B63\u5728\u5220\u9664\u2026", async () => {
-		      await deletePlan(plan.id);
-		      return `\u5DF2\u5220\u9664\u65B9\u6848\u300C${plan.name}\u300D\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002`;
-		    });
-		  };
-		  const runBlockTitle = status?.readOnly === true ? `\u672C\u7A97\u53E3\u6CA1\u6709\u91C7\u96C6\u6743\u3002\u7528\u300C\u63A5\u7BA1\u8C03\u5EA6\u300D\uFF0C\u6216\u5230\u53E6\u4E00\u4E2A\u7A97\u53E3\uFF08\u8FDB\u7A0B ${String(status.lease.pid ?? "?")}\uFF09\u91CC\u64CD\u4F5C\u3002` : feedback.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u73B0\u5728\u6309\u8FD9\u4E2A\u65B9\u6848\u91C7\u96C6\u4E00\u6B21\uFF08\u4F1A\u6253\u5F00\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09\u3002";
-		  const scheduledPlan = planList.find((plan) => plan.enabled && plan.schedule.enabled);
-		  const focusedPlan = planList.find((plan) => plan.id === focusPlanId) ?? scheduledPlan ?? planList[0];
-		  const runBlocked = feedback.running || (status?.readOnly ?? false);
-		  const toggleSchedule = () => {
-		    if (status === null) return;
-		    const next = !status.paused;
-		    void act(next ? "\u6B63\u5728\u6682\u505C\u5B9A\u65F6\u2026" : "\u6B63\u5728\u6062\u590D\u5B9A\u65F6\u2026", async () => {
-		      await setSchedulePaused(next);
-		      return next ? "\u5DF2\u6682\u505C**\u5B9A\u65F6**\u6293\u53D6\u3002\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4ECD\u7136\u53EF\u7528\u3002" : "\u5DF2\u6062\u590D\u5B9A\u65F6\u6293\u53D6\u3002";
-		    });
-		  };
-		  const recheck = () => void act("\u6B63\u5728\u91CD\u65B0\u68C0\u6D4B\u2026", async () => {
-		    const next = await recheckLease();
-		    return next.lease.held ? "\u5DF2\u7ECF\u62FF\u5230\u8C03\u5EA6\u6743\uFF0C\u672C\u7A97\u53E3\u73B0\u5728\u8D1F\u8D23\u91C7\u96C6\u3002" : "\u90A3\u4E2A\u7A97\u53E3\u8FD8\u5728\u8FD0\u884C\uFF0C\u672C\u7A97\u53E3\u4ECD\u662F\u53EA\u8BFB\u3002";
-		  });
-		  const sweep = () => void act("\u6B63\u5728\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u5168\u5E93\u2026", async () => {
-		    const result = await runDedupSweep();
-		    setDedupRevision((value) => value + 1);
-		    return `\u770B\u8FC7 ${String(result.scanned)} \u6761` + (result.skippedGrouped > 0 ? `\uFF08\u8DF3\u8FC7\u5DF2\u5728\u5206\u7EC4\u91CC\u7684 ${String(result.skippedGrouped)} \u6761\uFF09` : "") + `\uFF1A\u5408\u5E76 ${String(result.merged)} \u6761\u3001\u65B0\u5EFA ${String(result.newGroups)} \u7EC4\uFF0C\u73B0\u5728\u5171 ${String(result.groups)} \u7EC4\u3002` + (result.candidates > 0 ? `\u53E6\u6709 ${String(result.candidates)} \u6761\u7591\u4F3C\u91CD\u590D\u6CA1\u81EA\u52A8\u5408\u5E76\uFF08\u6807\u9898\u76F8\u4F3C\u5EA6\u4E0D\u591F\uFF09\u2014\u2014 \u9700\u8981\u4EBA\u5DE5\u770B\u4E00\u773C\u3002` : "");
-		  });
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-screen", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-collect-bar", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("nav", { className: "jh-modes", "aria-label": "\u91C7\u96C6\u5206\u533A", children: COLLECT_TABS.map((item) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		        "button",
-		        {
-		          type: "button",
-		          className: `jh-mode${tab === item.key ? " jh-mode-active" : ""}`,
-		          "aria-current": tab === item.key ? "page" : void 0,
-		          onClick: () => setTab(item.key),
-		          children: item.label
-		        },
-		        item.key
-		      )) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		      status === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-collect-switch", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		          "span",
-		          {
-		            className: `jh-status-dot ${status.paused ? "jh-status-dot-warn" : "jh-status-dot-on"}`,
-		            "aria-hidden": "true"
-		          }
-		        ),
-		        status.paused ? "\u5B9A\u65F6\u5DF2\u6682\u505C" : "\u5B9A\u65F6\u8FD0\u884C\u4E2D"
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		        "button",
-		        {
-		          type: "button",
-		          className: "jh-btn jh-btn-inline jh-btn-primary",
-		          disabled: status === null || feedback.running,
-		          "aria-pressed": status === null ? void 0 : !status.paused,
-		          title: status?.paused === true ? "\u6062\u590D\u300C\u5230\u70B9\u81EA\u52A8\u8DD1\u300D\u3002\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E00\u76F4\u90FD\u80FD\u7528\u3002" : "\u53EA\u505C\u300C\u5230\u70B9\u81EA\u52A8\u8DD1\u300D\uFF1B\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E0D\u53D7\u5F71\u54CD\u3002",
-		          onClick: toggleSchedule,
-		          children: status?.paused === true ? "\u542F\u52A8\u8C03\u5EA6" : "\u6682\u505C\u8C03\u5EA6"
-		        }
-		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		        "button",
-		        {
-		          type: "button",
-		          className: "jh-btn jh-btn-inline",
-		          disabled: status === null || feedback.running,
-		          title: "\u7ACB\u523B\u518D\u68C0\u67E5\u4E00\u6B21\u8C03\u5EA6\u5F52\u5C5E\uFF08\u4E0D\u7528\u7B49 90 \u79D2\u5FC3\u8DF3\u8FC7\u671F\uFF09\u3002",
-		          onClick: recheck,
-		          children: "\u91CD\u65B0\u68C0\u6D4B\u7CFB\u7EDF"
-		        }
-		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		        "button",
-		        {
-		          type: "button",
-		          className: "jh-btn jh-btn-inline",
-		          disabled: feedback.running,
-		          title: "\u628A\u5168\u5E93\u5C97\u4F4D\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u4E00\u904D\uFF08\u8DE8\u5E73\u53F0 + \u540C\u516C\u53F8\u540C\u57CE + \u85AA\u8D44\u4E0D\u51B2\u7A81 + \u6807\u9898\u76F8\u4F3C\uFF09\u3002\u7528\u5728\u300C\u521A\u6253\u5F00\u53BB\u91CD\u5F00\u5173\u300D\u6216\u300C\u521A\u6539\u8FC7\u6293\u53D6\u8303\u56F4\u300D\u4E4B\u540E\u8865\u505A\u4E00\u6B21 \u2014\u2014 \u5426\u5219\u8981\u5E72\u7B49\u4E0B\u4E00\u8F6E\u6293\u53D6\uFF0C\u800C\u90A3\u4E00\u8F6E\u53EF\u80FD\u4E00\u6761\u65B0\u5C97\u4F4D\u90FD\u6CA1\u6709\u3002\u5408\u5E76\u662F\u53EF\u9006\u7684\u3002",
-		          onClick: sweep,
-		          children: "\u8FD0\u884C\u5168\u5E93\u53BB\u91CD"
-		        }
-		      )
-		    ] }),
-		    scheduler.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u8BFB\u4E0D\u5230\u91C7\u96C6\u72B6\u6001" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", children: scheduler.state.message }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { type: "button", className: "jh-btn", onClick: scheduler.reload, children: "\u91CD\u8BD5" })
-		    ] }),
-		    feedback.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
-		      "div",
-		      {
-		        className: `jh-card jh-card-tight jh-feedback ${feedback.tone === "error" ? "jh-card-error" : ""}`,
-		        role: "status",
-		        "aria-live": "polite",
-		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(InlineMd, { text: feedback.message }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-icon-btn jh-feedback-close",
-		              "aria-label": "\u5173\u95ED\u63D0\u793A",
-		              title: "\u5173\u95ED\u8FD9\u6761\u63D0\u793A",
-		              onClick: () => setFeedback(IDLE),
-		              children: "\xD7"
-		            }
-		          )
-		        ]
-		      }
-		    ),
-		    tab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		      status !== null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		        StatusAlert,
-		        {
-		          status,
-		          planName: scheduledPlan?.name ?? null,
-		          running: feedback.running,
-		          onResume: () => void act("\u6B63\u5728\u6062\u590D\u5B9A\u65F6\u2026", async () => {
-		            await setSchedulePaused(false);
-		            return "\u5DF2\u6062\u590D\u5B9A\u65F6\u6293\u53D6\u3002";
-		          })
-		        }
-		      ) : null,
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-collect-top", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-collect-grid", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u8FD0\u884C\u72B6\u6001" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u8C01\u5728\u8C03\u5EA6\u3001\u4E0B\u6B21\u4EC0\u4E48\u65F6\u5019\u8DD1\u3001\u6709\u6CA1\u6709\u4E0B\u4E00\u6B21\u3002\u540C\u4E00\u53F0\u7535\u8111\u53EA\u5141\u8BB8\u4E00\u4E2A\u7A97\u53E3\u771F\u6B63\u53BB\u91C7\u96C6 \u2014\u2014 \u4E24\u4E2A\u7A97\u53E3\u540C\u65F6\u91C7\u96C6\u4F1A\u62A2\u540C\u4E00\u4EFD\u6D4F\u89C8\u5668\u767B\u5F55\u6001\u3002" })
-		          ] }),
-		          status === null || story === null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8C03\u5EA6\u72B6\u6001\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("p", { className: `jh-story jh-story-${story.tone}`, children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: story.owner }),
-		              story.nextRun === null ? " \u2014\u2014 \u5F53\u524D\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848\u3002" : status.paused ? `\uFF1A\u6062\u590D\u540E\u5C06\u6309 ${story.nextRun} \u8FD0\u884C` : `\uFF1A${story.nextRun}`
-		            ] }),
-		            story.detail === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: story.detail }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		              LeasePanel,
-		              {
-		                status,
-		                now,
-		                running: feedback.running,
-		                onTakeover: () => void act("\u6B63\u5728\u63A5\u7BA1\u8C03\u5EA6\u2026", async () => {
-		                  await takeoverLease();
-		                  return "\u5DF2\u63A5\u7BA1\u8C03\u5EA6\uFF0C\u672C\u7A97\u53E3\u73B0\u5728\u8D1F\u8D23\u91C7\u96C6\u3002";
-		                })
-		              }
-		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("ul", { className: "jh-kv", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u65B0\u9C9C\u5EA6", children: "\u4E0A\u6B21\u6210\u529F" }) }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: status.lastRunAt === null ? "\u4ECE\u6765\u6CA1\u6709\u6210\u529F\u91C7\u96C6\u8FC7" : `${formatClock(new Date(status.lastRunAt))} \xB7 ${formatRelative(new Date(status.lastRunAt), now)}` })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u65F6\u6BB5", children: "\u65F6\u533A" }) }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { title: "\u6392\u7A0B\u6309\u8FD9\u53F0\u7535\u8111\u7684\u672C\u5730\u65F6\u95F4\u7B97\u3002\u6539\u4E86\u7CFB\u7EDF\u65F6\u533A\uFF0C\u4E0B\u4E00\u6B21\u5C31\u7B97\u5230\u65B0\u65F6\u533A\u4E0A\u3002", children: status.timezone })
-		              ] })
-		            ] })
-		          ] })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5F53\u524D\u751F\u6548\u65B9\u6848" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		              "button",
-		              {
-		                type: "button",
-		                className: "jh-btn jh-btn-inline jh-btn-tiny",
-		                title: "\u53BB\u300C\u65B9\u6848\u7BA1\u7406\u300D\u5206\u533A\u65B0\u589E/\u7F16\u8F91/\u5220\u9664\u65B9\u6848\u3002",
-		                onClick: () => setTab("plans"),
-		                children: "\u7BA1\u7406\u65B9\u6848"
-		              }
-		            )
-		          ] }),
-		          plansLoading ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u65B9\u6848\u2026" }) : focusedPlan === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-empty", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u65B9\u6848\u3002" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u65B9\u6848\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002\u53BB\u300C\u65B9\u6848\u7BA1\u7406\u300D\u5EFA\u7B2C\u4E00\u4E2A\u3002" })
-		          ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		            planList.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-chips jh-plan-switch", children: planList.map((plan) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		              "button",
-		              {
-		                type: "button",
-		                className: `jh-chip${plan.id === focusedPlan.id ? " jh-chip-on" : ""}`,
-		                "aria-pressed": plan.id === focusedPlan.id,
-		                onClick: () => setFocusPlanId(plan.id),
-		                children: plan.name
-		              },
-		              plan.id
-		            )) }) : null,
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-head", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { className: "jh-plan-name", children: focusedPlan.name }),
-		              focusedPlan.id === scheduledPlan?.id ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-ok", children: "\u751F\u6548\u4E2D" }) : null,
-		              focusedPlan.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u505C\u7528" })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-meta", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: focusedPlan.platforms.join(" / ") }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(CriteriaLine, { plan: focusedPlan, dimensions: dimensionList })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-meta", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: focusedPlan.schedule.enabled ? `${formatWeekdays(focusedPlan.schedule.weekdays)} ${formatWindow(
-		                focusedPlan.schedule.windowStartHour,
-		                focusedPlan.schedule.windowStartMinute,
-		                focusedPlan.schedule.windowEndHour,
-		                focusedPlan.schedule.windowEndMinute
-		              )}` : "\u4E0D\u5B9A\u65F6" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
-		                focusedPlan.postProcess.score ? "\u6253\u5206" : "\u4E0D\u6253\u5206",
-		                " \xB7",
-		                " ",
-		                focusedPlan.postProcess.flag ? "\u6807\u6CE8" : "\u4E0D\u6807\u6CE8",
-		                " \xB7",
-		                " ",
-		                focusedPlan.postProcess.dedup ? "\u53BB\u91CD" : "\u4E0D\u53BB\u91CD"
-		              ] })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-actions", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-primary",
-		                  disabled: runBlocked,
-		                  title: runBlockTitle,
-		                  onClick: () => void trigger(focusedPlan),
-		                  children: "\u7ACB\u5373\u91C7\u96C6"
-		                }
-		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-btn jh-btn-inline jh-btn-tiny",
-		                  disabled: feedback.running,
-		                  title: "\u6539\u8FD9\u4E2A\u65B9\u6848\u6293\u4EC0\u4E48\u3001\u6293\u591A\u6DF1\u3001\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
-		                  onClick: () => {
-		                    setDuplicates([]);
-		                    setEditing({ id: focusedPlan.id, form: formOf(focusedPlan) });
-		                  },
-		                  children: "\u7F16\u8F91"
-		                }
-		              )
-		            ] })
-		          ] })
-		        ] })
-		      ] }) }),
-		      status === null && !runsLoading ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u6700\u8FD1\u8FD0\u884C" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u6309\u5F00\u59CB\u65F6\u523B\u5012\u5E8F\uFF08\u65B0\u7684\u5728\u4E0A\u9762\uFF09\u3002\u547D\u4E2D=\u8FD9\u4E00\u8F6E\u6293\u5230\u591A\u5C11\u6761\uFF08\u60AC\u505C\u770B\u7FFB\u4E86\u51E0\u9875\uFF09\uFF1B\u65B0\u589E/\u66F4\u65B0=\u771F\u6B63\u5199\u8FDB\u5C97\u4F4D\u5E93\u7684\u91CF\uFF1B\u9694\u79BB=\u88AB\u5B57\u6BB5\u65AD\u8A00\u62E6\u4E0B\u3001\u8FDB\u4E86\u5F85\u4FEE\u961F\u5217\u7684\u6761\u6570\u3002\u5931\u8D25\u7684\u90A3\u4E00\u6B21\u4E0D\u7B97\u300C\u4E0A\u6B21\u6210\u529F\u300D\u2014\u2014 \u5931\u8D25\u4E0D\u4F1A\u8BA9\u6570\u636E\u53D8\u65B0\u3002\u70B9\u9519\u8BEF\u80F6\u56CA\u770B\u5B8C\u6574\u539F\u56E0\u4E0E\u6392\u67E5\u6B65\u9AA4\u3002" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		          RunHistoryTable,
-		          {
-		            runs: status === null ? [] : status.recentRuns,
-		            loading: runsLoading,
-		            reasonFor,
-		            platformName: platformNameOf,
-		            onOpenError: (run, failure) => setErrorDetail({ run, failure })
-		          }
-		        )
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u72B6\u6001\u603B\u89C8" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u300C\u4ECA\u5929\u80FD\u8DD1\u300D\u7528\u7684\u662F\u4E0E\u8C03\u5EA6\u540C\u4E00\u4E2A\u524D\u7F6E\u6761\u4EF6\u5224\u5B9A \u2014\u2014 \u8FD9\u91CC\u5199\u7740\u300C\u53EF\u4EE5\u300D\u7684\u5E73\u53F0\uFF0C\u5230\u70B9\u771F\u7684\u4F1A\u8DD1\uFF1B\u5199\u7740\u539F\u56E0\u7684\uFF0C\u5C31\u662F\u5B83\u73B0\u5728\u88AB\u4EC0\u4E48\u62E6\u4F4F\u4E86\u3002\u70B9\u67D0\u4E00\u884C\u7684\u300C\u660E\u7EC6\u300D\u770B\u8BE5\u5E73\u53F0\u7684\u5B8C\u6574\u8BCA\u65AD\u3002" })
-		        ] }),
-		        platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", children: platforms.state.message }),
-		        platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u72B6\u6001\u2026" }) : platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-empty", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u5E73\u53F0\u6765\u81EA\u9002\u914D\u5668\u6CE8\u518C\u8868\uFF1B\u5F53\u524D\u6CA1\u6709\u4EFB\u4F55\u9002\u914D\u5668\u88AB\u6CE8\u518C\uFF0C\u6240\u4EE5\u65E0\u6CD5\u91C7\u96C6\u3002" })
-		        ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		          PlatformMatrix,
-		          {
-		            items: platformList,
-		            reasonText,
-		            expandedId: expandedPlatform,
-		            onToggle: (id) => setExpandedPlatform((current) => current === id ? null : id),
-		            running: feedback.running,
-		            onLogin: login,
-		            onGoSettings: props.onGoSettings
-		          }
-		        )
-		      ] })
-		    ] }) : null,
-		    tab === "plans" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u91C7\u96C6\u65B9\u6848" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline",
-		              disabled: feedback.running,
-		              title: "\u65B0\u5EFA\u4E00\u4E2A\u91C7\u96C6\u65B9\u6848\uFF1A\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
-		              onClick: () => {
-		                setDuplicates([]);
-		                setEditing({ id: "new", form: emptyForm() });
-		              },
-		              children: "\u65B0\u589E\u65B9\u6848"
-		            }
-		          )
-		        ] }),
-		        plansLoading ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-plan-list", "aria-busy": "true", "aria-live": "polite", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("li", { className: "jh-plan-card jh-skeleton-row", children: "\u6B63\u5728\u8BFB\u53D6\u65B9\u6848\u2026" }) }) : planList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-empty", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u65B9\u6848\u3002" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u65B9\u6848\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002\u70B9\u53F3\u4E0A\u89D2\u300C\u65B0\u589E\u65B9\u6848\u300D\u5EFA\u7B2C\u4E00\u4E2A\u3002" })
-		        ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-plan-list", children: planList.map((plan) => {
-		          const planStatus = status?.planStatus.find((item) => item.planId === plan.id) ?? null;
-		          const decision = planStatus?.lastDecision ?? null;
-		          const platformDecisions = new Map(
-		            (planStatus?.platformDecisions ?? []).map((item) => [item.platformId, item.decision])
-		          );
-		          const blockedPlatforms = plan.platforms.filter(
-		            (id) => (platformDecisions.get(id)?.reason ?? null) !== null
-		          );
-		          const platformName = (id) => platformList.find((item) => item.id === id)?.displayName ?? id;
-		          return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { className: "jh-plan-card", children: [
-		            planStatus?.riskPaused === true && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-banner jh-banner-error", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-banner-title", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u98CE\u63A7\u6682\u505C", children: "\u5DF2\u88AB\u6682\u505C\u81EA\u52A8\u91C7\u96C6" }) }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: planStatus.riskReason ?? "\u89E6\u53D1\u98CE\u63A7\u4FE1\u53F7\uFF0C\u5DF2\u505C\u6B62\u81EA\u52A8\u5C1D\u8BD5\u3002" })
-		            ] }),
-		            planStatus !== null && planStatus.backoffUntil !== null && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-banner jh-banner-warn", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-banner-title", children: [
-		                "\u8FDE\u7EED\u5931\u8D25 ",
-		                planStatus.failStreak,
-		                " \u6B21\uFF0C\u6B63\u5728",
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u9000\u907F", children: "\u9000\u907F" })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
-		                "\u6700\u65E9 ",
-		                formatClock(new Date(planStatus.backoffUntil)),
-		                " \u518D\u8BD5\u3002"
-		              ] })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-head", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { className: "jh-plan-name", children: plan.name }),
-		              planStatus === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		                FreshnessBadge,
-		                {
-		                  level: planStatus.freshness.level,
-		                  hours: planStatus.freshness.hoursSinceSuccess
-		                }
-		              ),
-		              plan.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u505C\u7528" })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-meta", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: plan.platforms.join(" / ") }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(CriteriaLine, { plan, dimensions: dimensionList })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-meta", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: plan.schedule.enabled ? `${formatWeekdays(plan.schedule.weekdays)} ${formatWindow(
-		                plan.schedule.windowStartHour,
-		                plan.schedule.windowStartMinute,
-		                plan.schedule.windowEndHour,
-		                plan.schedule.windowEndMinute
-		              )}` : "\u4E0D\u5B9A\u65F6" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
-		                plan.postProcess.score ? "\u6253\u5206" : "\u4E0D\u6253\u5206",
-		                " \xB7",
-		                " ",
-		                plan.postProcess.flag ? "\u6807\u6CE8" : "\u4E0D\u6807\u6CE8",
-		                " \xB7",
-		                " ",
-		                plan.postProcess.dedup ? "\u53BB\u91CD" : "\u4E0D\u53BB\u91CD"
-		              ] })
-		            ] }),
-		            decision === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: decision.decision === "skipped" ? "jh-warn" : "jh-muted", children: decision.decision === "skipped" ? `\u4E0A\u6B21\u5230\u70B9\u6CA1\u8DD1\uFF1A${decision.message ?? decision.reason ?? "\u539F\u56E0\u672A\u77E5"}` : decision.decision === "ran" ? "\u4E0A\u6B21\u5230\u70B9\u8DD1\u4E86" : "\u8FD8\u5728\u7B49\u4E0B\u4E00\u4E2A\u65F6\u6BB5" }),
-		            blockedPlatforms.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-muted", children: [
-		              "\u5404\u5E73\u53F0\uFF1A",
-		              plan.platforms.map((id) => {
-		                const item = platformDecisions.get(id) ?? null;
-		                return item?.reason == null ? `${platformName(id)} \u6B63\u5E38` : `${platformName(id)}\uFF1A${item.message ?? item.reason}`;
-		              }).join(" \xB7 ")
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-actions", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-primary",
-		                  disabled: runBlocked,
-		                  title: runBlockTitle,
-		                  onClick: () => void trigger(plan),
-		                  children: "\u7ACB\u5373\u91C7\u96C6"
-		                }
-		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-btn jh-btn-inline jh-btn-tiny",
-		                  disabled: feedback.running,
-		                  title: "\u6539\u8FD9\u4E2A\u65B9\u6848\u6293\u4EC0\u4E48\u3001\u6293\u591A\u6DF1\u3001\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
-		                  onClick: () => {
-		                    setDuplicates([]);
-		                    setEditing({ id: plan.id, form: formOf(plan) });
-		                  },
-		                  children: "\u7F16\u8F91"
-		                }
-		              ),
-		              planStatus?.riskPaused === true && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-warn",
-		                  disabled: feedback.running,
-		                  title: "\u786E\u8BA4\u73AF\u5883\u5DF2\u6062\u590D\u6B63\u5E38\uFF0C\u5141\u8BB8\u8FD9\u4E2A\u65B9\u6848\u91CD\u65B0\u88AB\u81EA\u52A8\u91C7\u96C6\u3002\u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\u3002",
-		                  onClick: () => void act("\u6B63\u5728\u6062\u590D\u2026", async () => {
-		                    await resumePlanRisk(plan.id);
-		                    return `\u65B9\u6848\u300C${plan.name}\u300D\u5DF2\u6062\u590D \u2014\u2014 \u8FD9\u4E00\u4E0B\u662F\u4F60\u786E\u8BA4\u7684\uFF0C\u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\u3002`;
-		                  }),
-		                  children: "\u786E\u8BA4\u6062\u590D"
-		                }
-		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger-ghost",
-		                  disabled: feedback.running,
-		                  title: "\u5220\u9664\u8FD9\u4E2A\u65B9\u6848\uFF08\u4F1A\u5148\u8BA9\u4F60\u786E\u8BA4\uFF09\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002",
-		                  onClick: () => setPendingDelete(plan),
-		                  children: "\u5220\u9664"
-		                }
-		              )
-		            ] })
-		          ] }, plan.id);
-		        }) })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(DedupGroupsCard, { revision: props.revision + dedupRevision })
-		    ] }) : null,
-		    tab === "diagnostics" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5B9E\u9A8C\u914D\u7F6E\u4E0E\u80FD\u529B" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u6210\u719F\u5EA6 = \u8FD9\u4E2A\u9002\u914D\u5668\u9A8C\u8BC1\u5230\u4EC0\u4E48\u7A0B\u5EA6\uFF08\u6CE8\u518C\u8868\u91CC\u6709\u5E73\u53F0 \u2260 \u8FD9\u4E2A\u5E73\u53F0\u80FD\u7528\uFF09\u3002\u300C\u5DF2\u5B9E\u73B0\u300D= \u8FD9\u6761\u94FE\u8DEF\u6211\u4EEC\u5DF2\u7ECF\u5199\u4E86\uFF1B\u300C\u672A\u5B9E\u73B0\u300D= \u5E73\u53F0\u652F\u6301\u3001\u6211\u4EEC\u8FD8\u6CA1\u5199\uFF1B\u300C\u4E0D\u652F\u6301\u300D= \u5E73\u53F0\u672C\u8EAB\u6CA1\u6709\u8FD9\u4E2A\u80FD\u529B\u3002\u6293\u53D6\u9700\u767B\u5F55\u4E0E\u767B\u5F55\u68C0\u6D4B\u662F\u4E24\u4EF6\u4E8B\uFF1A\u524D\u8005\u662F\u5E73\u53F0\u4E8B\u5B9E\uFF0C\u540E\u8005\u662F\u672C\u673A\u6709\u6CA1\u6709\u505A\u767B\u5F55\u6001\u68C0\u6D4B\u3002" })
-		        ] }),
-		        platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", children: platforms.state.message }),
-		        platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u914D\u7F6E\u2026" }) : platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(CapabilityMatrix, { items: platformList })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u5F02\u5E38\u65E5\u5FD7" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u53EA\u5217\u5931\u8D25\u4E0E\u88AB\u8DF3\u8FC7\u7684\u8F6E\u6B21 \u2014\u2014 \u6210\u529F\u7684\u90A3\u51E0\u8F6E\u5728\u300C\u8FD0\u884C\u4EEA\u8868\u76D8 \xB7 \u6700\u8FD1\u8FD0\u884C\u300D\u91CC\u3002\u70B9\u9519\u8BEF\u80F6\u56CA\u770B\u539F\u59CB\u4FE1\u606F\u4E0E\u6392\u67E5\u6B65\u9AA4\u3002" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		          RunLogCard,
-		          {
-		            runs: status === null ? [] : status.recentRuns,
-		            loading: runsLoading,
-		            reasonFor,
-		            platformName: platformNameOf,
-		            onOpenError: (run, failure) => setErrorDetail({ run, failure })
-		          }
-		        )
-		      ] })
-		    ] }) : null,
-		    editing === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		      PlanEditorModal,
-		      {
-		        planId: editing.id === "new" ? null : editing.id,
-		        initial: editing.form,
-		        available: platformList,
-		        duplicates,
-		        notices,
-		        running: feedback.running,
-		        onCancel: () => setEditing(null),
-		        onSubmit: async (form) => {
-		          setFeedback({ running: true, tone: "ok", message: "\u6B63\u5728\u4FDD\u5B58\u2026" });
-		          try {
-		            const input = writeOf(form);
-		            const result = editing.id === "new" ? await createPlan(input) : await updatePlan(editing.id, input);
-		            setDuplicates(result.duplicates);
-		            setNotices(result.notices);
-		            const verb = editing.id === "new" ? "\u5DF2\u521B\u5EFA" : "\u5DF2\u4FDD\u5B58";
-		            const tail = [];
-		            if (result.duplicates.length > 0) {
-		              tail.push(
-		                `\u4E0E ${result.duplicates.map((item) => `#${String(item.planId)}\u300C${item.name}\u300D`).join("\u3001")} \u6761\u4EF6\u91CD\u590D\uFF08**\u53EA\u63D0\u793A\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u5408\u5E76**\uFF09`
-		              );
-		            }
-		            if (result.notices.length > 0) tail.push(`\u53E6\u6709 ${String(result.notices.length)} \u6761\u63D0\u793A`);
-		            setFeedback({
-		              running: false,
-		              tone: "ok",
-		              message: `${verb}\u65B9\u6848\u300C${result.plan.name}\u300D\u3002${tail.length === 0 ? "" : `\u6CE8\u610F\uFF1A${tail.join("\uFF1B")}\u3002`}`
-		            });
-		            if (result.duplicates.length === 0 && result.notices.length === 0) setEditing(null);
-		            reload();
-		          } catch (error) {
-		            setFeedback(IDLE);
-		            throw error;
-		          }
-		        },
-		        onValidate: async (form) => {
-		          const input = writeOf(form);
-		          const result = editing.id === "new" ? await validatePlanDraft(input) : await validatePlan(editing.id, input);
-		          return { duplicates: result.duplicates, notices: result.notices };
-		        }
-		      },
-		      String(editing.id)
-		    ),
-		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
-		      Modal,
-		      {
-		        title: "\u5220\u9664\u91C7\u96C6\u65B9\u6848",
-		        label: "\u5220\u9664\u786E\u8BA4",
-		        onClose: () => setPendingDelete(null),
-		        footer: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-modal-foot-note jh-muted", children: "\u5220\u9664\u540E\u8FD9\u4E2A\u65B9\u6848\u4E0D\u4F1A\u518D\u81EA\u52A8\u91C7\u96C6\u3002" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline",
-		              onClick: () => setPendingDelete(null),
-		              children: "\u53D6\u6D88"
-		            }
-		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline jh-btn-danger",
-		              disabled: feedback.running,
-		              onClick: () => void confirmDelete(pendingDelete),
-		              children: "\u786E\u8BA4\u5220\u9664"
-		            }
-		          )
-		        ] }),
-		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("p", { className: "jh-alert-body", children: [
-		            "\u5373\u5C06\u5220\u9664\u65B9\u6848\u300C",
-		            pendingDelete.name,
-		            "\u300D\uFF08",
-		            pendingDelete.platforms.join(" / "),
-		            "\uFF09\u3002"
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("ul", { className: "jh-note", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("li", { children: "\u8FD9\u4E2A\u65B9\u6848\u672C\u8EAB\u4E0E\u5176\u5B9A\u65F6\u914D\u7F6E\u4F1A\u88AB\u79FB\u9664\uFF0C\u4E0D\u4F1A\u518D\u6709\u81EA\u52A8\u91C7\u96C6\u3002" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("li", { children: "**\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4F1A\u4FDD\u7559** \u2014\u2014 \u5220\u9664\u65B9\u6848\u4E0D\u4F1A\u5220\u5C97\u4F4D\u5E93\u3002" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("li", { children: "\u60F3\u4FDD\u7559\u914D\u7F6E\u53EA\u662F\u6682\u65F6\u505C\u7528\uFF0C\u8BF7\u6539\u7528\u300C\u7F16\u8F91\u300D\u91CC\u7684\u300C\u542F\u7528\u5B9A\u65F6\u300D\u6216\u505C\u7528\u65B9\u6848\u3002" })
-		          ] })
-		        ]
-		      }
-		    ),
-		    errorDetail === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
-		      Modal,
-		      {
-		        title: `\u8FD0\u884C\u5931\u8D25 \xB7 ${CRAWL_STATE_LABEL[errorDetail.run.state]}`,
-		        label: "\u8FD0\u884C\u5931\u8D25\u8BE6\u60C5",
-		        size: "lg",
-		        onClose: () => setErrorDetail(null),
-		        footer: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline jh-btn-quiet",
-		              onClick: () => setErrorDetail(null),
-		              children: "\u5173\u95ED"
-		            }
-		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline",
-		              onClick: () => {
-		                setErrorDetail(null);
-		                props.onGoSettings();
-		              },
-		              children: "\u53BB\u8BBE\u7F6E\u770B\u8BCA\u65AD"
-		            }
-		          )
-		        ] }),
-		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("ul", { className: "jh-kv", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u5E73\u53F0" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: errorDetail.run.platformId }) })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u5F00\u59CB\u65F6\u95F4" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: new Date(errorDetail.run.startedAt).toLocaleString() })
-		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u7C7B\u522B" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: FAILURE_KIND_LABEL[errorDetail.failure.kind] })
-		            ] })
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: errorDetail.failure.advice }),
-		          errorDetail.failure.detail === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u539F\u59CB\u4FE1\u606F\uFF08\u6280\u672F\u7EC6\u8282\uFF09\uFF1A" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("pre", { className: "jh-pre", children: errorDetail.failure.detail })
-		          ] })
-		        ]
-		      }
-		    )
-		  ] });
-		}
+
+		// src/client/screens/collect/status-alert.tsx
+		var import_jsx_runtime14 = require("react/jsx-runtime");
 		function StatusAlert(props) {
 		  if (props.status.paused) {
 		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-alert jh-alert-warn", children: [
@@ -5521,50 +4801,102 @@ window.__ModuleLoader__.load({
 		  }
 		  return null;
 		}
+
+		// src/shared/criteria-label.ts
+		var FALLBACK_LABEL = {
+		  keyword: "\u5173\u952E\u8BCD",
+		  city: "\u57CE\u5E02",
+		  sort: "\u6392\u5E8F\u65B9\u5F0F",
+		  postedWithinDays: "\u53D1\u5E03\u65F6\u95F4",
+		  maxPages: "\u6293\u53D6\u9875\u6570\u4E0A\u9650",
+		  scrollRounds: "\u52A0\u8F7D\u8F6E\u6570",
+		  // 平台特有维度：只有部分平台声明（如神仙外企），但方案可能引用了它们，
+		  // 而平台刚被取消勾选 —— 那时候界面不该退回去印 `workExp`。
+		  workExp: "\u5DE5\u4F5C\u7ECF\u9A8C",
+		  education: "\u5B66\u5386",
+		  type: "\u804C\u4F4D\u8303\u56F4"
+		};
+		var NUMERIC_SUFFIX = {
+		  postedWithinDays: " \u5929\u5185",
+		  maxPages: " \u9875",
+		  scrollRounds: " \u8F6E"
+		};
+		function describeCriteria(criteria, dimensions = []) {
+		  const declared = new Map(dimensions.map((dimension) => [dimension.key, dimension]));
+		  const order = [
+		    ...dimensions.map((dimension) => dimension.key).filter((key) => key in criteria),
+		    ...Object.keys(criteria).filter((key) => !declared.has(key))
+		  ];
+		  const seen = /* @__PURE__ */ new Set();
+		  const items = [];
+		  for (const key of order) {
+		    if (seen.has(key)) continue;
+		    seen.add(key);
+		    const value = criteria[key];
+		    if (value === void 0 || value === "") continue;
+		    const spec = declared.get(key);
+		    const suffix = NUMERIC_SUFFIX[key] ?? "";
+		    const inDomain = spec?.values.find((option) => option.value === value);
+		    items.push({
+		      key,
+		      label: spec?.label ?? FALLBACK_LABEL[key] ?? key,
+		      value,
+		      display: inDomain === void 0 ? `${value}${suffix}` : inDomain.label,
+		      declared: spec !== void 0
+		    });
+		  }
+		  return items;
+		}
+
+		// src/client/screens/collect/criteria-line.tsx
+		var import_jsx_runtime15 = require("react/jsx-runtime");
 		function CriteriaLine(props) {
 		  const scoped = props.dimensions.filter(
 		    (dimension) => dimension.key !== "keyword" && props.plan.criteria[dimension.key] !== void 0
 		  );
 		  const items = describeCriteria(props.plan.criteria, scoped);
 		  const keywords = props.plan.keywords.length > 0 ? props.plan.keywords : props.plan.criteria["keyword"] !== void 0 && props.plan.criteria["keyword"] !== "" ? [props.plan.criteria["keyword"] ?? ""] : [];
-		  if (items.length === 0 && keywords.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u6761\u4EF6\uFF1A\u4E0D\u9650" });
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
-		    keywords.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
+		  if (items.length === 0 && keywords.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-muted", children: "\u6761\u4EF6\uFF1A\u4E0D\u9650" });
+		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { children: [
+		    keywords.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { children: [
 		      "\u5173\u952E\u8BCD\uFF1A",
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: keywords.join("\u3001") }),
+		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("b", { children: keywords.join("\u3001") }),
 		      items.length > 0 ? " \xB7 " : ""
 		    ] }),
-		    items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
+		    items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { children: [
 		      item.label,
 		      "\uFF1A",
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: item.display })
+		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("b", { children: item.display })
 		    ] }, item.key)).reduce((acc, node) => acc.length === 0 ? [node] : [...acc, " \xB7 ", node], [])
 		  ] });
 		}
+
+		// src/client/screens/collect/lease-panel.tsx
+		var import_jsx_runtime16 = require("react/jsx-runtime");
 		function LeasePanel(props) {
 		  const { lease } = props.status;
 		  const heartbeat = lease.heartbeatAt === null ? null : new Date(lease.heartbeatAt);
 		  const takeoverPossible = !lease.held && lease.stale;
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: `jh-lease${lease.held ? " jh-lease-ok" : " jh-lease-warn"}`, children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-lease-head", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: lease.held ? "\u672C\u7A97\u53E3\u8D1F\u8D23\u91C7\u96C6" : "\u672C\u7A97\u53E3\u53EA\u8BFB" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: lease.held ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+		  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: `jh-lease${lease.held ? " jh-lease-ok" : " jh-lease-warn"}`, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "jh-lease-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("b", { children: lease.held ? "\u672C\u7A97\u53E3\u8D1F\u8D23\u91C7\u96C6" : "\u672C\u7A97\u53E3\u53EA\u8BFB" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "jh-muted", children: lease.held ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
 		        "\uFF08\u672C\u7A97\u53E3 ",
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
 		        " ",
 		        String(lease.pid ?? "?"),
 		        "\uFF09"
-		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
 		        "\uFF08\u53E6\u4E00\u4E2A\u7A97\u53E3 ",
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
 		        " ",
 		        String(lease.pid ?? "?"),
 		        " \u6B63\u5728\u8FD0\u884C",
 		        heartbeat === null ? "" : `\uFF0C${formatRelative(heartbeat, props.now)}\u8FD8\u6709\u5FC3\u8DF3`,
 		        "\uFF09"
 		      ] }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		      lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "jh-spacer" }),
+		      lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -5576,9 +4908,23 @@ window.__ModuleLoader__.load({
 		        }
 		      )
 		    ] }),
-		    lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(InlineMd, { text: "\u600E\u4E48\u89E3\u51B3\uFF1A\u2460 \u5230\u90A3\u4E2A\u7A97\u53E3\u91CC\u64CD\u4F5C\uFF08\u6700\u7A33\uFF09\uFF1B\u2461 \u5173\u6389\u90A3\u4E2A\u7A97\u53E3 \u2014\u2014 \u5173\u6389\u4E4B\u540E\u8FD9\u91CC\u4F1A**\u81EA\u52A8**\u63A5\u7BA1\uFF0C\u4E0D\u7528\u91CD\u542F\uFF0C\u4E5F\u53EF\u4EE5\u70B9\u4E0A\u9762\u7684\u300C\u91CD\u65B0\u68C0\u6D4B\u7CFB\u7EDF\u300D\u7ACB\u523B\u8BD5\u4E00\u6B21\u3002" }) })
+		    lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(InlineMd, { text: "\u600E\u4E48\u89E3\u51B3\uFF1A\u2460 \u5230\u90A3\u4E2A\u7A97\u53E3\u91CC\u64CD\u4F5C\uFF08\u6700\u7A33\uFF09\uFF1B\u2461 \u5173\u6389\u90A3\u4E2A\u7A97\u53E3 \u2014\u2014 \u5173\u6389\u4E4B\u540E\u8FD9\u91CC\u4F1A**\u81EA\u52A8**\u63A5\u7BA1\uFF0C\u4E0D\u7528\u91CD\u542F\uFF0C\u4E5F\u53EF\u4EE5\u70B9\u4E0A\u9762\u7684\u300C\u91CD\u65B0\u68C0\u6D4B\u7CFB\u7EDF\u300D\u7ACB\u523B\u8BD5\u4E00\u6B21\u3002" }) })
 		  ] });
 		}
+
+		// src/client/screens/collect/platform-matrix.tsx
+		var import_react11 = require("react");
+
+		// src/client/screens/collect/state-tag.tsx
+		var import_jsx_runtime17 = require("react/jsx-runtime");
+		function StateTag(props) {
+		  const label = props.kind === "run" ? CRAWL_STATE_LABEL[props.state] : HEALTH_STATE_LABEL[props.state];
+		  const tone = props.kind === "run" ? CRAWL_STATE_TONE[props.state] : HEALTH_STATE_TONE[props.state];
+		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: `jh-tag jh-tone-${tone}`, children: label });
+		}
+
+		// src/client/screens/collect/platform-matrix.tsx
+		var import_jsx_runtime18 = require("react/jsx-runtime");
 		function cooldownActive(until, now) {
 		  if (until === null) return null;
 		  const at = new Date(until);
@@ -5586,48 +4932,48 @@ window.__ModuleLoader__.load({
 		}
 		function PlatformMatrix(props) {
 		  const now = /* @__PURE__ */ new Date();
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5E73\u53F0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u4ECA\u5929\u80FD\u8DD1" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u767B\u5F55" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u5065\u5EB7" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u6210\u719F\u5EA6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num", children: "\u4ECA\u65E5\u989D\u5EA6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u4EA7\u91CF" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u6700\u8FD1\u4E00\u8F6E" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-sr-only", children: "\u660E\u7EC6" }) })
+		  return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5E73\u53F0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", children: "\u4ECA\u5929\u80FD\u8DD1" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", children: "\u767B\u5F55" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u5065\u5EB7" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", className: "jh-col-hide-sm", children: "\u6210\u719F\u5EA6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", className: "jh-num", children: "\u4ECA\u65E5\u989D\u5EA6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u4EA7\u91CF" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", children: "\u6700\u8FD1\u4E00\u8F6E" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { scope: "col", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-sr-only", children: "\u660E\u7EC6" }) })
 		    ] }) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("tbody", { children: props.items.map((item) => {
+		    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tbody", { children: props.items.map((item) => {
 		      const blocked = item.governance.blocked === null ? null : props.reasonText[item.governance.blocked] ?? item.governance.blocked;
 		      const cooldown = cooldownActive(item.governance.cooldownUntil, now);
 		      const quotaFull = item.governance.todayRuns >= item.governance.dailyLimit;
 		      const lastRun = item.governance.lastRun;
 		      const open = props.expandedId === item.id;
 		      const detailId = `jh-plat-detail-${item.id}`;
-		      return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_react11.Fragment, { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: "jh-col-sticky", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: item.id }),
-		            item.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u672A\u542F\u7528" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.displayName })
+		      return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_react11.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { className: "jh-col-sticky", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("code", { children: item.id }),
+		            item.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u672A\u542F\u7528" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-muted", children: item.displayName })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: blocked === null ? "jh-ok" : "jh-warn", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { children: blocked === null ? "\u53EF\u4EE5" : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-clip", title: blocked, children: blocked }) }),
-		            cooldown === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-muted", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { className: blocked === null ? "jh-ok" : "jh-warn", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { children: blocked === null ? "\u53EF\u4EE5" : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-clip", title: blocked, children: blocked }) }),
+		            cooldown === null ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-muted", children: [
 		              "\u51B7\u5374\u81F3 ",
 		              formatClock(cooldown)
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		              "span",
 		              {
 		                className: `jh-tag jh-tone-${item.account.loggedIn ? "ok" : item.account.lastCheckAt === null ? "muted" : "warn"}`,
 		                children: item.account.loggedIn ? "\u5DF2\u767B\u5F55" : item.account.lastCheckAt === null ? "\u672A\u68C0\u6D4B" : "\u672A\u767B\u5F55"
 		              }
 		            ),
-		            item.login.state === "running" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-warn", children: " \u68C0\u6D4B\u4E2D\u2026" }) : item.account.loggedIn ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		            item.login.state === "running" ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-warn", children: " \u68C0\u6D4B\u4E2D\u2026" }) : item.account.loggedIn ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -5639,14 +4985,14 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: "jh-cell-status", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(StateTag, { state: item.health, kind: "health" }),
-		            item.failStreak > 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { className: "jh-cell-status", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(StateTag, { state: item.health, kind: "health" }),
+		            item.failStreak > 0 ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { className: "jh-muted", children: [
 		              " \xD7",
 		              item.failStreak
 		            ] }) : null
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-col-hide-sm", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "jh-col-hide-sm", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		            "span",
 		            {
 		              className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`,
@@ -5654,22 +5000,22 @@ window.__ModuleLoader__.load({
 		              children: MATURITY_LEVEL_SHORT[item.maturity.level]
 		            }
 		          ) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: `jh-num${quotaFull ? " jh-warn" : ""}`, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { className: `jh-num${quotaFull ? " jh-warn" : ""}`, children: [
 		            item.governance.todayRuns,
 		            "/",
 		            item.governance.dailyLimit
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-num jh-col-hide-sm", children: item.yield.baseline === null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: item.yield.level === "dropped" ? "jh-warn" : void 0, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "jh-num jh-col-hide-sm", children: item.yield.baseline === null ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { className: item.yield.level === "dropped" ? "jh-warn" : void 0, children: [
 		            item.yield.lastFound ?? "\u2014",
 		            "/",
 		            item.yield.baseline
 		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: lastRun === null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u6CA1\u8DD1\u8FC7" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: formatClock(new Date(lastRun.startedAt)) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: lastRun === null ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-muted", children: "\u6CA1\u8DD1\u8FC7" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-muted", children: formatClock(new Date(lastRun.startedAt)) }),
 		            " ",
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(StateTag, { state: lastRun.state, kind: "run" })
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(StateTag, { state: lastRun.state, kind: "run" })
 		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-cell-actions", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "jh-cell-actions", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -5682,7 +5028,7 @@ window.__ModuleLoader__.load({
 		            }
 		          ) })
 		        ] }),
-		        open ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("tr", { className: "jh-row-detail", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { colSpan: 9, id: detailId, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        open ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tr", { className: "jh-row-detail", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { colSpan: 9, id: detailId, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		          PlatformDetail,
 		          {
 		            item,
@@ -5701,15 +5047,15 @@ window.__ModuleLoader__.load({
 		  const missing = item.fields.filter((field) => field.consecutiveMiss > 0);
 		  const lastRun = item.governance.lastRun;
 		  const needsLoginCheck = !item.implementation.loginCheck && Object.values(item.authRequirement).includes("required");
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plat-detail", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("ul", { className: "jh-kv", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u73B0\u5728\u80FD\u8DD1\u5417" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: blocked === null ? "jh-ok" : "jh-warn", children: blocked ?? "\u53EF\u4EE5 \u2014\u2014 \u5230\u70B9\u771F\u7684\u4F1A\u8DD1" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-plat-detail", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("ul", { className: "jh-kv", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u73B0\u5728\u80FD\u8DD1\u5417" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: blocked === null ? "jh-ok" : "jh-warn", children: blocked ?? "\u53EF\u4EE5 \u2014\u2014 \u5230\u70B9\u771F\u7684\u4F1A\u8DD1" })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u4ECA\u65E5\u989D\u5EA6" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u4ECA\u65E5\u989D\u5EA6" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(
 		          "span",
 		          {
 		            className: item.governance.todayRuns >= item.governance.dailyLimit ? "jh-warn" : void 0,
@@ -5722,40 +5068,40 @@ window.__ModuleLoader__.load({
 		          }
 		        )
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u51B7\u5374" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: cooldown === null ? "\u6CA1\u5728\u51B7\u5374" : `\u81F3 ${formatClock(cooldown)}` })
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u51B7\u5374" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: cooldown === null ? "\u6CA1\u5728\u51B7\u5374" : `\u81F3 ${formatClock(cooldown)}` })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u6700\u8FD1\u4E00\u8F6E" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: lastRun === null ? "\u6CA1\u8DD1\u8FC7" : `${new Date(lastRun.startedAt).toLocaleString()} \xB7 ${CRAWL_STATE_LABEL[lastRun.state]}` })
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u6700\u8FD1\u4E00\u8F6E" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: lastRun === null ? "\u6CA1\u8DD1\u8FC7" : `${new Date(lastRun.startedAt).toLocaleString()} \xB7 ${CRAWL_STATE_LABEL[lastRun.state]}` })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u4E0A\u6B21\u6210\u529F" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: item.lastOkAt === null ? "\u4ECE\u6765\u6CA1\u6709" : new Date(item.lastOkAt).toLocaleString() })
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u4E0A\u6B21\u6210\u529F" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: item.lastOkAt === null ? "\u4ECE\u6765\u6CA1\u6709" : new Date(item.lastOkAt).toLocaleString() })
 		      ] })
 		    ] }),
-		    item.governance.riskPaused ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u98CE\u9669\u6682\u505C", children: "\u5DF2\u88AB\u6682\u505C\u81EA\u52A8\u91C7\u96C6" }),
+		    item.governance.riskPaused ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Term, { term: "\u98CE\u9669\u6682\u505C", children: "\u5DF2\u88AB\u6682\u505C\u81EA\u52A8\u91C7\u96C6" }),
 		      item.governance.riskReason === null ? "" : `\uFF1A${item.governance.riskReason}`,
 		      " ",
 		      "\u2014\u2014 \u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\uFF0C\u786E\u8BA4\u73AF\u5883\u6B63\u5E38\u540E\u5728\u65B9\u6848\u5361\u4E0A\u70B9\u300C\u786E\u8BA4\u6062\u590D\u300D\u3002"
 		    ] }) : null,
-		    item.login.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.login.message }),
-		    item.account.hint === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.account.hint }),
-		    item.healthReason === null && item.failStreak === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-warn", children: [
+		    item.login.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-muted", children: item.login.message }),
+		    item.account.hint === null ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-muted", children: item.account.hint }),
+		    item.healthReason === null && item.failStreak === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-warn", children: [
 		      "\u5065\u5EB7\uFF1A",
 		      HEALTH_STATE_LABEL[item.health],
 		      item.failStreak > 0 ? `\uFF08\u8FDE\u7EED\u5931\u8D25 ${item.failStreak} \u6B21\uFF09` : "",
 		      item.healthReason === null ? "" : ` \u2014\u2014 ${item.healthReason}`
 		    ] }),
-		    maturityNeedsWarning(item.maturity.level) ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u6210\u719F\u5EA6", children: MATURITY_LEVEL_LABEL[item.maturity.level] }),
+		    maturityNeedsWarning(item.maturity.level) ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Term, { term: "\u6210\u719F\u5EA6", children: MATURITY_LEVEL_LABEL[item.maturity.level] }),
 		      item.maturity.notes === void 0 || item.maturity.notes === "" ? null : `\uFF1A${item.maturity.notes}`
 		    ] }) : null,
-		    needsLoginCheck ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-warn", children: "\u8BE5\u5E73\u53F0\u9700\u8981\u767B\u5F55\uFF0C\u4F46\u672C\u673A\u8FD8\u6CA1\u6709\u767B\u5F55\u6001\u68C0\u6D4B \u2014\u2014 \u672A\u767B\u5F55\u65F6\u53EF\u80FD\u9759\u9ED8\u6293\u5230\u7A7A\u7ED3\u679C\u3002" }) : null,
-		    item.yield.baseline === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: item.yield.level === "dropped" ? "jh-warn" : "jh-muted", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u91CF\u7EA7", children: "\u4EA7\u91CF" }),
+		    needsLoginCheck ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-warn", children: "\u8BE5\u5E73\u53F0\u9700\u8981\u767B\u5F55\uFF0C\u4F46\u672C\u673A\u8FD8\u6CA1\u6709\u767B\u5F55\u6001\u68C0\u6D4B \u2014\u2014 \u672A\u767B\u5F55\u65F6\u53EF\u80FD\u9759\u9ED8\u6293\u5230\u7A7A\u7ED3\u679C\u3002" }) : null,
+		    item.yield.baseline === null ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: item.yield.level === "dropped" ? "jh-warn" : "jh-muted", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Term, { term: "\u91CF\u7EA7", children: "\u4EA7\u91CF" }),
 		      "\uFF1A\u8FD1 ",
 		      item.yield.samples,
 		      " \u8F6E\u7684\u5E38\u6001\u7EA6 ",
@@ -5765,12 +5111,12 @@ window.__ModuleLoader__.load({
 		      " \u6761",
 		      item.yield.level === "dropped" ? " \u2014\u2014 \u660E\u663E\u504F\u4F4E\u3002\u5B57\u6BB5\u5065\u5EB7\u53EF\u80FD\u662F\u5168\u7EFF\u7684\uFF0C\u5148\u67E5\u7FFB\u9875\u4E0E\u61D2\u52A0\u8F7D\u3002" : ""
 		    ] }),
-		    missing.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Term, { term: "\u9010\u5B57\u6BB5\u5065\u5EB7", children: "\u8FDE\u7EED\u7F3A\u5931" }),
+		    missing.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Term, { term: "\u9010\u5B57\u6BB5\u5065\u5EB7", children: "\u8FDE\u7EED\u7F3A\u5931" }),
 		      "\uFF1A",
 		      missing.map((field) => `${field.field}\xD7${String(field.consecutiveMiss)}`).join(" \xB7 ")
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-plat-detail-actions", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-plat-detail-actions", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		      "button",
 		      {
 		        type: "button",
@@ -5782,109 +5128,115 @@ window.__ModuleLoader__.load({
 		    ) })
 		  ] });
 		}
+
+		// src/client/screens/collect/capability-matrix.tsx
+		var import_jsx_runtime19 = require("react/jsx-runtime");
 		var LEVEL_SHORT = {
 		  high: "\u9AD8",
 		  medium: "\u4E2D",
 		  low: "\u4F4E"
 		};
 		function CapabilityCell(props) {
-		  if (props.implemented) return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-ok", children: "\u5DF2\u5B9E\u73B0" });
-		  if (props.supported) return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-warn", children: "\u672A\u5B9E\u73B0" });
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u4E0D\u652F\u6301" });
+		  if (props.implemented) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "jh-tag jh-tone-ok", children: "\u5DF2\u5B9E\u73B0" });
+		  if (props.supported) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "jh-tag jh-tone-warn", children: "\u672A\u5B9E\u73B0" });
+		  return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u4E0D\u652F\u6301" });
 		}
 		function DoneCell(props) {
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: `jh-tag jh-tone-${props.done ? "ok" : "muted"}`, children: props.done ? "\u5DF2\u5B9E\u73B0" : "\u672A\u5B9E\u73B0" });
+		  return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: `jh-tag jh-tone-${props.done ? "ok" : "muted"}`, children: props.done ? "\u5DF2\u5B9E\u73B0" : "\u672A\u5B9E\u73B0" });
 		}
 		function CapabilityMatrix(props) {
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("table", { className: "jh-table jh-table-caps", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u6210\u719F\u5EA6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u4E0A\u6B21\u9A8C\u8BC1" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u5217\u8868\u91C7\u96C6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u8BE6\u60C5\u9875" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u6253\u62DB\u547C" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u6536\u4EF6\u7BB1" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u9644\u4EF6\u6295\u9012" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u767B\u5F55\u68C0\u6D4B" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u6293\u53D6\u9700\u767B\u5F55" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u5B57\u6BB5\u5B8C\u6574\u5EA6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u53CD\u722C\u5F3A\u5EA6" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("table", { className: "jh-table jh-table-caps", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u6210\u719F\u5EA6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u4E0A\u6B21\u9A8C\u8BC1" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u5217\u8868\u91C7\u96C6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u8BE6\u60C5\u9875" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u6253\u62DB\u547C" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u6536\u4EF6\u7BB1" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u9644\u4EF6\u6295\u9012" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u767B\u5F55\u68C0\u6D4B" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u6293\u53D6\u9700\u767B\u5F55" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u5B57\u6BB5\u5B8C\u6574\u5EA6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { scope: "col", children: "\u53CD\u722C\u5F3A\u5EA6" })
 		    ] }) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("tbody", { children: props.items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: item.id }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.displayName })
+		    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("tbody", { children: props.items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("code", { children: item.id }),
+		        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "jh-muted", children: item.displayName })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`, children: MATURITY_LEVEL_SHORT[item.maturity.level] }),
-		        item.maturity.notes === void 0 || item.maturity.notes === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-muted", children: item.maturity.notes })
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`, children: MATURITY_LEVEL_SHORT[item.maturity.level] }),
+		        item.maturity.notes === void 0 || item.maturity.notes === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "jh-muted", children: item.maturity.notes })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: item.maturity.verifiedAt ?? "\u2014" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(DoneCell, { done: item.implementation.crawl }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(DoneCell, { done: item.implementation.detail }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: item.maturity.verifiedAt ?? "\u2014" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(DoneCell, { done: item.implementation.crawl }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(DoneCell, { done: item.implementation.detail }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
 		        CapabilityCell,
 		        {
 		          supported: item.capabilities.supportsGreeting,
 		          implemented: item.implementation.actions.sayHello
 		        }
 		      ) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
 		        CapabilityCell,
 		        {
 		          supported: item.capabilities.supportsInbox,
 		          implemented: item.implementation.actions.readInbox
 		        }
 		      ) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
 		        CapabilityCell,
 		        {
 		          supported: item.capabilities.supportsAttachment,
 		          implemented: item.implementation.actions.sendResume
 		        }
 		      ) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(DoneCell, { done: item.implementation.loginCheck }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: AUTH_REQUIREMENT_LABEL[item.authRequirement.crawl] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: LEVEL_SHORT[item.capabilities.fieldCompleteness] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: item.capabilities.antiBot === "high" ? "jh-warn" : void 0, children: LEVEL_SHORT[item.capabilities.antiBot] })
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(DoneCell, { done: item.implementation.loginCheck }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: AUTH_REQUIREMENT_LABEL[item.authRequirement.crawl] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: LEVEL_SHORT[item.capabilities.fieldCompleteness] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { className: item.capabilities.antiBot === "high" ? "jh-warn" : void 0, children: LEVEL_SHORT[item.capabilities.antiBot] })
 		    ] }, item.id)) })
 		  ] }) });
 		}
+
+		// src/client/screens/collect/run-history.tsx
+		var import_jsx_runtime20 = require("react/jsx-runtime");
 		function RunHistoryTable(props) {
 		  if (props.loading) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8FD0\u884C\u8BB0\u5F55\u2026" });
+		    return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8FD0\u884C\u8BB0\u5F55\u2026" });
 		  }
 		  if (props.runs.length === 0) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-empty", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u8FD0\u884C\u8BB0\u5F55\u3002" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: "\u7B2C\u4E00\u6B21\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u6216\u7B49\u5230\u504F\u597D\u65F6\u6BB5\u81EA\u52A8\u89E6\u53D1\u4E4B\u540E\uFF0C\u8FD9\u91CC\u4F1A\u51FA\u73B0\u6BCF\u4E00\u8F6E\u7684\u7ED3\u679C\u3002" })
+		    return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "jh-empty", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u8FD0\u884C\u8BB0\u5F55\u3002" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-note", children: "\u7B2C\u4E00\u6B21\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u6216\u7B49\u5230\u504F\u597D\u65F6\u6BB5\u81EA\u52A8\u89E6\u53D1\u4E4B\u540E\uFF0C\u8FD9\u91CC\u4F1A\u51FA\u73B0\u6BCF\u4E00\u8F6E\u7684\u7ED3\u679C\u3002" })
 		    ] });
 		  }
 		  const now = /* @__PURE__ */ new Date();
 		  const showReason = props.runs.some((run) => runReasonLabel(run.reason) !== null);
 		  const showQuarantined = props.runs.some((run) => run.quarantined > 0);
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("table", { className: "jh-table jh-table-runs", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5F00\u59CB" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u72B6\u6001" }),
-		      showReason ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u89E6\u53D1" }) : null,
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num", children: "\u547D\u4E2D" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num", children: "\u65B0\u589E" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u66F4\u65B0" }),
-		      showQuarantined ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u9694\u79BB" }) : null,
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-num", children: "\u8017\u65F6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u7ED3\u679C\u8BF4\u660E" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("table", { className: "jh-table jh-table-runs", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("tr", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5F00\u59CB" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u72B6\u6001" }),
+		      showReason ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", children: "\u89E6\u53D1" }) : null,
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-num", children: "\u547D\u4E2D" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-num", children: "\u65B0\u589E" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u66F4\u65B0" }),
+		      showQuarantined ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-num jh-col-hide-sm", children: "\u9694\u79BB" }) : null,
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-num", children: "\u8017\u65F6" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", children: "\u7ED3\u679C\u8BF4\u660E" })
 		    ] }) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("tbody", { children: props.runs.map((run) => {
+		    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("tbody", { children: props.runs.map((run) => {
 		      const skip = props.reasonFor(run.skipReason);
 		      const failure = skip === null ? humanizeFailure(run.errorCode, run.errorMsg) : null;
 		      const startedAt = new Date(run.startedAt);
 		      const duration = run.endedAt === null ? null : formatDuration(new Date(run.endedAt).getTime() - startedAt.getTime());
 		      const platformName = props.platformName?.(run.platformId) ?? null;
-		      return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
 		          "td",
 		          {
 		            className: "jh-col-sticky",
@@ -5892,13 +5244,13 @@ window.__ModuleLoader__.load({
 		            children: formatLocalMoment(run.startedAt, now, { withRelative: false }) ?? run.startedAt
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { title: platformName === null ? run.platformId : `${platformName}\uFF08${run.platformId}\uFF09`, children: platformName ?? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: run.platformId }) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(StateTag, { state: run.state, kind: "run" }) }),
-		        showReason ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: runReasonLabel(run.reason) ?? "\u2014" }) : null,
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-num", title: `\u7FFB\u4E86 ${String(run.pages)} \u9875`, children: run.found }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-num", children: run.inserted }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-num jh-col-hide-sm", children: run.updated }),
-		        showQuarantined ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { title: platformName === null ? run.platformId : `${platformName}\uFF08${run.platformId}\uFF09`, children: platformName ?? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("code", { children: run.platformId }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(StateTag, { state: run.state, kind: "run" }) }),
+		        showReason ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { children: runReasonLabel(run.reason) ?? "\u2014" }) : null,
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { className: "jh-num", title: `\u7FFB\u4E86 ${String(run.pages)} \u9875`, children: run.found }),
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { className: "jh-num", children: run.inserted }),
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { className: "jh-num jh-col-hide-sm", children: run.updated }),
+		        showQuarantined ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
 		          "td",
 		          {
 		            className: `jh-num jh-col-hide-sm${run.quarantined > 0 ? " jh-warn" : ""}`,
@@ -5906,11 +5258,11 @@ window.__ModuleLoader__.load({
 		            children: run.quarantined
 		          }
 		        ) : null,
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-num", children: duration ?? (run.state === "running" ? "\u8FDB\u884C\u4E2D" : "\u2014") }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: skip !== null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: skip }) : failure === null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u2014" }) : (
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { className: "jh-num", children: duration ?? (run.state === "running" ? "\u8FDB\u884C\u4E2D" : "\u2014") }),
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { children: skip !== null ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { children: skip }) : failure === null ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-muted", children: "\u2014" }) : (
 		          // 单元格里只留"图标 + 一句人话（过长则截断）+ 详情"；点开是弹窗。
 		          // 图标让"这是错误"不只靠颜色表达；截断是为了不再把状态列撑宽。
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		          /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)(
 		            "button",
 		            {
 		              type: "button",
@@ -5918,9 +5270,9 @@ window.__ModuleLoader__.load({
 		              title: failure.detail === null ? failure.short : failure.detail.split("\n")[0],
 		              onClick: () => props.onOpenError(run, failure),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-err-chip-icon", "aria-hidden": "true", children: "\u26A0" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-err-chip-short", children: failure.short }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-err-chip-more", children: "\u8BE6\u60C5" })
+		                /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-err-chip-icon", "aria-hidden": "true", children: "\u26A0" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-err-chip-short", children: failure.short }),
+		                /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-err-chip-more", children: "\u8BE6\u60C5" })
 		              ]
 		            }
 		          )
@@ -5931,7 +5283,7 @@ window.__ModuleLoader__.load({
 		}
 		function RunLogCard(props) {
 		  if (props.loading) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8FD0\u884C\u8BB0\u5F55\u2026" });
+		    return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8FD0\u884C\u8BB0\u5F55\u2026" });
 		  }
 		  const now = /* @__PURE__ */ new Date();
 		  const rows = props.runs.map((run) => ({
@@ -5940,24 +5292,24 @@ window.__ModuleLoader__.load({
 		    failure: humanizeFailure(run.errorCode, run.errorMsg)
 		  })).filter((row) => row.skip !== null || row.failure !== null);
 		  if (rows.length === 0) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-empty", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u6700\u8FD1\u8FD9\u4E9B\u8F6E\u6B21\u91CC\u6CA1\u6709\u5931\u8D25\u6216\u8DF3\u8FC7\u3002" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-note", children: '\u8FD9\u4E0D\u7B49\u4E8E"\u4EE5\u540E\u4E0D\u4F1A\u5931\u8D25" \u2014\u2014 \u4E0B\u4E00\u8F6E\u771F\u5931\u8D25\u4E86\uFF0C\u5B8C\u6574\u539F\u56E0\u4E0E\u6392\u67E5\u6B65\u9AA4\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002' })
+		    return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "jh-empty", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-muted", children: "\u6700\u8FD1\u8FD9\u4E9B\u8F6E\u6B21\u91CC\u6CA1\u6709\u5931\u8D25\u6216\u8DF3\u8FC7\u3002" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-note", children: '\u8FD9\u4E0D\u7B49\u4E8E"\u4EE5\u540E\u4E0D\u4F1A\u5931\u8D25" \u2014\u2014 \u4E0B\u4E00\u8F6E\u771F\u5931\u8D25\u4E86\uFF0C\u5B8C\u6574\u539F\u56E0\u4E0E\u6392\u67E5\u6B65\u9AA4\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002' })
 		    ] });
 		  }
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("table", { className: "jh-table jh-table-runs", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5F00\u59CB" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u72B6\u6001" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u539F\u56E0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u89E6\u53D1" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("table", { className: "jh-table jh-table-runs", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("tr", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-col-sticky", children: "\u5F00\u59CB" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u72B6\u6001" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", children: "\u539F\u56E0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("th", { scope: "col", children: "\u89E6\u53D1" })
 		    ] }) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("tbody", { children: rows.map(({ run, skip, failure }) => {
+		    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("tbody", { children: rows.map(({ run, skip, failure }) => {
 		      const startedAt = new Date(run.startedAt);
 		      const platformName = props.platformName?.(run.platformId) ?? null;
-		      return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
 		          "td",
 		          {
 		            className: "jh-col-sticky",
@@ -5965,9 +5317,9 @@ window.__ModuleLoader__.load({
 		            children: formatLocalMoment(run.startedAt, now, { withRelative: false }) ?? run.startedAt
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { title: platformName === null ? run.platformId : `${platformName}\uFF08${run.platformId}\uFF09`, children: platformName ?? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("code", { children: run.platformId }) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(StateTag, { state: run.state, kind: "run" }) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: skip !== null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: skip }) : failure === null ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { title: platformName === null ? run.platformId : `${platformName}\uFF08${run.platformId}\uFF09`, children: platformName ?? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("code", { children: run.platformId }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(StateTag, { state: run.state, kind: "run" }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { children: skip !== null ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { children: skip }) : failure === null ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)(
 		          "button",
 		          {
 		            type: "button",
@@ -5975,17 +5327,21 @@ window.__ModuleLoader__.load({
 		            title: failure.detail === null ? failure.short : failure.detail.split("\n")[0],
 		            onClick: () => props.onOpenError(run, failure),
 		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-err-chip-icon", "aria-hidden": "true", children: "\u26A0" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-err-chip-short", children: failure.short }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-err-chip-more", children: "\u8BE6\u60C5" })
+		              /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-err-chip-icon", "aria-hidden": "true", children: "\u26A0" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-err-chip-short", children: failure.short }),
+		              /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "jh-err-chip-more", children: "\u8BE6\u60C5" })
 		            ]
 		          }
 		        ) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: runReasonLabel(run.reason) ?? "\u2014" })
+		        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("td", { children: runReasonLabel(run.reason) ?? "\u2014" })
 		      ] }, run.id);
 		    }) })
 		  ] }) });
 		}
+
+		// src/client/screens/collect/plan-editor-modal.tsx
+		var import_react12 = require("react");
+		var import_jsx_runtime21 = require("react/jsx-runtime");
 		var PLAN_STEPS = ["\u57FA\u7840\u4E0E\u5E73\u53F0", "\u91C7\u96C6\u4E0E\u7B5B\u9009", "\u8C03\u5EA6\u4E0E\u540E\u5904\u7406"];
 		var PRIMARY_CRITERIA_KEYS = [
 		  "city",
@@ -6010,17 +5366,17 @@ window.__ModuleLoader__.load({
 		  return parts.join(" \xB7 ");
 		}
 		function PlanEditorModal(props) {
-		  const [form, setForm] = (0, import_react11.useState)(props.initial);
-		  const [localDuplicates, setLocalDuplicates] = (0, import_react11.useState)([]);
-		  const [localNotices, setLocalNotices] = (0, import_react11.useState)([]);
-		  const [step, setStep] = (0, import_react11.useState)(0);
-		  const [rulesOpen, setRulesOpen] = (0, import_react11.useState)(false);
-		  const [advancedOpen, setAdvancedOpen] = (0, import_react11.useState)(false);
-		  const [batchPages, setBatchPages] = (0, import_react11.useState)("5");
-		  const allBoxRef = (0, import_react11.useRef)(null);
-		  const [submitting, setSubmitting] = (0, import_react11.useState)(false);
-		  const [submitError, setSubmitError] = (0, import_react11.useState)(null);
-		  const [receipt, setReceipt] = (0, import_react11.useState)(null);
+		  const [form, setForm] = (0, import_react12.useState)(props.initial);
+		  const [localDuplicates, setLocalDuplicates] = (0, import_react12.useState)([]);
+		  const [localNotices, setLocalNotices] = (0, import_react12.useState)([]);
+		  const [step, setStep] = (0, import_react12.useState)(0);
+		  const [rulesOpen, setRulesOpen] = (0, import_react12.useState)(false);
+		  const [advancedOpen, setAdvancedOpen] = (0, import_react12.useState)(false);
+		  const [batchPages, setBatchPages] = (0, import_react12.useState)("5");
+		  const allBoxRef = (0, import_react12.useRef)(null);
+		  const [submitting, setSubmitting] = (0, import_react12.useState)(false);
+		  const [submitError, setSubmitError] = (0, import_react12.useState)(null);
+		  const [receipt, setReceipt] = (0, import_react12.useState)(null);
 		  const patch = (next) => setForm((current) => ({ ...current, ...next }));
 		  const duplicates = [
 		    ...new Map(
@@ -6034,7 +5390,7 @@ window.__ModuleLoader__.load({
 		  const endMissing = endClock === null;
 		  const keywordsKey = JSON.stringify(parseKeywordsText(form.keywordsText));
 		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.overrides)}\0${JSON.stringify(form.criteria)}\0${keywordsKey}`;
-		  (0, import_react11.useEffect)(() => {
+		  (0, import_react12.useEffect)(() => {
 		    const timer = window.setTimeout(() => {
 		      void props.onValidate(form).then((result) => {
 		        setLocalDuplicates(result.duplicates);
@@ -6114,11 +5470,11 @@ window.__ModuleLoader__.load({
 		    (item) => (form.criteria[item.key] ?? "") !== ""
 		  ).length;
 		  const advancedNames = advancedItems.filter((item) => item.supported).map((item) => item.label).slice(0, 4).join(" / ") || "\u6392\u5E8F\u65B9\u5F0F / \u53D1\u5E03\u65F6\u95F4 / \u5E73\u53F0\u7279\u6709\u7EF4\u5EA6";
-		  (0, import_react11.useEffect)(() => {
+		  (0, import_react12.useEffect)(() => {
 		    if (advancedActiveCount > 0) setAdvancedOpen(true);
 		  }, [advancedActiveCount]);
 		  const allIncluded = includedCount > 0 && includedCount === props.available.length;
-		  (0, import_react11.useEffect)(() => {
+		  (0, import_react12.useEffect)(() => {
 		    const box = allBoxRef.current;
 		    if (box !== null) box.indeterminate = includedCount > 0 && !allIncluded;
 		  }, [includedCount, allIncluded]);
@@ -6148,13 +5504,13 @@ window.__ModuleLoader__.load({
 		  const renderDimension = (dimension) => {
 		    const value = form.criteria[dimension.key] ?? "";
 		    const hint = dimension.supported ? dimension.hint : dimension.disabledReason ?? dimension.hint;
-		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "jh-field", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-field-label", children: [
+		    return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "jh-field", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-field-label", children: [
 		        dimension.label,
-		        dimension.supported ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("em", { className: "jh-field-flag", children: "\u5F53\u524D\u5E73\u53F0\u4E0D\u652F\u6301" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: hint })
+		        dimension.supported ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("em", { className: "jh-field-flag", children: "\u5F53\u524D\u5E73\u53F0\u4E0D\u652F\u6301" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(FieldHint, { text: hint })
 		      ] }),
-		      dimension.numeric ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      dimension.numeric ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		        "input",
 		        {
 		          className: "jh-input",
@@ -6166,7 +5522,7 @@ window.__ModuleLoader__.load({
 		          placeholder: dimension.supported ? "\u4E0D\u9650" : "\u4E0D\u652F\u6301",
 		          onChange: (event) => setCriteria(dimension.key, event.target.value)
 		        }
-		      ) : dimension.values.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      ) : dimension.values.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		        "input",
 		        {
 		          className: "jh-input",
@@ -6175,7 +5531,7 @@ window.__ModuleLoader__.load({
 		          placeholder: dimension.supported ? "\u4E0D\u9650" : "\u4E0D\u652F\u6301",
 		          onChange: (event) => setCriteria(dimension.key, event.target.value)
 		        }
-		      ) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		      ) : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		        "select",
 		        {
 		          className: "jh-select",
@@ -6183,25 +5539,25 @@ window.__ModuleLoader__.load({
 		          value,
 		          onChange: (event) => setCriteria(dimension.key, event.target.value),
 		          children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("option", { value: "", children: "\u4E0D\u9650" }),
-		            dimension.values.map((option) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("option", { value: option.value, children: option.label }, option.value))
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("option", { value: "", children: "\u4E0D\u9650" }),
+		            dimension.values.map((option) => /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("option", { value: option.value, children: option.label }, option.value))
 		          ]
 		        }
 		      )
 		    ] }, dimension.key);
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		    Modal,
 		    {
 		      title: props.planId === null ? "\u65B0\u589E\u91C7\u96C6\u65B9\u6848" : "\u7F16\u8F91\u91C7\u96C6\u65B9\u6848",
 		      label: "\u91C7\u96C6\u65B9\u6848",
 		      size: "lg",
 		      onClose: props.onCancel,
-		      footer: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		        step === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: () => setStep(step - 1), children: "\u4E0A\u4E00\u6B65" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onCancel, children: "\u53D6\u6D88" }),
-		        step < PLAN_STEPS.length - 1 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      footer: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+		        step === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: () => setStep(step - 1), children: "\u4E0A\u4E00\u6B65" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-spacer" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onCancel, children: "\u53D6\u6D88" }),
+		        step < PLAN_STEPS.length - 1 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -6211,7 +5567,7 @@ window.__ModuleLoader__.load({
 		            onClick: () => setStep(step + 1),
 		            children: "\u4E0B\u4E00\u6B65"
 		          }
-		        ) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        ) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -6224,9 +5580,9 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }),
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("nav", { className: "jh-steps", "aria-label": "\u65B9\u6848\u914D\u7F6E\u6B65\u9AA4", children: PLAN_STEPS.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_react11.Fragment, { children: [
-		          index === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-step-sep", "aria-hidden": "true", children: "\u203A" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("nav", { className: "jh-steps", "aria-label": "\u65B9\u6848\u914D\u7F6E\u6B65\u9AA4", children: PLAN_STEPS.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_react12.Fragment, { children: [
+		          index === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-step-sep", "aria-hidden": "true", children: "\u203A" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		            "button",
 		            {
 		              type: "button",
@@ -6236,14 +5592,14 @@ window.__ModuleLoader__.load({
 		              title: index > 0 && stepOneBlocked ? "\u5148\u586B\u65B9\u6848\u540D\uFF0C\u5E76\u81F3\u5C11\u7EB3\u5165\u4E00\u4E2A\u672A\u6682\u505C\u7684\u5E73\u53F0\u3002" : `\u7B2C ${String(index + 1)} \u6B65\uFF1A${label}`,
 		              onClick: () => setStep(index),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-step-no", "aria-hidden": "true", children: index + 1 }),
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-step-no", "aria-hidden": "true", children: index + 1 }),
 		                label
 		              ]
 		            }
 		          )
 		        ] }, label)) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-alert jh-alert-quiet", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-alert jh-alert-quiet", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		            "button",
 		            {
 		              type: "button",
@@ -6252,61 +5608,61 @@ window.__ModuleLoader__.load({
 		              "aria-controls": "jh-plan-rules",
 		              onClick: () => setRulesOpen((open) => !open),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-plan-caret", "aria-hidden": "true", children: rulesOpen ? "\u25BE" : "\u25B8" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-plan-toggle-text", children: "\u914D\u7F6E\u987B\u77E5" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-filter-note", children: "\u4FDD\u5B58\u524D\u6309\u540C\u4E00\u5957\u89C4\u5219\u6821\u9A8C \xB7 \u5E73\u53F0\u81EA\u8EAB\u7684\u9650\u5236\u89C1\u4E0B\u8868\u300C\u9650\u5236\u300D\u5217" })
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-plan-caret", "aria-hidden": "true", children: rulesOpen ? "\u25BE" : "\u25B8" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-plan-toggle-text", children: "\u914D\u7F6E\u987B\u77E5" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-filter-note", children: "\u4FDD\u5B58\u524D\u6309\u540C\u4E00\u5957\u89C4\u5219\u6821\u9A8C \xB7 \u5E73\u53F0\u81EA\u8EAB\u7684\u9650\u5236\u89C1\u4E0B\u8868\u300C\u9650\u5236\u300D\u5217" })
 		              ]
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-plan-panel", id: "jh-plan-rules", hidden: !rulesOpen, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("ul", { className: "jh-alert-list", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-plan-panel", id: "jh-plan-rules", hidden: !rulesOpen, children: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("ul", { className: "jh-alert-list", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("li", { children: [
 		              "\u4FDD\u5B58\u524D\u4F1A\u6309\u4E0E\u6A21\u578B\u5DE5\u5177\u3001\u63A5\u53E3",
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("strong", { children: "\u540C\u4E00\u5957" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("strong", { children: "\u540C\u4E00\u5957" }),
 		              "\u89C4\u5219\u6821\u9A8C\uFF1B\u4E0D\u5408\u6CD5\u76F4\u63A5\u62A5\u9519\u3001\u4E0D\u5165\u5E93\u3002"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("li", { children: [
 		              "\u9875\u6570\u4E0A\u9650\u6309",
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("strong", { children: "\u6BCF\u4E2A\u5E73\u53F0\u81EA\u5DF1" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("strong", { children: "\u6BCF\u4E2A\u5E73\u53F0\u81EA\u5DF1" }),
 		              "\u7684\u4E0A\u9650\u6821\u9A8C\uFF08\u89C1\u300C\u9650\u5236\u300D\u5217\uFF09\u3002\u7ED9\u67D0\u4E2A\u5E73\u53F0\u5355\u72EC\u586B\u7684\u9875\u6570 \u53EA\u4F5C\u7528\u4E8E\u5B83\uFF1B\u7559\u7A7A\u5219\u7528\u7B2C 1 \u6B65\u7684\u65B9\u6848\u7EA7\u9875\u6570\u3002"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("li", { children: [
 		              "\u7B5B\u9009\u6761\u4EF6\u6309",
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("strong", { children: "\u5DF2\u7EB3\u5165\u4E14\u672A\u6682\u505C" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("strong", { children: "\u5DF2\u7EB3\u5165\u4E14\u672A\u6682\u505C" }),
 		              "\u7684\u5E73\u53F0\u6821\u9A8C \u2014\u2014 \u67D0\u4E2A\u5E73\u53F0\u4E0D\u8BA4\u7684\u6761\u4EF6\u4F1A\u88AB\u62D2\u7EDD\uFF0C \u800C\u4E0D\u662F\u9759\u9ED8\u5FFD\u7565\u3002"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("li", { children: "\u5B9A\u65F6\u65F6\u6BB5\u53EA\u5728\u533A\u95F4\u5185\u968F\u673A\u53D6\u70B9\uFF0C\u4E0D\u56FA\u5B9A\u5230\u67D0\u4E00\u5206\u949F\uFF1A\u56FA\u5B9A\u65F6\u523B\u6700\u5BB9\u6613\u88AB\u5E73\u53F0\u8BC6\u522B\u6210\u81EA\u52A8\u5316\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("li", { children: "\u5B9A\u65F6\u65F6\u6BB5\u53EA\u5728\u533A\u95F4\u5185\u968F\u673A\u53D6\u70B9\uFF0C\u4E0D\u56FA\u5B9A\u5230\u67D0\u4E00\u5206\u949F\uFF1A\u56FA\u5B9A\u65F6\u523B\u6700\u5BB9\u6613\u88AB\u5E73\u53F0\u8BC6\u522B\u6210\u81EA\u52A8\u5316\u3002" })
 		          ] }) })
 		        ] }),
-		        submitError === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-alert jh-alert-error", role: "alert", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-alert-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-alert-title", children: "\u4FDD\u5B58\u5931\u8D25" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u6CA1\u6709\u5199\u5165\u4EFB\u4F55\u4E1C\u897F\uFF1B\u6309\u4E0B\u9762\u7684\u539F\u56E0\u6539\u5B8C\u53EF\u4EE5\u76F4\u63A5\u91CD\u8BD5\u3002" })
+		        submitError === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-alert jh-alert-error", role: "alert", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-alert-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-alert-title", children: "\u4FDD\u5B58\u5931\u8D25" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-muted", children: "\u6CA1\u6709\u5199\u5165\u4EFB\u4F55\u4E1C\u897F\uFF1B\u6309\u4E0B\u9762\u7684\u539F\u56E0\u6539\u5B8C\u53EF\u4EE5\u76F4\u63A5\u91CD\u8BD5\u3002" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-alert-body", children: submitError })
+		          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-alert-body", children: submitError })
 		        ] }),
-		        receipt === null || !unchangedSinceSave ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-alert", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-alert-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-alert-title", children: [
+		        receipt === null || !unchangedSinceSave ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-alert", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-alert-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-alert-title", children: [
 		            "\u5DF2\u4FDD\u5B58\u65B9\u6848\u300C",
 		            receipt.name,
 		            "\u300D"
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u6539\u52A8\u4EFB\u4F55\u4E00\u9879\u540E\u300C\u4FDD\u5B58\u300D\u4F1A\u91CD\u65B0\u53EF\u7528\u3002" })
+		          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-muted", children: "\u6539\u52A8\u4EFB\u4F55\u4E00\u9879\u540E\u300C\u4FDD\u5B58\u300D\u4F1A\u91CD\u65B0\u53EF\u7528\u3002" })
 		        ] }) }),
-		        duplicates.length === 0 && notices.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		        duplicates.length === 0 && notices.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		          "div",
 		          {
 		            className: `jh-alert ${duplicates.length > 0 ? "jh-alert-warn" : "jh-alert-quiet"}`,
 		            role: "status",
 		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-alert-head", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-alert-title", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-alert-head", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-alert-title", children: [
 		                  duplicates.length > 0 ? `\u4E0E ${String(duplicates.length)} \u4E2A\u65B9\u6848\u6761\u4EF6\u91CD\u590D` : null,
 		                  notices.length > 0 ? `${String(notices.length)} \u6761\u63D0\u793A` : null
 		                ].filter((part) => part !== null).join(" \xB7 ") }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u53EA\u63D0\u793A\uFF0C\u4ECD\u53EF\u4FDD\u5B58" })
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-muted", children: "\u53EA\u63D0\u793A\uFF0C\u4ECD\u53EF\u4FDD\u5B58" })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("ul", { className: "jh-alert-list", children: [
-		                duplicates.map((item) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("ul", { className: "jh-alert-list", children: [
+		                duplicates.map((item) => /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("li", { children: [
 		                  "\u4E0E #",
 		                  item.planId,
 		                  "\u300C",
@@ -6315,17 +5671,17 @@ window.__ModuleLoader__.load({
 		                  item.reason,
 		                  "\uFF09\u2014\u2014 \u4E0D\u4F1A\u81EA\u52A8\u5408\u5E76\u3002"
 		                ] }, `dup-${String(item.planId)}`)),
-		                notices.map((notice) => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("li", { children: notice }, notice))
+		                notices.map((notice) => /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("li", { children: notice }, notice))
 		              ] })
 		            ]
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-step-body", children: [
-		          step === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-field-label", children: "\u65B9\u6848\u540D" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-affix", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-step-body", children: [
+		          step === 0 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-field-label", children: "\u65B9\u6848\u540D" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-affix", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                  "input",
 		                  {
 		                    className: "jh-input",
@@ -6335,7 +5691,7 @@ window.__ModuleLoader__.load({
 		                    onBlur: check
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -6347,22 +5703,22 @@ window.__ModuleLoader__.load({
 		                  }
 		                )
 		              ] }),
-		              nameMissing ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-warn", role: "alert", children: "\u65B9\u6848\u540D\u4E0D\u80FD\u4E3A\u7A7A\u3002" }) : null
+		              nameMissing ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-warn", role: "alert", children: "\u65B9\u6848\u540D\u4E0D\u80FD\u4E3A\u7A7A\u3002" }) : null
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-section-title", children: "\u76EE\u6807\u5E73\u53F0\u4E0E\u9875\u6570" }),
-		            props.available.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DF2\u6CE8\u518C\u7684\u5E73\u53F0\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		              pagesDimension === void 0 || !pagesDimension.supported ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-field-label", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-section-title", children: "\u76EE\u6807\u5E73\u53F0\u4E0E\u9875\u6570" }),
+		            props.available.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DF2\u6CE8\u518C\u7684\u5E73\u53F0\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+		              pagesDimension === void 0 || !pagesDimension.supported ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-field", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-field-label", children: [
 		                  "\u6293\u53D6\u9875\u6570\u4E0A\u9650\uFF08\u65B9\u6848\u7EA7\uFF09",
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                    FieldHint,
 		                    {
 		                      text: `${pagesDimension.hint} \u5355\u4E2A\u5E73\u53F0\u53EF\u5728\u4E0B\u8868\u5355\u72EC\u586B\uFF0C\u586B\u4E86\u5C31\u7528\u5B83\u3002\u7559\u7A7A\u5219\u5404\u5E73\u53F0\u6309\u81EA\u5DF1\u7684\u9ED8\u8BA4\u9875\u6570\u6293\uFF1B\u8D85\u8FC7\u67D0\u4E2A\u5E73\u53F0\u81EA\u8EAB\u4E0A\u9650\u7684\u90E8\u5206\u5BF9\u5B83\u65E0\u6548\uFF0C\u4FDD\u5B58\u524D\u4F1A\u63D0\u793A\u3002`
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field-row", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-field-row", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                    "input",
 		                    {
 		                      className: "jh-input jh-input-narrow",
@@ -6374,12 +5730,12 @@ window.__ModuleLoader__.load({
 		                      onChange: (event) => setCriteria("maxPages", event.target.value)
 		                    }
 		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-muted", children: "\u9875 \u2014\u2014 \u7559\u7A7A\u5219\u5404\u5E73\u53F0\u6309\u81EA\u5DF1\u7684\u9ED8\u8BA4\u9875\u6570\u6293" })
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-muted", children: "\u9875 \u2014\u2014 \u7559\u7A7A\u5219\u5404\u5E73\u53F0\u6309\u81EA\u5DF1\u7684\u9ED8\u8BA4\u9875\u6570\u6293" })
 		                ] })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-batch", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "jh-check", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-batch", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "jh-check", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                    "input",
 		                    {
 		                      ref: allBoxRef,
@@ -6390,7 +5746,7 @@ window.__ModuleLoader__.load({
 		                  ),
 		                  "\u5168\u9009"
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-muted", children: [
 		                  "\u5DF2\u7EB3\u5165 ",
 		                  includedCount,
 		                  " / ",
@@ -6398,9 +5754,9 @@ window.__ModuleLoader__.load({
 		                  " \u4E2A\u5E73\u53F0",
 		                  enabledCount === includedCount ? "" : `\uFF08\u5176\u4E2D ${String(includedCount - enabledCount)} \u4E2A\u5DF2\u6682\u505C\uFF09`
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-spacer" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("label", { className: "jh-muted", htmlFor: "jh-batch-pages", children: "\u6279\u91CF\u8BBE\u7F6E\u9875\u6570\u4E0A\u9650" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-spacer" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("label", { className: "jh-muted", htmlFor: "jh-batch-pages", children: "\u6279\u91CF\u8BBE\u7F6E\u9875\u6570\u4E0A\u9650" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                  "input",
 		                  {
 		                    id: "jh-batch-pages",
@@ -6411,7 +5767,7 @@ window.__ModuleLoader__.load({
 		                    onChange: (event) => setBatchPages(event.target.value)
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -6423,22 +5779,22 @@ window.__ModuleLoader__.load({
 		                  }
 		                )
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-filter-note", children: "\u8D85\u8FC7\u5E73\u53F0\u81EA\u8EAB\u4E0A\u9650\u7684\u6309\u8BE5\u5E73\u53F0\u4E0A\u9650\u586B\u5199\uFF1B\u9875\u6570\u7559\u7A7A\u7684\u5E73\u53F0\u7528\u4E0A\u9762\u7684\u65B9\u6848\u7EA7\u9875\u6570\u3002" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("table", { className: "jh-table jh-table-plan jh-table-roomy", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", className: "jh-col-check", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-sr-only", children: "\u7EB3\u5165\u65B9\u6848" }) }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u72B6\u6001" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u9875\u6570\u4E0A\u9650" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("th", { scope: "col", children: "\u9650\u5236" })
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-filter-note", children: "\u8D85\u8FC7\u5E73\u53F0\u81EA\u8EAB\u4E0A\u9650\u7684\u6309\u8BE5\u5E73\u53F0\u4E0A\u9650\u586B\u5199\uFF1B\u9875\u6570\u7559\u7A7A\u7684\u5E73\u53F0\u7528\u4E0A\u9762\u7684\u65B9\u6848\u7EA7\u9875\u6570\u3002" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("table", { className: "jh-table jh-table-plan jh-table-roomy", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("tr", { children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { scope: "col", className: "jh-col-check", children: /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-sr-only", children: "\u7EB3\u5165\u65B9\u6848" }) }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { scope: "col", children: "\u72B6\u6001" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { scope: "col", children: "\u9875\u6570\u4E0A\u9650" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { scope: "col", children: "\u9650\u5236" })
 		                ] }) }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("tbody", { children: props.available.map((item) => {
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("tbody", { children: props.available.map((item) => {
 		                  const included = form.platforms.includes(item.id);
 		                  const entry = form.overrides[item.id] ?? { enabled: true, maxPages: "" };
 		                  const lastEnabled = included && entry.enabled && enabledCount === 1;
 		                  const overCap = entry.maxPages.trim() !== "" && Number(entry.maxPages) > item.maxPages;
-		                  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("tr", { children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { className: "jh-col-check", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("tr", { children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("td", { className: "jh-col-check", children: /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                      "input",
 		                      {
 		                        type: "checkbox",
@@ -6447,20 +5803,20 @@ window.__ModuleLoader__.load({
 		                        onChange: () => togglePlatform(item.id)
 		                      }
 		                    ) }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("td", { children: [
 		                      item.displayName,
-		                      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: platformHintOf(item) })
+		                      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(FieldHint, { text: platformHintOf(item) })
 		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("td", { children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                        "span",
 		                        {
 		                          className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`,
 		                          children: MATURITY_LEVEL_SHORT[item.maturity.level]
 		                        }
 		                      ),
-		                      included && !entry.enabled ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u6682\u505C" }) : null,
-		                      included ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                      included && !entry.enabled ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u6682\u505C" }) : null,
+		                      included ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                        "button",
 		                        {
 		                          type: "button",
@@ -6472,7 +5828,7 @@ window.__ModuleLoader__.load({
 		                        }
 		                      ) : null
 		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input jh-pages-input",
@@ -6487,35 +5843,35 @@ window.__ModuleLoader__.load({
 		                        onChange: (event) => setOverride(item.id, { maxPages: event.target.value })
 		                      }
 		                    ) }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("td", { className: "jh-muted", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("td", { className: "jh-muted", children: [
 		                      limitTextOf(item),
-		                      overCap ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-error", children: " \xB7 \u8D85\u8FC7\u4E0A\u9650\uFF0C\u4FDD\u5B58\u4F1A\u88AB\u62D2" }) : null
+		                      overCap ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-error", children: " \xB7 \u8D85\u8FC7\u4E0A\u9650\uFF0C\u4FDD\u5B58\u4F1A\u88AB\u62D2" }) : null
 		                    ] })
 		                  ] }, item.id);
 		                }) })
 		              ] }) })
 		            ] }),
-		            stepOneBlocked ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("p", { className: "jh-warn", role: "alert", children: [
+		            stepOneBlocked ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("p", { className: "jh-warn", role: "alert", children: [
 		              nameMissing ? "\u5148\u586B\u65B9\u6848\u540D\u3002" : "",
 		              includedCount === 0 ? "\u81F3\u5C11\u7EB3\u5165\u4E00\u4E2A\u5E73\u53F0\u3002" : "",
 		              includedCount > 0 && enabledCount === 0 ? "\u81F3\u5C11\u7559\u4E00\u4E2A\u672A\u6682\u505C\u7684\u5E73\u53F0\u3002" : "",
 		              "\u8FD9\u4E24\u6761\u540C\u65F6\u4E5F\u662F\u4FDD\u5B58\u63A5\u53E3\u7684\u786C\u6027\u5224\u636E\u3002"
 		            ] }) : null
 		          ] }) : null,
-		          step === 1 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-field-label", children: [
+		          step === 1 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-field-label", children: [
 		                "\u5173\u952E\u8BCD\uFF08\u6BCF\u884C\u4E00\u4E2A\uFF0C\u6700\u591A ",
 		                String(PLAN_KEYWORDS_MAX),
 		                " \u4E2A\uFF09",
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                  FieldHint,
 		                  {
 		                    text: `\u9010\u4E2A\u91C7\u96C6\uFF1A\u7B2C 1 \u4E2A\u5173\u952E\u8BCD\u6293\u5B8C\u5B83\u7684\u9875\u6570\u518D\u6293\u7B2C 2 \u4E2A\uFF0C\u6BCF\u4E2A\u5173\u952E\u8BCD\u4E00\u6761\u72EC\u7ACB\u7684\u8FD0\u884C\u8BB0\u5F55\uFF08\u80FD\u770B\u5230\u300CJava 12 \u6761\u3001Go 3 \u6761\u300D\uFF09\u3002\u7559\u7A7A = \u4E0D\u6309\u5173\u952E\u8BCD\u7B5B\uFF08\u6309\u5E73\u53F0\u9ED8\u8BA4\u5217\u8868\u6293\uFF09\u3002\u6CE8\u610F\uFF1A\u81EA\u52A8\u8C03\u5EA6\u6309\u7AD9\u70B9\u8BBF\u95EE\u6B21\u6570\u8BA1\u6BCF\u65E5\u989D\u5EA6\uFF0CN \u4E2A\u5173\u952E\u8BCD = N \u6B21\uFF1B\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E0D\u5360\u989D\u5EA6\u3002`
 		                  }
 		                )
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                "textarea",
 		                {
 		                  className: "jh-textarea",
@@ -6527,22 +5883,22 @@ window.__ModuleLoader__.load({
 		                  onChange: (event) => patch({ keywordsText: event.target.value })
 		                }
 		              ),
-		              keywordCount === 0 ? null : keywordCount > PLAN_KEYWORDS_MAX ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-error", role: "alert", children: [
+		              keywordCount === 0 ? null : keywordCount > PLAN_KEYWORDS_MAX ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-error", role: "alert", children: [
 		                String(keywordCount),
 		                " \u4E2A\u5173\u952E\u8BCD\u8D85\u8FC7\u4E0A\u9650 ",
 		                String(PLAN_KEYWORDS_MAX),
 		                " \u2014\u2014 \u4FDD\u5B58\u4F1A\u88AB\u62D2\u3002 \u9700\u8981\u66F4\u591A\u5C31\u62C6\u6210\u4E24\u4E2A\u65B9\u6848\uFF08\u5404\u81EA\u7684\u989D\u5EA6\u4E0E\u65F6\u6BB5\u72EC\u7ACB\uFF09\u3002"
-		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-filter-note", children: [
+		              ] }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-filter-note", children: [
 		                String(keywordCount),
 		                " \u4E2A\u5173\u952E\u8BCD \xB7 \u4E00\u8F6E\u6309\u987A\u5E8F\u6293 ",
 		                String(keywordCount),
 		                " \u904D"
 		              ] })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-section-title", children: "\u7B5B\u9009\u6761\u4EF6" }),
-		            primaryItems.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u5DF2\u7EB3\u5165\u7684\u5E73\u53F0\u6CA1\u6709\u58F0\u660E\u4EFB\u4F55\u7B5B\u9009\u7EF4\u5EA6 \u2014\u2014 \u4FDD\u5B58\u540E\u5B83\u4EEC\u4F1A\u6309\u5E73\u53F0\u81EA\u5DF1\u7684\u9ED8\u8BA4\u5217\u8868\u6293\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-grid2", children: primaryItems.map(renderDimension) }),
-		            advancedItems.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-section-title", children: "\u7B5B\u9009\u6761\u4EF6" }),
+		            primaryItems.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-muted", children: "\u5DF2\u7EB3\u5165\u7684\u5E73\u53F0\u6CA1\u6709\u58F0\u660E\u4EFB\u4F55\u7B5B\u9009\u7EF4\u5EA6 \u2014\u2014 \u4FDD\u5B58\u540E\u5B83\u4EEC\u4F1A\u6309\u5E73\u53F0\u81EA\u5DF1\u7684\u9ED8\u8BA4\u5217\u8868\u6293\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-grid2", children: primaryItems.map(renderDimension) }),
+		            advancedItems.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		                "button",
 		                {
 		                  type: "button",
@@ -6551,9 +5907,9 @@ window.__ModuleLoader__.load({
 		                  "aria-controls": "jh-plan-advanced",
 		                  onClick: () => setAdvancedOpen((open) => !open),
 		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-plan-caret", "aria-hidden": "true", children: advancedOpen ? "\u25BE" : "\u25B8" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-plan-toggle-text", children: "\u9AD8\u7EA7\u7B5B\u9009" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-plan-caret", "aria-hidden": "true", children: advancedOpen ? "\u25BE" : "\u25B8" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-plan-toggle-text", children: "\u9AD8\u7EA7\u7B5B\u9009" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                      "span",
 		                      {
 		                        className: `jh-filter-note${advancedActiveCount > 0 ? " jh-filter-note-on" : ""}`,
@@ -6563,20 +5919,20 @@ window.__ModuleLoader__.load({
 		                  ]
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-plan-panel", id: "jh-plan-advanced", hidden: !advancedOpen, children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-grid2", children: advancedItems.map(renderDimension) }) })
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-plan-panel", id: "jh-plan-advanced", hidden: !advancedOpen, children: /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-grid2", children: advancedItems.map(renderDimension) }) })
 		            ] })
 		          ] }) : null,
-		          step === 2 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("fieldset", { className: "jh-fieldset", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("legend", { children: [
+		          step === 2 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("fieldset", { className: "jh-fieldset", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("legend", { children: [
 		                "\u5B9A\u65F6",
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u89E6\u53D1\u65F6\u523B\u4F1A\u5728\u8FD9\u6BB5\u65F6\u95F4\u5185\u968F\u673A\u9009\u70B9\uFF0C\u5177\u4F53\u5230\u54EA\u4E00\u5206\u949F\u4E0D\u56FA\u5B9A \u2014\u2014 \u6BCF\u5929\u56FA\u5B9A\u540C\u4E00\u5206\u949F\u53BB\u8BBF\u95EE\u6700\u5BB9\u6613\u88AB\u5E73\u53F0\u8BC6\u522B\u6210\u81EA\u52A8\u5316\u3002\u8FD9\u91CC\u523B\u610F\u6CA1\u6709\u300C\u7CBE\u786E\u5230\u67D0\u5206\u67D0\u79D2\u300D\u7684\u9009\u9879\u3002\u4E00\u5929\u90FD\u4E0D\u9009\u8FD0\u884C\u65E5\u7B49\u4E8E\u6BCF\u5929\u90FD\u8DD1\uFF1B\u65F6\u6BB5\u8DE8\u96F6\u70B9\u4E5F\u53EF\u4EE5\uFF08\u4F8B\u5982 22:00 \u81F3 02:00\uFF09\u3002" })
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(FieldHint, { text: "\u89E6\u53D1\u65F6\u523B\u4F1A\u5728\u8FD9\u6BB5\u65F6\u95F4\u5185\u968F\u673A\u9009\u70B9\uFF0C\u5177\u4F53\u5230\u54EA\u4E00\u5206\u949F\u4E0D\u56FA\u5B9A \u2014\u2014 \u6BCF\u5929\u56FA\u5B9A\u540C\u4E00\u5206\u949F\u53BB\u8BBF\u95EE\u6700\u5BB9\u6613\u88AB\u5E73\u53F0\u8BC6\u522B\u6210\u81EA\u52A8\u5316\u3002\u8FD9\u91CC\u523B\u610F\u6CA1\u6709\u300C\u7CBE\u786E\u5230\u67D0\u5206\u67D0\u79D2\u300D\u7684\u9009\u9879\u3002\u4E00\u5929\u90FD\u4E0D\u9009\u8FD0\u884C\u65E5\u7B49\u4E8E\u6BCF\u5929\u90FD\u8DD1\uFF1B\u65F6\u6BB5\u8DE8\u96F6\u70B9\u4E5F\u53EF\u4EE5\uFF08\u4F8B\u5982 22:00 \u81F3 02:00\uFF09\u3002" })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-schedule-row", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-field-label", children: "\u504F\u597D\u65F6\u6BB5" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-timerange", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-schedule-row", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-field-label", children: "\u504F\u597D\u65F6\u6BB5" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-timerange", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input jh-time",
@@ -6591,8 +5947,8 @@ window.__ModuleLoader__.load({
 		                        }
 		                      }
 		                    ),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-timerange-sep", children: "\u81F3" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-timerange-sep", children: "\u81F3" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input jh-time",
@@ -6609,9 +5965,9 @@ window.__ModuleLoader__.load({
 		                    )
 		                  ] })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-field-label", children: "\u8FD0\u884C\u65E5" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "jh-segmented", role: "group", "aria-label": "\u8FD0\u884C\u65E5", children: ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"].map((label, day) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-field-label", children: "\u8FD0\u884C\u65E5" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-segmented", role: "group", "aria-label": "\u8FD0\u884C\u65E5", children: ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"].map((label, day) => /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -6631,11 +5987,11 @@ window.__ModuleLoader__.load({
 		                  )) })
 		                ] })
 		              ] }),
-		              startMissing || endMissing ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-warn", id: "jh-window-error", role: "alert", children: "\u65F6\u6BB5\u6CA1\u586B\u5B8C\u6574\uFF0C\u4FDD\u5B58\u65F6\u4F1A\u9000\u56DE\u9ED8\u8BA4\u7684 09:00\u201311:00\u3002" }) : null,
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-chips jh-presets", children: [
+		              startMissing || endMissing ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-warn", id: "jh-window-error", role: "alert", children: "\u65F6\u6BB5\u6CA1\u586B\u5B8C\u6574\uFF0C\u4FDD\u5B58\u65F6\u4F1A\u9000\u56DE\u9ED8\u8BA4\u7684 09:00\u201311:00\u3002" }) : null,
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-chips jh-presets", children: [
 		                WEEKDAY_PRESETS.map((preset) => {
 		                  const active = form.weekdays.join(",") === preset.days.join(",");
-		                  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                  return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                    "button",
 		                    {
 		                      type: "button",
@@ -6648,13 +6004,13 @@ window.__ModuleLoader__.load({
 		                    preset.key
 		                  );
 		                }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { className: "jh-muted", children: [
 		                  "\u5F53\u524D\uFF1A",
 		                  form.weekdays.length === 0 ? "\u6BCF\u5929" : formatWeekdays(form.weekdays)
 		                ] })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "jh-check", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "jh-check", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                  "input",
 		                  {
 		                    type: "checkbox",
@@ -6664,9 +6020,9 @@ window.__ModuleLoader__.load({
 		                ),
 		                "\u542F\u7528\u5B9A\u65F6"
 		              ] }),
-		              startClock === null || endClock === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-info", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { children: [
+		              startClock === null || endClock === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-info", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { children: [
 		                  "\u6267\u884C\u9891\u6B21\uFF1A",
 		                  form.weekdays.length === 0 ? "\u6BCF\u5929" : formatWeekdays(form.weekdays),
 		                  " ",
@@ -6675,19 +6031,19 @@ window.__ModuleLoader__.load({
 		                ] })
 		              ] })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("fieldset", { className: "jh-fieldset", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("legend", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("fieldset", { className: "jh-fieldset", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("legend", { children: [
 		                "\u6293\u53D6\u540E\u5904\u7406",
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u4E09\u9879\u9ED8\u8BA4\u5168\u5F00\u3002\u5173\u6389\u6253\u5206\u540E\u4E0D\u518D\u5199\u5339\u914D\u5206\uFF1B\u5173\u6389\u6807\u6CE8\u540E\u4E0D\u518D\u4EA7\u51FA\u98CE\u9669/\u9ED1\u8BDD\u6807\u8BB0\uFF1B\u8DE8\u5E73\u53F0\u53BB\u91CD\u8981\u6709\u591A\u4E2A\u5E73\u53F0\u624D\u751F\u6548\u3002" })
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(FieldHint, { text: "\u4E09\u9879\u9ED8\u8BA4\u5168\u5F00\u3002\u5173\u6389\u6253\u5206\u540E\u4E0D\u518D\u5199\u5339\u914D\u5206\uFF1B\u5173\u6389\u6807\u6CE8\u540E\u4E0D\u518D\u4EA7\u51FA\u98CE\u9669/\u9ED1\u8BDD\u6807\u8BB0\uFF1B\u8DE8\u5E73\u53F0\u53BB\u91CD\u8981\u6709\u591A\u4E2A\u5E73\u53F0\u624D\u751F\u6548\u3002" })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-chips", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		              /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-chips", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		                  "label",
 		                  {
 		                    className: "jh-check",
 		                    title: "\u7B97\u51FA\u300C\u8FD9\u4E2A\u5C97\u4F4D\u8DDF\u4F60\u7B80\u5386\u6709\u591A\u5339\u914D\u300D\u5E76\u7ED9\u51FA\u9010\u6761\u7406\u7531\u3002\u5173\u6389\u540E\u5C97\u4F4D\u5E93\u91CC\u4E0D\u518D\u663E\u793A\u5339\u914D\u5206\u3002",
 		                    children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                        "input",
 		                        {
 		                          type: "checkbox",
@@ -6699,13 +6055,13 @@ window.__ModuleLoader__.load({
 		                    ]
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		                  "label",
 		                  {
 		                    className: "jh-check",
 		                    title: "\u8BC6\u522B\u300C\u7591\u4F3C\u5916\u5305 / \u9AD8\u98CE\u9669 / \u50F5\u5C38\u5C97\u4F4D / \u85AA\u8D44\u865A\u6807 / \u884C\u4E1A\u9ED1\u8BDD\u300D\u5E76\u6807\u51FA\u6765\u3002",
 		                    children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                        "input",
 		                        {
 		                          type: "checkbox",
@@ -6717,13 +6073,13 @@ window.__ModuleLoader__.load({
 		                    ]
 		                  }
 		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
+		                /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
 		                  "label",
 		                  {
 		                    className: "jh-check",
 		                    title: "\u540C\u4E00\u4E2A\u5C97\u4F4D\u51FA\u73B0\u5728\u591A\u4E2A\u62DB\u8058\u5E73\u53F0\u65F6\u5408\u5E76\u6210\u4E00\u6761\u3002\u53EA\u7EB3\u5165\u4E00\u4E2A\u5E73\u53F0\u65F6\u5B83\u4E0D\u4F1A\u751F\u6548\u3002",
 		                    children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		                      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
 		                        "input",
 		                        {
 		                          type: "checkbox",
@@ -6743,11 +6099,15 @@ window.__ModuleLoader__.load({
 		    }
 		  );
 		}
+
+		// src/client/screens/collect/dedup-groups-card.tsx
+		var import_react13 = require("react");
+		var import_jsx_runtime22 = require("react/jsx-runtime");
 		function DedupGroupsCard(props) {
 		  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision]);
-		  const [busyId, setBusyId] = (0, import_react11.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react11.useState)(null);
-		  const [error, setError] = (0, import_react11.useState)(null);
+		  const [busyId, setBusyId] = (0, import_react13.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react13.useState)(null);
+		  const [error, setError] = (0, import_react13.useState)(null);
 		  const act = async (id, fn) => {
 		    setBusyId(id);
 		    setError(null);
@@ -6762,21 +6122,21 @@ window.__ModuleLoader__.load({
 		  };
 		  const items = groups.state.status === "ok" ? groups.state.data.items : [];
 		  const total = groups.state.status === "ok" ? groups.state.data.count : 0;
-		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u8DE8\u5E73\u53F0\u53BB\u91CD" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u540C\u4E00\u5C97\u4F4D\u88AB\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u5408\u5E76\u5230\u540C\u4E00\u7EC4\uFF0C\u4F9D\u636E\u662F\u8DE8\u5E73\u53F0 + \u540C\u516C\u53F8\u540C\u57CE + \u85AA\u8D44\u4E0D\u51B2\u7A81 + \u6807\u9898\u76F8\u4F3C\u3002\u5408\u5E76\u662F\u53EF\u9006\u7684\uFF1A\u8BEF\u5408\u5E76\u968F\u65F6\u53EF\u4EE5\u5728\u4E0B\u9762\u62C6\u5F00\u3002\u8865\u505A\u4E00\u6B21\u5168\u5E93\u590D\u6838\u7528\u9876\u90E8\u7684\u300C\u8FD0\u884C\u5168\u5E93\u53BB\u91CD\u300D\u3002" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("section", { className: "jh-card", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "jh-form-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h2", { className: "jh-card-title", children: "\u8DE8\u5E73\u53F0\u53BB\u91CD" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(FieldHint, { text: "\u540C\u4E00\u5C97\u4F4D\u88AB\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u5408\u5E76\u5230\u540C\u4E00\u7EC4\uFF0C\u4F9D\u636E\u662F\u8DE8\u5E73\u53F0 + \u540C\u516C\u53F8\u540C\u57CE + \u85AA\u8D44\u4E0D\u51B2\u7A81 + \u6807\u9898\u76F8\u4F3C\u3002\u5408\u5E76\u662F\u53EF\u9006\u7684\uFF1A\u8BEF\u5408\u5E76\u968F\u65F6\u53EF\u4EE5\u5728\u4E0B\u9762\u62C6\u5F00\u3002\u8865\u505A\u4E00\u6B21\u5168\u5E93\u590D\u6838\u7528\u9876\u90E8\u7684\u300C\u8FD0\u884C\u5168\u5E93\u53BB\u91CD\u300D\u3002" })
 		    ] }),
-		    error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", role: "alert", children: error }),
-		    groups.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", children: "\u6B63\u5728\u8BFB\u53D6\u53BB\u91CD\u5206\u7EC4\u2026" }) : items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u76EE\u524D\u6CA1\u6709\u53BB\u91CD\u5206\u7EC4\u3002\u591A\u5E73\u53F0\u540C\u65F6\u5728\u6293\u540C\u4E00\u6279\u5C97\u4F4D\u65F6\uFF0C\u91CD\u590D\u7684\u90A3\u51E0\u6761\u624D\u4F1A\u88AB\u5408\u5E76\u5230\u8FD9\u91CC\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-tailor-notes", children: items.map((group) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
+		    error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "jh-error", role: "alert", children: error }),
+		    groups.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "jh-muted", "aria-busy": "true", children: "\u6B63\u5728\u8BFB\u53D6\u53BB\u91CD\u5206\u7EC4\u2026" }) : items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "jh-muted", children: "\u76EE\u524D\u6CA1\u6709\u53BB\u91CD\u5206\u7EC4\u3002\u591A\u5E73\u53F0\u540C\u65F6\u5728\u6293\u540C\u4E00\u6279\u5C97\u4F4D\u65F6\uFF0C\u91CD\u590D\u7684\u90A3\u51E0\u6761\u624D\u4F1A\u88AB\u5408\u5E76\u5230\u8FD9\u91CC\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("ul", { className: "jh-tailor-notes", children: items.map((group) => /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("li", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("span", { className: "jh-muted", children: [
 		        "\u7EC4 #",
 		        group.id,
 		        "\uFF08",
 		        group.basis,
 		        "\uFF09"
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -6786,7 +6146,7 @@ window.__ModuleLoader__.load({
 		          children: "\u62C6\u7EC4"
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-tailor-notes", children: group.members.map((member) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("ul", { className: "jh-tailor-notes", children: group.members.map((member) => /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("li", { children: [
 		        "\xB7 ",
 		        member.isPrimary ? "\u4E3B" : "\u4ECE",
 		        "\uFF5C",
@@ -6798,7 +6158,7 @@ window.__ModuleLoader__.load({
 		        "(",
 		        member.city,
 		        ")",
-		        member.isPrimary ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        member.isPrimary ? null : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -6810,22 +6170,22 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }, member.id)) })
 		    ] }, group.id)) }),
-		    total > items.length ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("p", { className: "jh-muted", children: [
+		    total > items.length ? /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("p", { className: "jh-muted", children: [
 		      "\u5171 ",
 		      total,
 		      " \u7EC4\uFF0C\u8FD9\u91CC\u5217\u51FA\u6700\u65B0\u7684 ",
 		      items.length,
 		      " \u7EC4\u3002"
 		    ] }) : null,
-		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
 		      Modal,
 		      {
 		        title: "\u62C6\u6563\u8FD9\u4E2A\u53BB\u91CD\u7EC4",
 		        label: "\u62C6\u7EC4\u786E\u8BA4",
 		        onClose: () => setPendingDelete(null),
-		        footer: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(import_jsx_runtime14.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: () => setPendingDelete(null), children: "\u53D6\u6D88" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        footer: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(import_jsx_runtime22.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: () => setPendingDelete(null), children: "\u53D6\u6D88" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -6840,14 +6200,689 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        children: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-alert-body", children: "\u62C6\u7EC4\u540E\u8FD9\u7EC4\u91CC\u7684\u5C97\u4F4D\u5168\u90E8\u53D8\u56DE\u72EC\u7ACB\u5C97\u4F4D\u3002**\u5C97\u4F4D\u672C\u8EAB\u4E0D\u4F1A\u5220** \u2014\u2014 \u53EA\u662F\u60F3\u64A4\u9500\u4E00\u6B21\u5408\u5E76\u5224\u65AD\u3002" })
+		        children: /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "jh-alert-body", children: "\u62C6\u7EC4\u540E\u8FD9\u7EC4\u91CC\u7684\u5C97\u4F4D\u5168\u90E8\u53D8\u56DE\u72EC\u7ACB\u5C97\u4F4D\u3002**\u5C97\u4F4D\u672C\u8EAB\u4E0D\u4F1A\u5220** \u2014\u2014 \u53EA\u662F\u60F3\u64A4\u9500\u4E00\u6B21\u5408\u5E76\u5224\u65AD\u3002" })
+		      }
+		    )
+		  ] });
+		}
+
+		// src/client/screens/collect.tsx
+		var import_jsx_runtime23 = require("react/jsx-runtime");
+		var IDLE = { running: false, tone: "ok", message: null };
+		var COLLECT_TABS = [
+		  { key: "dashboard", label: "\u8FD0\u884C\u4EEA\u8868\u76D8" },
+		  { key: "plans", label: "\u65B9\u6848\u7BA1\u7406" },
+		  { key: "diagnostics", label: "\u8BCA\u65AD\u4E0E\u660E\u7EC6" }
+		];
+		function CollectScreen(props) {
+		  const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision]);
+		  const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision]);
+		  const plans = useAsync((signal) => fetchPlans(signal), [props.revision]);
+		  const reasons = useAsync((signal) => fetchSkipReasons(signal), [props.revision]);
+		  const dimensions = useAsync((signal) => fetchCriteriaDimensions([], signal), [props.revision]);
+		  const [feedback, setFeedback] = (0, import_react14.useState)(IDLE);
+		  const [editing, setEditing] = (0, import_react14.useState)(null);
+		  const [duplicates, setDuplicates] = (0, import_react14.useState)([]);
+		  const [notices, setNotices] = (0, import_react14.useState)([]);
+		  const [errorDetail, setErrorDetail] = (0, import_react14.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react14.useState)(null);
+		  const [tab, setTab] = (0, import_react14.useState)("dashboard");
+		  const [expandedPlatform, setExpandedPlatform] = (0, import_react14.useState)(null);
+		  const [focusPlanId, setFocusPlanId] = (0, import_react14.useState)(null);
+		  const [dedupRevision, setDedupRevision] = (0, import_react14.useState)(0);
+		  const report = (error) => {
+		    setFeedback({
+		      running: false,
+		      tone: "error",
+		      message: error instanceof ApiError ? error.display : String(error)
+		    });
+		  };
+		  const reload = () => {
+		    scheduler.reload();
+		    platforms.reload();
+		    plans.reload();
+		    dimensions.reload();
+		  };
+		  const act = async (pending2, run) => {
+		    setFeedback({ running: true, tone: "ok", message: pending2 });
+		    try {
+		      const done = await run();
+		      setFeedback({ running: false, tone: "ok", message: done });
+		      reload();
+		    } catch (error) {
+		      report(error);
+		    }
+		  };
+		  const status = scheduler.state.status === "ok" ? scheduler.state.data : null;
+		  const planList = plans.state.status === "ok" ? plans.state.data.items : [];
+		  const platformList = platforms.state.status === "ok" ? platforms.state.data.items : [];
+		  const plansLoading = plans.state.status === "loading";
+		  const platformsLoading = platforms.state.status === "loading";
+		  const runsLoading = scheduler.state.status === "loading";
+		  const reasonText = reasons.state.status === "ok" ? reasons.state.data.items : {};
+		  const dimensionList = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
+		  const now = (0, import_react14.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const story = status === null ? null : scheduleStoryOf(status, now);
+		  const login = (platformId) => act("\u5DF2\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u8BF7\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\uFF08\u6BCF 3 \u79D2\u68C0\u6D4B\u4E00\u6B21\uFF09", async () => {
+		    const result = await startLogin(platformId);
+		    return result.message ?? "\u767B\u5F55\u5F15\u5BFC\u5DF2\u542F\u52A8";
+		  });
+		  const trigger = (plan) => act("\u6B63\u5728\u6309\u65B9\u6848\u91C7\u96C6\u2026\uFF08\u4F1A\u6253\u5F00\u4E00\u4E2A\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09", async () => {
+		    const summary = await runPlan(plan.id);
+		    return `\u65B9\u6848\u300C${plan.name}\u300D\u672C\u8F6E ${CRAWL_STATE_LABEL[summary.run.state]}\uFF1A\u547D\u4E2D ${String(summary.run.found)} \xB7 \u65B0\u589E ${String(summary.run.inserted)} \xB7 \u66F4\u65B0 ${String(summary.run.updated)} \xB7 \u9694\u79BB ${String(summary.run.quarantined)}`;
+		  });
+		  const reasonFor = (skipReason) => skipReason === null ? null : reasonText[skipReason] ?? skipReason;
+		  const platformNameOf = (id) => platformList.find((item) => item.id === id)?.displayName ?? null;
+		  const confirmDelete = async (plan) => {
+		    setPendingDelete(null);
+		    await act("\u6B63\u5728\u5220\u9664\u2026", async () => {
+		      await deletePlan(plan.id);
+		      return `\u5DF2\u5220\u9664\u65B9\u6848\u300C${plan.name}\u300D\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002`;
+		    });
+		  };
+		  const runBlockTitle = status?.readOnly === true ? `\u672C\u7A97\u53E3\u6CA1\u6709\u91C7\u96C6\u6743\u3002\u7528\u300C\u63A5\u7BA1\u8C03\u5EA6\u300D\uFF0C\u6216\u5230\u53E6\u4E00\u4E2A\u7A97\u53E3\uFF08\u8FDB\u7A0B ${String(status.lease.pid ?? "?")}\uFF09\u91CC\u64CD\u4F5C\u3002` : feedback.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u73B0\u5728\u6309\u8FD9\u4E2A\u65B9\u6848\u91C7\u96C6\u4E00\u6B21\uFF08\u4F1A\u6253\u5F00\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09\u3002";
+		  const scheduledPlan = planList.find((plan) => plan.enabled && plan.schedule.enabled);
+		  const focusedPlan = planList.find((plan) => plan.id === focusPlanId) ?? scheduledPlan ?? planList[0];
+		  const runBlocked = feedback.running || (status?.readOnly ?? false);
+		  const toggleSchedule = () => {
+		    if (status === null) return;
+		    const next = !status.paused;
+		    void act(next ? "\u6B63\u5728\u6682\u505C\u5B9A\u65F6\u2026" : "\u6B63\u5728\u6062\u590D\u5B9A\u65F6\u2026", async () => {
+		      await setSchedulePaused(next);
+		      return next ? "\u5DF2\u6682\u505C**\u5B9A\u65F6**\u6293\u53D6\u3002\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4ECD\u7136\u53EF\u7528\u3002" : "\u5DF2\u6062\u590D\u5B9A\u65F6\u6293\u53D6\u3002";
+		    });
+		  };
+		  const recheck = () => void act("\u6B63\u5728\u91CD\u65B0\u68C0\u6D4B\u2026", async () => {
+		    const next = await recheckLease();
+		    return next.lease.held ? "\u5DF2\u7ECF\u62FF\u5230\u8C03\u5EA6\u6743\uFF0C\u672C\u7A97\u53E3\u73B0\u5728\u8D1F\u8D23\u91C7\u96C6\u3002" : "\u90A3\u4E2A\u7A97\u53E3\u8FD8\u5728\u8FD0\u884C\uFF0C\u672C\u7A97\u53E3\u4ECD\u662F\u53EA\u8BFB\u3002";
+		  });
+		  const sweep = () => void act("\u6B63\u5728\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u5168\u5E93\u2026", async () => {
+		    const result = await runDedupSweep();
+		    setDedupRevision((value) => value + 1);
+		    return `\u770B\u8FC7 ${String(result.scanned)} \u6761` + (result.skippedGrouped > 0 ? `\uFF08\u8DF3\u8FC7\u5DF2\u5728\u5206\u7EC4\u91CC\u7684 ${String(result.skippedGrouped)} \u6761\uFF09` : "") + `\uFF1A\u5408\u5E76 ${String(result.merged)} \u6761\u3001\u65B0\u5EFA ${String(result.newGroups)} \u7EC4\uFF0C\u73B0\u5728\u5171 ${String(result.groups)} \u7EC4\u3002` + (result.candidates > 0 ? `\u53E6\u6709 ${String(result.candidates)} \u6761\u7591\u4F3C\u91CD\u590D\u6CA1\u81EA\u52A8\u5408\u5E76\uFF08\u6807\u9898\u76F8\u4F3C\u5EA6\u4E0D\u591F\uFF09\u2014\u2014 \u9700\u8981\u4EBA\u5DE5\u770B\u4E00\u773C\u3002` : "");
+		  });
+		  return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-screen", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-collect-bar", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("nav", { className: "jh-modes", "aria-label": "\u91C7\u96C6\u5206\u533A", children: COLLECT_TABS.map((item) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: `jh-mode${tab === item.key ? " jh-mode-active" : ""}`,
+		          "aria-current": tab === item.key ? "page" : void 0,
+		          onClick: () => setTab(item.key),
+		          children: item.label
+		        },
+		        item.key
+		      )) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-spacer" }),
+		      status === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("span", { className: "jh-collect-switch", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		          "span",
+		          {
+		            className: `jh-status-dot ${status.paused ? "jh-status-dot-warn" : "jh-status-dot-on"}`,
+		            "aria-hidden": "true"
+		          }
+		        ),
+		        status.paused ? "\u5B9A\u65F6\u5DF2\u6682\u505C" : "\u5B9A\u65F6\u8FD0\u884C\u4E2D"
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "jh-btn jh-btn-inline jh-btn-primary",
+		          disabled: status === null || feedback.running,
+		          "aria-pressed": status === null ? void 0 : !status.paused,
+		          title: status?.paused === true ? "\u6062\u590D\u300C\u5230\u70B9\u81EA\u52A8\u8DD1\u300D\u3002\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E00\u76F4\u90FD\u80FD\u7528\u3002" : "\u53EA\u505C\u300C\u5230\u70B9\u81EA\u52A8\u8DD1\u300D\uFF1B\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E0D\u53D7\u5F71\u54CD\u3002",
+		          onClick: toggleSchedule,
+		          children: status?.paused === true ? "\u542F\u52A8\u8C03\u5EA6" : "\u6682\u505C\u8C03\u5EA6"
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "jh-btn jh-btn-inline",
+		          disabled: status === null || feedback.running,
+		          title: "\u7ACB\u523B\u518D\u68C0\u67E5\u4E00\u6B21\u8C03\u5EA6\u5F52\u5C5E\uFF08\u4E0D\u7528\u7B49 90 \u79D2\u5FC3\u8DF3\u8FC7\u671F\uFF09\u3002",
+		          onClick: recheck,
+		          children: "\u91CD\u65B0\u68C0\u6D4B\u7CFB\u7EDF"
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "jh-btn jh-btn-inline",
+		          disabled: feedback.running,
+		          title: "\u628A\u5168\u5E93\u5C97\u4F4D\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u4E00\u904D\uFF08\u8DE8\u5E73\u53F0 + \u540C\u516C\u53F8\u540C\u57CE + \u85AA\u8D44\u4E0D\u51B2\u7A81 + \u6807\u9898\u76F8\u4F3C\uFF09\u3002\u7528\u5728\u300C\u521A\u6253\u5F00\u53BB\u91CD\u5F00\u5173\u300D\u6216\u300C\u521A\u6539\u8FC7\u6293\u53D6\u8303\u56F4\u300D\u4E4B\u540E\u8865\u505A\u4E00\u6B21 \u2014\u2014 \u5426\u5219\u8981\u5E72\u7B49\u4E0B\u4E00\u8F6E\u6293\u53D6\uFF0C\u800C\u90A3\u4E00\u8F6E\u53EF\u80FD\u4E00\u6761\u65B0\u5C97\u4F4D\u90FD\u6CA1\u6709\u3002\u5408\u5E76\u662F\u53EF\u9006\u7684\u3002",
+		          onClick: sweep,
+		          children: "\u8FD0\u884C\u5168\u5E93\u53BB\u91CD"
+		        }
+		      )
+		    ] }),
+		    scheduler.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u8BFB\u4E0D\u5230\u91C7\u96C6\u72B6\u6001" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-error", children: scheduler.state.message }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { type: "button", className: "jh-btn", onClick: scheduler.reload, children: "\u91CD\u8BD5" })
+		    ] }),
+		    feedback.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
+		      "div",
+		      {
+		        className: `jh-card jh-card-tight jh-feedback ${feedback.tone === "error" ? "jh-card-error" : ""}`,
+		        role: "status",
+		        "aria-live": "polite",
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(InlineMd, { text: feedback.message }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-icon-btn jh-feedback-close",
+		              "aria-label": "\u5173\u95ED\u63D0\u793A",
+		              title: "\u5173\u95ED\u8FD9\u6761\u63D0\u793A",
+		              onClick: () => setFeedback(IDLE),
+		              children: "\xD7"
+		            }
+		          )
+		        ]
+		      }
+		    ),
+		    tab === "dashboard" ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		      status !== null ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		        StatusAlert,
+		        {
+		          status,
+		          planName: scheduledPlan?.name ?? null,
+		          running: feedback.running,
+		          onResume: () => void act("\u6B63\u5728\u6062\u590D\u5B9A\u65F6\u2026", async () => {
+		            await setSchedulePaused(false);
+		            return "\u5DF2\u6062\u590D\u5B9A\u65F6\u6293\u53D6\u3002";
+		          })
+		        }
+		      ) : null,
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "jh-collect-top", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-collect-grid", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("section", { className: "jh-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-form-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u8FD0\u884C\u72B6\u6001" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(FieldHint, { text: "\u8C01\u5728\u8C03\u5EA6\u3001\u4E0B\u6B21\u4EC0\u4E48\u65F6\u5019\u8DD1\u3001\u6709\u6CA1\u6709\u4E0B\u4E00\u6B21\u3002\u540C\u4E00\u53F0\u7535\u8111\u53EA\u5141\u8BB8\u4E00\u4E2A\u7A97\u53E3\u771F\u6B63\u53BB\u91C7\u96C6 \u2014\u2014 \u4E24\u4E2A\u7A97\u53E3\u540C\u65F6\u91C7\u96C6\u4F1A\u62A2\u540C\u4E00\u4EFD\u6D4F\u89C8\u5668\u767B\u5F55\u6001\u3002" })
+		          ] }),
+		          status === null || story === null ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8C03\u5EA6\u72B6\u6001\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("p", { className: `jh-story jh-story-${story.tone}`, children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { children: story.owner }),
+		              story.nextRun === null ? " \u2014\u2014 \u5F53\u524D\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848\u3002" : status.paused ? `\uFF1A\u6062\u590D\u540E\u5C06\u6309 ${story.nextRun} \u8FD0\u884C` : `\uFF1A${story.nextRun}`
+		            ] }),
+		            story.detail === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-note", children: story.detail }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		              LeasePanel,
+		              {
+		                status,
+		                now,
+		                running: feedback.running,
+		                onTakeover: () => void act("\u6B63\u5728\u63A5\u7BA1\u8C03\u5EA6\u2026", async () => {
+		                  await takeoverLease();
+		                  return "\u5DF2\u63A5\u7BA1\u8C03\u5EA6\uFF0C\u672C\u7A97\u53E3\u73B0\u5728\u8D1F\u8D23\u91C7\u96C6\u3002";
+		                })
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("ul", { className: "jh-kv", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("li", { children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Term, { term: "\u65B0\u9C9C\u5EA6", children: "\u4E0A\u6B21\u6210\u529F" }) }),
+		                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: status.lastRunAt === null ? "\u4ECE\u6765\u6CA1\u6709\u6210\u529F\u91C7\u96C6\u8FC7" : `${formatClock(new Date(status.lastRunAt))} \xB7 ${formatRelative(new Date(status.lastRunAt), now)}` })
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("li", { children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Term, { term: "\u65F6\u6BB5", children: "\u65F6\u533A" }) }),
+		                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { title: "\u6392\u7A0B\u6309\u8FD9\u53F0\u7535\u8111\u7684\u672C\u5730\u65F6\u95F4\u7B97\u3002\u6539\u4E86\u7CFB\u7EDF\u65F6\u533A\uFF0C\u4E0B\u4E00\u6B21\u5C31\u7B97\u5230\u65B0\u65F6\u533A\u4E0A\u3002", children: status.timezone })
+		              ] })
+		            ] })
+		          ] })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("section", { className: "jh-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-form-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u5F53\u524D\u751F\u6548\u65B9\u6848" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-spacer" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "jh-btn jh-btn-inline jh-btn-tiny",
+		                title: "\u53BB\u300C\u65B9\u6848\u7BA1\u7406\u300D\u5206\u533A\u65B0\u589E/\u7F16\u8F91/\u5220\u9664\u65B9\u6848\u3002",
+		                onClick: () => setTab("plans"),
+		                children: "\u7BA1\u7406\u65B9\u6848"
+		              }
+		            )
+		          ] }),
+		          plansLoading ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u65B9\u6848\u2026" }) : focusedPlan === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-empty", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u65B9\u6848\u3002" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-note", children: "\u65B9\u6848\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002\u53BB\u300C\u65B9\u6848\u7BA1\u7406\u300D\u5EFA\u7B2C\u4E00\u4E2A\u3002" })
+		          ] }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		            planList.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "jh-chips jh-plan-switch", children: planList.map((plan) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		              "button",
+		              {
+		                type: "button",
+		                className: `jh-chip${plan.id === focusedPlan.id ? " jh-chip-on" : ""}`,
+		                "aria-pressed": plan.id === focusedPlan.id,
+		                onClick: () => setFocusPlanId(plan.id),
+		                children: plan.name
+		              },
+		              plan.id
+		            )) }) : null,
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-head", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { className: "jh-plan-name", children: focusedPlan.name }),
+		              focusedPlan.id === scheduledPlan?.id ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-tag jh-tone-ok", children: "\u751F\u6548\u4E2D" }) : null,
+		              focusedPlan.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u505C\u7528" })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-meta", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: focusedPlan.platforms.join(" / ") }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(CriteriaLine, { plan: focusedPlan, dimensions: dimensionList })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-meta", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: focusedPlan.schedule.enabled ? `${formatWeekdays(focusedPlan.schedule.weekdays)} ${formatWindow(
+		                focusedPlan.schedule.windowStartHour,
+		                focusedPlan.schedule.windowStartMinute,
+		                focusedPlan.schedule.windowEndHour,
+		                focusedPlan.schedule.windowEndMinute
+		              )}` : "\u4E0D\u5B9A\u65F6" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("span", { children: [
+		                focusedPlan.postProcess.score ? "\u6253\u5206" : "\u4E0D\u6253\u5206",
+		                " \xB7",
+		                " ",
+		                focusedPlan.postProcess.flag ? "\u6807\u6CE8" : "\u4E0D\u6807\u6CE8",
+		                " \xB7",
+		                " ",
+		                focusedPlan.postProcess.dedup ? "\u53BB\u91CD" : "\u4E0D\u53BB\u91CD"
+		              ] })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-actions", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-primary",
+		                  disabled: runBlocked,
+		                  title: runBlockTitle,
+		                  onClick: () => void trigger(focusedPlan),
+		                  children: "\u7ACB\u5373\u91C7\u96C6"
+		                }
+		              ),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "jh-btn jh-btn-inline jh-btn-tiny",
+		                  disabled: feedback.running,
+		                  title: "\u6539\u8FD9\u4E2A\u65B9\u6848\u6293\u4EC0\u4E48\u3001\u6293\u591A\u6DF1\u3001\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
+		                  onClick: () => {
+		                    setDuplicates([]);
+		                    setEditing({ id: focusedPlan.id, form: formOf(focusedPlan) });
+		                  },
+		                  children: "\u7F16\u8F91"
+		                }
+		              )
+		            ] })
+		          ] })
+		        ] })
+		      ] }) }),
+		      status === null && !runsLoading ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-form-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u6700\u8FD1\u8FD0\u884C" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(FieldHint, { text: "\u6309\u5F00\u59CB\u65F6\u523B\u5012\u5E8F\uFF08\u65B0\u7684\u5728\u4E0A\u9762\uFF09\u3002\u547D\u4E2D=\u8FD9\u4E00\u8F6E\u6293\u5230\u591A\u5C11\u6761\uFF08\u60AC\u505C\u770B\u7FFB\u4E86\u51E0\u9875\uFF09\uFF1B\u65B0\u589E/\u66F4\u65B0=\u771F\u6B63\u5199\u8FDB\u5C97\u4F4D\u5E93\u7684\u91CF\uFF1B\u9694\u79BB=\u88AB\u5B57\u6BB5\u65AD\u8A00\u62E6\u4E0B\u3001\u8FDB\u4E86\u5F85\u4FEE\u961F\u5217\u7684\u6761\u6570\u3002\u5931\u8D25\u7684\u90A3\u4E00\u6B21\u4E0D\u7B97\u300C\u4E0A\u6B21\u6210\u529F\u300D\u2014\u2014 \u5931\u8D25\u4E0D\u4F1A\u8BA9\u6570\u636E\u53D8\u65B0\u3002\u70B9\u9519\u8BEF\u80F6\u56CA\u770B\u5B8C\u6574\u539F\u56E0\u4E0E\u6392\u67E5\u6B65\u9AA4\u3002" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		          RunHistoryTable,
+		          {
+		            runs: status === null ? [] : status.recentRuns,
+		            loading: runsLoading,
+		            reasonFor,
+		            platformName: platformNameOf,
+		            onOpenError: (run, failure) => setErrorDetail({ run, failure })
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-form-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u72B6\u6001\u603B\u89C8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(FieldHint, { text: "\u300C\u4ECA\u5929\u80FD\u8DD1\u300D\u7528\u7684\u662F\u4E0E\u8C03\u5EA6\u540C\u4E00\u4E2A\u524D\u7F6E\u6761\u4EF6\u5224\u5B9A \u2014\u2014 \u8FD9\u91CC\u5199\u7740\u300C\u53EF\u4EE5\u300D\u7684\u5E73\u53F0\uFF0C\u5230\u70B9\u771F\u7684\u4F1A\u8DD1\uFF1B\u5199\u7740\u539F\u56E0\u7684\uFF0C\u5C31\u662F\u5B83\u73B0\u5728\u88AB\u4EC0\u4E48\u62E6\u4F4F\u4E86\u3002\u70B9\u67D0\u4E00\u884C\u7684\u300C\u660E\u7EC6\u300D\u770B\u8BE5\u5E73\u53F0\u7684\u5B8C\u6574\u8BCA\u65AD\u3002" })
+		        ] }),
+		        platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-error", children: platforms.state.message }),
+		        platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u72B6\u6001\u2026" }) : platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-empty", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-note", children: "\u5E73\u53F0\u6765\u81EA\u9002\u914D\u5668\u6CE8\u518C\u8868\uFF1B\u5F53\u524D\u6CA1\u6709\u4EFB\u4F55\u9002\u914D\u5668\u88AB\u6CE8\u518C\uFF0C\u6240\u4EE5\u65E0\u6CD5\u91C7\u96C6\u3002" })
+		        ] }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		          PlatformMatrix,
+		          {
+		            items: platformList,
+		            reasonText,
+		            expandedId: expandedPlatform,
+		            onToggle: (id) => setExpandedPlatform((current) => current === id ? null : id),
+		            running: feedback.running,
+		            onLogin: login,
+		            onGoSettings: props.onGoSettings
+		          }
+		        )
+		      ] })
+		    ] }) : null,
+		    tab === "plans" ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-form-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u91C7\u96C6\u65B9\u6848" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline",
+		              disabled: feedback.running,
+		              title: "\u65B0\u5EFA\u4E00\u4E2A\u91C7\u96C6\u65B9\u6848\uFF1A\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
+		              onClick: () => {
+		                setDuplicates([]);
+		                setEditing({ id: "new", form: emptyForm() });
+		              },
+		              children: "\u65B0\u589E\u65B9\u6848"
+		            }
+		          )
+		        ] }),
+		        plansLoading ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("ul", { className: "jh-plan-list", "aria-busy": "true", "aria-live": "polite", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("li", { className: "jh-plan-card jh-skeleton-row", children: "\u6B63\u5728\u8BFB\u53D6\u65B9\u6848\u2026" }) }) : planList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-empty", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u65B9\u6848\u3002" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-note", children: "\u65B9\u6848\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002\u70B9\u53F3\u4E0A\u89D2\u300C\u65B0\u589E\u65B9\u6848\u300D\u5EFA\u7B2C\u4E00\u4E2A\u3002" })
+		        ] }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("ul", { className: "jh-plan-list", children: planList.map((plan) => {
+		          const planStatus = status?.planStatus.find((item) => item.planId === plan.id) ?? null;
+		          const decision = planStatus?.lastDecision ?? null;
+		          const platformDecisions = new Map(
+		            (planStatus?.platformDecisions ?? []).map((item) => [item.platformId, item.decision])
+		          );
+		          const blockedPlatforms = plan.platforms.filter(
+		            (id) => (platformDecisions.get(id)?.reason ?? null) !== null
+		          );
+		          const platformName = (id) => platformList.find((item) => item.id === id)?.displayName ?? id;
+		          return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("li", { className: "jh-plan-card", children: [
+		            planStatus?.riskPaused === true && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-banner jh-banner-error", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-banner-title", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Term, { term: "\u98CE\u63A7\u6682\u505C", children: "\u5DF2\u88AB\u6682\u505C\u81EA\u52A8\u91C7\u96C6" }) }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: planStatus.riskReason ?? "\u89E6\u53D1\u98CE\u63A7\u4FE1\u53F7\uFF0C\u5DF2\u505C\u6B62\u81EA\u52A8\u5C1D\u8BD5\u3002" })
+		            ] }),
+		            planStatus !== null && planStatus.backoffUntil !== null && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-banner jh-banner-warn", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("span", { className: "jh-banner-title", children: [
+		                "\u8FDE\u7EED\u5931\u8D25 ",
+		                planStatus.failStreak,
+		                " \u6B21\uFF0C\u6B63\u5728",
+		                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Term, { term: "\u9000\u907F", children: "\u9000\u907F" })
+		              ] }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("span", { children: [
+		                "\u6700\u65E9 ",
+		                formatClock(new Date(planStatus.backoffUntil)),
+		                " \u518D\u8BD5\u3002"
+		              ] })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-head", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { className: "jh-plan-name", children: plan.name }),
+		              planStatus === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		                FreshnessBadge,
+		                {
+		                  level: planStatus.freshness.level,
+		                  hours: planStatus.freshness.hoursSinceSuccess
+		                }
+		              ),
+		              plan.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u505C\u7528" })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-meta", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: plan.platforms.join(" / ") }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(CriteriaLine, { plan, dimensions: dimensionList })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-meta", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: plan.schedule.enabled ? `${formatWeekdays(plan.schedule.weekdays)} ${formatWindow(
+		                plan.schedule.windowStartHour,
+		                plan.schedule.windowStartMinute,
+		                plan.schedule.windowEndHour,
+		                plan.schedule.windowEndMinute
+		              )}` : "\u4E0D\u5B9A\u65F6" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("span", { children: [
+		                plan.postProcess.score ? "\u6253\u5206" : "\u4E0D\u6253\u5206",
+		                " \xB7",
+		                " ",
+		                plan.postProcess.flag ? "\u6807\u6CE8" : "\u4E0D\u6807\u6CE8",
+		                " \xB7",
+		                " ",
+		                plan.postProcess.dedup ? "\u53BB\u91CD" : "\u4E0D\u53BB\u91CD"
+		              ] })
+		            ] }),
+		            decision === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: decision.decision === "skipped" ? "jh-warn" : "jh-muted", children: decision.decision === "skipped" ? `\u4E0A\u6B21\u5230\u70B9\u6CA1\u8DD1\uFF1A${decision.message ?? decision.reason ?? "\u539F\u56E0\u672A\u77E5"}` : decision.decision === "ran" ? "\u4E0A\u6B21\u5230\u70B9\u8DD1\u4E86" : "\u8FD8\u5728\u7B49\u4E0B\u4E00\u4E2A\u65F6\u6BB5" }),
+		            blockedPlatforms.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-muted", children: [
+		              "\u5404\u5E73\u53F0\uFF1A",
+		              plan.platforms.map((id) => {
+		                const item = platformDecisions.get(id) ?? null;
+		                return item?.reason == null ? `${platformName(id)} \u6B63\u5E38` : `${platformName(id)}\uFF1A${item.message ?? item.reason}`;
+		              }).join(" \xB7 ")
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-plan-actions", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-primary",
+		                  disabled: runBlocked,
+		                  title: runBlockTitle,
+		                  onClick: () => void trigger(plan),
+		                  children: "\u7ACB\u5373\u91C7\u96C6"
+		                }
+		              ),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "jh-btn jh-btn-inline jh-btn-tiny",
+		                  disabled: feedback.running,
+		                  title: "\u6539\u8FD9\u4E2A\u65B9\u6848\u6293\u4EC0\u4E48\u3001\u6293\u591A\u6DF1\u3001\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
+		                  onClick: () => {
+		                    setDuplicates([]);
+		                    setEditing({ id: plan.id, form: formOf(plan) });
+		                  },
+		                  children: "\u7F16\u8F91"
+		                }
+		              ),
+		              planStatus?.riskPaused === true && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-warn",
+		                  disabled: feedback.running,
+		                  title: "\u786E\u8BA4\u73AF\u5883\u5DF2\u6062\u590D\u6B63\u5E38\uFF0C\u5141\u8BB8\u8FD9\u4E2A\u65B9\u6848\u91CD\u65B0\u88AB\u81EA\u52A8\u91C7\u96C6\u3002\u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\u3002",
+		                  onClick: () => void act("\u6B63\u5728\u6062\u590D\u2026", async () => {
+		                    await resumePlanRisk(plan.id);
+		                    return `\u65B9\u6848\u300C${plan.name}\u300D\u5DF2\u6062\u590D \u2014\u2014 \u8FD9\u4E00\u4E0B\u662F\u4F60\u786E\u8BA4\u7684\uFF0C\u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\u3002`;
+		                  }),
+		                  children: "\u786E\u8BA4\u6062\u590D"
+		                }
+		              ),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "jh-btn jh-btn-inline jh-btn-tiny jh-btn-danger-ghost",
+		                  disabled: feedback.running,
+		                  title: "\u5220\u9664\u8FD9\u4E2A\u65B9\u6848\uFF08\u4F1A\u5148\u8BA9\u4F60\u786E\u8BA4\uFF09\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002",
+		                  onClick: () => setPendingDelete(plan),
+		                  children: "\u5220\u9664"
+		                }
+		              )
+		            ] })
+		          ] }, plan.id);
+		        }) })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(DedupGroupsCard, { revision: props.revision + dedupRevision })
+		    ] }) : null,
+		    tab === "diagnostics" ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-form-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u5B9E\u9A8C\u914D\u7F6E\u4E0E\u80FD\u529B" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(FieldHint, { text: "\u6210\u719F\u5EA6 = \u8FD9\u4E2A\u9002\u914D\u5668\u9A8C\u8BC1\u5230\u4EC0\u4E48\u7A0B\u5EA6\uFF08\u6CE8\u518C\u8868\u91CC\u6709\u5E73\u53F0 \u2260 \u8FD9\u4E2A\u5E73\u53F0\u80FD\u7528\uFF09\u3002\u300C\u5DF2\u5B9E\u73B0\u300D= \u8FD9\u6761\u94FE\u8DEF\u6211\u4EEC\u5DF2\u7ECF\u5199\u4E86\uFF1B\u300C\u672A\u5B9E\u73B0\u300D= \u5E73\u53F0\u652F\u6301\u3001\u6211\u4EEC\u8FD8\u6CA1\u5199\uFF1B\u300C\u4E0D\u652F\u6301\u300D= \u5E73\u53F0\u672C\u8EAB\u6CA1\u6709\u8FD9\u4E2A\u80FD\u529B\u3002\u6293\u53D6\u9700\u767B\u5F55\u4E0E\u767B\u5F55\u68C0\u6D4B\u662F\u4E24\u4EF6\u4E8B\uFF1A\u524D\u8005\u662F\u5E73\u53F0\u4E8B\u5B9E\uFF0C\u540E\u8005\u662F\u672C\u673A\u6709\u6CA1\u6709\u505A\u767B\u5F55\u6001\u68C0\u6D4B\u3002" })
+		        ] }),
+		        platforms.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-error", children: platforms.state.message }),
+		        platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", "aria-busy": "true", "aria-live": "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u914D\u7F6E\u2026" }) : platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(CapabilityMatrix, { items: platformList })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-form-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-card-title", children: "\u5F02\u5E38\u65E5\u5FD7" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(FieldHint, { text: "\u53EA\u5217\u5931\u8D25\u4E0E\u88AB\u8DF3\u8FC7\u7684\u8F6E\u6B21 \u2014\u2014 \u6210\u529F\u7684\u90A3\u51E0\u8F6E\u5728\u300C\u8FD0\u884C\u4EEA\u8868\u76D8 \xB7 \u6700\u8FD1\u8FD0\u884C\u300D\u91CC\u3002\u70B9\u9519\u8BEF\u80F6\u56CA\u770B\u539F\u59CB\u4FE1\u606F\u4E0E\u6392\u67E5\u6B65\u9AA4\u3002" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		          RunLogCard,
+		          {
+		            runs: status === null ? [] : status.recentRuns,
+		            loading: runsLoading,
+		            reasonFor,
+		            platformName: platformNameOf,
+		            onOpenError: (run, failure) => setErrorDetail({ run, failure })
+		          }
+		        )
+		      ] })
+		    ] }) : null,
+		    editing === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		      PlanEditorModal,
+		      {
+		        planId: editing.id === "new" ? null : editing.id,
+		        initial: editing.form,
+		        available: platformList,
+		        duplicates,
+		        notices,
+		        running: feedback.running,
+		        onCancel: () => setEditing(null),
+		        onSubmit: async (form) => {
+		          setFeedback({ running: true, tone: "ok", message: "\u6B63\u5728\u4FDD\u5B58\u2026" });
+		          try {
+		            const input = writeOf(form);
+		            const result = editing.id === "new" ? await createPlan(input) : await updatePlan(editing.id, input);
+		            setDuplicates(result.duplicates);
+		            setNotices(result.notices);
+		            const verb = editing.id === "new" ? "\u5DF2\u521B\u5EFA" : "\u5DF2\u4FDD\u5B58";
+		            const tail = [];
+		            if (result.duplicates.length > 0) {
+		              tail.push(
+		                `\u4E0E ${result.duplicates.map((item) => `#${String(item.planId)}\u300C${item.name}\u300D`).join("\u3001")} \u6761\u4EF6\u91CD\u590D\uFF08**\u53EA\u63D0\u793A\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u5408\u5E76**\uFF09`
+		              );
+		            }
+		            if (result.notices.length > 0) tail.push(`\u53E6\u6709 ${String(result.notices.length)} \u6761\u63D0\u793A`);
+		            setFeedback({
+		              running: false,
+		              tone: "ok",
+		              message: `${verb}\u65B9\u6848\u300C${result.plan.name}\u300D\u3002${tail.length === 0 ? "" : `\u6CE8\u610F\uFF1A${tail.join("\uFF1B")}\u3002`}`
+		            });
+		            if (result.duplicates.length === 0 && result.notices.length === 0) setEditing(null);
+		            reload();
+		          } catch (error) {
+		            setFeedback(IDLE);
+		            throw error;
+		          }
+		        },
+		        onValidate: async (form) => {
+		          const input = writeOf(form);
+		          const result = editing.id === "new" ? await validatePlanDraft(input) : await validatePlan(editing.id, input);
+		          return { duplicates: result.duplicates, notices: result.notices };
+		        }
+		      },
+		      String(editing.id)
+		    ),
+		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
+		      Modal,
+		      {
+		        title: "\u5220\u9664\u91C7\u96C6\u65B9\u6848",
+		        label: "\u5220\u9664\u786E\u8BA4",
+		        onClose: () => setPendingDelete(null),
+		        footer: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-modal-foot-note jh-muted", children: "\u5220\u9664\u540E\u8FD9\u4E2A\u65B9\u6848\u4E0D\u4F1A\u518D\u81EA\u52A8\u91C7\u96C6\u3002" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline",
+		              onClick: () => setPendingDelete(null),
+		              children: "\u53D6\u6D88"
+		            }
+		          ),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-danger",
+		              disabled: feedback.running,
+		              onClick: () => void confirmDelete(pendingDelete),
+		              children: "\u786E\u8BA4\u5220\u9664"
+		            }
+		          )
+		        ] }),
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("p", { className: "jh-alert-body", children: [
+		            "\u5373\u5C06\u5220\u9664\u65B9\u6848\u300C",
+		            pendingDelete.name,
+		            "\u300D\uFF08",
+		            pendingDelete.platforms.join(" / "),
+		            "\uFF09\u3002"
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("ul", { className: "jh-note", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("li", { children: "\u8FD9\u4E2A\u65B9\u6848\u672C\u8EAB\u4E0E\u5176\u5B9A\u65F6\u914D\u7F6E\u4F1A\u88AB\u79FB\u9664\uFF0C\u4E0D\u4F1A\u518D\u6709\u81EA\u52A8\u91C7\u96C6\u3002" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("li", { children: "**\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4F1A\u4FDD\u7559** \u2014\u2014 \u5220\u9664\u65B9\u6848\u4E0D\u4F1A\u5220\u5C97\u4F4D\u5E93\u3002" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("li", { children: "\u60F3\u4FDD\u7559\u914D\u7F6E\u3001\u53EA\u662F\u6682\u65F6\u4E0D\u60F3\u81EA\u52A8\u8DD1\uFF1A\u6539\u7528\u300C\u7F16\u8F91 \xB7 \u5B9A\u65F6\u300D\u91CC\u7684\u300C\u542F\u7528\u5B9A\u65F6\u300D\u2014\u2014 \u5173\u6389\u5B83\u4E4B\u540E \u4ECD\u7136\u53EF\u4EE5\u70B9\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u624B\u52A8\u8DD1\u3002" })
+		          ] })
+		        ]
+		      }
+		    ),
+		    errorDetail === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
+		      Modal,
+		      {
+		        title: `\u8FD0\u884C\u5931\u8D25 \xB7 ${CRAWL_STATE_LABEL[errorDetail.run.state]}`,
+		        label: "\u8FD0\u884C\u5931\u8D25\u8BE6\u60C5",
+		        size: "lg",
+		        onClose: () => setErrorDetail(null),
+		        footer: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-quiet",
+		              onClick: () => setErrorDetail(null),
+		              children: "\u5173\u95ED"
+		            }
+		          ),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline",
+		              onClick: () => {
+		                setErrorDetail(null);
+		                props.onGoSettings();
+		              },
+		              children: "\u53BB\u8BBE\u7F6E\u770B\u8BCA\u65AD"
+		            }
+		          )
+		        ] }),
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("ul", { className: "jh-kv", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("li", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "\u5E73\u53F0" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("code", { children: errorDetail.run.platformId }) })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("li", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "\u5F00\u59CB\u65F6\u95F4" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: new Date(errorDetail.run.startedAt).toLocaleString() })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("li", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "\u7C7B\u522B" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: FAILURE_KIND_LABEL[errorDetail.failure.kind] })
+		            ] })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-note", children: errorDetail.failure.advice }),
+		          errorDetail.failure.detail === null ? null : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-note", children: "\u539F\u59CB\u4FE1\u606F\uFF08\u6280\u672F\u7EC6\u8282\uFF09\uFF1A" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("pre", { className: "jh-pre", children: errorDetail.failure.detail })
+		          ] })
+		        ]
 		      }
 		    )
 		  ] });
 		}
 
 		// src/client/screens/resumes.tsx
-		var import_react12 = require("react");
+		var import_react15 = require("react");
 
 		// src/shared/resume.ts
 		function emptyResumeContent(direction = "") {
@@ -6863,7 +6898,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes.tsx
-		var import_jsx_runtime15 = require("react/jsx-runtime");
+		var import_jsx_runtime24 = require("react/jsx-runtime");
 		function move(items, index, delta) {
 		  const target = index + delta;
 		  if (target < 0 || target >= items.length) return items;
@@ -6874,24 +6909,24 @@ window.__ModuleLoader__.load({
 		}
 		function ResumesScreen(props) {
 		  const list = useAsync((signal) => fetchResumes(signal), [props.revision]);
-		  const [selected, setSelected] = (0, import_react12.useState)(null);
-		  const [creating, setCreating] = (0, import_react12.useState)(false);
-		  const [query, setQuery] = (0, import_react12.useState)("");
-		  const [dirty, setDirty] = (0, import_react12.useState)(false);
-		  const [issuesById, setIssuesById] = (0, import_react12.useState)({});
+		  const [selected, setSelected] = (0, import_react15.useState)(null);
+		  const [creating, setCreating] = (0, import_react15.useState)(false);
+		  const [query, setQuery] = (0, import_react15.useState)("");
+		  const [dirty, setDirty] = (0, import_react15.useState)(false);
+		  const [issuesById, setIssuesById] = (0, import_react15.useState)({});
 		  const items = list.state.status === "ok" ? list.state.data.items : [];
-		  const shown = (0, import_react12.useMemo)(() => {
+		  const shown = (0, import_react15.useMemo)(() => {
 		    const key = query.trim().toLowerCase();
 		    if (key === "") return items;
 		    return items.filter(
 		      (item) => `${item.name} ${item.direction}`.toLowerCase().includes(key)
 		    );
 		  }, [items, query]);
-		  (0, import_react12.useEffect)(() => {
+		  (0, import_react15.useEffect)(() => {
 		    if (selected !== null || items.length === 0) return;
 		    setSelected((items.find((item) => item.isDefault) ?? items[0])?.id ?? null);
 		  }, [items, selected]);
-		  const loadIssues = (0, import_react12.useCallback)(
+		  const loadIssues = (0, import_react15.useCallback)(
 		    (id) => {
 		      if (issuesById[id] !== void 0) return;
 		      void fetchResume(id).then((detail) => {
@@ -6901,7 +6936,7 @@ window.__ModuleLoader__.load({
 		    },
 		    [issuesById]
 		  );
-		  const onCreate = (0, import_react12.useCallback)(async () => {
+		  const onCreate = (0, import_react15.useCallback)(async () => {
 		    setCreating(true);
 		    try {
 		      const created = await createResume({ name: "\u65B0\u7B80\u5386", direction: "", content: emptyResumeContent() });
@@ -6916,21 +6951,21 @@ window.__ModuleLoader__.load({
 		    if (dirty && !window.confirm("\u8FD9\u4E00\u7248\u8FD8\u6709\u672A\u4FDD\u5B58\u7684\u6539\u52A8\uFF0C\u5207\u8D70\u5C31\u4E22\u4E86\u3002\u786E\u5B9A\u5207\u6362\uFF1F")) return;
 		    setSelected(id);
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-screen jh-screen-wide", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-row-head", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { className: "jh-card-title", children: "\u7B80\u5386\u4E2D\u5FC3" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-muted", children: "\u6309\u65B9\u5411\u7EF4\u62A4 2\u20133 \u7248\u5C31\u591F\u4E86 \u2014\u2014 \u6BCF\u6295\u4E00\u4E2A\u5C97\u4F4D\u6539\u4E00\u6B21\u7B80\u5386\uFF0C\u9762\u8BD5\u65F6\u53CD\u800C\u8BB2\u4E0D\u4E00\u81F4\u3002" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-screen jh-screen-wide", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-row-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h2", { className: "jh-card-title", children: "\u7B80\u5386\u4E2D\u5FC3" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-muted", children: "\u6309\u65B9\u5411\u7EF4\u62A4 2\u20133 \u7248\u5C31\u591F\u4E86 \u2014\u2014 \u6BCF\u6295\u4E00\u4E2A\u5C97\u4F4D\u6539\u4E00\u6B21\u7B80\u5386\uFF0C\u9762\u8BD5\u65F6\u53CD\u800C\u8BB2\u4E0D\u4E00\u81F4\u3002" })
 		    ] }),
-		    list.state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u7B80\u5386\u2026" }),
-		    list.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-error", children: list.state.message }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("button", { type: "button", className: "jh-btn", onClick: list.reload, children: "\u91CD\u8BD5" })
+		    list.state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u7B80\u5386\u2026" }),
+		    list.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-error", children: list.state.message }),
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { type: "button", className: "jh-btn", onClick: list.reload, children: "\u91CD\u8BD5" })
 		    ] }),
-		    list.state.status === "ok" && items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-card", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u7B80\u5386\u3002\u5EFA\u4E00\u7248\u4E4B\u540E\uFF0C\u9644\u4EF6\uFF08PDF / Word\uFF09\u4E0E\u5C97\u4F4D\u5B9A\u5236\u90FD\u4F1A\u56F4\u7ED5\u5B83\u5DE5\u4F5C\u3002" }) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-resume-shell", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("aside", { className: "jh-resume-side", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-resume-side-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		    list.state.status === "ok" && items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "jh-card", children: /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u7B80\u5386\u3002\u5EFA\u4E00\u7248\u4E4B\u540E\uFF0C\u9644\u4EF6\uFF08PDF / Word\uFF09\u4E0E\u5C97\u4F4D\u5B9A\u5236\u90FD\u4F1A\u56F4\u7ED5\u5B83\u5DE5\u4F5C\u3002" }) }),
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-resume-shell", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("aside", { className: "jh-resume-side", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-resume-side-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "input",
 		            {
 		              className: "jh-input",
@@ -6940,7 +6975,7 @@ window.__ModuleLoader__.load({
 		              onChange: (event) => setQuery(event.target.value)
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -6951,11 +6986,11 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("ul", { className: "jh-resume-list", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("ul", { className: "jh-resume-list", children: [
 		          shown.map((item) => {
 		            const issues = issuesById[item.id];
 		            const active = selected === item.id;
-		            return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		            return /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
 		              "button",
 		              {
 		                type: "button",
@@ -6964,34 +6999,34 @@ window.__ModuleLoader__.load({
 		                "aria-current": active ? "true" : void 0,
 		                onClick: () => pick(item.id),
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-resume-item-top", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-resume-name", children: item.name }),
-		                    item.isDefault ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("i", { className: "jh-badge-on", children: "\u542F\u7528\u4E2D" }) : null
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-resume-item-top", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-resume-name", children: item.name }),
+		                    item.isDefault ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("i", { className: "jh-badge-on", children: "\u542F\u7528\u4E2D" }) : null
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-resume-sub", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-resume-sub", children: [
 		                    item.direction || "\u672A\u586B\u65B9\u5411",
 		                    " \xB7 ",
 		                    RESUME_LANGUAGE_LABEL[item.language],
 		                    item.state === "archived" ? " \xB7 \u5DF2\u5F52\u6863" : ""
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-resume-chips", children: [
-		                    item.counts.skills > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("i", { className: "jh-chip", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-resume-chips", children: [
+		                    item.counts.skills > 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("i", { className: "jh-chip", children: [
 		                      "\u6280\u80FD ",
 		                      item.counts.skills
 		                    ] }) : null,
-		                    item.counts.experiences > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("i", { className: "jh-chip", children: [
+		                    item.counts.experiences > 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("i", { className: "jh-chip", children: [
 		                      "\u7ECF\u5386 ",
 		                      item.counts.experiences
 		                    ] }) : null,
-		                    item.counts.projects > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("i", { className: "jh-chip", children: [
+		                    item.counts.projects > 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("i", { className: "jh-chip", children: [
 		                      "\u9879\u76EE ",
 		                      item.counts.projects
 		                    ] }) : null,
-		                    item.counts.files > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("i", { className: "jh-chip", children: [
+		                    item.counts.files > 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("i", { className: "jh-chip", children: [
 		                      "\u9644\u4EF6 ",
 		                      item.counts.files
 		                    ] }) : null,
-		                    item.issues > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		                    item.issues > 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
 		                      "i",
 		                      {
 		                        className: "jh-chip jh-chip-warn",
@@ -7004,20 +7039,20 @@ window.__ModuleLoader__.load({
 		                        ]
 		                      }
 		                    ) : null,
-		                    item.counts.skills === 0 && item.counts.experiences === 0 && item.issues === 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("i", { className: "jh-chip jh-chip-quiet", children: "\u8FD8\u662F\u7A7A\u7684" }) : null
+		                    item.counts.skills === 0 && item.counts.experiences === 0 && item.issues === 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("i", { className: "jh-chip jh-chip-quiet", children: "\u8FD8\u662F\u7A7A\u7684" }) : null
 		                  ] })
 		                ]
 		              }
 		            ) }, item.id);
 		          }),
-		          shown.length === 0 && items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("p", { className: "jh-muted", children: [
+		          shown.length === 0 && items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "jh-muted", children: [
 		            "\u6CA1\u6709\u5339\u914D\u300C",
 		            query,
 		            "\u300D\u7684\u7248\u672C\u3002"
 		          ] }) }) : null
 		        ] })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("section", { className: "jh-resume-work", children: selected === null ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-muted", children: "\u9009\u5DE6\u8FB9\u4E00\u7248\u7B80\u5386\u5F00\u59CB\u7F16\u8F91\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("section", { className: "jh-resume-work", children: selected === null ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-muted", children: "\u9009\u5DE6\u8FB9\u4E00\u7248\u7B80\u5386\u5F00\u59CB\u7F16\u8F91\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        ResumeWork,
 		        {
 		          id: selected,
@@ -7036,15 +7071,15 @@ window.__ModuleLoader__.load({
 		}
 		function ResumeWork(props) {
 		  const detail = useAsync((signal) => fetchResume(props.id, signal), [props.id]);
-		  const [draft, setDraft] = (0, import_react12.useState)(null);
-		  const [dirty, setDirty] = (0, import_react12.useState)(false);
-		  const [mode, setMode] = (0, import_react12.useState)("edit");
-		  const [busy, setBusy] = (0, import_react12.useState)(null);
-		  const [error, setError] = (0, import_react12.useState)(null);
-		  const [notice, setNotice] = (0, import_react12.useState)(null);
-		  const [template, setTemplate] = (0, import_react12.useState)("concise");
-		  const [split, setSplit] = (0, import_react12.useState)(55);
-		  const bodyRef = (0, import_react12.useRef)(null);
+		  const [draft, setDraft] = (0, import_react15.useState)(null);
+		  const [dirty, setDirty] = (0, import_react15.useState)(false);
+		  const [mode, setMode] = (0, import_react15.useState)("edit");
+		  const [busy, setBusy] = (0, import_react15.useState)(null);
+		  const [error, setError] = (0, import_react15.useState)(null);
+		  const [notice, setNotice] = (0, import_react15.useState)(null);
+		  const [template, setTemplate] = (0, import_react15.useState)("concise");
+		  const [split, setSplit] = (0, import_react15.useState)(55);
+		  const bodyRef = (0, import_react15.useRef)(null);
 		  const startDrag = (clientX, clientY) => {
 		    const body = bodyRef.current;
 		    if (body === null) return;
@@ -7061,14 +7096,14 @@ window.__ModuleLoader__.load({
 		    window.addEventListener("pointermove", move2);
 		    window.addEventListener("pointerup", stop);
 		  };
-		  (0, import_react12.useEffect)(() => {
+		  (0, import_react15.useEffect)(() => {
 		    if (detail.state.status === "ok") setDraft(detail.state.data);
 		  }, [detail.state]);
-		  (0, import_react12.useEffect)(() => {
+		  (0, import_react15.useEffect)(() => {
 		    props.onDirtyChange(dirty);
 		  }, [dirty, props]);
 		  const issues = detail.state.status === "ok" ? detail.state.data.issues : [];
-		  const run = (0, import_react12.useCallback)(
+		  const run = (0, import_react15.useCallback)(
 		    async (label, fn, done) => {
 		      setBusy(label);
 		      setError(null);
@@ -7088,7 +7123,7 @@ window.__ModuleLoader__.load({
 		    [props]
 		  );
 		  if (draft === null) {
-		    return detail.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-error", children: detail.state.message }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u2026" });
+		    return detail.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-error", children: detail.state.message }) : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u2026" });
 		  }
 		  const content = draft.content;
 		  const patchContent = (next) => {
@@ -7115,9 +7150,9 @@ window.__ModuleLoader__.load({
 		      }
 		    );
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-work-head", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-work-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "input",
 		        {
 		          className: "jh-input jh-editable",
@@ -7135,10 +7170,10 @@ window.__ModuleLoader__.load({
 		          }
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u270E" }),
-		      dirty ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-chip jh-chip-dirty", children: "\u6709\u672A\u4FDD\u5B58\u7684\u6539\u52A8" }) : null,
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-work-actions", children: [
-		        draft.isDefault ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-badge", children: "\u5F53\u524D\u542F\u7528" }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u270E" }),
+		      dirty ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-chip jh-chip-dirty", children: "\u6709\u672A\u4FDD\u5B58\u7684\u6539\u52A8" }) : null,
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-work-actions", children: [
+		        draft.isDefault ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-badge", children: "\u5F53\u524D\u542F\u7528" }) : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -7148,7 +7183,7 @@ window.__ModuleLoader__.load({
 		            children: "\u8BBE\u4E3A\u542F\u7528"
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -7158,7 +7193,7 @@ window.__ModuleLoader__.load({
 		            children: "\u590D\u5236"
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -7172,7 +7207,7 @@ window.__ModuleLoader__.load({
 		            children: "\u5220\u9664"
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -7183,7 +7218,7 @@ window.__ModuleLoader__.load({
 		            children: "\u5BFC\u51FA PDF"
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -7194,7 +7229,7 @@ window.__ModuleLoader__.load({
 		            children: "\u5BFC\u51FA Word"
 		          }
 		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -7206,26 +7241,26 @@ window.__ModuleLoader__.load({
 		        )
 		      ] })
 		    ] }),
-		    error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-error", children: error }),
-		    notice === null ? null : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-ok", children: notice }),
-		    issues.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: `jh-alert ${issues.some((issue) => issue.level === "error") ? "jh-alert-error" : "jh-alert-warn"}`, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-alert-title", children: [
+		    error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-error", children: error }),
+		    notice === null ? null : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-ok", children: notice }),
+		    issues.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: `jh-alert ${issues.some((issue) => issue.level === "error") ? "jh-alert-error" : "jh-alert-warn"}`, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-alert-title", children: [
 		        "\u4F53\u68C0\uFF1A",
 		        issues.length,
 		        " \u9879\u5F85\u5904\u7406"
 		      ] }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("ul", { className: "jh-issues", children: issues.map((issue, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("b", { children: issue.level === "error" ? "\u5FC5\u6539" : "\u5EFA\u8BAE" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("ul", { className: "jh-issues", children: issues.map((issue, index) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("b", { children: issue.level === "error" ? "\u5FC5\u6539" : "\u5EFA\u8BAE" }),
 		        " ",
 		        issue.message
 		      ] }, `${issue.at}-${String(index)}`)) })
 		    ] }),
-		    draft.language !== "en" ? null : /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-card jh-card-tight", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { className: "jh-card-title", children: "\u82F1\u6587\u4F53\u68C0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(EnglishCheckPanel, { resumeId: props.id })
+		    draft.language !== "en" ? null : /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { className: "jh-card-title", children: "\u82F1\u6587\u4F53\u68C0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(EnglishCheckPanel, { resumeId: props.id })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-work-modes", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-modes", role: "tablist", "aria-label": "\u89C6\u56FE\u6A21\u5F0F", children: [["edit", "\u7F16\u8F91"], ["split", "\u5206\u5C4F"], ["preview", "\u9884\u89C8"], ["files", "\u9644\u4EF6"]].map(([key, label]) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-work-modes", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "jh-modes", role: "tablist", "aria-label": "\u89C6\u56FE\u6A21\u5F0F", children: [["edit", "\u7F16\u8F91"], ["split", "\u5206\u5C4F"], ["preview", "\u9884\u89C8"], ["files", "\u9644\u4EF6"]].map(([key, label]) => /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -7237,21 +7272,21 @@ window.__ModuleLoader__.load({
 		        },
 		        key
 		      )) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-muted", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-muted", children: [
 		        mode === "edit" ? "\u5148\u628A\u5185\u5BB9\u586B\u5B8C\u6574\uFF1B\u5355\u6761\u6210\u679C\u6309\u56DE\u8F66\u53EF\u4EE5\u63A5\u7740\u52A0\u4E00\u6761\u3002" : null,
 		        mode === "split" ? "\u62D6\u52A8\u4E2D\u95F4\u90A3\u6761\u7070\u6761\u53EF\u4EE5\u8C03\u6574\u4E0A\u4E0B\u6BD4\u4F8B\u3002" : null,
 		        mode === "preview" ? "\u5BFC\u51FA\u6B63\u5728\u770B\u7684\u8FD9\u4E00\u7248\u3002" : null,
 		        mode === "files" ? "\u8FD9\u4E00\u7248\u751F\u6210\u8FC7\u7684\u9644\u4EF6\u90FD\u5728\u8FD9\u513F \u2014\u2014 \u53EA\u6709\u4F60\u663E\u5F0F\u5220\u9664\u624D\u4F1A\u6D88\u5931\u3002" : null
 		      ] })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: `jh-work-body jh-mode-${mode}`, ref: bodyRef, style: { "--jh-split": `${String(split)}%` }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-work-editor", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "jh-form-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-form-head", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { children: "\u57FA\u672C\u4FE1\u606F" }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid2", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u59D3\u540D" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: `jh-work-body jh-mode-${mode}`, ref: bodyRef, style: { "--jh-split": `${String(split)}%` }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-work-editor", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("section", { className: "jh-form-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "jh-form-head", children: /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { children: "\u57FA\u672C\u4FE1\u606F" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid2", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u59D3\u540D" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                "input",
 		                {
 		                  className: "jh-input",
@@ -7261,9 +7296,9 @@ window.__ModuleLoader__.load({
 		                }
 		              )
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u76EE\u6807\u5C97\u4F4D" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u76EE\u6807\u5C97\u4F4D" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                "input",
 		                {
 		                  className: "jh-input",
@@ -7274,10 +7309,10 @@ window.__ModuleLoader__.load({
 		              )
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid3", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u57CE\u5E02" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid3", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u57CE\u5E02" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                "input",
 		                {
 		                  className: "jh-input",
@@ -7287,9 +7322,9 @@ window.__ModuleLoader__.load({
 		                }
 		              )
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u5DE5\u4F5C\u5E74\u9650" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u5DE5\u4F5C\u5E74\u9650" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                "input",
 		                {
 		                  className: "jh-input",
@@ -7301,9 +7336,9 @@ window.__ModuleLoader__.load({
 		                }
 		              )
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u5E74\u9F84\uFF08\u53EF\u7559\u7A7A\uFF09" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u5E74\u9F84\uFF08\u53EF\u7559\u7A7A\uFF09" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                "input",
 		                {
 		                  className: "jh-input",
@@ -7316,10 +7351,10 @@ window.__ModuleLoader__.load({
 		              )
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid2", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u624B\u673A" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid2", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u624B\u673A" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                "input",
 		                {
 		                  className: "jh-input",
@@ -7329,9 +7364,9 @@ window.__ModuleLoader__.load({
 		                }
 		              )
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u90AE\u7BB1" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u90AE\u7BB1" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                "input",
 		                {
 		                  className: "jh-input",
@@ -7342,14 +7377,14 @@ window.__ModuleLoader__.load({
 		              )
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("p", { className: "jh-info", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(InlineMd, { text: "\u624B\u673A\u4E0E\u90AE\u7BB1\u5728**\u53D1\u7ED9\u6A21\u578B\u4E4B\u524D\u4F1A\u88AB\u6458\u6389**\uFF0C\u53EA\u5728\u5BFC\u51FA\u4E0E\u9884\u89C8\u91CC\u51FA\u73B0\u3002" }) })
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "jh-info", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(InlineMd, { text: "\u624B\u673A\u4E0E\u90AE\u7BB1\u5728**\u53D1\u7ED9\u6A21\u578B\u4E4B\u524D\u4F1A\u88AB\u6458\u6389**\uFF0C\u53EA\u5728\u5BFC\u51FA\u4E0E\u9884\u89C8\u91CC\u51FA\u73B0\u3002" }) })
 		          ] })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "jh-form-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-form-head", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { children: "\u4E2A\u4EBA\u7B80\u4ECB" }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("section", { className: "jh-form-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "jh-form-head", children: /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { children: "\u4E2A\u4EBA\u7B80\u4ECB" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "textarea",
 		            {
 		              className: "jh-textarea",
@@ -7361,13 +7396,13 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "jh-form-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-form-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { children: "\u6280\u80FD" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-spacer" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-muted", children: "\u56DE\u8F66\u6216\u300C\u3001\u300D\u786E\u8BA4\u4E00\u4E2A" })
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("section", { className: "jh-form-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-form-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { children: "\u6280\u80FD" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-spacer" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-muted", children: "\u56DE\u8F66\u6216\u300C\u3001\u300D\u786E\u8BA4\u4E00\u4E2A" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            ChipsEditor,
 		            {
 		              values: content.skills.map((skill) => skill.name),
@@ -7380,16 +7415,16 @@ window.__ModuleLoader__.load({
 		              })
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("p", { className: "jh-info", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u53EA\u5199\u4F60\u771F\u7684\u80FD\u8BB2\u6E05\u695A\u7684 \u2014\u2014 \u9762\u8BD5\u5B98\u4F1A\u6311\u7740\u95EE\u3002" })
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "jh-info", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u53EA\u5199\u4F60\u771F\u7684\u80FD\u8BB2\u6E05\u695A\u7684 \u2014\u2014 \u9762\u8BD5\u5B98\u4F1A\u6311\u7740\u95EE\u3002" })
 		          ] })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "jh-form-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-form-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { children: "\u5DE5\u4F5C\u7ECF\u5386" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-spacer" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("section", { className: "jh-form-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-form-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { children: "\u5DE5\u4F5C\u7ECF\u5386" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-spacer" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -7405,8 +7440,8 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          content.experiences.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u7ECF\u5386 \u2014\u2014 \u70B9\u4E0B\u9762\u7684\u865A\u7EBF\u6846\u52A0\u7B2C\u4E00\u6BB5\u3002" }) : null,
-		          content.experiences.map((experience, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		          content.experiences.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u7ECF\u5386 \u2014\u2014 \u70B9\u4E0B\u9762\u7684\u865A\u7EBF\u6846\u52A0\u7B2C\u4E00\u6BB5\u3002" }) : null,
+		          content.experiences.map((experience, index) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
 		            BlockCard,
 		            {
 		              label: `\u7B2C ${String(index + 1)} \u6BB5`,
@@ -7415,10 +7450,10 @@ window.__ModuleLoader__.load({
 		              onMove: (delta) => patchContent({ ...content, experiences: move(content.experiences, index, delta) }),
 		              onRemove: () => patchContent({ ...content, experiences: content.experiences.filter((_, i) => i !== index) }),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid2", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u516C\u53F8" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid2", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u516C\u53F8" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7431,9 +7466,9 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u804C\u4F4D" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u804C\u4F4D" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7447,10 +7482,10 @@ window.__ModuleLoader__.load({
 		                    )
 		                  ] })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid3", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u5F00\u59CB" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid3", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u5F00\u59CB" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7463,9 +7498,9 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u7ED3\u675F\uFF08\u7559\u7A7A = \u81F3\u4ECA\uFF09" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u7ED3\u675F\uFF08\u7559\u7A7A = \u81F3\u4ECA\uFF09" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7478,9 +7513,9 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u57CE\u5E02" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u57CE\u5E02" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7494,9 +7529,9 @@ window.__ModuleLoader__.load({
 		                    )
 		                  ] })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u4E3B\u8981\u6210\u679C\uFF08\u4E00\u6761\u4E00\u884C\uFF0C\u56DE\u8F66\u63A5\u7740\u52A0\uFF09" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u4E3B\u8981\u6210\u679C\uFF08\u4E00\u6761\u4E00\u884C\uFF0C\u56DE\u8F66\u63A5\u7740\u52A0\uFF09" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                    LinesEditor,
 		                    {
 		                      lines: experience.highlights,
@@ -7508,9 +7543,9 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u6280\u672F\u6808" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u6280\u672F\u6808" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                    ChipsEditor,
 		                    {
 		                      values: experience.stack ?? [],
@@ -7527,7 +7562,7 @@ window.__ModuleLoader__.load({
 		            },
 		            `exp-${String(index)}`
 		          )),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -7540,11 +7575,11 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "jh-form-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-form-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { children: "\u9879\u76EE\u7ECF\u5386" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-spacer" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("section", { className: "jh-form-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-form-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { children: "\u9879\u76EE\u7ECF\u5386" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-spacer" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -7554,8 +7589,8 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          content.projects.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u4E5F\u53EF\u4EE5 \u2014\u2014 \u5DE5\u4F5C\u7ECF\u5386\u5199\u6E05\u695A\u5C31\u591F\u3002" }) : null,
-		          content.projects.map((project, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		          content.projects.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u4E5F\u53EF\u4EE5 \u2014\u2014 \u5DE5\u4F5C\u7ECF\u5386\u5199\u6E05\u695A\u5C31\u591F\u3002" }) : null,
+		          content.projects.map((project, index) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
 		            BlockCard,
 		            {
 		              label: `\u7B2C ${String(index + 1)} \u9879`,
@@ -7564,10 +7599,10 @@ window.__ModuleLoader__.load({
 		              onMove: (delta) => patchContent({ ...content, projects: move(content.projects, index, delta) }),
 		              onRemove: () => patchContent({ ...content, projects: content.projects.filter((_, i) => i !== index) }),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid2", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u9879\u76EE\u540D" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid2", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u9879\u76EE\u540D" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7580,9 +7615,9 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u4F60\u7684\u89D2\u8272 / \u65F6\u95F4" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u4F60\u7684\u89D2\u8272 / \u65F6\u95F4" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7596,9 +7631,9 @@ window.__ModuleLoader__.load({
 		                    )
 		                  ] })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u505A\u4E86\u4EC0\u4E48" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u505A\u4E86\u4EC0\u4E48" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                    LinesEditor,
 		                    {
 		                      lines: project.highlights,
@@ -7610,9 +7645,9 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u6280\u672F\u6808" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u6280\u672F\u6808" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                    ChipsEditor,
 		                    {
 		                      values: project.stack ?? [],
@@ -7629,7 +7664,7 @@ window.__ModuleLoader__.load({
 		            },
 		            `prj-${String(index)}`
 		          )),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -7639,11 +7674,11 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "jh-form-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-form-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { children: "\u6559\u80B2\u7ECF\u5386" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-spacer" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("section", { className: "jh-form-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-form-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { children: "\u6559\u80B2\u7ECF\u5386" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-spacer" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -7653,7 +7688,7 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          content.education.map((education, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		          content.education.map((education, index) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(
 		            BlockCard,
 		            {
 		              label: `\u7B2C ${String(index + 1)} \u9879`,
@@ -7662,10 +7697,10 @@ window.__ModuleLoader__.load({
 		              onMove: (delta) => patchContent({ ...content, education: move(content.education, index, delta) }),
 		              onRemove: () => patchContent({ ...content, education: content.education.filter((_, i) => i !== index) }),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid3", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u5B66\u6821" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid3", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u5B66\u6821" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7677,9 +7712,9 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u4E13\u4E1A" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u4E13\u4E1A" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7691,9 +7726,9 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u5B66\u5386" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u5B66\u5386" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7707,10 +7742,10 @@ window.__ModuleLoader__.load({
 		                    )
 		                  ] })
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid2", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u5165\u5B66" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid2", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u5165\u5B66" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7723,9 +7758,9 @@ window.__ModuleLoader__.load({
 		                      }
 		                    )
 		                  ] }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u6BD5\u4E1A" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u6BD5\u4E1A" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                      "input",
 		                      {
 		                        className: "jh-input",
@@ -7743,7 +7778,7 @@ window.__ModuleLoader__.load({
 		            },
 		            `edu-${String(index)}`
 		          )),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -7753,11 +7788,11 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("section", { className: "jh-form-card", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-form-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { children: "\u5176\u4ED6\uFF08\u8BC1\u4E66 / \u7ADE\u8D5B / \u5F00\u6E90\u2026\uFF09" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-spacer" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("section", { className: "jh-form-card", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-form-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { children: "\u5176\u4ED6\uFF08\u8BC1\u4E66 / \u7ADE\u8D5B / \u5F00\u6E90\u2026\uFF09" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-spacer" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -7767,7 +7802,7 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          content.extras.map((extra, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          content.extras.map((extra, index) => /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            BlockCard,
 		            {
 		              label: `\u7B2C ${String(index + 1)} \u6761`,
@@ -7775,10 +7810,10 @@ window.__ModuleLoader__.load({
 		              total: content.extras.length,
 		              onMove: (delta) => patchContent({ ...content, extras: move(content.extras, index, delta) }),
 		              onRemove: () => patchContent({ ...content, extras: content.extras.filter((_, i) => i !== index) }),
-		              children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-grid2", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u6807\u9898" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		              children: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-grid2", children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u6807\u9898" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                    "input",
 		                    {
 		                      className: "jh-input",
@@ -7791,9 +7826,9 @@ window.__ModuleLoader__.load({
 		                    }
 		                  )
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "jh-field", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u8BF4\u660E" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "jh-field", children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u8BF4\u660E" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		                    "input",
 		                    {
 		                      className: "jh-input",
@@ -7810,7 +7845,7 @@ window.__ModuleLoader__.load({
 		            },
 		            `ext-${String(index)}`
 		          )),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -7820,16 +7855,16 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("p", { className: "jh-info", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "jh-info", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { children: [
 		            "\u9644\u4EF6\u53EA\u7531\u4F60\u663E\u5F0F\u5220\u9664 \u2014\u2014 \u7B80\u5386\u662F\u8D44\u4EA7\uFF0C\u4EFB\u4F55\u81EA\u52A8\u6E05\u7406\u90FD\u4E0D\u4F1A\u78B0\u5B83\uFF08",
 		            PLUGIN_ID,
 		            "\uFF09\u3002"
 		          ] })
 		        ] })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "div",
 		        {
 		          className: "jh-splitter",
@@ -7848,43 +7883,43 @@ window.__ModuleLoader__.load({
 		          }
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-work-preview", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-preview-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-work-preview", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-preview-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "select",
 		            {
 		              className: "jh-select",
 		              "aria-label": "\u6A21\u677F",
 		              value: template,
 		              onChange: (event) => setTemplate(event.target.value === "professional" ? "professional" : "concise"),
-		              children: RESUME_TEMPLATES.map((item) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("option", { value: item, children: RESUME_TEMPLATE_LABEL[item] }, item))
+		              children: RESUME_TEMPLATES.map((item) => /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("option", { value: item, children: RESUME_TEMPLATE_LABEL[item] }, item))
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(InlineMd, { text: "\u9884\u89C8\u4E0E\u5BFC\u51FA\u8D70**\u540C\u4E00\u4E2A\u6E32\u67D3\u5668**\uFF0C\u6A21\u677F\u5373\u6240\u89C1" }) })
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(InlineMd, { text: "\u9884\u89C8\u4E0E\u5BFC\u51FA\u8D70**\u540C\u4E00\u4E2A\u6E32\u67D3\u5668**\uFF0C\u6A21\u677F\u5373\u6240\u89C1" }) })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-paper-stage", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("iframe", { className: "jh-paper", title: "\u7B80\u5386\u9884\u89C8", src: previewUrl(props.id, template), sandbox: "" }) })
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "jh-paper-stage", children: /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("iframe", { className: "jh-paper", title: "\u7B80\u5386\u9884\u89C8", src: previewUrl(props.id, template), sandbox: "" }) })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-work-files", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-form-head", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("h3", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-work-files", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-form-head", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("h3", { children: [
 		            "\u9644\u4EF6\uFF08",
 		            draft.files.length,
 		            "\uFF09"
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-spacer" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-muted", children: "\u5BFC\u51FA\u5728\u53F3\u4E0A\u89D2\u5DE5\u5177\u680F\uFF1B\u8FD9\u91CC\u8D1F\u8D23\u6253\u5F00\u4E0E\u5220\u9664" })
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-muted", children: "\u5BFC\u51FA\u5728\u53F3\u4E0A\u89D2\u5DE5\u5177\u680F\uFF1B\u8FD9\u91CC\u8D1F\u8D23\u6253\u5F00\u4E0E\u5220\u9664" })
 		        ] }),
-		        draft.files.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u751F\u6210\u9644\u4EF6\u3002\u7528\u53F3\u4E0A\u89D2\u7684\u300C\u5BFC\u51FA PDF / \u5BFC\u51FA Word\u300D\u751F\u6210\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("ul", { className: "jh-files", children: draft.files.map((file) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("li", { className: "jh-file-row", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: `jh-file-badge jh-file-${file.format}`, children: file.format.toUpperCase() }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-file-main", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("a", { className: "jh-link jh-file-name", href: fileUrl(file.id), target: "_blank", rel: "noreferrer", children: file.fileName }),
-		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-muted jh-file-meta", children: [
+		        draft.files.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u751F\u6210\u9644\u4EF6\u3002\u7528\u53F3\u4E0A\u89D2\u7684\u300C\u5BFC\u51FA PDF / \u5BFC\u51FA Word\u300D\u751F\u6210\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("ul", { className: "jh-files", children: draft.files.map((file) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("li", { className: "jh-file-row", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: `jh-file-badge jh-file-${file.format}`, children: file.format.toUpperCase() }),
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-file-main", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("a", { className: "jh-link jh-file-name", href: fileUrl(file.id), target: "_blank", rel: "noreferrer", children: file.fileName }),
+		            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-muted jh-file-meta", children: [
 		              (file.bytes / 1024).toFixed(0),
 		              " KB \xB7 ",
 		              file.createdAt.slice(0, 16).replace("T", " ")
 		            ] })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -7893,7 +7928,7 @@ window.__ModuleLoader__.load({
 		              children: "\u6253\u5F00"
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -7909,20 +7944,20 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }, file.id)) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("p", { className: "jh-info", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "\u5220\u9664\u8FD9\u4E00\u7248\u7B80\u5386\u65F6\uFF0C\u5B83\u7684\u9644\u4EF6\u4F1A\u4E00\u8D77\u5220\u6389\uFF1B\u9664\u6B64\u4E4B\u5916\u6CA1\u6709\u4EFB\u4F55\u81EA\u52A8\u6E05\u7406\u4F1A\u78B0\u5B83\u4EEC\u3002" })
+		        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "jh-info", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-info-icon", "aria-hidden": "true", children: "\u24D8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "\u5220\u9664\u8FD9\u4E00\u7248\u7B80\u5386\u65F6\uFF0C\u5B83\u7684\u9644\u4EF6\u4F1A\u4E00\u8D77\u5220\u6389\uFF1B\u9664\u6B64\u4E4B\u5916\u6CA1\u6709\u4EFB\u4F55\u81EA\u52A8\u6E05\u7406\u4F1A\u78B0\u5B83\u4EEC\u3002" })
 		        ] })
 		      ] })
 		    ] })
 		  ] });
 		}
 		function BlockCard(props) {
-		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-entry", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-entry-head", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-entry-no", children: props.label }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-spacer" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-entry", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-entry-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-entry-no", children: props.label }),
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "jh-spacer" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -7933,7 +7968,7 @@ window.__ModuleLoader__.load({
 		          children: "\u2191"
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -7944,7 +7979,7 @@ window.__ModuleLoader__.load({
 		          children: "\u2193"
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -7959,9 +7994,9 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function LinesEditor(props) {
-		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-lines", children: [
-		    props.lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-line", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-lines", children: [
+		    props.lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "jh-line", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "input",
 		        {
 		          className: "jh-input",
@@ -7979,7 +8014,7 @@ window.__ModuleLoader__.load({
 		          }
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -7990,7 +8025,7 @@ window.__ModuleLoader__.load({
 		        }
 		      )
 		    ] }, index)),
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		      "button",
 		      {
 		        type: "button",
@@ -8002,16 +8037,16 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function ChipsEditor(props) {
-		  const [text, setText] = (0, import_react12.useState)("");
+		  const [text, setText] = (0, import_react15.useState)("");
 		  const commit = () => {
 		    const parts = text.split(/[、,，\s]+/).map((part) => part.trim()).filter((part) => part !== "");
 		    if (parts.length > 0) props.onChange([.../* @__PURE__ */ new Set([...props.values, ...parts])]);
 		    setText("");
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-chips", children: [
-		    props.values.map((value) => /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "jh-chip-item", children: [
+		  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-chips", children: [
+		    props.values.map((value) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("span", { className: "jh-chip-item", children: [
 		      value,
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -8022,7 +8057,7 @@ window.__ModuleLoader__.load({
 		        }
 		      )
 		    ] }, value)),
-		    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
 		      "input",
 		      {
 		        className: "jh-input jh-chip-input",
@@ -8046,13 +8081,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings.tsx
-		var import_react13 = require("react");
+		var import_react16 = require("react");
 
 		// src/client/switch.tsx
-		var import_jsx_runtime16 = require("react/jsx-runtime");
+		var import_jsx_runtime25 = require("react/jsx-runtime");
 		function Switch(props) {
-		  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "jh-switch", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("span", { className: "jh-switch", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
 		      "input",
 		      {
 		        type: "checkbox",
@@ -8063,12 +8098,12 @@ window.__ModuleLoader__.load({
 		        onChange: (event) => props.onChange(event.target.checked)
 		      }
 		    ),
-		    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "jh-switch-track", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "jh-switch-thumb" }) })
+		    /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { className: "jh-switch-track", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { className: "jh-switch-thumb" }) })
 		  ] });
 		}
 
 		// src/client/screens/settings.tsx
-		var import_jsx_runtime17 = require("react/jsx-runtime");
+		var import_jsx_runtime26 = require("react/jsx-runtime");
 		var GUARD_LIMITS = {
 		  daily: { min: 0, max: 500 },
 		  cooldownMinutes: { min: 0, max: 7 * 24 * 60 },
@@ -8150,9 +8185,9 @@ window.__ModuleLoader__.load({
 		  const health = useAsync((signal) => fetchHealth(signal), [props.revision]);
 		  const audit = useAsync((signal) => fetchAudit(50, {}, signal), [props.revision]);
 		  const llm = useAsync((signal) => fetchLlmCalls(50, signal), [props.revision]);
-		  const [tab, setTab] = (0, import_react13.useState)("config");
-		  const [message, setMessage] = (0, import_react13.useState)(null);
-		  const [busy, setBusy] = (0, import_react13.useState)(false);
+		  const [tab, setTab] = (0, import_react16.useState)("config");
+		  const [message, setMessage] = (0, import_react16.useState)(null);
+		  const [busy, setBusy] = (0, import_react16.useState)(false);
 		  const current = settings.state.status === "ok" ? settings.state.data : null;
 		  const write = async (patch, okText) => {
 		    setBusy(true);
@@ -8168,7 +8203,7 @@ window.__ModuleLoader__.load({
 		    }
 		  };
 		  const labelOf = (purpose) => current?.derived.purposes.find((item) => item.purpose === purpose)?.label ?? purpose;
-		  const tabRefs = (0, import_react13.useRef)([]);
+		  const tabRefs = (0, import_react16.useRef)([]);
 		  const onTabKeyDown = (event, index) => {
 		    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
 		    event.preventDefault();
@@ -8179,13 +8214,13 @@ window.__ModuleLoader__.load({
 		    setTab(next[0]);
 		    tabRefs.current[nextIndex]?.focus();
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-screen jh-screen-settings", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-row-head", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { className: "jh-card-title", children: "\u8BBE\u7F6E\u4E0E\u8BCA\u65AD" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-muted", children: "\u6293\u53D6\u989D\u5EA6\u3001\u5BA1\u6279\u4E0E\u5BA1\u8BA1\u5F00\u5173\u53EA\u80FD\u7531\u4F60\u5728\u754C\u9762\u4E0A\u6539 \u2014\u2014 \u6A21\u578B\u6539\u4E0D\u4E86\uFF08\xA722.4\uFF09" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-screen jh-screen-settings", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-row-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { className: "jh-card-title", children: "\u8BBE\u7F6E\u4E0E\u8BCA\u65AD" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-muted", children: "\u6293\u53D6\u989D\u5EA6\u3001\u5BA1\u6279\u4E0E\u5BA1\u8BA1\u5F00\u5173\u53EA\u80FD\u7531\u4F60\u5728\u754C\u9762\u4E0A\u6539 \u2014\u2014 \u6A21\u578B\u6539\u4E0D\u4E86\uFF08\xA722.4\uFF09" })
 		    ] }),
-		    message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-card jh-card-tight", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: message.tone === "error" ? "jh-error" : "jh-ok", children: message.text }) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-modes jh-set-tabs", role: "tablist", "aria-label": "\u8BBE\u7F6E\u5206\u533A", children: SETTINGS_TABS.map(([key, label], index) => /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		    message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-card jh-card-tight", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: message.tone === "error" ? "jh-error" : "jh-ok", children: message.text }) }),
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-modes jh-set-tabs", role: "tablist", "aria-label": "\u8BBE\u7F6E\u5206\u533A", children: SETTINGS_TABS.map(([key, label], index) => /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		      "button",
 		      {
 		        id: `jh-set-tab-${key}`,
@@ -8204,7 +8239,7 @@ window.__ModuleLoader__.load({
 		      },
 		      key
 		    )) }),
-		    tab === "config" ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { role: "tabpanel", id: "jh-set-panel-config", "aria-labelledby": "jh-set-tab-config", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		    tab === "config" ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { role: "tabpanel", id: "jh-set-panel-config", "aria-labelledby": "jh-set-tab-config", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		      ConfigPanel,
 		      {
 		        current,
@@ -8212,7 +8247,7 @@ window.__ModuleLoader__.load({
 		        busy,
 		        write
 		      }
-		    ) }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { role: "tabpanel", id: "jh-set-panel-logs", "aria-labelledby": "jh-set-tab-logs", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		    ) }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { role: "tabpanel", id: "jh-set-panel-logs", "aria-labelledby": "jh-set-tab-logs", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		      LogsPanel,
 		      {
 		        health: health.state,
@@ -8227,10 +8262,10 @@ window.__ModuleLoader__.load({
 		function ConfigPanel(props) {
 		  const { current, busy, write } = props;
 		  if (props.error !== null) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-set-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("section", { className: "jh-card", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-error", children: props.error }) }) });
+		    return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-set-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("section", { className: "jh-card", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-error", children: props.error }) }) });
 		  }
 		  if (current === null) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-set-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("section", { className: "jh-card", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u8BBE\u7F6E\u2026" }) }) });
+		    return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-set-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("section", { className: "jh-card", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u8BBE\u7F6E\u2026" }) }) });
 		  }
 		  const masterOn = current.ai.enabled;
 		  const grouped = new Set(PURPOSE_GROUPS.flatMap((group) => group.purposes));
@@ -8262,20 +8297,20 @@ window.__ModuleLoader__.load({
 		  };
 		  const defaults = current.derived.defaults.guard;
 		  const story = riskStory(current);
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-set-wrap", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("section", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { className: "jh-card-title", children: "\u5F53\u524D\u98CE\u63A7\u6001\u52BF" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: `jh-story ${story.tone}`, children: story.text })
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-set-wrap", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("section", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { className: "jh-card-title", children: "\u5F53\u524D\u98CE\u63A7\u6001\u52BF" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: `jh-story ${story.tone}`, children: story.text })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-set-grid", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { className: "jh-card-title", children: "\u6A21\u578B\u7528\u9014" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-set-grid", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { className: "jh-card-title", children: "\u6A21\u578B\u7528\u9014" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u6A21\u578B\u603B\u5F00\u5173",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(FieldHint, { text: "\u5173\u6389\u4E4B\u540E\u4E00\u5207\u8D70\u89C4\u5219 / \u6A21\u677F\u964D\u7EA7\uFF0C\u529F\u80FD\u4E0D\u4F1A\u5D29\uFF08J10\uFF09\u2014\u2014 \u53EA\u662F\u4E0D\u518D\u5916\u53D1\u4EFB\u4F55\u5B57\u6BB5\u3002\u5355\u9879\u5F00\u5173\u4F1A\u4FDD\u7559\u7740\uFF0C\u91CD\u65B0\u6253\u5F00\u603B\u5F00\u5173\u540E\u6309\u539F\u6837\u751F\u6548\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(FieldHint, { text: "\u5173\u6389\u4E4B\u540E\u4E00\u5207\u8D70\u89C4\u5219 / \u6A21\u677F\u964D\u7EA7\uFF0C\u529F\u80FD\u4E0D\u4F1A\u5D29\uFF08J10\uFF09\u2014\u2014 \u53EA\u662F\u4E0D\u518D\u5916\u53D1\u4EFB\u4F55\u5B57\u6BB5\u3002\u5355\u9879\u5F00\u5173\u4F1A\u4FDD\u7559\u7740\uFF0C\u91CD\u65B0\u6253\u5F00\u603B\u5F00\u5173\u540E\u6309\u539F\u6837\u751F\u6548\u3002" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            Switch,
 		            {
 		              checked: masterOn,
@@ -8288,22 +8323,22 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        masterOn ? null : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(InlineMd, { text: "\u6A21\u578B\u603B\u5F00\u5173\u5DF2\u5173\u95ED\uFF1A\u4E0B\u9762\u6BCF\u4E00\u9879\u73B0\u5728\u90FD\u8D70\u89C4\u5219 / \u6A21\u677F\uFF0C\u4E0D\u5BF9\u5916\u53D1\u9001\u4EFB\u4F55\u5B57\u6BB5\u3002\u5355\u9879\u5F00\u5173**\u4ECD\u7136\u53EF\u4EE5\u6539** \u2014\u2014 \u5B83\u4EEC\u8BB0\u7684\u662F\u4F60\u7684\u610F\u5411\uFF0C\u91CD\u65B0\u6253\u5F00\u603B\u5F00\u5173\u540E\u6309\u8FD9\u4E2A\u610F\u5411\u751F\u6548\u3002" }) }),
-		        groups.map((group) => /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-purpose-group", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: group.title }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-purpose-grid", children: group.purposes.map((key) => {
+		        masterOn ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(InlineMd, { text: "\u6A21\u578B\u603B\u5F00\u5173\u5DF2\u5173\u95ED\uFF1A\u4E0B\u9762\u6BCF\u4E00\u9879\u73B0\u5728\u90FD\u8D70\u89C4\u5219 / \u6A21\u677F\uFF0C\u4E0D\u5BF9\u5916\u53D1\u9001\u4EFB\u4F55\u5B57\u6BB5\u3002\u5355\u9879\u5F00\u5173**\u4ECD\u7136\u53EF\u4EE5\u6539** \u2014\u2014 \u5B83\u4EEC\u8BB0\u7684\u662F\u4F60\u7684\u610F\u5411\uFF0C\u91CD\u65B0\u6253\u5F00\u603B\u5F00\u5173\u540E\u6309\u8FD9\u4E2A\u610F\u5411\u751F\u6548\u3002" }) }),
+		        groups.map((group) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-purpose-group", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: group.title }),
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-purpose-grid", children: group.purposes.map((key) => {
 		            const item = current.derived.purposes.find((entry) => entry.purpose === key);
 		            if (item === void 0) return null;
 		            const on = current.ai.purposes[key] !== false;
 		            const byDefault = current.derived.defaults.purposes[key] !== false;
-		            return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
+		            return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
 		              "label",
 		              {
 		                className: "jh-purpose",
 		                title: `${item.label}\uFF08${key}\uFF09\xB7 \u51FA\u5382\u9ED8\u8BA4${byDefault ? "\u5F00" : "\u5173"}`,
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-purpose-name", children: item.label }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-purpose-name", children: item.label }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		                    Switch,
 		                    {
 		                      checked: on,
@@ -8321,20 +8356,20 @@ window.__ModuleLoader__.load({
 		            );
 		          }) })
 		        ] }, group.title)),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-note", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(InlineMd, { text: "\u6309**\u7528\u9014**\u5206\u5F00\u5F00\u5173\uFF1A\u5173\u6389\u54EA\u4E00\u9879\uFF0C\u90A3\u4E00\u9879\u5C31\u8D70\u89C4\u5219 / \u6A21\u677F\uFF0C\u5176\u4F59\u4E0D\u53D7\u5F71\u54CD\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-note", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(InlineMd, { text: "\u6309**\u7528\u9014**\u5206\u5F00\u5F00\u5173\uFF1A\u5173\u6389\u54EA\u4E00\u9879\uFF0C\u90A3\u4E00\u9879\u5C31\u8D70\u89C4\u5219 / \u6A21\u677F\uFF0C\u5176\u4F59\u4E0D\u53D7\u5F71\u54CD\u3002" }),
 		          "\u6D89\u53CA\u7B80\u5386\u5185\u5BB9\u7684\u51E0\u9879\u9ED8\u8BA4\u5173\u7740 \u2014\u2014 \u90A3\u4F1A\u628A\u7B80\u5386\u53D1\u7ED9\u6A21\u578B\uFF0C\u5C5E\u4E8E\u4F60\u5E94\u5F53\u663E\u5F0F\u540C\u610F\u7684\u8303\u56F4\u3002"
 		        ] })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { className: "jh-card-title", children: "\u7CFB\u7EDF\u63A7\u5236\u4E2D\u5FC3" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u53D1\u9001\u5206\u5C42\uFF08L3 / L4\uFF09" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { className: "jh-card-title", children: "\u7CFB\u7EDF\u63A7\u5236\u4E2D\u5FC3" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: "\u53D1\u9001\u5206\u5C42\uFF08L3 / L4\uFF09" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "L3 \u6253\u62DB\u547C",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(FieldHint, { text: "\u5141\u8BB8\u53D1\u51FA\u7B2C\u4E00\u6761\u6253\u62DB\u547C\u6D88\u606F\u3002\u5173\u6389\u4E4B\u540E\uFF0C\u6240\u6709\u6253\u62DB\u547C\u90FD\u4F1A\u88AB\u95F8\u95E8\u62D2\u7EDD\u3002\u51FA\u5382\u9ED8\u8BA4\u5F00\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(FieldHint, { text: "\u5141\u8BB8\u53D1\u51FA\u7B2C\u4E00\u6761\u6253\u62DB\u547C\u6D88\u606F\u3002\u5173\u6389\u4E4B\u540E\uFF0C\u6240\u6709\u6253\u62DB\u547C\u90FD\u4F1A\u88AB\u95F8\u95E8\u62D2\u7EDD\u3002\u51FA\u5382\u9ED8\u8BA4\u5F00\u3002" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            Switch,
 		            {
 		              checked: current.guard.levels.l3Greeting,
@@ -8344,12 +8379,12 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "L4 \u6295\u9012",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(FieldHint, { text: "\u5141\u8BB8\u771F\u7684\u70B9\u4E0B\u5E73\u53F0\u7684\u300C\u6295\u9012\u300D\u6309\u94AE\u3002\u9ED8\u8BA4\u5173\u95ED \u2014\u2014 \u8FD9\u662F\u6700\u4E0D\u53EF\u9006\u7684\u4E00\u6B65\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(FieldHint, { text: "\u5141\u8BB8\u771F\u7684\u70B9\u4E0B\u5E73\u53F0\u7684\u300C\u6295\u9012\u300D\u6309\u94AE\u3002\u9ED8\u8BA4\u5173\u95ED \u2014\u2014 \u8FD9\u662F\u6700\u4E0D\u53EF\u9006\u7684\u4E00\u6B65\u3002" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            Switch,
 		            {
 		              checked: current.guard.levels.l4Application,
@@ -8359,12 +8394,12 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "L4 \u56DE\u590D",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(FieldHint, { text: "\u5141\u8BB8\u56DE\u590D HR \u53D1\u6765\u7684\u6D88\u606F\u3002\u9ED8\u8BA4\u5173\u95ED\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(FieldHint, { text: "\u5141\u8BB8\u56DE\u590D HR \u53D1\u6765\u7684\u6D88\u606F\u3002\u9ED8\u8BA4\u5173\u95ED\u3002" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            Switch,
 		            {
 		              checked: current.guard.levels.l4Reply,
@@ -8374,11 +8409,11 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u6BCF\u65E5\u989D\u5EA6\uFF08\u6BCF\u4E2A\u5E73\u53F0\uFF09" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-limits", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("label", { className: "jh-limit", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-field-label", children: "\u6253\u62DB\u547C" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: "\u6BCF\u65E5\u989D\u5EA6\uFF08\u6BCF\u4E2A\u5E73\u53F0\uFF09" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-limits", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("label", { className: "jh-limit", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-field-label", children: "\u6253\u62DB\u547C" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              NumberField,
 		              {
 		                value: current.guard.dailyLimits.greeting,
@@ -8391,9 +8426,9 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("label", { className: "jh-limit", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-field-label", children: "\u6295\u9012" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("label", { className: "jh-limit", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-field-label", children: "\u6295\u9012" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              NumberField,
 		              {
 		                value: current.guard.dailyLimits.application,
@@ -8406,9 +8441,9 @@ window.__ModuleLoader__.load({
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("label", { className: "jh-limit", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-field-label", children: "\u56DE\u590D" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("label", { className: "jh-limit", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-field-label", children: "\u56DE\u590D" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              NumberField,
 		              {
 		                value: current.guard.dailyLimits.reply,
@@ -8422,25 +8457,25 @@ window.__ModuleLoader__.load({
 		            )
 		          ] })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		          InlineMd,
 		          {
 		            text: `\u989D\u5EA6\u662F**\u4F60\u81EA\u5DF1\u7684\u9884\u7B97**\uFF1B\u95F8\u95E8\u8FD8\u4F1A\u4E0E\u5E73\u53F0\u4FA7\u4E0A\u9650\u53D6\u8F83\u5C0F\u8005 \u2014\u2014 \u6240\u4EE5\u8C03\u5927\u4E0D\u4F1A\u7ED5\u8FC7\u5E73\u53F0\u7EA2\u7EBF\u3002\u586B 0 \u8868\u793A\u8FD9\u4E00\u7C7B\u52A8\u4F5C\u4ECA\u5929\u5B8C\u5168\u4E0D\u505A\u3002\u51FA\u5382\u9ED8\u8BA4\uFF1A\u6253\u62DB\u547C ${String(defaults.dailyLimits.greeting)} \xB7 \u6295\u9012 ${String(defaults.dailyLimits.application)} \xB7 \u56DE\u590D ${String(defaults.dailyLimits.reply)}\u3002`
 		          }
 		        ) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u53D1\u9001\u65F6\u95F4\u4E0E\u8282\u594F" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl-stack", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: "\u53D1\u9001\u65F6\u95F4\u4E0E\u8282\u594F" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl-stack", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u53D1\u9001\u65F6\u6BB5",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              FieldHint,
 		              {
 		                text: `\u53EA\u5728\u8FD9\u4E2A\u672C\u5730\u65F6\u95F4\u7A97\u53E3\u5185\u53D1\u9001\uFF08\u652F\u6301\u8DE8\u5348\u591C\uFF0C\u5982 22:00-06:00\uFF09\u3002\u51CC\u6668/\u6DF1\u591C\u53D1\u6D88\u606F\u662F\u6700\u5F3A\u7684\u673A\u5668\u4FE1\u53F7\u4E4B\u4E00\uFF0C\u6240\u4EE5\u51FA\u5382\u9ED8\u8BA4\u9650\u5236\u5728 ${defaults.sendWindow}\u3002\u70B9\u300C\u8BBE\u4E3A\u4E0D\u9650\u300D\u8868\u793A\u4EFB\u4F55\u65F6\u95F4\u90FD\u53EF\u4EE5\u53D1\u3002`
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-timerange", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-timerange", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              "input",
 		              {
 		                type: "time",
@@ -8451,8 +8486,8 @@ window.__ModuleLoader__.load({
 		                onChange: (event) => setWindow(event.target.value, windowEnd)
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-timerange-sep", children: "\u81F3" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-timerange-sep", children: "\u81F3" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              "input",
 		              {
 		                type: "time",
@@ -8463,7 +8498,7 @@ window.__ModuleLoader__.load({
 		                onChange: (event) => setWindow(windowStart, event.target.value)
 		              }
 		            ),
-		            windowRaw === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            windowRaw === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -8475,25 +8510,25 @@ window.__ModuleLoader__.load({
 		            )
 		          ] })
 		        ] }),
-		        windowRaw !== "" && parsedWindow === null ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-alert jh-alert-warn", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-alert-body", children: [
+		        windowRaw !== "" && parsedWindow === null ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-alert jh-alert-warn", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-alert-body", children: [
 		          "\u53D1\u9001\u65F6\u6BB5\u914D\u7F6E\u65E0\u6CD5\u89E3\u6790\uFF1A",
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("code", { children: windowRaw }),
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("code", { children: windowRaw }),
 		          " \u2014\u2014 \u95F8\u95E8\u4F1A fail-closed\uFF0C",
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("b", { children: "\u6240\u6709\u53D1\u9001\u90FD\u4F1A\u88AB\u62D2\u7EDD" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("b", { children: "\u6240\u6709\u53D1\u9001\u90FD\u4F1A\u88AB\u62D2\u7EDD" }),
 		          "\u3002\u7528\u4E0A\u9762\u4E24\u4E2A\u65F6\u95F4\u6846\u6539\u56DE\u5408\u6CD5\u503C\uFF0C\u6216\u70B9\u300C\u8BBE\u4E3A\u4E0D\u9650\u300D\u3002"
 		        ] }) }) : null,
-		        windowRaw === "" ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-note", children: "\u5F53\u524D\uFF1A\u4E0D\u9650\u65F6\u6BB5\u3002\u4E0A\u9762\u4E24\u4E2A\u6846\u663E\u793A\u7684\u662F\u51FA\u5382\u9ED8\u8BA4\u65F6\u6BB5 \u2014\u2014 \u6539\u5176\u4E2D\u4EFB\u4F55\u4E00\u683C\u5C31\u4F1A\u542F\u7528\u5B83\u3002" }) : null,
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        windowRaw === "" ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-note", children: "\u5F53\u524D\uFF1A\u4E0D\u9650\u65F6\u6BB5\u3002\u4E0A\u9762\u4E24\u4E2A\u6846\u663E\u793A\u7684\u662F\u51FA\u5382\u9ED8\u8BA4\u65F6\u6BB5 \u2014\u2014 \u6539\u5176\u4E2D\u4EFB\u4F55\u4E00\u683C\u5C31\u4F1A\u542F\u7528\u5B83\u3002" }) : null,
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u968F\u673A\u4F11\u606F\u65E5",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              FieldHint,
 		              {
 		                text: `\u6309\u5929\u786E\u5B9A\u6027\u547D\u4E2D\uFF1A\u547D\u4E2D\u7684\u90A3\u4E00\u5929\u6574\u4F53\u4E0D\u53D1\u9001\uFF0C\u6A21\u62DF"\u4EBA\u4E0D\u4F1A\u5929\u5929\u6295"\u7684\u8282\u594F\u3002\u51FA\u5382\u9ED8\u8BA4 ${String(Math.round(defaults.dayOffProbability * 100))}%\uFF0C\u586B 0 \u8868\u793A\u53D6\u6D88\u3002\u540C\u4E00\u5929\u91CC\u7ED3\u8BBA\u4E0D\u4F1A\u53D8\uFF08\u4E0D\u662F\u6BCF\u6B21\u8C03\u7528\u91CD\u63B7\uFF09\uFF0C\u6309\u6574\u6570\u767E\u5206\u6BD4\u4FDD\u5B58\u3002`
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            NumberField,
 		            {
 		              value: Math.round(current.guard.dayOffProbability * 100),
@@ -8509,17 +8544,17 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u51B7\u5374\u671F",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              FieldHint,
 		              {
 		                text: `\u540C\u4E00\u5BB6\u516C\u53F8\u5728\u591A\u5C11\u5206\u949F\u5185\u4E0D\u5141\u8BB8\u91CD\u590D\u6295\u9012\u3002\u9632\u8BEF\u6295\u4E0E\u9632\u98CE\u63A7\uFF0C\u4E0D\u5EFA\u8BAE\u8BBE\u6210 0\u3002\u51FA\u5382\u9ED8\u8BA4 ${String(defaults.cooldownMinutes)} \u5206\u949F\uFF0824 \u5C0F\u65F6\uFF09\u3002`
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            NumberField,
 		            {
 		              value: current.guard.cooldownMinutes,
@@ -8532,13 +8567,13 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u5BA1\u6279\u3001\u5BA1\u8BA1\u4E0E\u6A21\u578B\u4E0A\u9650" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: "\u5BA1\u6279\u3001\u5BA1\u8BA1\u4E0E\u6A21\u578B\u4E0A\u9650" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u9AD8\u5371\u52A8\u4F5C\u5FC5\u987B\u5BA1\u6279",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(FieldHint, { text: "\u9AD8\u5371\u52A8\u4F5C\uFF08\u6295\u9012 / \u56DE\u590D / \u6253\u62DB\u547C\uFF09\u662F\u5426\u5FC5\u987B\u5148\u7ECF\u4F60\u786E\u8BA4\u3002\u6A21\u578B\u4E0D\u5F97\u4FEE\u6539\u8FD9\u4E00\u9879\uFF08\xA722.4\uFF09\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(FieldHint, { text: "\u9AD8\u5371\u52A8\u4F5C\uFF08\u6295\u9012 / \u56DE\u590D / \u6253\u62DB\u547C\uFF09\u662F\u5426\u5FC5\u987B\u5148\u7ECF\u4F60\u786E\u8BA4\u3002\u6A21\u578B\u4E0D\u5F97\u4FEE\u6539\u8FD9\u4E00\u9879\uFF08\xA722.4\uFF09\u3002" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            Switch,
 		            {
 		              checked: current.guard.requireApproval,
@@ -8551,12 +8586,12 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u5BA1\u8BA1\u7559\u75D5",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(FieldHint, { text: "\u662F\u5426\u628A\u6240\u6709\u52A8\u4F5C\u5199\u8FDB\u5BA1\u8BA1\u8868\u3002\u6A21\u578B\u4E0D\u5F97\u5173\u95ED\u5B83\uFF08\xA722.4\uFF09\u3002\u5173\u6389\u4E4B\u540E\u989D\u5EA6\u7684\u8BA1\u6570\u4E5F\u5C31\u6CA1\u4E86\u6765\u6E90\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(FieldHint, { text: "\u662F\u5426\u628A\u6240\u6709\u52A8\u4F5C\u5199\u8FDB\u5BA1\u8BA1\u8868\u3002\u6A21\u578B\u4E0D\u5F97\u5173\u95ED\u5B83\uFF08\xA722.4\uFF09\u3002\u5173\u6389\u4E4B\u540E\u989D\u5EA6\u7684\u8BA1\u6570\u4E5F\u5C31\u6CA1\u4E86\u6765\u6E90\u3002" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            Switch,
 		            {
 		              checked: current.guard.auditEnabled,
@@ -8569,17 +8604,17 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u6279\u91CF\u4E0A\u9650",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              FieldHint,
 		              {
 		                text: `\u6A21\u578B\u5355\u6B21\u8C03\u7528\u6700\u591A\u6D89\u53CA\u591A\u5C11\u4E2A\u5C97\u4F4D\uFF08\xA722.4\uFF09\u3002\u8D85\u51FA\u5FC5\u987B\u5206\u6279\u5E76\u9010\u6279\u5BA1\u6279\u3002\u51FA\u5382\u9ED8\u8BA4 ${String(defaults.batchLimit)} \u4E2A\u3002`
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            NumberField,
 		            {
 		              value: current.guard.batchLimit,
@@ -8592,18 +8627,18 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u6D4F\u89C8\u5668" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: "\u6D4F\u89C8\u5668" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u6BCF\u8F6E\u91C7\u96C6\u7ED3\u675F\u540E\u5173\u95ED",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              FieldHint,
 		              {
 		                text: `\u6253\u5F00\u540E\uFF1A\u4E00\u8F6E\u91C7\u96C6\uFF08\u542B\u4E00\u8F6E\u91CC\u4E32\u884C\u8DD1\u7684\u591A\u4E2A\u65B9\u6848\uFF09\u5168\u90E8\u8DD1\u5B8C\uFF0C\u91C7\u96C6\u6D4F\u89C8\u5668\u5C31\u81EA\u52A8\u5173\u6389\uFF0C\u4E0D\u7559\u5728\u684C\u9762\u4E0A\u3002\u4EE3\u4EF7\u662F"\u8FDE\u7740\u70B9\u4E24\u6B21\u7ACB\u5373\u91C7\u96C6"\u65F6\u7B2C\u4E8C\u6B21\u8981\u591A\u82B1\u51E0\u79D2\u91CD\u65B0\u6253\u5F00\u6D4F\u89C8\u5668 \u2014\u2014 \u767B\u5F55\u6001\u5728\u78C1\u76D8\u4E0A\uFF0C\u4E0D\u4F1A\u4E22\u3002\u6B63\u5728\u767B\u5F55\u5F15\u5BFC\u4E2D\u6216\u6B63\u5728\u91C7\u96C6\u65F6\u7EDD\u4E0D\u4F1A\u88AB\u5173\u6389\u3002\u5173\u6389\u5B83\uFF0C\u624D\u8F6E\u5230\u4E0B\u9762\u7684\u7A7A\u95F2\u65F6\u957F\u8BF4\u4E86\u7B97\u3002`
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            Switch,
 		            {
 		              checked: closeAfterRun,
@@ -8616,17 +8651,17 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u7A7A\u95F2\u540E\u81EA\u52A8\u5173\u95ED",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              FieldHint,
 		              {
 		                text: `\u91C7\u96C6\u8981\u590D\u7528\u4F60\u81EA\u5DF1\u767B\u5F55\u8FC7\u7684\u6D4F\u89C8\u5668\uFF0C\u6240\u4EE5\u5B83\u662F headful \u7684\uFF08\u4F60\u80FD\u770B\u89C1\u90A3\u4E2A\u7A97\u53E3\uFF09\u3002\u7528\u5B8C\u4E00\u76F4\u5F00\u7740\u4F1A\u5360\u5185\u5B58\uFF0C\u6240\u4EE5\u7A7A\u95F2\u5230\u70B9\u5C31\u81EA\u52A8\u5173\u6389\uFF1B\u4E0B\u4E00\u6B21\u91C7\u96C6\u4F1A\u91CD\u65B0\u6253\u5F00\uFF0C\u767B\u5F55\u6001\u5728\u78C1\u76D8\u4E0A\u3001\u4E0D\u4F1A\u4E22\u3002\u586B 0 \u8868\u793A\u4E0D\u81EA\u52A8\u5173\u95ED\u3002\u9ED8\u8BA4 ${String(BROWSER_IDLE_DEFAULT_MIN)} \u5206\u949F\u3002\u4E0A\u9762\u90A3\u4E2A\u5F00\u5173\u6253\u5F00\u65F6\uFF0C\u8FD9\u4E00\u683C\u4E0D\u8D77\u4F5C\u7528\u3002`
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            NumberField,
 		            {
 		              value: idleMinutes,
@@ -8642,23 +8677,23 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-note", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-note", children: [
 		          closeAfterRun ? `\u5F53\u524D\uFF1A\u6BCF\u8F6E\u91C7\u96C6\u7ED3\u675F\u540E\u5173\u95ED\uFF08\u8DD1\u5B8C\u7EA6 ${String(BROWSER_CLOSE_AFTER_RUN_MS / 1e3)} \u79D2\uFF1B\u4E0A\u9762\u7684\u7A7A\u95F2\u65F6\u957F\u6B64\u523B\u4E0D\u8D77\u4F5C\u7528\uFF09\u3002` : idleMinutes <= 0 ? "\u5F53\u524D\uFF1A\u4E0D\u81EA\u52A8\u5173\u95ED \u2014\u2014 \u6D4F\u89C8\u5668\u4F1A\u4E00\u76F4\u5F00\u7740\uFF0C\u76F4\u5230\u4F60\u5173\u6389\u5B83\u6216\u5378\u8F7D\u63D2\u4EF6\u3002" : `\u5F53\u524D\uFF1A\u7A7A\u95F2 ${String(idleMinutes)} \u5206\u949F\u540E\u5173\u95ED\u3002`,
 		          " ",
 		          "\u6B63\u5728\u767B\u5F55\u6216\u6B63\u5728\u91C7\u96C6\u65F6\u4E0D\u4F1A\u88AB\u5173\u6389\u3002"
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u91C7\u96C6\u8282\u594F" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-field-label", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: "\u91C7\u96C6\u8282\u594F" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-field-label", children: [
 		            "\u5355\u8F6E\u91C7\u96C6\u6700\u591A\u8DD1\u591A\u4E45",
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              FieldHint,
 		              {
 		                text: `\u4E00\u8F6E = \u4E00\u4E2A\u65B9\u6848\u7684\u4E00\u6B21\u8FD0\u884C\uFF1B\u591A\u5173\u952E\u8BCD\u65B9\u6848\u4F1A\u9010\u4E2A\u5173\u952E\u8BCD\u8DD1\uFF0C\u65B0\u5C97\u4F4D\u8FD8\u4F1A\u9010\u6761\u70B9\u8FDB\u8BE6\u60C5\u9875\uFF0C\u6240\u4EE5\u8017\u65F6\u968F\u914D\u7F6E\u653E\u5927\u3002\u5230\u70B9\u540E**\u4E0D\u518D\u5F00\u59CB**\u65B0\u7684\u5E73\u53F0\u6216\u5173\u952E\u8BCD\uFF08\u6B63\u5728\u8DD1\u7684\u90A3\u4E00\u9875\u8DD1\u5B8C\u5C31\u505C\uFF09\uFF0C\u5DF2\u6293\u5230\u7684\u7167\u5E38\u5165\u5E93\uFF0C\u5269\u4E0B\u7684\u7559\u5230\u4E0B\u4E00\u8F6E\u5E76\u6309\u300C\u672C\u8F6E\u5DF2\u5230\u65F6\u9650\u300D\u5982\u5B9E\u663E\u793A\u3002\u9ED8\u8BA4 ${String(CRAWL_ROUND_BUDGET_DEFAULT_MIN)} \u5206\u949F\u3002\u8FD9\u4E0D\u662F\u8282\u6D41\u9600\uFF0C\u662F\u4FDD\u9669\u4E1D \u2014\u2014 \u5BF9\u5E94\u7528\u6237\u80FD\u63A5\u53D7\u7684"\u70B9\u4E00\u4E0B\u6700\u591A\u7B49\u591A\u4E45"\u3002`
 		              }
 		            )
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            NumberField,
 		            {
 		              value: roundBudgetMinutes,
@@ -8674,13 +8709,13 @@ window.__ModuleLoader__.load({
 		            }
 		          )
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-note", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-note", children: [
 		          "\u5F53\u524D\uFF1A\u4E00\u8F6E\u6700\u591A ",
 		          String(roundBudgetMinutes),
 		          " \u5206\u949F\u3002\u6539\u5B8C\u4E0D\u7528\u91CD\u542F\uFF0C\u4E0B\u4E00\u8F6E\u5C31\u5730\u751F\u6548\u3002"
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-note", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(InlineMd, { text: "\u6A21\u578B**\u4E0D\u80FD**\u4FEE\u6539\u8FD9\u4E9B\u952E\uFF1A" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-note", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(InlineMd, { text: "\u6A21\u578B**\u4E0D\u80FD**\u4FEE\u6539\u8FD9\u4E9B\u952E\uFF1A" }),
 		          current.derived.modelForbidden.join(" / "),
 		          "\uFF1B\u6A21\u578B\u80FD\u6539\u7684\u53EA\u6709\uFF1A",
 		          current.derived.modelEditable.join(" / "),
@@ -8691,10 +8726,10 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function LogsPanel(props) {
-		  const [purpose, setPurpose] = (0, import_react13.useState)("");
-		  const [status, setStatus] = (0, import_react13.useState)("all");
-		  const [query, setQuery] = (0, import_react13.useState)("");
-		  const [payload, setPayload] = (0, import_react13.useState)(null);
+		  const [purpose, setPurpose] = (0, import_react16.useState)("");
+		  const [status, setStatus] = (0, import_react16.useState)("all");
+		  const [query, setQuery] = (0, import_react16.useState)("");
+		  const [payload, setPayload] = (0, import_react16.useState)(null);
 		  const health = props.health;
 		  const llmItems = props.llm.status === "ok" ? props.llm.data.items : [];
 		  const purposes = [...new Set(llmItems.map((item) => item.purpose))].sort();
@@ -8730,48 +8765,48 @@ window.__ModuleLoader__.load({
 		    calls: item.calls,
 		    tokens: item.promptTokens + item.completionTokens
 		  })).sort((left, right) => right.tokens - left.tokens);
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("section", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { className: "jh-card-title", children: "\u8BCA\u65AD" }),
-		      health.status !== "ok" ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u8BCA\u65AD\u4FE1\u606F\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
-		        health.data.dataReady ? /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-stats", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-stat", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("b", { children: health.data.version }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { children: [
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("section", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { className: "jh-card-title", children: "\u8BCA\u65AD" }),
+		      health.status !== "ok" ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u8BCA\u65AD\u4FE1\u606F\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
+		        health.data.dataReady ? /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-stats", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-stat", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("b", { children: health.data.version }),
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { children: [
 		                "\u7248\u672C \xB7 ",
 		                health.data.phase
 		              ] })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(LiveUptimeCard, { uptimeMs: health.data.hostUptimeMs }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-stat", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("b", { children: health.data.tools === null ? "\u2014" : health.data.tools.registered.length }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: "\u5DF2\u6302\u8F7D\u5DE5\u5177" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(LiveUptimeCard, { uptimeMs: health.data.hostUptimeMs }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-stat", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("b", { children: health.data.tools === null ? "\u2014" : health.data.tools.registered.length }),
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: "\u5DF2\u6302\u8F7D\u5DE5\u5177" })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-stat", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("b", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-stat", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("b", { children: [
 		                health.data.jobCount,
 		                " / ",
 		                health.data.companyCount
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: "\u5C97\u4F4D / \u516C\u53F8" })
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: "\u5C97\u4F4D / \u516C\u53F8" })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
 		              "div",
 		              {
 		                className: `jh-stat${health.data.pendingRepairCount > 0 ? " jh-stat-warn" : ""}`,
 		                children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("b", { children: health.data.pendingRepairCount }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: "\u5F85\u4FEE\u590D" })
+		                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("b", { children: health.data.pendingRepairCount }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: "\u5F85\u4FEE\u590D" })
 		                ]
 		              }
 		            )
 		          ] }),
-		          dataPath === null ? null : /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-field", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-field-label", children: "\u6570\u636E\u6587\u4EF6" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-path", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("code", { title: dataPath, children: dataPath }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          dataPath === null ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-field", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-field-label", children: "\u6570\u636E\u6587\u4EF6" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-path", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("code", { title: dataPath, children: dataPath }),
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		                "button",
 		                {
 		                  type: "button",
@@ -8779,10 +8814,10 @@ window.__ModuleLoader__.load({
 		                  title: "\u590D\u5236\u8DEF\u5F84",
 		                  "aria-label": "\u590D\u5236\u6570\u636E\u6587\u4EF6\u8DEF\u5F84",
 		                  onClick: () => void copyPath(dataPath),
-		                  children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconCopy, {})
+		                  children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconCopy, {})
 		                }
 		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		                "button",
 		                {
 		                  type: "button",
@@ -8790,31 +8825,31 @@ window.__ModuleLoader__.load({
 		                  title: "\u6253\u5F00\u6240\u5728\u6587\u4EF6\u5939",
 		                  "aria-label": "\u6253\u5F00\u6570\u636E\u6587\u4EF6\u6240\u5728\u6587\u4EF6\u5939",
 		                  onClick: () => void revealDir(),
-		                  children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(IconFolder, {})
+		                  children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconFolder, {})
 		                }
 		              )
 		            ] })
 		          ] })
-		        ] }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-alert jh-alert-error", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-alert-title", children: "\u6570\u636E\u5C42\u672A\u5C31\u7EEA" }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-alert-body", children: health.data.dataError ?? "\u6CA1\u6709\u53EF\u8BFB\u7684\u5931\u8D25\u539F\u56E0 \u2014\u2014 \u6570\u636E\u5C42\u5C1A\u672A\u5C31\u7EEA\u3002" })
+		        ] }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-alert jh-alert-error", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-alert-title", children: "\u6570\u636E\u5C42\u672A\u5C31\u7EEA" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-alert-body", children: health.data.dataError ?? "\u6CA1\u6709\u53EF\u8BFB\u7684\u5931\u8D25\u539F\u56E0 \u2014\u2014 \u6570\u636E\u5C42\u5C1A\u672A\u5C31\u7EEA\u3002" })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-ctl", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-field-label", children: "\u79BB\u7EBF\u6A21\u5F0F" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: health.data.offline ? "jh-warn" : "jh-muted", children: health.data.offline ? "\u5DF2\u5F00\u542F \u2014\u2014 \u6293\u53D6\u4E0E\u767B\u5F55\u5F15\u5BFC\u4F1A\u88AB\u62D2\u7EDD" : "\u5173\u95ED" })
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-ctl", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-field-label", children: "\u79BB\u7EBF\u6A21\u5F0F" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: health.data.offline ? "jh-warn" : "jh-muted", children: health.data.offline ? "\u5DF2\u5F00\u542F \u2014\u2014 \u6293\u53D6\u4E0E\u767B\u5F55\u5F15\u5BFC\u4F1A\u88AB\u62D2\u7EDD" : "\u5173\u95ED" })
 		        ] }),
-		        health.data.tools !== null && health.data.tools.failed.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("p", { className: "jh-error", children: [
+		        health.data.tools !== null && health.data.tools.failed.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("p", { className: "jh-error", children: [
 		          "\u5DE5\u5177\u6CE8\u518C\u5931\u8D25\uFF1A",
 		          health.data.tools.failed.map((item) => `${item.name}\uFF08${item.reason}\uFF09`).join(" \xB7 ")
 		        ] })
 		      ] })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("section", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { className: "jh-card-title", children: "\u6A21\u578B\u8C03\u7528\u7559\u75D5\uFF08\u6211\u53D1\u4E86\u4EC0\u4E48\u7ED9\u6A21\u578B\uFF09" }),
-		      props.llm.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-error", children: props.llm.message }),
-		      props.llm.status === "ok" && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-filters", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("section", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { className: "jh-card-title", children: "\u6A21\u578B\u8C03\u7528\u7559\u75D5\uFF08\u6211\u53D1\u4E86\u4EC0\u4E48\u7ED9\u6A21\u578B\uFF09" }),
+		      props.llm.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-error", children: props.llm.message }),
+		      props.llm.status === "ok" && /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-filters", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
 		            "select",
 		            {
 		              className: "jh-select",
@@ -8822,8 +8857,8 @@ window.__ModuleLoader__.load({
 		              value: purpose,
 		              onChange: (event) => setPurpose(event.target.value),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("option", { value: "", children: "\u5168\u90E8\u573A\u666F" }),
-		                purposes.map((item) => /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("option", { value: item, children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("option", { value: "", children: "\u5168\u90E8\u573A\u666F" }),
+		                purposes.map((item) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("option", { value: item, children: [
 		                  props.labelOf(item),
 		                  "\uFF08",
 		                  item,
@@ -8832,7 +8867,7 @@ window.__ModuleLoader__.load({
 		              ]
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
 		            "select",
 		            {
 		              className: "jh-select",
@@ -8840,13 +8875,13 @@ window.__ModuleLoader__.load({
 		              value: status,
 		              onChange: (event) => setStatus(event.target.value),
 		              children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("option", { value: "all", children: "\u5168\u90E8\u72B6\u6001" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("option", { value: "ok", children: "\u6210\u529F" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("option", { value: "fail", children: "\u5931\u8D25" })
+		                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("option", { value: "all", children: "\u5168\u90E8\u72B6\u6001" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("option", { value: "ok", children: "\u6210\u529F" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("option", { value: "fail", children: "\u5931\u8D25" })
 		              ]
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		            "input",
 		            {
 		              className: "jh-input jh-input-grow",
@@ -8857,7 +8892,7 @@ window.__ModuleLoader__.load({
 		              onChange: (event) => setQuery(event.target.value)
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-filter-note", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-filter-note", children: [
 		            "\u663E\u793A ",
 		            shown.length,
 		            " / ",
@@ -8865,32 +8900,32 @@ window.__ModuleLoader__.load({
 		            " \u6761"
 		          ] })
 		        ] }),
-		        usage.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { className: "jh-section-title", children: "\u6309\u7528\u9014\u6C47\u603B\uFF08\u4E0D\u53D7\u4E0A\u9762\u7684\u7B5B\u9009\u5F71\u54CD\uFF09" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-usage", children: usage.map((item) => /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-usage-item", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-usage-name", children: props.labelOf(item.purpose) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-usage-num", children: item.calls }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-usage-unit", children: "\u6B21" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-usage-num", children: item.tokens }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-usage-unit", children: "token" })
+		        usage.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h3", { className: "jh-section-title", children: "\u6309\u7528\u9014\u6C47\u603B\uFF08\u4E0D\u53D7\u4E0A\u9762\u7684\u7B5B\u9009\u5F71\u54CD\uFF09" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-usage", children: usage.map((item) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-usage-item", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-usage-name", children: props.labelOf(item.purpose) }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-usage-num", children: item.calls }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-usage-unit", children: "\u6B21" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-usage-num", children: item.tokens }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-usage-unit", children: "token" })
 		          ] }, item.purpose)) })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("table", { className: "jh-table jh-table-roomy", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("tr", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u65F6\u95F4" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u7528\u9014" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u6A21\u578B" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u5916\u53D1\u5B57\u6BB5" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", className: "jh-num", children: "Token" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u7ED3\u679C" })
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("table", { className: "jh-table jh-table-roomy", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u65F6\u95F4" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u7528\u9014" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u6A21\u578B" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u5916\u53D1\u5B57\u6BB5" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", className: "jh-num", children: "Token" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u7ED3\u679C" })
 		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("tbody", { children: shown.map((call) => {
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("tbody", { children: shown.map((call) => {
 		            const result = resultOf(call);
-		            return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("tr", { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { children: call.at.slice(5, 16).replace("T", " ") }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { children: props.labelOf(call.purpose) }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { children: call.model ?? "\u2014" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { children: call.fields.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
+		            return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: call.at.slice(5, 16).replace("T", " ") }),
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: props.labelOf(call.purpose) }),
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: call.model ?? "\u2014" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: call.fields.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
 		                "button",
 		                {
 		                  type: "button",
@@ -8904,54 +8939,54 @@ window.__ModuleLoader__.load({
 		                  ]
 		                }
 		              ) }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { className: "jh-num", children: call.promptTokens + call.completionTokens }),
-		              /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: `jh-tag jh-tag-clip ${result.tone}`, title: result.full, children: result.text }) })
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { className: "jh-num", children: call.promptTokens + call.completionTokens }),
+		              /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: `jh-tag jh-tag-clip ${result.tone}`, title: result.full, children: result.text }) })
 		            ] }, call.id);
 		          }) })
 		        ] }) }),
-		        llmItems.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u8C03\u7528\u8BB0\u5F55\u3002" }),
-		        llmItems.length > 0 && shown.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u5339\u914D\u7684\u8C03\u7528\u8BB0\u5F55 \u2014\u2014 \u6E05\u6389\u4E0A\u9762\u7684\u7B5B\u9009\u6761\u4EF6\u518D\u770B\u770B\u3002" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-note", children: props.llm.data.note })
+		        llmItems.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u8C03\u7528\u8BB0\u5F55\u3002" }),
+		        llmItems.length > 0 && shown.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u5339\u914D\u7684\u8C03\u7528\u8BB0\u5F55 \u2014\u2014 \u6E05\u6389\u4E0A\u9762\u7684\u7B5B\u9009\u6761\u4EF6\u518D\u770B\u770B\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-note", children: props.llm.data.note })
 		      ] })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("section", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h2", { className: "jh-card-title", children: "\u64CD\u4F5C\u5BA1\u8BA1" }),
-		      props.audit.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-error", children: props.audit.message }),
-		      props.audit.status === "ok" && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(import_jsx_runtime17.Fragment, { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-filters", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-filter-note", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("section", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { className: "jh-card-title", children: "\u64CD\u4F5C\u5BA1\u8BA1" }),
+		      props.audit.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-error", children: props.audit.message }),
+		      props.audit.status === "ok" && /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(import_jsx_runtime26.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-filters", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-filter-note", children: [
 		          "\u5171 ",
 		          props.audit.data.count,
 		          " \u6761 \xB7 \u8868\u91CC\u663E\u793A\u6700\u8FD1 ",
 		          props.audit.data.items.length,
 		          " \u6761"
 		        ] }) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("table", { className: "jh-table jh-table-roomy", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("tr", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u65F6\u95F4" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u8C01" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u52A8\u4F5C" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u7ED3\u679C" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("th", { scope: "col", children: "\u8BF4\u660E" })
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("table", { className: "jh-table jh-table-roomy", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u65F6\u95F4" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u8C01" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u52A8\u4F5C" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", className: "jh-cell-status", children: "\u7ED3\u679C" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { scope: "col", children: "\u8BF4\u660E" })
 		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("tbody", { children: props.audit.data.items.map((record) => /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("tr", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { children: record.at.slice(5, 16).replace("T", " ") }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { children: record.actor }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("code", { children: record.action }) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("tbody", { children: props.audit.data.items.map((record) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: record.at.slice(5, 16).replace("T", " ") }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: record.actor }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("code", { children: record.action }) }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { className: "jh-cell-status", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              "span",
 		              {
 		                className: `jh-tag ${record.result === "ok" ? "jh-tone-ok" : "jh-tone-warn"}`,
 		                children: record.result
 		              }
 		            ) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("td", { className: "jh-muted", children: record.reason ?? "\u2014" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { className: "jh-muted", children: record.reason ?? "\u2014" })
 		          ] }, record.id)) })
 		        ] }) }),
-		        props.audit.data.items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5BA1\u8BA1\u8BB0\u5F55\u3002" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-note", children: props.audit.data.note })
+		        props.audit.data.items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5BA1\u8BA1\u8BB0\u5F55\u3002" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-note", children: props.audit.data.note })
 		      ] })
 		    ] }),
-		    payload === null ? null : /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		    payload === null ? null : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		      PayloadDrawer,
 		      {
 		        call: payload,
@@ -8973,22 +9008,22 @@ window.__ModuleLoader__.load({
 		  };
 		}
 		function LiveUptimeCard(props) {
-		  const [elapsed, setElapsed] = (0, import_react13.useState)(0);
-		  (0, import_react13.useEffect)(() => {
+		  const [elapsed, setElapsed] = (0, import_react16.useState)(0);
+		  (0, import_react16.useEffect)(() => {
 		    setElapsed(0);
 		    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1e3);
 		    return () => window.clearInterval(timer);
 		  }, [props.uptimeMs]);
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-stat", title: "\u9762\u677F\u8BFB\u53D6\u65F6\u7684\u5BBF\u4E3B\u8FD0\u884C\u65F6\u957F + \u672C\u5730\u7ECF\u8FC7\u65F6\u95F4\uFF0C\u6BCF\u79D2\u81EA\u589E", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("b", { children: [
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-stat", title: "\u9762\u677F\u8BFB\u53D6\u65F6\u7684\u5BBF\u4E3B\u8FD0\u884C\u65F6\u957F + \u672C\u5730\u7ECF\u8FC7\u65F6\u95F4\uFF0C\u6BCF\u79D2\u81EA\u589E", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("b", { children: [
 		      Math.round(props.uptimeMs / 1e3) + elapsed,
 		      "s"
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: "\u8FD0\u884C\u65F6\u957F" })
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: "\u8FD0\u884C\u65F6\u957F" })
 		  ] });
 		}
 		function PayloadDrawer(props) {
-		  const dialogRef = (0, import_react13.useRef)(null);
+		  const dialogRef = (0, import_react16.useRef)(null);
 		  useDialogA11y(dialogRef, props.onClose);
 		  const call = props.call;
 		  const json = JSON.stringify(
@@ -9019,8 +9054,8 @@ window.__ModuleLoader__.load({
 		    }
 		    props.notify("error", "\u590D\u5236\u5931\u8D25 \u2014\u2014 \u6D4F\u89C8\u5668\u4E0D\u5141\u8BB8\u5199\u526A\u8D34\u677F\uFF0C\u8BF7\u624B\u52A8\u9009\u4E2D JSON \u590D\u5236\u3002");
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-drawer-layer", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-drawer-layer", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		      "button",
 		      {
 		        type: "button",
@@ -9029,7 +9064,7 @@ window.__ModuleLoader__.load({
 		        onClick: props.onClose
 		      }
 		    ),
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
 		      "aside",
 		      {
 		        className: "jh-drawer",
@@ -9040,15 +9075,15 @@ window.__ModuleLoader__.load({
 		        ref: dialogRef,
 		        "data-job-hunter": "llm-payload-drawer",
 		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("header", { className: "jh-drawer-head", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-drawer-title", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("header", { className: "jh-drawer-head", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-drawer-title", children: [
 		              "\u7559\u75D5\u660E\u7EC6 #",
 		              call.id
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("button", { type: "button", className: "jh-icon-btn", "aria-label": "\u5173\u95ED", onClick: props.onClose, children: "\xD7" })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("button", { type: "button", className: "jh-icon-btn", "aria-label": "\u5173\u95ED", onClick: props.onClose, children: "\xD7" })
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "jh-drawer-body", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("div", { className: "jh-copy-head", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "jh-drawer-body", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "jh-copy-head", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -9057,8 +9092,8 @@ window.__ModuleLoader__.load({
 		                children: "\u590D\u5236 JSON"
 		              }
 		            ) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "jh-note jh-json-hint", children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(InlineMd, { text: "\u7559\u75D5\u8868\u91CC\u53EA\u6709**\u5B57\u6BB5\u6E05\u5355\u4E0E\u957F\u5EA6**\uFF0C\u6CA1\u6709\u6B63\u6587 \u2014\u2014 \u5916\u53D1\u6B63\u6587\u4E0D\u5165\u5BA1\u8BA1\u8868\uFF08\xA74.1 \u9690\u79C1\u7B56\u7565\uFF09\u3002" }) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("pre", { className: "jh-json", children: json })
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "jh-note jh-json-hint", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(InlineMd, { text: "\u7559\u75D5\u8868\u91CC\u53EA\u6709**\u5B57\u6BB5\u6E05\u5355\u4E0E\u957F\u5EA6**\uFF0C\u6CA1\u6709\u6B63\u6587 \u2014\u2014 \u5916\u53D1\u6B63\u6587\u4E0D\u5165\u5BA1\u8BA1\u8868\uFF08\xA74.1 \u9690\u79C1\u7B56\u7565\uFF09\u3002" }) }),
+		            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("pre", { className: "jh-json", children: json })
 		          ] })
 		        ]
 		      }
@@ -9066,9 +9101,9 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function NumberField(props) {
-		  const [draft, setDraft] = (0, import_react13.useState)(String(props.value));
-		  const focused = (0, import_react13.useRef)(false);
-		  (0, import_react13.useEffect)(() => {
+		  const [draft, setDraft] = (0, import_react16.useState)(String(props.value));
+		  const focused = (0, import_react16.useRef)(false);
+		  (0, import_react16.useEffect)(() => {
 		    if (!focused.current) setDraft(String(props.value));
 		  }, [props.value]);
 		  const commit = () => {
@@ -9081,8 +9116,8 @@ window.__ModuleLoader__.load({
 		    setDraft(String(clamped));
 		    if (clamped !== props.value) props.onCommit(clamped);
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("span", { className: "jh-number", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("span", { className: "jh-number", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		      "input",
 		      {
 		        type: "number",
@@ -9108,11 +9143,11 @@ window.__ModuleLoader__.load({
 		        }
 		      }
 		    ),
-		    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "jh-number-unit", children: props.unit })
+		    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "jh-number-unit", children: props.unit })
 		  ] });
 		}
 		function IconCopy() {
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
 		    "svg",
 		    {
 		      width: "14",
@@ -9124,14 +9159,14 @@ window.__ModuleLoader__.load({
 		      strokeLinejoin: "round",
 		      "aria-hidden": "true",
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("rect", { x: "5.5", y: "5.5", width: "9", height: "9", rx: "1.5" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("path", { d: "M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5" })
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("rect", { x: "5.5", y: "5.5", width: "9", height: "9", rx: "1.5" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("path", { d: "M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5" })
 		      ]
 		    }
 		  );
 		}
 		function IconFolder() {
-		  return /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
 		    "svg",
 		    {
 		      width: "14",
@@ -9142,14 +9177,14 @@ window.__ModuleLoader__.load({
 		      strokeWidth: "1.4",
 		      strokeLinejoin: "round",
 		      "aria-hidden": "true",
-		      children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("path", { d: "M1.5 4.5A1.5 1.5 0 0 1 3 3h3l1.5 2h5.5A1.5 1.5 0 0 1 14.5 6.5v5A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" })
+		      children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("path", { d: "M1.5 4.5A1.5 1.5 0 0 1 3 3h3l1.5 2h5.5A1.5 1.5 0 0 1 14.5 6.5v5A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" })
 		    }
 		  );
 		}
 
 		// src/client/screens/today.tsx
-		var import_react14 = require("react");
-		var import_jsx_runtime18 = require("react/jsx-runtime");
+		var import_react17 = require("react");
+		var import_jsx_runtime27 = require("react/jsx-runtime");
 		var IDLE2 = { running: false, tone: "ok", message: null };
 		function planIdOf(todo) {
 		  if (todo.detail === null || typeof todo.detail !== "object") return null;
@@ -9170,7 +9205,7 @@ window.__ModuleLoader__.load({
 		  return TODO_KIND_LABEL[kind] ?? kind;
 		}
 		function useSticky(state) {
-		  const last = (0, import_react14.useRef)(null);
+		  const last = (0, import_react17.useRef)(null);
 		  if (state.status === "ok") last.current = state.data;
 		  return state.status === "ok" ? state.data : state.status === "loading" ? last.current : null;
 		}
@@ -9178,8 +9213,8 @@ window.__ModuleLoader__.load({
 		  const today = useAsync((signal) => fetchToday(signal), [props.revision]);
 		  const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision]);
 		  const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react14.useState)(IDLE2);
-		  const now = (0, import_react14.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const [feedback, setFeedback] = (0, import_react17.useState)(IDLE2);
+		  const now = (0, import_react17.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -9241,33 +9276,33 @@ window.__ModuleLoader__.load({
 		  const nextTrigger = sched === null || sched.triggers.length === 0 ? null : [...sched.triggers].sort(
 		    (left, right) => left.nextRunAt < right.nextRunAt ? -1 : left.nextRunAt > right.nextRunAt ? 1 : 0
 		  )[0] ?? null;
-		  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-screen", children: [
-		    today.state.status === "loading" && data === null && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u4ECA\u65E5\u6982\u51B5\u2026" }),
-		    today.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { className: "jh-card-title", children: "\u8BFB\u4E0D\u5230\u4ECA\u65E5\u6982\u51B5" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-error", children: today.state.message }),
-		      today.state.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-muted", children: today.state.hint }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { type: "button", className: "jh-btn", onClick: today.reload, children: "\u91CD\u8BD5" })
+		  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-screen", children: [
+		    today.state.status === "loading" && data === null && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u4ECA\u65E5\u6982\u51B5\u2026" }),
+		    today.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h2", { className: "jh-card-title", children: "\u8BFB\u4E0D\u5230\u4ECA\u65E5\u6982\u51B5" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-error", children: today.state.message }),
+		      today.state.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: today.state.hint }),
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { type: "button", className: "jh-btn", onClick: today.reload, children: "\u91CD\u8BD5" })
 		    ] }),
-		    data !== null && !data.dataReady && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { className: "jh-card-title", children: "\u6570\u636E\u5C42\u672A\u5C31\u7EEA" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-error", children: data.dataError ?? "\u672A\u77E5\u539F\u56E0" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-muted", children: "\u63D2\u4EF6\u672C\u8EAB\u662F\u6302\u7740\u7684 \u2014\u2014 \u8FD9\u91CC\u5982\u5B9E\u62A5\u544A\u539F\u56E0\uFF0C\u800C\u4E0D\u662F\u8BA9\u754C\u9762\u9759\u9ED8\u53D8\u7A7A\u3002" })
+		    data !== null && !data.dataReady && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h2", { className: "jh-card-title", children: "\u6570\u636E\u5C42\u672A\u5C31\u7EEA" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-error", children: data.dataError ?? "\u672A\u77E5\u539F\u56E0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: "\u63D2\u4EF6\u672C\u8EAB\u662F\u6302\u7740\u7684 \u2014\u2014 \u8FD9\u91CC\u5982\u5B9E\u62A5\u544A\u539F\u56E0\uFF0C\u800C\u4E0D\u662F\u8BA9\u754C\u9762\u9759\u9ED8\u53D8\u7A7A\u3002" })
 		    ] }),
-		    data !== null && data.offline && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-card jh-card-tight", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { className: "jh-card-title", children: "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("p", { className: "jh-muted", children: [
+		    data !== null && data.offline && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h2", { className: "jh-card-title", children: "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "jh-muted", children: [
 		        "\u6293\u53D6\u4E0E\u767B\u5F55\u5F15\u5BFC\u5DF2\u88AB\u62D2\u7EDD \u2014\u2014 \u8FD9\u662F\u300C\u81EA\u52A8\u5316\u6D4B\u8BD5\u7EDD\u4E0D\u8BBF\u95EE\u771F\u5B9E\u62DB\u8058\u7AD9\u300D\u7684\u5F00\u5173\u5728\u8D77\u4F5C\u7528\u3002 \u53BB\u6389\u73AF\u5883\u53D8\u91CF ",
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("code", { children: "DSH_JOB_HUNTER_NO_NETWORK" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("code", { children: "DSH_JOB_HUNTER_NO_NETWORK" }),
 		        " \u91CD\u542F\u5373\u53EF\u89E3\u9664\u3002"
 		      ] })
 		    ] }),
-		    data !== null && data.dataReady && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-today-head", children: [
-		          worst === null ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-muted", children: sched !== null && sched.planStatus.length > 0 ? "\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848 \u2014\u2014 \u6570\u636E\u4E0D\u4F1A\u81EA\u52A8\u66F4\u65B0\u3002" : "\u8FD8\u6CA1\u6709\u91C7\u96C6\u65B9\u6848\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(FreshnessBadge, { level: worst.freshness.level, hours: worst.freshness.hoursSinceSuccess }),
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-spacer" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+		    data !== null && data.dataReady && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(import_jsx_runtime27.Fragment, { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-today-head", children: [
+		          worst === null ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-muted", children: sched !== null && sched.planStatus.length > 0 ? "\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848 \u2014\u2014 \u6570\u636E\u4E0D\u4F1A\u81EA\u52A8\u66F4\u65B0\u3002" : "\u8FD8\u6CA1\u6709\u91C7\u96C6\u65B9\u6848\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(FreshnessBadge, { level: worst.freshness.level, hours: worst.freshness.hoursSinceSuccess }),
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		            "button",
 		            {
 		              type: "button",
@@ -9277,60 +9312,60 @@ window.__ModuleLoader__.load({
 		              children: feedback.running ? "\u6267\u884C\u4E2D\u2026" : "\u7ACB\u5373\u91C7\u96C6"
 		            }
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGoCollect, children: "\u53BB\u914D\u7F6E" })
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGoCollect, children: "\u53BB\u914D\u7F6E" })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("p", { className: "jh-muted", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "jh-muted", children: [
 		          nextTrigger === null ? "\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848 \u2014\u2014 \u53EA\u4F1A\u5728\u4F60\u70B9\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u65F6\u8DD1\u3002" : `\u4E0B\u6B21\u81EA\u52A8\u91C7\u96C6\uFF1A${formatClock(new Date(nextTrigger.nextRunAt))}\uFF08${formatRelative(new Date(nextTrigger.nextRunAt), now)}\uFF09${formatJitter(nextTrigger.jitterMs) === null ? "" : ` \xB7 ${String(formatJitter(nextTrigger.jitterMs))}`} \xB7 \u65B9\u6848\u300C${nextTrigger.planName}\u300D`,
-		          sched?.paused === true ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(InlineMd, { text: " \xB7 **\u5B9A\u65F6\u5DF2\u6682\u505C**\uFF08\u624B\u52A8\u4ECD\u7136\u53EF\u7528\uFF09" }) : null
+		          sched?.paused === true ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(InlineMd, { text: " \xB7 **\u5B9A\u65F6\u5DF2\u6682\u505C**\uFF08\u624B\u52A8\u4ECD\u7136\u53EF\u7528\uFF09" }) : null
 		        ] }),
-		        sched?.refreshSuggested === true && sched.refreshHint !== null && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-warn", children: sched.refreshHint }),
-		        sched?.readOnly === true && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("p", { className: "jh-error", children: [
+		        sched?.refreshSuggested === true && sched.refreshHint !== null && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-warn", children: sched.refreshHint }),
+		        sched?.readOnly === true && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "jh-error", children: [
 		          "\u672C\u5B9E\u4F8B\u53EA\u8BFB\uFF1A",
 		          sched.readOnlyReason ?? "\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u8FD0\u884C"
 		        ] }),
-		        feedback.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: feedback.message })
+		        feedback.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: feedback.tone === "error" ? "jh-error" : "jh-muted", children: feedback.message })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("p", { className: "jh-muted jh-health-line", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "jh-muted jh-health-line", children: [
 		        "\u5E73\u53F0\u5065\u5EB7\uFF1A",
 		        platformItems.length === 0 ? "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0" : unhealthy.length === 0 ? "\u5168\u90E8\u6B63\u5E38" : unhealthy.map(
 		          (item) => `${item.id} ${item.health !== "healthy" ? HEALTH_STATE_LABEL[item.health] : "\u672A\u767B\u5F55"}`
 		        ).join(" \xB7 "),
 		        " \xB7 ",
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { type: "button", className: "jh-link", onClick: props.onGoCollect, children: "\u770B\u7EC6\u8282" })
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { type: "button", className: "jh-link", onClick: props.onGoCollect, children: "\u770B\u7EC6\u8282" })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-stats", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("button", { type: "button", className: "jh-stat", onClick: props.onGoJobs, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: data.newJobs24h }),
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "24 \u5C0F\u65F6\u65B0\u589E" })
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-stats", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("button", { type: "button", className: "jh-stat", onClick: props.onGoJobs, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: data.newJobs24h }),
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "24 \u5C0F\u65F6\u65B0\u589E" })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("button", { type: "button", className: "jh-stat", onClick: props.onGoJobs, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: data.jobCount }),
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u5C97\u4F4D\u603B\u6570" })
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("button", { type: "button", className: "jh-stat", onClick: props.onGoJobs, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: data.jobCount }),
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "\u5C97\u4F4D\u603B\u6570" })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: `jh-stat${data.pendingRepair > 0 ? " jh-stat-warn" : ""}`, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: data.pendingRepair }),
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u5F85\u4FEE\u590D\u8BB0\u5F55" })
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: `jh-stat${data.pendingRepair > 0 ? " jh-stat-warn" : ""}`, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: data.pendingRepair }),
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "\u5F85\u4FEE\u590D\u8BB0\u5F55" })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: `jh-stat${data.todos.some((todo) => todo.level === "urgent") ? " jh-stat-error" : ""}`, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: data.openTodoCount }),
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u5F85\u529E" })
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: `jh-stat${data.todos.some((todo) => todo.level === "urgent") ? " jh-stat-error" : ""}`, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: data.openTodoCount }),
+		          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "\u5F85\u529E" })
 		        ] })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("section", { className: "jh-card", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { className: "jh-card-title", children: "\u5F85\u529E" }),
-		        data.todos.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u5F85\u529E\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("ul", { className: "jh-todos", children: data.todos.map((todo) => {
+		      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("section", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h2", { className: "jh-card-title", children: "\u5F85\u529E" }),
+		        data.todos.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u5F85\u529E\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("ul", { className: "jh-todos", children: data.todos.map((todo) => {
 		          const planId = planIdOf(todo);
 		          const confirmJobId = confirmTargetJobIdOf(todo);
-		          return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { className: `jh-todo jh-todo-${todo.level}`, children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-todo-level", children: todoLevelLabel(todo.level) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-todo-body", children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-todo-title", children: todo.title }),
-		              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-muted", children: [
+		          return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("li", { className: `jh-todo jh-todo-${todo.level}`, children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-todo-level", children: todoLevelLabel(todo.level) }),
+		            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-todo-body", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { className: "jh-todo-title", children: todo.title }),
+		              /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-muted", children: [
 		                todoKindLabel(todo.kind),
 		                todo.ref === null ? "" : ` \xB7 ${todo.ref}`
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-todo-actions", children: [
-		                todo.kind === "catch-up" && planId !== null && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+		              /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "jh-todo-actions", children: [
+		                todo.kind === "catch-up" && planId !== null && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -9340,7 +9375,7 @@ window.__ModuleLoader__.load({
 		                    children: "\u7ACB\u5373\u8865\u8DD1"
 		                  }
 		                ),
-		                todo.kind === "login-required" && todo.ref !== null && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+		                todo.kind === "login-required" && todo.ref !== null && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -9350,7 +9385,7 @@ window.__ModuleLoader__.load({
 		                    children: "\u53BB\u767B\u5F55"
 		                  }
 		                ),
-		                todo.kind === "confirm-action" && confirmJobId !== null && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+		                todo.kind === "confirm-action" && confirmJobId !== null && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -9360,8 +9395,8 @@ window.__ModuleLoader__.load({
 		                    children: "\u53BB\u5904\u7406"
 		                  }
 		                ),
-		                todo.kind === "blocked" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGoCollect, children: "\u53BB\u786E\u8BA4\u6062\u590D" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+		                todo.kind === "blocked" && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGoCollect, children: "\u53BB\u786E\u8BA4\u6062\u590D" }),
+		                /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
@@ -9384,13 +9419,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/use-event-stream.ts
-		var import_react15 = require("react");
+		var import_react18 = require("react");
 		function useEventStream(onHint) {
-		  const [status, setStatus] = (0, import_react15.useState)("connecting");
-		  const [lastEventAt, setLastEventAt] = (0, import_react15.useState)(null);
-		  const hintRef = (0, import_react15.useRef)(onHint);
+		  const [status, setStatus] = (0, import_react18.useState)("connecting");
+		  const [lastEventAt, setLastEventAt] = (0, import_react18.useState)(null);
+		  const hintRef = (0, import_react18.useRef)(onHint);
 		  hintRef.current = onHint;
-		  (0, import_react15.useEffect)(() => {
+		  (0, import_react18.useEffect)(() => {
 		    const source = new EventSource(`${ROUTE_PREFIX}/events`);
 		    source.onopen = () => {
 		      setStatus("open");
@@ -9424,7 +9459,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/panel.tsx
-		var import_jsx_runtime19 = require("react/jsx-runtime");
+		var import_jsx_runtime28 = require("react/jsx-runtime");
 		var TABS = [
 		  { key: "today", label: "\u4ECA\u65E5" },
 		  { key: "jobs", label: "\u5C97\u4F4D\u5E93" },
@@ -9443,17 +9478,17 @@ window.__ModuleLoader__.load({
 		  closed: "\u5B9E\u65F6\u5DF2\u65AD\u5F00"
 		};
 		function JobHunterPanel() {
-		  const [screen, setScreen] = (0, import_react16.useState)("today");
-		  const [selected, setSelected] = (0, import_react16.useState)(null);
-		  const [revision, setRevision] = (0, import_react16.useState)(0);
-		  const timer = (0, import_react16.useRef)(null);
-		  (0, import_react16.useEffect)(
+		  const [screen, setScreen] = (0, import_react19.useState)("today");
+		  const [selected, setSelected] = (0, import_react19.useState)(null);
+		  const [revision, setRevision] = (0, import_react19.useState)(0);
+		  const timer = (0, import_react19.useRef)(null);
+		  (0, import_react19.useEffect)(
 		    () => () => {
 		      if (timer.current !== null) window.clearTimeout(timer.current);
 		    },
 		    []
 		  );
-		  const onHint = (0, import_react16.useCallback)((type) => {
+		  const onHint = (0, import_react19.useCallback)((type) => {
 		    if (type === "resync") {
 		      setRevision((value) => value + 1);
 		      return;
@@ -9465,7 +9500,7 @@ window.__ModuleLoader__.load({
 		    }, 250);
 		  }, []);
 		  const stream = useEventStream(onHint);
-		  (0, import_react16.useEffect)(() => {
+		  (0, import_react19.useEffect)(() => {
 		    const apply2 = (intent) => {
 		      setScreen("jobs");
 		      setSelected(intent.jobId);
@@ -9474,11 +9509,11 @@ window.__ModuleLoader__.load({
 		    if (first !== null) apply2(first);
 		    return subscribePanelIntent(apply2);
 		  }, []);
-		  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "jh-root", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("header", { className: "jh-topbar", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h1", { className: "jh-title", children: "\u6C42\u804C\u627E\u5DE5\u4F5C" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "jh-badge", children: PHASE }),
-		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("nav", { className: "jh-tabs", "aria-label": "\u6C42\u804C\u627E\u5DE5\u4F5C\u5206\u533A", children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "jh-root", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("header", { className: "jh-topbar", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h1", { className: "jh-title", children: "\u6C42\u804C\u627E\u5DE5\u4F5C" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-badge", children: PHASE }),
+		      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("nav", { className: "jh-tabs", "aria-label": "\u6C42\u804C\u627E\u5DE5\u4F5C\u5206\u533A", children: TABS.map((tab) => /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -9492,14 +9527,14 @@ window.__ModuleLoader__.load({
 		        },
 		        tab.key
 		      )) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "jh-spacer" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("span", { className: `jh-live jh-live-${stream.status}`, title: PLUGIN_ID, role: "status", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("i", { className: "jh-dot", "aria-hidden": "true" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-spacer" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("span", { className: `jh-live jh-live-${stream.status}`, title: PLUGIN_ID, role: "status", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("i", { className: "jh-dot", "aria-hidden": "true" }),
 		        STREAM_LABEL[stream.status] ?? stream.status
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: backToConversation, children: "\u8FD4\u56DE\u5BF9\u8BDD\u533A" })
+		      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: backToConversation, children: "\u8FD4\u56DE\u5BF9\u8BDD\u533A" })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "jh-body", role: "main", children: screen === "today" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "jh-body", role: "main", children: screen === "today" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		      TodayScreen,
 		      {
 		        revision,
@@ -9510,28 +9545,28 @@ window.__ModuleLoader__.load({
 		        },
 		        onGoCollect: () => setScreen("collect")
 		      }
-		    ) : screen === "collect" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(CollectScreen, { revision, onGoSettings: () => setScreen("settings") }) : screen === "settings" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(SettingsScreen, { revision }) : screen === "pipeline" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		    ) : screen === "collect" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(CollectScreen, { revision, onGoSettings: () => setScreen("settings") }) : screen === "settings" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(SettingsScreen, { revision }) : screen === "pipeline" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		      PipelineScreen,
 		      {
 		        revision,
 		        onChanged: () => setRevision((value) => value + 1),
 		        onSelectJob: setSelected
 		      }
-		    ) : screen === "inbox" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		    ) : screen === "inbox" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		      InboxScreen,
 		      {
 		        revision,
 		        onChanged: () => setRevision((value) => value + 1),
 		        onSelectJob: setSelected
 		      }
-		    ) : screen === "interviews" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		    ) : screen === "interviews" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		      InterviewsScreen,
 		      {
 		        revision,
 		        onChanged: () => setRevision((value) => value + 1),
 		        onSelectJob: setSelected
 		      }
-		    ) : screen === "campus" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(CampusScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : screen === "board" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		    ) : screen === "campus" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(CampusScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : screen === "board" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		      BoardScreen,
 		      {
 		        revision,
@@ -9540,7 +9575,7 @@ window.__ModuleLoader__.load({
 		          setScreen("pipeline");
 		        }
 		      }
-		    ) : screen === "resumes" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ResumesScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		    ) : screen === "resumes" ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ResumesScreen, { revision, onChanged: () => setRevision((value) => value + 1) }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		      JobsScreen,
 		      {
 		        revision,
@@ -9549,7 +9584,7 @@ window.__ModuleLoader__.load({
 		        onChanged: () => setRevision((value) => value + 1)
 		      }
 		    ) }),
-		    screen === "jobs" || selected === null ? null : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+		    screen === "jobs" || selected === null ? null : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
 		      JobDetailDrawer,
 		      {
 		        id: selected,
@@ -11208,10 +11243,10 @@ window.__ModuleLoader__.load({
 		`;
 
 		// src/client/toolviews/greeting-card.tsx
-		var import_react18 = require("react");
+		var import_react21 = require("react");
 
 		// src/client/toolviews/parts.tsx
-		var import_react17 = require("react");
+		var import_react20 = require("react");
 
 		// src/shared/tool-format.ts
 		var JOB_LIST_LINE = /^#(\d+)\s+(.+)$/;
@@ -11274,28 +11309,28 @@ window.__ModuleLoader__.load({
 		}
 		function CardShell(props) {
 		  const { title, subtitle, tone = "normal", actions, inspect, children } = props;
-		  return (0, import_react17.createElement)(
+		  return (0, import_react20.createElement)(
 		    "div",
 		    { className: "jh-tv", "data-tone": tone },
-		    (0, import_react17.createElement)(
+		    (0, import_react20.createElement)(
 		      "div",
 		      { className: "jh-tv-head" },
-		      (0, import_react17.createElement)("span", { className: "jh-tv-title" }, title),
-		      subtitle === void 0 || subtitle === "" ? null : (0, import_react17.createElement)("span", { className: "jh-tv-sub" }, subtitle),
-		      (0, import_react17.createElement)("span", { className: "jh-spacer" }),
-		      actions === void 0 ? null : (0, import_react17.createElement)("span", { className: "jh-tv-actions" }, actions),
-		      inspect === void 0 ? null : (0, import_react17.createElement)(
+		      (0, import_react20.createElement)("span", { className: "jh-tv-title" }, title),
+		      subtitle === void 0 || subtitle === "" ? null : (0, import_react20.createElement)("span", { className: "jh-tv-sub" }, subtitle),
+		      (0, import_react20.createElement)("span", { className: "jh-spacer" }),
+		      actions === void 0 ? null : (0, import_react20.createElement)("span", { className: "jh-tv-actions" }, actions),
+		      inspect === void 0 ? null : (0, import_react20.createElement)(
 		        "button",
 		        { type: "button", className: "jh-tv-link", onClick: inspect },
 		        "\u67E5\u770B"
 		      )
 		    ),
-		    children === void 0 ? null : (0, import_react17.createElement)("div", { className: "jh-tv-body" }, children)
+		    children === void 0 ? null : (0, import_react20.createElement)("div", { className: "jh-tv-body" }, children)
 		  );
 		}
 		function JobRow(props) {
 		  const { job, onOpen } = props;
-		  return (0, import_react17.createElement)(
+		  return (0, import_react20.createElement)(
 		    "button",
 		    {
 		      type: "button",
@@ -11303,18 +11338,18 @@ window.__ModuleLoader__.load({
 		      onClick: () => onOpen(job.id),
 		      title: "\u5728\u4E3B\u9762\u677F\u91CC\u6253\u5F00\u8FD9\u4E2A\u5C97\u4F4D"
 		    },
-		    (0, import_react17.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
-		    (0, import_react17.createElement)("span", { className: "jh-tv-job-title" }, job.title),
-		    (0, import_react17.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
-		    (0, import_react17.createElement)("span", { className: "jh-spacer" }),
-		    (0, import_react17.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
-		    (0, import_react17.createElement)("span", { className: "jh-tv-job-score" }, job.score)
+		    (0, import_react20.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
+		    (0, import_react20.createElement)("span", { className: "jh-tv-job-title" }, job.title),
+		    (0, import_react20.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
+		    (0, import_react20.createElement)("span", { className: "jh-spacer" }),
+		    (0, import_react20.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
+		    (0, import_react20.createElement)("span", { className: "jh-tv-job-score" }, job.score)
 		  );
 		}
 		function useAction() {
-		  const [busy, setBusy] = (0, import_react17.useState)(false);
-		  const [error, setError] = (0, import_react17.useState)(null);
-		  const [result, setResult] = (0, import_react17.useState)(null);
+		  const [busy, setBusy] = (0, import_react20.useState)(false);
+		  const [error, setError] = (0, import_react20.useState)(null);
+		  const [result, setResult] = (0, import_react20.useState)(null);
 		  const run = async (fn) => {
 		    setBusy(true);
 		    setError(null);
@@ -11345,23 +11380,23 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/toolviews/greeting-card.tsx
-		var import_jsx_runtime20 = require("react/jsx-runtime");
+		var import_jsx_runtime29 = require("react/jsx-runtime");
 		function GreetingCard(props) {
 		  const { block, inspect } = props;
 		  const settled = isSettled(block);
 		  const text = textOf(block);
 		  const failed = block.isError === true;
-		  const [copied, setCopied] = (0, import_react18.useState)(false);
+		  const [copied, setCopied] = (0, import_react21.useState)(false);
 		  const parsed = splitDraft(text);
 		  const jobId = jobIdOf(props);
-		  return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
 		    CardShell,
 		    {
 		      title: "\u6253\u62DB\u547C\u8BDD\u672F",
 		      subtitle: failed ? block.error?.code ?? "\u5931\u8D25" : settled ? parsed.source : "\u6B63\u5728\u751F\u6210\u2026",
 		      tone: failed ? "error" : "normal",
 		      ...inspect === void 0 ? {} : { inspect },
-		      actions: settled && !failed ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
+		      actions: settled && !failed ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -11376,12 +11411,12 @@ window.__ModuleLoader__.load({
 		        }
 		      ) : null,
 		      children: [
-		        !settled ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-tv-note", children: "\u6B63\u5728\u751F\u6210\u2026\u6A21\u578B\u4E0D\u53EF\u7528\u65F6\u4F1A\u81EA\u52A8\u9000\u56DE\u5185\u7F6E\u6A21\u677F\u3002" }) : failed ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-tv-error", children: text === "" ? "\u8FD9\u6B21\u8C03\u7528\u5931\u8D25\u4E86\u3002" : text }) : /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)(import_jsx_runtime20.Fragment, { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("pre", { className: "jh-tv-pre jh-tv-pre-body", children: parsed.body }),
-		          parsed.meta === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-tv-note", children: parsed.meta }),
-		          /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "jh-tv-note", children: "\u8FD8\u6CA1\u6709\u53D1\u9001 \u2014\u2014 \u53D1\u9001\u662F\u9AD8\u5371\u52A8\u4F5C\uFF0C\u9700\u8981\u5728\u9762\u677F\u91CC\u786E\u8BA4\u3002" })
+		        !settled ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { className: "jh-tv-note", children: "\u6B63\u5728\u751F\u6210\u2026\u6A21\u578B\u4E0D\u53EF\u7528\u65F6\u4F1A\u81EA\u52A8\u9000\u56DE\u5185\u7F6E\u6A21\u677F\u3002" }) : failed ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { className: "jh-tv-error", children: text === "" ? "\u8FD9\u6B21\u8C03\u7528\u5931\u8D25\u4E86\u3002" : text }) : /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(import_jsx_runtime29.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("pre", { className: "jh-tv-pre jh-tv-pre-body", children: parsed.body }),
+		          parsed.meta === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { className: "jh-tv-note", children: parsed.meta }),
+		          /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("p", { className: "jh-tv-note", children: "\u8FD8\u6CA1\u6709\u53D1\u9001 \u2014\u2014 \u53D1\u9001\u662F\u9AD8\u5371\u52A8\u4F5C\uFF0C\u9700\u8981\u5728\u9762\u677F\u91CC\u786E\u8BA4\u3002" })
 		        ] }),
-		        jobId === null || !settled || failed ? null : /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("div", { className: "jh-tv-foot", children: /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
+		        jobId === null || !settled || failed ? null : /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { className: "jh-tv-foot", children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -11421,8 +11456,8 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/toolviews/job-detail-card.tsx
-		var import_react19 = require("react");
-		var import_jsx_runtime21 = require("react/jsx-runtime");
+		var import_react22 = require("react");
+		var import_jsx_runtime30 = require("react/jsx-runtime");
 		function JobDetailCard(props) {
 		  const { block, inspect } = props;
 		  const settled = isSettled(block);
@@ -11434,7 +11469,7 @@ window.__ModuleLoader__.load({
 		  const jobId = jobIdOf2(props);
 		  const mark = useAction();
 		  const draft = useAction();
-		  const [copied, setCopied] = (0, import_react19.useState)(false);
+		  const [copied, setCopied] = (0, import_react22.useState)(false);
 		  const onMark = () => {
 		    if (jobId === null) return;
 		    void mark.run(async () => {
@@ -11452,17 +11487,17 @@ window.__ModuleLoader__.load({
 		\u2014\u2014 \u6765\u6E90\uFF1A${source}${result.notes.length === 0 ? "" : `\uFF08${result.notes.join("\uFF1B")}\uFF09`}`;
 		    });
 		  };
-		  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
 		    CardShell,
 		    {
 		      title: "\u5C97\u4F4D\u8BE6\u60C5",
 		      subtitle: failed ? block.error?.code ?? "\u5931\u8D25" : settled ? titleLine : "\u6B63\u5728\u8BFB\u53D6\u2026",
 		      tone: failed ? "error" : "normal",
 		      ...inspect === void 0 ? {} : { inspect },
-		      actions: jobId === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled: mark.busy, onClick: onMark, children: mark.busy ? "\u6536\u85CF\u4E2D\u2026" : "\u6536\u85CF" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled: draft.busy, onClick: onDraft, children: draft.busy ? "\u751F\u6210\u4E2D\u2026" : "\u751F\u6210\u8BDD\u672F" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
+		      actions: jobId === null ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(import_jsx_runtime30.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled: mark.busy, onClick: onMark, children: mark.busy ? "\u6536\u85CF\u4E2D\u2026" : "\u6536\u85CF" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled: draft.busy, onClick: onDraft, children: draft.busy ? "\u751F\u6210\u4E2D\u2026" : "\u751F\u6210\u8BDD\u672F" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -11473,19 +11508,19 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }),
 		      children: [
-		        failed ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-tv-error", children: text === "" ? "\u8FD9\u6B21\u8C03\u7528\u5931\u8D25\u4E86\u3002" : text }) : !settled ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-tv-note", children: "\u6B63\u5728\u8BFB\u53D6\u5C97\u4F4D\u8BE6\u60C5\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "jh-tv-rows", children: rows.map(
-		          (row, index) => row === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-tv-row", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-tv-label", children: row.key }),
-		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-tv-value", children: row.value })
+		        failed ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { className: "jh-tv-error", children: text === "" ? "\u8FD9\u6B21\u8C03\u7528\u5931\u8D25\u4E86\u3002" : text }) : !settled ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { className: "jh-tv-note", children: "\u6B63\u5728\u8BFB\u53D6\u5C97\u4F4D\u8BE6\u60C5\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "jh-tv-rows", children: rows.map(
+		          (row, index) => row === null ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-tv-row", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-tv-label", children: row.key }),
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-tv-value", children: row.value })
 		          ] }, `${row.key}-${String(index)}`)
 		        ) }),
-		        mark.error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-tv-error", children: mark.error }),
-		        mark.result === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-tv-ok", children: mark.result }),
-		        draft.error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "jh-tv-error", children: draft.error }),
-		        draft.result === null ? null : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-tv-draft", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("pre", { className: "jh-tv-pre", children: draft.result }),
-		          /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "jh-tv-foot", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(
+		        mark.error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { className: "jh-tv-error", children: mark.error }),
+		        mark.result === null ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { className: "jh-tv-ok", children: mark.result }),
+		        draft.error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { className: "jh-tv-error", children: draft.error }),
+		        draft.result === null ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-tv-draft", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("pre", { className: "jh-tv-pre", children: draft.result }),
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-tv-foot", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
 		              "button",
 		              {
 		                type: "button",
@@ -11499,7 +11534,7 @@ window.__ModuleLoader__.load({
 		                children: copied ? "\u5DF2\u590D\u5236" : "\u590D\u5236"
 		              }
 		            ),
-		            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "jh-tv-note", children: "\u8FD9\u6BB5**\u8FD8\u6CA1\u6709\u53D1\u9001** \u2014\u2014 \u53D1\u9001\u8981\u53BB\u9762\u677F\u91CC\u786E\u8BA4\u3002" })
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-tv-note", children: "\u8FD9\u6BB5**\u8FD8\u6CA1\u6709\u53D1\u9001** \u2014\u2014 \u53D1\u9001\u8981\u53BB\u9762\u677F\u91CC\u786E\u8BA4\u3002" })
 		          ] })
 		        ] })
 		      ]
@@ -11520,7 +11555,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/toolviews/jobs-card.tsx
-		var import_jsx_runtime22 = require("react/jsx-runtime");
+		var import_jsx_runtime31 = require("react/jsx-runtime");
 		function JobsCard(props) {
 		  const { block, toolName, inspect } = props;
 		  const settled = isSettled(block);
@@ -11531,7 +11566,7 @@ window.__ModuleLoader__.load({
 		  const running = !settled;
 		  const title = toolName === "job_search" ? "\u5C97\u4F4D\u641C\u7D22" : "\u5C97\u4F4D\u5E93";
 		  const subtitle = running ? "\u6B63\u5728\u8DD1\u2026" : failed ? block.error?.code ?? "\u5931\u8D25" : headline;
-		  return /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(
+		  return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
 		    CardShell,
 		    {
 		      title,
@@ -11539,8 +11574,8 @@ window.__ModuleLoader__.load({
 		      tone: failed ? "error" : "normal",
 		      ...inspect === void 0 ? {} : { inspect },
 		      children: [
-		        running ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "jh-tv-note", children: toolName === "job_search" ? "\u6B63\u5728\u6293\u53D6 \u2014\u2014 \u4F1A\u771F\u7684\u6253\u5F00\u6D4F\u89C8\u5668\uFF0C\u901A\u5E38\u5341\u51E0\u79D2\u5230\u4E00\u5206\u949F\u3002" : "\u6B63\u5728\u8BFB\u53D6\u2026" }) : failed ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "jh-tv-error", children: text === "" ? "\u8FD9\u6B21\u8C03\u7528\u5931\u8D25\u4E86\u3002" : text }) : jobs.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "jh-tv-note", children: text === "" ? "\u6CA1\u6709\u7ED3\u679C\u3002" : text }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "jh-tv-jobs", children: jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(JobRow, { job, onOpen: (id) => openJobInPanel(id) }, job.id)) }),
-		        running || failed || jobs.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "jh-tv-foot", children: /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: () => openJobInPanel(jobs[0].id), children: "\u53BB\u9762\u677F\u770B\u5168\u90E8" }) })
+		        running ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("p", { className: "jh-tv-note", children: toolName === "job_search" ? "\u6B63\u5728\u6293\u53D6 \u2014\u2014 \u4F1A\u771F\u7684\u6253\u5F00\u6D4F\u89C8\u5668\uFF0C\u901A\u5E38\u5341\u51E0\u79D2\u5230\u4E00\u5206\u949F\u3002" : "\u6B63\u5728\u8BFB\u53D6\u2026" }) : failed ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("p", { className: "jh-tv-error", children: text === "" ? "\u8FD9\u6B21\u8C03\u7528\u5931\u8D25\u4E86\u3002" : text }) : jobs.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("p", { className: "jh-tv-note", children: text === "" ? "\u6CA1\u6709\u7ED3\u679C\u3002" : text }) : /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "jh-tv-jobs", children: jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(JobRow, { job, onOpen: (id) => openJobInPanel(id) }, job.id)) }),
+		        running || failed || jobs.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "jh-tv-foot", children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: () => openJobInPanel(jobs[0].id), children: "\u53BB\u9762\u677F\u770B\u5168\u90E8" }) })
 		      ]
 		    }
 		  );

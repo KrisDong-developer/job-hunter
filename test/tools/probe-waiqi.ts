@@ -65,7 +65,6 @@ async function main(): Promise<void> {
   const base = await list({ expectId: 0, status: 1, sort: 0, type: 2, page: 1, size: 20, needAd: 1 })
   check('基线 code=1000', base?.code === 1000, `code=${String(base?.code)} count=${String(resultCount(base))}`)
   const baseCount = resultCount(base)
-  const baseIds = firstIds(base)
   INFO.push(`基线结果数 count=${String(baseCount)} 全平台 total=${String(base?.data?.totalCount)}`)
   INFO.push(`单条记录字段：${Object.keys(base?.data?.positionVO?.records?.[0] ?? {}).join(', ')}`)
   await wait()

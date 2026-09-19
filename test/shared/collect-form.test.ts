@@ -12,7 +12,7 @@ import {
   formOf,
   parseKeywordsText,
   writeOf,
-} from '../../src/client/screens/collect.js'
+} from '../../src/client/screens/collect/plan-form.js'
 import type { PlanDto } from '../../src/shared/dto.js'
 
 /**

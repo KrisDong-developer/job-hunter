@@ -22,7 +22,6 @@ import type {
   JobState,
   MaturityLevel,
   MessageDirection,
-  RemoteKind,
   StageSource,
   TripartiteState,
   VisaStance,

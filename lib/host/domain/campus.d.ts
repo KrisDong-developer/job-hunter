@@ -91,4 +91,21 @@ export interface CampusDeps {
     };
 }
 export declare function createCampusService(deps: CampusDeps): CampusService;
+/**
+ * 把**不可逆的硬截止**同步进待办（§12.7 / 决策记录第 3 条）。
+ *
+ * 落在 campus 而不是装配点：这里用的是 `URGENT_WITHIN_HOURS` 那条口径，
+ * 而那正是本模块（"不可逆节点"）的语义 —— 分两处写必然漂移成两种"紧急"。
+ *
+ * 两件事必须一起做，否则这条提醒本身就是坏的：
+ *   * **周期性地跑**（调用方把它挂在心跳上）—— 只在数据层打开时跑一次的话，
+ *     用户今天刚建的笔试根本进不了待办，要等到下次重启才出现，
+ *     而"错过即终态"的提醒晚一天就等于没有；
+ *   * 标题里的"剩 N 小时"要**跟着时间更新** —— `createOnce` 命中已有待办时直接返回、
+ *     不改文案，一条已经过期两小时的笔试还写着"剩 3 小时"，比没有提醒更糟。
+ * 所以命中已有待办时不能只靠 `createOnce` 跳过：**文案变了就先关掉再重建**。
+ *
+ * 不再紧急（或已被处理）的截止会把对应的提醒关掉，不留一条永远不消的待办。
+ */
+export declare function syncDeadlineTodos(store: Store, deadlines: readonly DeadlineDto[], now: string): void;
 //# sourceMappingURL=campus.d.ts.map

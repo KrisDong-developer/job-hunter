@@ -140,8 +140,14 @@ src/
 │   │   └── dsh.ts         # 我们消费的 DSH 接口的**最小本地类型面**
 ├── host/              # ── 宿主半（Node）
 │   ├── index.ts       # cordis 插件入口：name / inject / apply（立即返回）
-│   ├── runtime.ts     # 宿主侧装配：store + 注册表 + 互斥 + 浏览器 + 领域/安全/模型服务
-│   │                  # 含 platformGate（SR-16 每平台前置：离线/健康/登录/冷却/配额）
+│   ├── runtime.ts     # 宿主侧装配门面：store + 注册表 + 互斥 + 浏览器 + 领域/安全/模型服务
+│   ├── runtime/       # 装配点的子模块（都是叶子/单向依赖，不反向 import runtime.ts）
+│   │   ├── contract.ts # RuntimeFailure + dataNotReady（路由不必为一个错误 import 整个装配点）
+│   │   ├── adapters.ts # **平台清单**（10 个适配器一行一个）+ 注册样板 + platform 行登记
+│   │   ├── gate.ts     # SR-16 每平台前置（离线/风控/健康/登录/冷却/配额）+ 冷却与配额两个读数
+│   │   ├── views.ts    # 只读投影：store → DTO（health / crawlStatus / platforms / loginStatuses）
+│   │   ├── actions.ts  # 七个编排：闸门 + 令牌 + **成功后才回写** + 事件广播
+│   │   └── lifecycle.ts# 租约（R20）与心跳：只读原因 / 接管 / 拒绝驱动浏览器
 │   ├── scheduler/     # 自排程（§4.6 / D-19）
 │   │   ├── schedule.ts   # **纯函数**：偏好时段 → 窗口内触发点（稳定哈希，可离线断言）
 │   │   ├── index.ts      # 触发/跳过/退避/风控暂停/一键暂停/新鲜度
@@ -149,7 +155,8 @@ src/
 │   ├── settings.ts    # 插件配置门面（改 guard 配置必须持令牌）
 │   ├── http.ts        # 唯一前缀路由的**传输层**（Node req/res + SSE 挂流）
 │   ├── http/
-│   │   ├── router.ts  # 路由与参数校验（与传输解耦，可离线单测）
+│   │   ├── router.ts  # **有序路由表** + 同源校验 + 领域错误→HTTP 映射（表 = 全部端点清单）
+│   │   ├── routes/    # 19 个按域分的模块；**一个 handler 只接一个精确形状**（不接就返回 undefined）
 │   │   └── sse.ts     # 事件总线（有界缓冲 + Last-Event-ID 补发 + resync）
 │   ├── store/         # sqlite 层（R2：experimental API 只隔离在这里）
 │   │   ├── db.ts      # 连接、PRAGMA、WAL、application_id 自保护
@@ -172,7 +179,7 @@ src/
 │   │   ├── messages.ts# 消息与邀约识别（识别 != 改状态）
 │   │   ├── interviews.ts # 面试日程 / 撞车 / 通勤 / 准备包
 │   │   └── analytics.ts  # 漏斗 / 归因 / 薪资分位（样本不足不给结论）
-│   │   ├── campus.ts   # 校招：硬截止 / 笔试不可逆 / 三方不可逆（P8）
+│   │   ├── campus.ts   # 校招：硬截止（含**同步进待办**）/ 笔试不可逆 / 三方不可逆（P8）
 │   │   └── overseas.ts # 海外：工签识别 / 时区双重显示 / Cover Letter（P8）
 │   ├── render/        # ── 文档渲染（P6，纯函数：内容 → 字节）
 │   │   ├── resume-html.ts # 结构化简历 → 自包含 HTML（两套模板 + CJK 字体栈）
@@ -191,8 +198,15 @@ src/
 │   │   ├── prompts.ts # 系统提示 + nonce 围栏（结构隔离）+ JSON 抠取
 │   │   ├── purposes.ts# 11 个用途与默认开关
 │   │   └── llm-port.ts# 把宿主 llm 服务的流式接口适配成一次性调用
-│   ├── tools/         # ── 模型工具（P5，§22.2）
-│   │   ├── index.ts   # 11 个工具 + 注册结果报告
+│   ├── tools/         # ── 模型工具（P5，§22.2；31 个工具按**所消费的领域服务**分文件）
+│   │   ├── index.ts   # 公共入口：工具聚合 + 注册结果报告（注册失败必须可见）
+│   │   ├── kit.ts     # 共享工具箱：schema 片段 / 工具装配 / 参数收敛 / 数据层就绪检查
+│   │   ├── types.ts   # 注册结果契约（叶子模块：runtime.ts 只依赖它，不反向依赖 index.ts）
+│   │   ├── jobs.ts    # job_*（岗位库）            plans.ts    # job_plan_manage（方案与调度配置）
+│   │   ├── crawl.ts   # crawl_*（抓取执行）        outreach.ts # 打招呼 / 收件箱 / 消息
+│   │   ├── applications.ts # 投递 / 面试           resumes.ts  # resume_*
+│   │   ├── campus.ts  # 校招                     overseas.ts # 海外 / Cover Letter
+│   │   ├── analytics.ts # job_report              settings.ts # job_settings
 │   │   └── exec-context.ts # 把 agent/toolName 传给审批端口
 │   ├── platform/      # 平台接入
 │   │   ├── types.ts   # SiteAdapter / PageLike 契约
@@ -211,6 +225,8 @@ src/
 │   ├── screens/       # U0 today / U1 jobs / U2 job-detail（内嵌栏 + 抽屉两种承载）
 │   │                  # U3 resumes / U4 tailor-panel / U5+U8 pipeline / U6+U7 messages
 │   │                  # P8 campus + 海外面板 + 英文体检
+│   │                  # U9 `collect.tsx` 是薄入口（编排 + 三分区骨架），子组件在 `collect/` 下按职责分文件；
+│   │                  #    表单派生逻辑在 `collect/plan-form.ts`（测试直接引用它，改动要连带看 test/shared/collect-form.test.ts）
 │   ├── toolviews/     # 对话里的岗位/详情/话术卡片（§22.3）
 │   ├── intent.ts      # 对话 → 面板的跳转意图通道
 │   ├── use-async.ts   # 拉一次数据的加载/成功/失败三态
@@ -314,7 +330,7 @@ locks（按平台互斥：同平台忙就立刻失败、不排队；不同平台
 | GET · POST | `/intel/dictionary` | 读 / 写词表（P4） |
 | POST | `/intel/recompute` | 单次重算一批岗位的标注与匹配分（P4） |
 
-**路由与传输是分开的**：`http/router.ts` 收 `RouteRequest`、出 `RouteResult`，完全不碰 Node 的
+**路由与传输是分开的**：`http/router.ts`（每条路由的实现在 `http/routes/*`）收 `RouteRequest`、出 `RouteResult`，完全不碰 Node 的
 `IncomingMessage`/`ServerResponse`；`http.ts` 只做搬运与 SSE 挂流。所以上面这些路由**可以离线单测**
 （`test/http/router.test.ts` 直接调 `routeRequest`，不需要造假流对象）。
 

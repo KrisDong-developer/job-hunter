@@ -14,6 +14,9 @@ import type { CompanyProfileRecord } from '../store/repo/companies.js'
 import type { DictionaryEntry } from '../store/repo/dictionary.js'
 import type { Store } from '../store/store.js'
 import { DICTIONARY_SEED } from './dictionary-seed.js'
+// 只借简历服务的**类型**（`resumeProfileOf` 读它，不建它）—— type-only，不引入运行时依赖
+import type { ResumeService } from './resumes.js'
+import type { ResumeContent } from '../../shared/resume.js'
 import { parseSalary } from '../util/salary.js'
 import { describeHit, matchTerms, type TermHit } from '../util/text.js'
 
@@ -177,6 +180,43 @@ export const DEFAULT_MATCH_PROFILE: MatchProfile = {
   minSalary: null,
   keywords: [],
   excludeKeywords: [],
+}
+
+/**
+ * 从**当前启用的简历**派生匹配偏好（§4.5.1：简历是最诚实的偏好声源）。
+ *
+ * 为什么这条规则在领域层而不是装配点：它是一条**派生规则**
+ * （技能取前 15 个 + 从标题里拆词，去重后取前 20；城市取一个），
+ * 装配点只该负责接上"哪一份简历算当前简历"。规则留在装配点的话，
+ * 它既没有单测、又和"哪些服务存在"的接线混在一起。
+ *
+ * 没有可用的默认简历时返回 `undefined` —— **不是抛错**：简历还没建、或那一份坏了，
+ * 都只是"暂时没有偏好"的正常状态，不该让岗位列表整个挂掉。
+ */
+export function resumeProfileOf(service: ResumeService): Partial<MatchProfile> | undefined {
+  const current = safeDefaultResume(service)
+  if (current === undefined) return undefined
+  const content = current.content
+  const keywords = [
+    ...content.skills.slice(0, 15).map((skill) => skill.name),
+    ...content.basics.title.split(/[\s/、,，]+/),
+  ].filter((token) => token.trim() !== '')
+  return {
+    keywords: [...new Set(keywords)].slice(0, 20),
+    cities: content.basics.city === undefined ? [] : [content.basics.city],
+  }
+}
+
+/** 当前启用（`isDefault && active`）的那份简历内容；取不到就返回 undefined。 */
+function safeDefaultResume(service: ResumeService): { content: ResumeContent } | undefined {
+  try {
+    const listed = service.list().find((item) => item.isDefault && item.state === 'active')
+    if (listed === undefined) return undefined
+    return { content: service.get(listed.id).content }
+  } catch {
+    // 简历坏了不该让「岗位列表」整个挂掉
+    return undefined
+  }
 }
 
 export interface MatchReason {

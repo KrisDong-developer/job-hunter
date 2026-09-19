@@ -1,23 +1,35 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { after, before, test } from 'node:test'
 import { createPlanService } from '../../src/host/domain/plans.js'
 import { createEventBus } from '../../src/host/http/sse.js'
 import { platformFacts } from '../../src/host/platform/platform-facts.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
+import { createPlatformGate } from '../../src/host/runtime/gate.js'
 import { createScheduler, type PlatformGateOptions } from '../../src/host/scheduler/index.js'
 import type { CrawlSummaryDto } from '../../src/shared/dto.js'
 import { createManualTimer } from '../../src/host/scheduler/timer-port.js'
 import type { SiteAdapter } from '../../src/host/platform/types.js'
+import { NO_NETWORK_ENV } from '../../src/host/util/offline.js'
 import { cleanup, openTestStore } from '../support/store.js'
 
 /**
  * 城市档（city_unsupported）的**接线**：调度器把方案的城市交给门，
  * 门说"不认识" → 该平台带原因跳过、不派抓取。
  *
- * 门的判定本体（registry + citySupportOf）在 runtime 那侧，离线测不到；
- * 这里钉的是调度器侧的三件事：city 传到了门上、skip 原因进了判定记录、
- * 没派 run。
+ * 门用的是 `runtime/gate.ts` 的**真实现**（判定本体另有直接单测：test/host/gate.test.ts）。
+ * 这里钉的是调度器侧的三件事：city 传到了门上、skip 原因进了判定记录、没派 run。
+ * 2026-09-19 之前这里复刻了一份门（"复刻 runtime 门的城市档"）—— 复刻件测不出真件改了。
  */
+
+/** 门的离线闸门排在最前，而本测试钉的是城市档；不依赖调用方环境（跑完恢复）。 */
+let savedNoNetwork: string | undefined
+before(() => {
+  savedNoNetwork = process.env[NO_NETWORK_ENV]
+  delete process.env[NO_NETWORK_ENV]
+})
+after(() => {
+  if (savedNoNetwork !== undefined) process.env[NO_NETWORK_ENV] = savedNoNetwork
+})
 
 function cityAdapter(id: string, cities: string[]): SiteAdapter {
   return {
@@ -74,6 +86,9 @@ test('decide：方案城市传到门上；不支持的平台带 city_unsupported
     schedule: { windowStartHour: 0, windowEndHour: 24, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
   })
 
+  /** 真门（`runtime/gate.ts`）：读的就是这一份 store 与上面注册的两个夹具平台。 */
+  const realGate = createPlatformGate({ storeOf: () => store, registry, clock })
+
   /** 门收到的 options（生产在 runtime 侧；这里记录调度器传了什么）。 */
   const gateCalls: Array<{ platformId: string; city: string | undefined }> = []
   let ranCount = 0
@@ -93,11 +108,8 @@ test('decide：方案城市传到门上；不支持的平台带 city_unsupported
     clock,
     platformGate: (platformId: string, options?: PlatformGateOptions) => {
       gateCalls.push({ platformId, city: options?.city })
-      // 复刻 runtime 门的城市档：不认识方案城市 → city_unsupported
-      if (options?.city !== undefined && options.city !== '' && platformId === 'b') {
-        return 'city_unsupported'
-      }
-      return null
+      // 真门：'a' 的码表有深圳 → 放行；'b' 只有北京 → city_unsupported
+      return realGate(platformId, options)
     },
   })
 

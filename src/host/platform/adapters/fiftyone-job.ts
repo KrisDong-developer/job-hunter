@@ -170,8 +170,6 @@ export function extractJobsInPage(config: FiftyOneConfig): RawJob[] {
   const clean = (value: string | null | undefined): string =>
     value === null || value === undefined ? '' : String(value).replace(/\s+/g, ' ').trim()
   const textOf = (node: Element | null): string => (node === null ? '' : clean(node.textContent))
-  const attrOf = (node: Element | null, name: string): string =>
-    node === null ? '' : clean(node.getAttribute(name))
   const queryAll = (scope: Element | Document, selector: string): Element[] => {
     try {
       return Array.prototype.slice.call(scope.querySelectorAll(selector)) as Element[]

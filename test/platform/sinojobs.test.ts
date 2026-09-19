@@ -17,7 +17,6 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import {
   buildSinoJobsRequestBody,
-  buildSinoJobsSearchUrl,
   createSinoJobsAdapter,
   DEFAULT_SINOJOBS_CONFIG,
   mergeSinoJobsConfig,

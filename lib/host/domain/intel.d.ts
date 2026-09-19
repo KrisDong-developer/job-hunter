@@ -13,6 +13,7 @@ import type { JobFlagInput } from '../store/repo/flags.js';
 import type { CompanyProfileRecord } from '../store/repo/companies.js';
 import type { DictionaryEntry } from '../store/repo/dictionary.js';
 import type { Store } from '../store/store.js';
+import type { ResumeService } from './resumes.js';
 /** 僵尸岗位的判定阈值：发布时间超过这么多天还在列表里出现。 */
 export declare const ZOMBIE_PUBLISH_DAYS = 60;
 /** 薪资虚标的跨度阈值：上限 / 下限。 */
@@ -60,6 +61,18 @@ export interface MatchProfile {
     excludeKeywords: string[];
 }
 export declare const DEFAULT_MATCH_PROFILE: MatchProfile;
+/**
+ * 从**当前启用的简历**派生匹配偏好（§4.5.1：简历是最诚实的偏好声源）。
+ *
+ * 为什么这条规则在领域层而不是装配点：它是一条**派生规则**
+ * （技能取前 15 个 + 从标题里拆词，去重后取前 20；城市取一个），
+ * 装配点只该负责接上"哪一份简历算当前简历"。规则留在装配点的话，
+ * 它既没有单测、又和"哪些服务存在"的接线混在一起。
+ *
+ * 没有可用的默认简历时返回 `undefined` —— **不是抛错**：简历还没建、或那一份坏了，
+ * 都只是"暂时没有偏好"的正常状态，不该让岗位列表整个挂掉。
+ */
+export declare function resumeProfileOf(service: ResumeService): Partial<MatchProfile> | undefined;
 export interface MatchReason {
     kind: 'hit' | 'miss' | 'penalty' | 'exclude' | 'unknown';
     text: string;

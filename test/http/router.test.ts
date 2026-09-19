@@ -557,6 +557,51 @@ test('批次 5：/platforms 带回治理事实，且「今天能跑」与调度�
   }
 })
 
+test('同一份健康事实，三个入口的说法必须一致（/health · /crawl/status · /platforms）', async () => {
+  const { runtime, dir } = await openRuntime()
+  try {
+    const store = runtime.store()
+    assert.ok(store)
+    // 一个有内容的降级态：健康档 + 连续失败次数 + 原因，三处都要能一致地读出来
+    store.platform.setHealth('51job', 'degraded', '卡片选择器只命中一半', T1)
+    store.platform.recordFailure('51job', T1)
+    store.platform.recordFailure('51job', T1)
+
+    const health = (await call(runtime, 'GET', '/health')).body as {
+      adapters: Array<{ platformId: string; health: string; failStreak: number; reason: string | null; fields: unknown[] }>
+    }
+    const crawl = (await call(runtime, 'GET', '/crawl/status')).body as {
+      paused: string[]
+      adapters: Array<{ platformId: string; health: string; failStreak: number; reason: string | null }>
+    }
+    const platforms = (await call(runtime, 'GET', '/platforms')).body as { items: PlatformOverviewDto[] }
+
+    const fromHealth = health.adapters.find((item) => item.platformId === '51job')
+    const fromCrawl = crawl.adapters.find((item) => item.platformId === '51job')
+    const fromMatrix = platforms.items.find((item) => item.id === '51job')
+    assert.ok(fromHealth !== undefined && fromCrawl !== undefined && fromMatrix !== undefined)
+
+    assert.equal(fromHealth.health, 'degraded')
+    assert.equal(fromHealth.failStreak, 2)
+    assert.equal(fromHealth.reason, '卡片选择器只命中一半')
+
+    // 三处读的是同一份映射（runtime/views.ts）。这里钉的是"它们没有各写一遍" ——
+    // 加一个字段只改一处，凭这一点保持一致，而不是靠人记得改三遍。
+    assert.deepEqual(
+      { health: fromCrawl.health, failStreak: fromCrawl.failStreak, reason: fromCrawl.reason },
+      { health: fromHealth.health, failStreak: fromHealth.failStreak, reason: fromHealth.reason },
+    )
+    assert.equal(fromMatrix.health, fromHealth.health)
+    assert.equal(fromMatrix.failStreak, fromHealth.failStreak)
+    assert.equal(fromMatrix.healthReason, fromHealth.reason)
+    assert.deepEqual(fromMatrix.fields, fromHealth.fields)
+    assert.ok(crawl.paused.includes('51job'), '降级平台要进 paused（界面据此说明暂停写入）')
+  } finally {
+    runtime.close()
+    cleanup(dir)
+  }
+})
+
 test('批次 4：POST /dedup/run 复核全库；GET /dedup/groups/:id 给跨平台对照；/jobs 能折叠', async () => {
   const { runtime, dir } = await openRuntime()
   try {

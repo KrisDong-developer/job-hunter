@@ -954,7 +954,7 @@ host 侧改为转发（既有 import 不用改）。
 | `src/host/platform/browser.ts` | 接上 `createIdleCloser`；`release()` 末尾起表（所有采集与登录路径的唯一入口），`ensure()` 开头取消 |
 | `src/host/browser-config.ts` | **新增**。设置键的读写 + `normalizeBrowserConfig` 收敛（NaN/负数/越界） |
 | `src/host/settings.ts` | snapshot 加 `browser` 段；patch 支持 `browser`；**不走 guard 令牌**（它是资源设置，不是闸门） |
-| `src/host/http/router.ts` | `settingsPatchOf` 白名单加 `browser.idleCloseMinutes` |
+| `src/host/http/routes/ops.ts` | `settingsPatchOf` 白名单加 `browser.idleCloseMinutes` |
 | `src/client/screens/settings.tsx` | 「浏览器」卡片：数字输入 + 问号说明 + 当前状态说明 |
 | `src/client/field-hint.tsx` | **新增**。`FieldHint` 原本是 `collect.tsx` 的私有组件，设置页也要用 → 抽出来共用，不复制 |
 
