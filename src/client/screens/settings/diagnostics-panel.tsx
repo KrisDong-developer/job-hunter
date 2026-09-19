@@ -104,7 +104,7 @@ export function DiagnosticsPanel(props: {
               )}
             </>
           ) : (
-            <div className="jh-alert jh-alert-error">
+            <div className="jh-alert jh-alert-error" role="alert">
               <div className="jh-alert-head">
                 <span className="jh-alert-title">数据层未就绪</span>
               </div>

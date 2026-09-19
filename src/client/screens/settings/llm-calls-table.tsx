@@ -152,7 +152,11 @@ export function LlmCallsTable(props: {
               </tbody>
             </table>
           </div>
-          {llmItems.length === 0 && <p className="jh-muted">还没有调用记录。</p>}
+          {llmItems.length === 0 && (
+            <p className="jh-muted">
+              还没有调用记录 —— 模型总开关关着、或者还没跑过要用模型的活时，这里就是空的。
+            </p>
+          )}
           {llmItems.length > 0 && shown.length === 0 && (
             <p className="jh-muted">没有匹配的调用记录 —— 清掉上面的筛选条件再看看。</p>
           )}

@@ -17,12 +17,14 @@
  *   没有引号（引号内可能有换行，按行切会把一行切成两半）—— 有引号时不分批并说明。
  */
 import { useState } from 'react'
+import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from '../../../shared/config/retention.js'
 import { ApiError } from '../../net/client.js'
 import { dataExportUrl, fetchStorage, importJobsPayload, previewCleanup, runCleanup } from '../../net/ops.js'
 import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import type { CleanupPlanDto, DataImportResultDto, RetentionPolicy } from '../../../shared/contract/dto/storage.js'
 import { ErrorLine, LoadingLine } from '../../ui/async-view.js'
 import { FieldHint } from '../../ui/field-hint.js'
+import { InlineMd } from '../../ui/inline-md.js'
 import { Modal } from '../../ui/modal.js'
 import { Switch } from '../../ui/switch.js'
 import { useAsync } from '../../hooks/use-async.js'
@@ -117,6 +119,33 @@ export function DataPanel(props: {
     }
   }
 
+  /**
+   * 保存保留期：整批写一次（6 个数字框各自请求既慢又会出现半保存状态）。
+   *
+   * 写之前先把草稿收敛进合法区间 —— 宿主那边的 `normalizeRetentionPolicy` 也会夹，
+   * 但**界面必须自己说**：不然用户输入 9999、界面回一句"已保存"，数字却变成了 3650。
+   * 边界取共享常量，不再在这里写第二份 3650。
+   */
+  const saveRetention = (): void => {
+    const raw = draft
+    if (raw === null) return
+    const patch: Partial<Record<RetentionDaysKey, number>> = {}
+    let clamped = 0
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value !== 'number') continue
+      const next = Math.min(RETENTION_MAX_DAYS, Math.max(RETENTION_MIN_DAYS, value))
+      if (next !== value) clamped += 1
+      patch[key as RetentionDaysKey] = next
+    }
+    setDraft(null)
+    void props.write(
+      { retention: patch },
+      clamped === 0
+        ? '保留策略已保存（下次预览 / 清理即生效）'
+        : `保留策略已保存 —— 有 ${String(clamped)} 项超出 ${String(RETENTION_MIN_DAYS)}–${String(RETENTION_MAX_DAYS)} 天，已按边界收敛。`,
+    )
+  }
+
   const importFile = async (file: File): Promise<void> => {
     setImporting(true)
     setImportResult(null)
@@ -148,7 +177,7 @@ export function DataPanel(props: {
   }
 
   return (
-    <div className="jh-screen">
+    <>
       {/* ── 保留策略 ───────────────────────────────────────────── */}
       <section className="jh-card">
         <div className="jh-form-head">
@@ -171,8 +200,8 @@ export function DataPanel(props: {
                 <input
                   className="jh-input jh-input-narrow"
                   type="number"
-                  min={0}
-                  max={3650}
+                  min={RETENTION_MIN_DAYS}
+                  max={RETENTION_MAX_DAYS}
                   aria-label={field.label}
                   value={String(shownDays(field.key))}
                   disabled={props.busy}
@@ -205,11 +234,7 @@ export function DataPanel(props: {
                 type="button"
                 className="jh-btn jh-btn-inline"
                 disabled={props.busy || draft === null}
-                onClick={() => {
-                  const patch = draft
-                  setDraft(null)
-                  void props.write({ retention: patch ?? {} }, '保留策略已保存（下次预览 / 清理即生效）')
-                }}
+                onClick={saveRetention}
               >
                 保存保留期
               </button>
@@ -279,24 +304,29 @@ export function DataPanel(props: {
             <details className="jh-details">
               <summary>看按表 / 按类型的明细</summary>
               <p className="jh-muted">占用最大的表：</p>
-              <table className="jh-table jh-table-roomy">
-                <thead>
-                  <tr>
-                    <th scope="col">表</th>
-                    <th scope="col" className="jh-num">占用</th>
-                    <th scope="col" className="jh-num">行数</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {storage.state.data.tables.slice(0, 12).map((table) => (
-                    <tr key={table.table}>
-                      <td>{table.table}</td>
-                      <td className="jh-num">{formatBytes(table.bytes)}</td>
-                      <td className="jh-num">{table.rows}</td>
+              {/* 与同屏另两张表（留痕 / 审计）一样套 scroll 容器：
+                  不套的话窄屏下表宽一超，被顶出去的是**整页**的横向滚动，
+                  而不是这张表自己的。 */}
+              <div className="jh-table-scroll">
+                <table className="jh-table jh-table-roomy">
+                  <thead>
+                    <tr>
+                      <th scope="col">表</th>
+                      <th scope="col" className="jh-num">占用</th>
+                      <th scope="col" className="jh-num">行数</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {storage.state.data.tables.slice(0, 12).map((table) => (
+                      <tr key={table.table}>
+                        <td>{table.table}</td>
+                        <td className="jh-num">{formatBytes(table.bytes)}</td>
+                        <td className="jh-num">{table.rows}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <p className="jh-muted">按类型（清理口径）：</p>
               <ul className="jh-kv">
                 {storage.state.data.types.map((type) => (
@@ -341,7 +371,7 @@ export function DataPanel(props: {
               共 {plan.totalRows} 行 · 预计释放 {formatBytes(plan.totalBytes)} · 数据库当前{' '}
               {formatBytes(plan.dbBytesBefore)}（VACUUM 后才会真的变小）
             </p>
-            <ul className="jh-tailor-notes">
+            <ul className="jh-tailor-notes jh-clean-list">
               {plan.items.map((item) => (
                 <li key={item.id}>
                   <label className="jh-check">
@@ -460,11 +490,14 @@ export function DataPanel(props: {
           <p className="jh-alert-body">
             将会清理 {selected.length} 类、共{' '}
             {plan?.items.filter((item) => selected.includes(item.id)).reduce((sum, item) => sum + item.rows, 0) ?? 0} 行。
-            这一步**不可撤销**，且只清理上面列出的那几类（投递记录、打招呼、消息、面试、简历与附件都不在其中）。
+            {/* 这里原来把 `**不可撤销**` 原样印出来了 —— 这个项目里"文案写了 Markdown
+                但界面上没有解析"是一类已知缺陷（InlineMd 的由来），而这句恰恰是
+                整个弹窗里最该被看见的四个字。 */}
+            <InlineMd text="这一步**不可撤销**，且只清理上面列出的那几类（投递记录、打招呼、消息、面试、简历与附件都不在其中）。" />
           </p>
         </Modal>
       ) : null}
-    </div>
+    </>
   )
 }
 

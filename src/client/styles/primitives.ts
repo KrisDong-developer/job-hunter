@@ -231,7 +231,14 @@ export const MODAL_SEG_TIMERANGE = `
    是外层这个 span，而不是里面那个圆点（inline 变体常出现在正文段落里）。 */
 .jh-hint-wrap{position:relative;vertical-align:middle}
 .jh-hint-wrap>.jh-field-hint,.jh-hint-wrap>.jh-hint{
-  font-family:inherit;padding:0;cursor:pointer}
+  font-family:inherit;padding:0;cursor:pointer;position:relative}
+/* 触达尺寸（WCAG 2.2 AA 2.5.8 要求 24×24）：这两个问号的实际尺寸是 16×16 / 15×15
+   （content-box 的 14px + 1px 边框），却是全项目**最高频**的点击目标 —— 设置页几乎
+   每一行控件都挂着它。做法：视觉圆点逐像素不动，用伪元素把命中区向外扩 5px
+   （16 → 26）。不用 padding 撑：那会把每一行控件的高度都改掉，而本文件上面承诺过
+   "折叠时与改之前逐像素一致"。 */
+.jh-hint-wrap>.jh-field-hint::after,.jh-hint-wrap>.jh-hint::after{
+  content:'';position:absolute;inset:-5px;border-radius:50%}
 .jh-hint-wrap>.jh-field-hint{box-sizing:content-box}
 /* inline 变体（.jh-hint，定义在 job-detail.ts）没有自己的边框，
    不加这条就会露出 <button> 的 UA 边框。 */
@@ -309,6 +316,13 @@ export const QUALITY_GATES = `
 
 /* Table 的必查状态里有 row hover —— 原来没有，扫行时会丢失"鼠标在哪一行"的反馈 */
 .jh-table tbody tr:hover{background:var(--dsw-alias-interactive-bg-hover)}
+/* 但行 hover 会把底色铺到 .jh-muted（label-secondary）的文字下面，而本仓库的不变式是
+   "secondary 只能压在 bg-base / bg-layer-1 这类卡片表面上，不要压在 bg-overlay /
+   interactive-* 上"（见 tokens.ts 的实测：bg-overlay 上只有 3.85:1）——
+   行 hover 用的正是 interactive-bg-hover。
+   做法：悬停时把次要说明提到 label-primary。这个组合与本项目所有可悬停控件
+   （.jh-btn / .jh-icon-btn / .jh-sibling）用的是同一套，不再让文字压在没量过的底色上。 */
+.jh-table tbody tr:hover .jh-muted{color:var(--dsw-alias-label-primary)}
 
 /* ── 动效降级（第四轮修复，审核 P3）────────────────────────────────
    全项目此前没有任何 prefers-reduced-motion 分支。这里的过渡都是 120–140ms 的颜色 /

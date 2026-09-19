@@ -1,7 +1,6 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { ApiError } from '../../net/client.js'
-import { fetchAudit, fetchLlmCalls, fetchSettings, updateSettings } from '../../net/ops.js'
-import { fetchHealth } from '../../net/overview.js'
+import { fetchSettings, updateSettings } from '../../net/ops.js'
 import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { ConfigPanel, type SettingsPatch } from './config-panel.js'
@@ -22,16 +21,28 @@ import { LogsPanel } from './logs-panel.js'
  *
  * 原实现把 6 个平级模块纵向排成一列：宽屏下右侧一大片空白，找"关掉某个用途"
  * 要先滚过整屏日志，而"开 / 关"与"打招呼 20 · 投递 10 · 回复 30"都只是**文字**。
- * 现在拆成两个标签页：
- *   * 「模型与安全配置」—— 模型用途（按业务分组的三列开关）+ 系统控制中心
- *     （发送分层 / 额度 / 审批审计 / 浏览器），两栏响应式网格；
- *   * 「诊断与调用日志」—— 指标卡 + 数据文件 + 模型调用留痕 + 操作审计。
+ * 现在拆成三个标签页，配置页内部再排成两栏响应式网格：
+ *   * 「模型与系统配置」—— 模型用途 + 系统控制中心 + 运行资源；
+ *   * 「诊断与调用日志」—— 指标卡 + 数据文件 + 模型调用留痕 + 操作审计；
+ *   * 「数据与存储」—— 保留期、磁盘占用、清理、导出导入。
+ *
+ * ## 2026-09-20（界面审核：P1 两条 / P2 五条）
+ *
+ *   1. **写入不再让整张表单闪成 loading**。每次写入都要回读设置，而回读期间
+ *      `useAsync` 默认退回 `loading` —— 于是每拨一个开关，全部控件都卸载再重建，
+ *      键盘焦点也跟着丢回文档开头。现在：`keepPrevious` + 本文件记最后一次成功值，
+ *      `ConfigPanel` 只在**从没读到过**时才让位给提示。
+ *   2. **日志与诊断数据改为切到那个分区才拉**（移进 `LogsPanel`）。默认落在配置页时
+ *      不再白拉 100 行日志与一次诊断 —— 原来的四发请求里有两发是给看不见的东西付的钱。
+ *   3. **反馈条补 `role`**：它是这一屏唯一的操作反馈通道，读屏必须能听到"已生效"；
+ *      同时从标签栏**上方**挪到下方 —— 它不再把分区导航推走。
  */
-
 type SettingsTab = 'config' | 'logs' | 'data'
 
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
-  ['config', '模型与安全配置'],
+  // 这一格里有模型用途、系统控制中心（闸门）与运行资源三张卡，
+  // 所以名字取"模型与**系统**配置"而不是"模型与安全配置" —— 见 config-panel 的注释。
+  ['config', '模型与系统配置'],
   ['logs', '诊断与调用日志'],
   // 第三个分区（§18 / J8）：保留期、磁盘占用、清理、导出导入。
   // 为什么不塞进「诊断」：那一屏回答"出问题时怎么自查"，这一屏回答"我的数据现在多大、
@@ -40,15 +51,24 @@ const SETTINGS_TABS: Array<[SettingsTab, string]> = [
 ]
 
 export function SettingsScreen(props: { revision: number }) {
-  const settings = useAsync((signal) => fetchSettings(signal), [props.revision])
-  const health = useAsync((signal) => fetchHealth(signal), [props.revision])
-  const audit = useAsync((signal) => fetchAudit(50, {}, signal), [props.revision])
-  const llm = useAsync((signal) => fetchLlmCalls(50, signal), [props.revision])
+  const settings = useAsync((signal) => fetchSettings(signal), [props.revision], {
+    keepPrevious: true,
+  })
   const [tab, setTab] = useState<SettingsTab>('config')
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const current: SettingsDto | null = settings.state.status === 'ok' ? settings.state.data : null
+  /**
+   * 最后一次**成功**读到的设置 —— 状态离开 `ok` 时拿它顶上。
+   *
+   * 直接读 `settings.state.data` 是不够的：每次写入都要回读，而回读期间（哪怕只有
+   * 几十毫秒）状态会离开 `ok`。这时若把 `current` 当成 null，ConfigPanel 会把整张表单
+   * 换成"正在读取设置…"再换回来 —— 每拨一个开关都来一次，焦点也一起丢。
+   */
+  const lastSettings = useRef<SettingsDto | null>(null)
+  if (settings.state.status === 'ok') lastSettings.current = settings.state.data
+  const current: SettingsDto | null =
+    settings.state.status === 'ok' ? settings.state.data : lastSettings.current
 
   /**
    * 所有配置写入走同一条路径（`settings.write` 闸门）。
@@ -98,12 +118,6 @@ export function SettingsScreen(props: { revision: number }) {
         </span>
       </div>
 
-      {message === null ? null : (
-        <div className="jh-card jh-card-tight">
-          <p className={message.tone === 'error' ? 'jh-error' : 'jh-ok'}>{message.text}</p>
-        </div>
-      )}
-
       {/* 二级分区。用 role=tablist 而不是 aria-current：这里是同屏内的两个视图，
           不是"整屏替换"的页面级分区（顶部那排导航才属于后者）。
           既然是 tablist，就把它该有的契约补齐：aria-controls 指向面板、
@@ -131,11 +145,32 @@ export function SettingsScreen(props: { revision: number }) {
         ))}
       </div>
 
+      {/* 反馈条放在标签栏**下方**：它是每个分区共用的状态，但不该把分区导航推走。
+          `role` 不能省 —— 这一屏所有写入的结果（含失败原因）只在这一个元素里，
+          没有 live region 的话读屏用户拨完开关得不到任何确认（WCAG 4.1.3）。
+          失败用 alert（打断），成功用 status（等当前朗读结束）。 */}
+      {message === null ? null : (
+        <div className="jh-card jh-card-tight">
+          <p
+            className={message.tone === 'error' ? 'jh-error' : 'jh-ok'}
+            role={message.tone === 'error' ? 'alert' : 'status'}
+          >
+            {message.text}
+          </p>
+        </div>
+      )}
+
       {tab === 'config' ? (
         <div role="tabpanel" id="jh-set-panel-config" aria-labelledby="jh-set-tab-config">
           <ConfigPanel
             current={current}
-            error={settings.state.status === 'error' ? settings.state.message : null}
+            /* 读失败也优先用宿主给的那句可执行提示（`ApiError.display` 的规则），
+               与写入失败走同一条口径。 */
+            error={
+              settings.state.status === 'error'
+                ? (settings.state.hint ?? settings.state.message)
+                : null
+            }
             busy={busy}
             write={write}
           />
@@ -143,16 +178,19 @@ export function SettingsScreen(props: { revision: number }) {
       ) : tab === 'logs' ? (
         <div role="tabpanel" id="jh-set-panel-logs" aria-labelledby="jh-set-tab-logs">
           <LogsPanel
-            health={health.state}
-            llm={llm.state}
-            audit={audit.state}
+            revision={props.revision}
             labelOf={labelOf}
             notify={(tone, text) => setMessage({ tone, text })}
           />
         </div>
       ) : (
         <div role="tabpanel" id="jh-set-panel-data" aria-labelledby="jh-set-tab-data">
-          <DataPanel current={current} busy={busy} write={write} notify={(tone, text) => setMessage({ tone, text })} />
+          <DataPanel
+            current={current}
+            busy={busy}
+            write={write}
+            notify={(tone, text) => setMessage({ tone, text })}
+          />
         </div>
       )}
     </div>

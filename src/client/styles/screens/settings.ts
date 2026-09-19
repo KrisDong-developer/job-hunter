@@ -12,6 +12,8 @@ export const SETTINGS = `
      ③ 开关与额度是**纯文本**（"开 / 关"、"打招呼 20 · 投递 10 · 回复 30"），
         看起来像读数而不是能改的控件。
    做法：二级标签页 + 容器查询驱动的两栏网格 + 真正的 Switch / 数字输入框。
+   配置页现在是**三张卡**（模型用途 / 系统控制中心 / 运行资源）—— 「运行资源」
+   （浏览器 + 采集节奏）是从闸门那张卡里拆出来的，理由见 config-panel.tsx。
    为什么用 container query 而不是 media query：决定"放不放得下两栏"的是**面板**
    有多宽（侧栏一展开、对话区一挤，窗口还宽着呢面板已经放不下了），
    与岗位库的两栏网格（.jh-jobs-split）同一个理由。 */
@@ -19,8 +21,16 @@ export const SETTINGS = `
 .jh-set-tabs{margin:0 0 12px}
 .jh-set-wrap{container-type:inline-size}
 /* 这一屏的卡片统一放到 1360：.jh-card 自带的 max-width:1000px 会让顶部的
-   「当前风控态势」比下面两栏网格窄一截，看起来像没对齐。 */
-.jh-set-wrap>.jh-card{max-width:none}
+   「当前风控态势」比下面两栏网格窄一截，看起来像没对齐。
+   ── 2026-09-20：作用域从 .jh-set-wrap>.jh-card（只有配置页在 wrap 里）改成**整屏**。
+   原因：三个分区的内容宽度原本是 1360 / 1000 / 964（数据页还多套了一层 .jh-screen
+   的内边距），切分区时整片内容会跳一下宽度。
+   为什么不是"给每个 tabpanel 都加 .jh-set-wrap"（那样只改一行）：.jh-set-wrap 带
+   container-type:inline-size，等于给面板加了一层 containment —— 而清理确认弹窗
+   （Modal）与留痕抽屉（PayloadDrawer）都是 position:absolute 层，containment 会让
+   它们改为相对面板定位：面板很高、用户又滚到了下面时，弹窗会落在视口之外。
+   宽度归一不需要 containment，所以用作用域选择器，不动面板本身。 */
+.jh-screen-settings .jh-card{max-width:none}
 .jh-set-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 /* 间距交给 grid gap：卡片自带 margin-bottom，两栏时左右两张卡的下外边距会变成双份 */
 .jh-set-grid>.jh-card{margin:0}
@@ -38,6 +48,13 @@ export const SETTINGS = `
    在两栏布局最窄的那一档（容器 880px 时右栏内容宽约 361px）横排会把标签挤成一列字。
    窄的时候整行换成上下排，宽的时候也不难看（与「每日额度」三格同一套语法）。 */
 .jh-ctl-stack{display:flex;flex-direction:column;gap:4px;padding:7px 0}
+
+/* 清理清单的勾选框：原生 checkbox 只有 13×13，而这里的勾选是"要删哪些"的唯一入口。
+   与 .jh-job-pick 同一个理由与做法（那里已提到 18px + 内边距）。
+   作用域只给这一处清单：.jh-check 全仓库有 7 个使用点，改全局会连带改到
+   筛选栏与几个弹窗的行高，那不是这次要动的东西。 */
+.jh-clean-list .jh-check{padding:2px 0}
+.jh-clean-list .jh-check input{width:18px;height:18px;margin:0}
 `
 
 export const SETTINGS_PURPOSES_AND_USAGE = `

@@ -1,11 +1,9 @@
-import { CRAWL_ROUND_BUDGET_DEFAULT_MIN, CRAWL_ROUND_BUDGET_MAX_MIN, CRAWL_ROUND_BUDGET_MIN_MIN } from '../../../shared/config/crawl.js'
 import { parseWindow } from '../../../shared/text/time-format.js'
 import type { SettingsDto } from '../../../shared/contract/dto/settings.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { NumberField } from '../../ui/number-field.js'
 import { Switch } from '../../ui/switch.js'
-import { BrowserPanel } from './browser-panel.js'
 import type { SettingsPatch } from './config-panel.js'
 
 /**
@@ -55,8 +53,6 @@ export function GuardPanel(props: {
     write({ guard: { [key]: next } }, `已把「${label}」改为 ${String(next)} ${unit}。`)
   }
 
-  const roundBudgetMinutes = current.crawl.roundBudgetMinutes
-
   /**
    * 发送时段。`''` 在配置里的含义是"不限时段"，此时两个 time 输入显示**出厂默认**
    * 作为建议值，改其中任何一格就会启用它 —— 不必再加一个"启用/停用"开关，
@@ -78,6 +74,8 @@ export function GuardPanel(props: {
 
   return (
     <section className="jh-card">
+      {/* 这张卡只放**闸门**：发送分层 / 每日额度 / 发送时段与节奏 / 审批审计 / 批量上限。
+          浏览器与采集节奏是资源设置，已拆到同级的「运行资源」卡（见 resources-panel.tsx）。 */}
       <h2 className="jh-card-title">系统控制中心</h2>
 
       <h3 className="jh-section-title">发送分层（L3 / L4）</h3>
@@ -206,7 +204,7 @@ export function GuardPanel(props: {
         </div>
       </div>
       {windowRaw !== '' && parsedWindow === null ? (
-        <div className="jh-alert jh-alert-warn">
+        <div className="jh-alert jh-alert-warn" role="alert">
           <p className="jh-alert-body">
             发送时段配置无法解析：<code>{windowRaw}</code> —— 闸门会 fail-closed，
             <b>所有发送都会被拒绝</b>。用上面两个时间框改回合法值，或点「设为不限」。
@@ -315,38 +313,6 @@ export function GuardPanel(props: {
           onCommit={(next) => setGuardNumber('batchLimit', '批量上限', '个岗位', next)}
         />
       </div>
-
-      <BrowserPanel current={current} busy={busy} write={write} />
-
-      <h3 className="jh-section-title">采集节奏</h3>
-      {/* 单轮预算：一轮 = 一个方案的一次运行（含多关键词逐个 + 新岗位详情补抓）。
-          到点后**不再开始新的平台/关键词**，正在跑的那一页跑完就停 —— 如实记
-          aborted，已解析到的照常入库。 */}
-      <div className="jh-ctl">
-        <span className="jh-field-label">
-          单轮采集最多跑多久
-          <FieldHint
-            text={`一轮 = 一个方案的一次运行；多关键词方案会逐个关键词跑，新岗位还会逐条点进详情页，所以耗时随配置放大。到点后**不再开始**新的平台或关键词（正在跑的那一页跑完就停），已抓到的照常入库，剩下的留到下一轮并按「本轮已到时限」如实显示。默认 ${String(CRAWL_ROUND_BUDGET_DEFAULT_MIN)} 分钟。这不是节流阀，是保险丝 —— 对应用户能接受的"点一下最多等多久"。`}
-          />
-        </span>
-        <NumberField
-          value={roundBudgetMinutes}
-          min={CRAWL_ROUND_BUDGET_MIN_MIN}
-          max={CRAWL_ROUND_BUDGET_MAX_MIN}
-          unit="分钟"
-          label="单轮采集最多跑多少分钟"
-          disabled={busy}
-          onCommit={(next) =>
-            write(
-              { crawl: { roundBudgetMinutes: next } },
-              `已把单轮采集预算改为 ${String(next)} 分钟（下一轮开始生效）。`,
-            )
-          }
-        />
-      </div>
-      <p className="jh-note">
-        当前：一轮最多 {String(roundBudgetMinutes)} 分钟。改完不用重启，下一轮就地生效。
-      </p>
 
       <p className="jh-note">
         <InlineMd text="模型**不能**修改这些键：" />

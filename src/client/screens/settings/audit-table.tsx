@@ -1,5 +1,5 @@
 import type { AuditRecordDto } from '../../../shared/contract/dto/settings.js'
-import { actorLabel } from '../../../shared/contract/enums/guard.js'
+import { actorLabel, auditResultLabel, auditResultTone } from '../../../shared/contract/enums/guard.js'
 import { ErrorLine } from '../../ui/async-view.js'
 import type { AuditState } from './logs-panel.js'
 
@@ -38,12 +38,10 @@ export function AuditTable(props: { audit: AuditState }) {
                       <code>{record.action}</code>
                     </td>
                     <td className="jh-cell-status">
-                      <span
-                        className={`jh-tag ${
-                          record.result === 'ok' ? 'jh-tone-ok' : 'jh-tone-warn'
-                        }`}
-                      >
-                        {record.result}
+                      {/* 结果与发起者一样是**机器取值**（ok / denied / error），必须过一遍
+                          翻译 —— 而且 error 与 denied 的色调要分开（见 enums/guard.ts）。 */}
+                      <span className={`jh-tag jh-tone-${auditResultTone(record.result)}`}>
+                        {auditResultLabel(record.result)}
                       </span>
                     </td>
                     <td className="jh-muted">{record.reason ?? '—'}</td>
@@ -52,7 +50,11 @@ export function AuditTable(props: { audit: AuditState }) {
               </tbody>
             </table>
           </div>
-          {props.audit.data.items.length === 0 && <p className="jh-muted">还没有审计记录。</p>}
+          {props.audit.data.items.length === 0 && (
+            <p className="jh-muted">
+              还没有审计记录 —— 它只记「过闸门」的动作（发送 / 投递 / 回复 / 改闸门配置），今天还没触发过。
+            </p>
+          )}
           {/* 与留痕卡同一类"我们存了什么、没存什么"的声明 —— 一张有一张没有是说不通的 */}
           <p className="jh-note">{props.audit.data.note}</p>
         </>

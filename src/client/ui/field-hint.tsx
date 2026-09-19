@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { InlineMd } from './inline-md.js'
 
 /**
  * 一个可以**展开**的字段说明。
@@ -51,14 +52,23 @@ export function FieldHint(props: { text: string; variant?: 'field' | 'inline' })
         aria-label="查看说明"
         aria-expanded={open}
         aria-controls={textId}
-        title={props.text}
+        title={plainTitle(props.text)}
         onClick={() => setOpen((value) => !value)}
       >
         ?
       </button>
+      {/* 说明文字里带 `**强调**`（这些说明的全文本来就这么写），所以必须过一遍
+          InlineMd —— 否则摊开看到的是带星号的原文（"（下面「磁盘占用」里列为
+          长期保留）"这段在设置页就是这么显示的）。`title` 也一并去掉标记：
+          悬停提示里出现 `**` 是同一类"文案里的约定没落地"。 */}
       <span id={textId} role="note" className={open ? 'jh-hint-text' : 'jh-sr-only'}>
-        {props.text}
+        <InlineMd text={props.text} />
       </span>
     </span>
   )
+}
+
+/** 悬停提示用纯文本：InlineMd 只处理行内强调标记，这里把标记去掉即可。 */
+function plainTitle(text: string): string {
+  return text.replaceAll('**', '')
 }

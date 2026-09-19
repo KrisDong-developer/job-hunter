@@ -99,11 +99,15 @@ export function PurposesPanel(props: {
                   {/* 总开关关着时**不**禁用：宿主那边 purposes 与 enabled 是独立持久化的
                       （`setConfig` 各写各的），点一下确实会存下来、开总开关时生效。
                       禁用反而更糟 —— disabled 控件会从 Tab 序与读屏里整个消失，
-                      用户既看不到它、也不知道自己有什么被记住。状态靠 label 说明。 */}
+                      用户既看不到它、也不知道自己有什么被记住。状态靠 label 说明。
+                      "出厂默认开/关"也放进可访问名里：它原先只在 title 上，
+                      键盘与读屏用户永远拿不到（FieldHint 的由来就是同一个坑）。 */}
                   <Switch
                     checked={on}
                     disabled={busy}
-                    label={masterOn ? item.label : `${item.label}（模型总开关已关闭，暂不生效）`}
+                    label={`${item.label}（出厂默认${byDefault ? '开' : '关'}）${
+                      masterOn ? '' : '，模型总开关已关闭，暂不生效'
+                    }`}
                     onChange={(next) =>
                       write(
                         { ai: { purposes: { [key]: next } } },
