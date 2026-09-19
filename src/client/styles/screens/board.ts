@@ -89,7 +89,7 @@ export const SALARY_BOX = `
 .jh-box-tip{position:absolute;right:0;bottom:calc(100% + 8px);z-index:2;width:264px;
   box-sizing:border-box;padding:8px 10px;border-radius:9px;font-size:12px;
   border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
-  box-shadow:0 6px 20px rgba(0,0,0,.16);pointer-events:none}
+  box-shadow:0 6px 20px var(--jh-shadow-ink);pointer-events:none}
 .jh-box-tip-row{display:flex;align-items:baseline;gap:10px;margin:0;line-height:1.9;
   color:var(--dsw-alias-label-secondary)}
 .jh-box-tip-row>b{margin-left:auto;font-variant-numeric:tabular-nums;
@@ -120,7 +120,8 @@ export const SALARY_BOX = `
   color:var(--jh-business-fg)}
 /* 窄面板（≤400px）下三个刻度必然叠字 —— 实测 320px 时轨道只有 141px，
    而"P25 12000"这样的标签本身就有 34px 宽，靠"位置差 ≥9%"这条规则拦不住。
-   这时只留中位数，P25 / P75 / 极值去下面「薪资分位」那一排读数里看（一个数字都没丢）。 */
+   这时只留中位数 —— 一个数字都没丢：五数概括**常驻**在图下面那一行
+   .jh-metric-row 里（它不受容器查询影响，也是键盘/触屏用户唯一的读数入口）。 */
 @container (max-width: 400px){
   .jh-box-ticklabel:not(.jh-box-ticklabel-key){display:none}
 }
@@ -146,8 +147,9 @@ export const BOARD_V2 = `
 .jh-screen-title{font-size:18px;font-weight:600;margin:0}
 
 /* 面板卡：.jh-card 已经给了描边 / 圆角 / 底色，这里只补一层微阴影 ——
-   白底卡片画在白页面上时，阴影是唯一能说明"这是一块独立内容"的东西。 */
-.jh-panel{box-shadow:0 1px 2px rgba(0,0,0,.04)}
+   白底卡片画在白页面上时，阴影是唯一能说明"这是一块独立内容"的东西。
+   走 --jh-shadow-card（与弹窗/悬浮卡的 --jh-shadow-ink 是两个角色，见 tokens.ts）。 */
+.jh-panel{box-shadow:0 1px 2px var(--jh-shadow-card)}
 .jh-panel-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
 .jh-panel-title{font-size:16px;font-weight:600;margin:0}
 /* 面板内的二级标题：比正文（13px）略大、比面板标题（16px）小两档 */
@@ -188,9 +190,11 @@ export const BOARD_V2 = `
 .jh-tag-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
 .jh-tag-best{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
 
-/* 薪资分位：一排行内指标。数值加粗、中位数带色 ——
-   "主核心指标要高亮"的具体落法（也是这一块唯一需要一眼记住的数）。 */
-.jh-metric-row{display:flex;flex-wrap:wrap;gap:10px 28px}
+/* 薪资五数概括：一排行内指标，紧跟箱线图。数值加粗、中位数带色 ——
+   "主核心指标要高亮"的具体落法（也是这一块唯一需要一眼记住的数）。
+   它是**图之外的常驻读数**：极值在图上根本没有刻度，窄面板还会把刻度收掉，
+   所以这一行不是装饰，是键盘 / 触屏用户拿到这些数的唯一入口。 */
+.jh-metric-row{display:flex;flex-wrap:wrap;gap:10px 28px;margin-top:12px}
 .jh-metric{display:flex;flex-direction:column;gap:1px;min-width:64px}
 .jh-metric>span{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
 .jh-metric>b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}

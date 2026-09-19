@@ -391,7 +391,9 @@ export function BoardScreen(props: { revision: number; onDrillDown: (step: strin
           <div className="jh-baseline">
             <h4 className="jh-panel-sub">我投递过的 vs 全部在库（同一口径：月薪下限）</h4>
             {baseline.state.data.all.count === 0 ? (
-              <p className="jh-muted">岗位库里还没有带薪资的岗位。</p>
+              /* 措辞不能再是"岗位库里还没有带薪资的岗位" —— 时间窗现在也在这条链路上，
+                 空结果可能只是"这个范围里没有"，那句话会把库说成空的。 */
+              <p className="jh-muted">这个范围里没有带薪资下限的岗位。</p>
             ) : (
               <>
                 <div className="jh-table-scroll">

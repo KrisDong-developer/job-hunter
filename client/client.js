@@ -4502,6 +4502,7 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime40 = require("react/jsx-runtime");
 		function SalaryBoxChart(props) {
 		  const [hot, setHot] = (0, import_react18.useState)(null);
+		  const rectRef = (0, import_react18.useRef)(null);
 		  const { min, p25, median, p75, max, count, withinBox, basisLabel } = props.box;
 		  if (min === null || p25 === null || median === null || p75 === null || max === null) return null;
 		  const span = max - min;
@@ -4522,8 +4523,11 @@ window.__ModuleLoader__.load({
 		      "div",
 		      {
 		        className: "jh-box-plot",
+		        onMouseEnter: (event) => {
+		          rectRef.current = event.currentTarget.getBoundingClientRect();
+		        },
 		        onMouseMove: (event) => {
-		          const rect = event.currentTarget.getBoundingClientRect();
+		          const rect = rectRef.current ?? event.currentTarget.getBoundingClientRect();
 		          if (rect.width <= 0) return;
 		          const ratio = (event.clientX - rect.left) / rect.width * 100;
 		          let nearest = "median";
@@ -4537,14 +4541,17 @@ window.__ModuleLoader__.load({
 		          }
 		          setHot(nearest);
 		        },
-		        onMouseLeave: () => setHot(null),
+		        onMouseLeave: () => {
+		          rectRef.current = null;
+		          setHot(null);
+		        },
 		        children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime40.jsxs)("div", { className: "jh-box-track", children: [
 		            flatten ? null : /* @__PURE__ */ (0, import_jsx_runtime40.jsx)("div", { className: "jh-box-whisker", style: { left: `${String(at(min))}%`, width: `${String(at(max) - at(min))}%` } }),
 		            /* @__PURE__ */ (0, import_jsx_runtime40.jsx)("div", { className: "jh-box-body", style: { left: `${String(at(p25))}%`, width: `${String(Math.max(0.5, at(p75) - at(p25)))}%` } }),
 		            /* @__PURE__ */ (0, import_jsx_runtime40.jsx)("div", { className: "jh-box-median", style: { left: `${String(at(median))}%` }, "data-hot": hot === "median" ? "1" : "0" })
 		          ] }),
-		          hot === null ? null : /* @__PURE__ */ (0, import_jsx_runtime40.jsxs)("div", { className: "jh-box-tip", role: "tooltip", children: [
+		          hot === null ? null : /* @__PURE__ */ (0, import_jsx_runtime40.jsxs)("div", { className: "jh-box-tip", "aria-hidden": "true", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime40.jsxs)("p", { className: "jh-box-tip-row", "data-hot": hot === "median" ? "1" : "0", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime40.jsx)("span", { children: "\u4E2D\u4F4D\u6570" }),
 		              /* @__PURE__ */ (0, import_jsx_runtime40.jsx)("b", { children: median })
@@ -4602,7 +4609,7 @@ window.__ModuleLoader__.load({
 		        }
 		      )
 		    ] }, mark.key)) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime40.jsx)("p", { className: "jh-note", children: "\u84DD\u8272\u7BB1\u4F53 = P25\u2013P75\uFF08\u4E00\u534A\u6837\u672C\u5728\u8FD9\u91CC\u9762\uFF09\uFF1B\u987B\u7684\u4E24\u7AEF\u662F\u6700\u5C0F / \u6700\u5927\u503C\u3002\u60AC\u505C\u770B\u5206\u4F4D\u6570\u4E4B\u5DEE\u3002" })
+		    /* @__PURE__ */ (0, import_jsx_runtime40.jsx)("p", { className: "jh-note", children: "\u84DD\u8272\u7BB1\u4F53 = P25\u2013P75\uFF08\u4E00\u534A\u6837\u672C\u5728\u8FD9\u91CC\u9762\uFF09\uFF1B\u987B\u7684\u4E24\u7AEF\u662F\u6700\u5C0F / \u6700\u5927\u503C\u3002 \u4E94\u4E2A\u6570\u5728\u4E0B\u9762\u4E00\u884C\uFF0C\u60AC\u505C\u8FD8\u80FD\u770B\u51FA\u5206\u4F4D\u6570\u4E4B\u5DEE\u3002" })
 		  ] });
 		}
 
@@ -4911,7 +4918,11 @@ window.__ModuleLoader__.load({
 		      ] }),
 		      baseline.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u7EDF\u8BA1\u57FA\u51C6\u2026" }) : baseline.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)(PanelFailure, { message: baseline.state.message, hint: baseline.state.hint, onRetry: baseline.reload }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("div", { className: "jh-baseline", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("h4", { className: "jh-panel-sub", children: "\u6211\u6295\u9012\u8FC7\u7684 vs \u5168\u90E8\u5728\u5E93\uFF08\u540C\u4E00\u53E3\u5F84\uFF1A\u6708\u85AA\u4E0B\u9650\uFF09" }),
-		        baseline.state.data.all.count === 0 ? /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u5C97\u4F4D\u5E93\u91CC\u8FD8\u6CA1\u6709\u5E26\u85AA\u8D44\u7684\u5C97\u4F4D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
+		        baseline.state.data.all.count === 0 ? (
+		          /* 措辞不能再是"岗位库里还没有带薪资的岗位" —— 时间窗现在也在这条链路上，
+		             空结果可能只是"这个范围里没有"，那句话会把库说成空的。 */
+		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u8303\u56F4\u91CC\u6CA1\u6709\u5E26\u85AA\u8D44\u4E0B\u9650\u7684\u5C97\u4F4D\u3002" })
+		        ) : /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)(import_jsx_runtime42.Fragment, { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("table", { className: "jh-table jh-table-board", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime42.jsxs)("tr", { children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime42.jsx)("th", { scope: "col", children: "\u5206\u7EC4" }),
@@ -12567,7 +12578,7 @@ window.__ModuleLoader__.load({
 		.jh-box-tip{position:absolute;right:0;bottom:calc(100% + 8px);z-index:2;width:264px;
 		  box-sizing:border-box;padding:8px 10px;border-radius:9px;font-size:12px;
 		  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
-		  box-shadow:0 6px 20px rgba(0,0,0,.16);pointer-events:none}
+		  box-shadow:0 6px 20px var(--jh-shadow-ink);pointer-events:none}
 		.jh-box-tip-row{display:flex;align-items:baseline;gap:10px;margin:0;line-height:1.9;
 		  color:var(--dsw-alias-label-secondary)}
 		.jh-box-tip-row>b{margin-left:auto;font-variant-numeric:tabular-nums;
@@ -12598,7 +12609,8 @@ window.__ModuleLoader__.load({
 		  color:var(--jh-business-fg)}
 		/* \u7A84\u9762\u677F\uFF08\u2264400px\uFF09\u4E0B\u4E09\u4E2A\u523B\u5EA6\u5FC5\u7136\u53E0\u5B57 \u2014\u2014 \u5B9E\u6D4B 320px \u65F6\u8F68\u9053\u53EA\u6709 141px\uFF0C
 		   \u800C"P25 12000"\u8FD9\u6837\u7684\u6807\u7B7E\u672C\u8EAB\u5C31\u6709 34px \u5BBD\uFF0C\u9760"\u4F4D\u7F6E\u5DEE \u22659%"\u8FD9\u6761\u89C4\u5219\u62E6\u4E0D\u4F4F\u3002
-		   \u8FD9\u65F6\u53EA\u7559\u4E2D\u4F4D\u6570\uFF0CP25 / P75 / \u6781\u503C\u53BB\u4E0B\u9762\u300C\u85AA\u8D44\u5206\u4F4D\u300D\u90A3\u4E00\u6392\u8BFB\u6570\u91CC\u770B\uFF08\u4E00\u4E2A\u6570\u5B57\u90FD\u6CA1\u4E22\uFF09\u3002 */
+		   \u8FD9\u65F6\u53EA\u7559\u4E2D\u4F4D\u6570 \u2014\u2014 \u4E00\u4E2A\u6570\u5B57\u90FD\u6CA1\u4E22\uFF1A\u4E94\u6570\u6982\u62EC**\u5E38\u9A7B**\u5728\u56FE\u4E0B\u9762\u90A3\u4E00\u884C
+		   .jh-metric-row \u91CC\uFF08\u5B83\u4E0D\u53D7\u5BB9\u5668\u67E5\u8BE2\u5F71\u54CD\uFF0C\u4E5F\u662F\u952E\u76D8/\u89E6\u5C4F\u7528\u6237\u552F\u4E00\u7684\u8BFB\u6570\u5165\u53E3\uFF09\u3002 */
 		@container (max-width: 400px){
 		  .jh-box-ticklabel:not(.jh-box-ticklabel-key){display:none}
 		}
@@ -12623,8 +12635,9 @@ window.__ModuleLoader__.load({
 		.jh-screen-title{font-size:18px;font-weight:600;margin:0}
 
 		/* \u9762\u677F\u5361\uFF1A.jh-card \u5DF2\u7ECF\u7ED9\u4E86\u63CF\u8FB9 / \u5706\u89D2 / \u5E95\u8272\uFF0C\u8FD9\u91CC\u53EA\u8865\u4E00\u5C42\u5FAE\u9634\u5F71 \u2014\u2014
-		   \u767D\u5E95\u5361\u7247\u753B\u5728\u767D\u9875\u9762\u4E0A\u65F6\uFF0C\u9634\u5F71\u662F\u552F\u4E00\u80FD\u8BF4\u660E"\u8FD9\u662F\u4E00\u5757\u72EC\u7ACB\u5185\u5BB9"\u7684\u4E1C\u897F\u3002 */
-		.jh-panel{box-shadow:0 1px 2px rgba(0,0,0,.04)}
+		   \u767D\u5E95\u5361\u7247\u753B\u5728\u767D\u9875\u9762\u4E0A\u65F6\uFF0C\u9634\u5F71\u662F\u552F\u4E00\u80FD\u8BF4\u660E"\u8FD9\u662F\u4E00\u5757\u72EC\u7ACB\u5185\u5BB9"\u7684\u4E1C\u897F\u3002
+		   \u8D70 --jh-shadow-card\uFF08\u4E0E\u5F39\u7A97/\u60AC\u6D6E\u5361\u7684 --jh-shadow-ink \u662F\u4E24\u4E2A\u89D2\u8272\uFF0C\u89C1 tokens.ts\uFF09\u3002 */
+		.jh-panel{box-shadow:0 1px 2px var(--jh-shadow-card)}
 		.jh-panel-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
 		.jh-panel-title{font-size:16px;font-weight:600;margin:0}
 		/* \u9762\u677F\u5185\u7684\u4E8C\u7EA7\u6807\u9898\uFF1A\u6BD4\u6B63\u6587\uFF0813px\uFF09\u7565\u5927\u3001\u6BD4\u9762\u677F\u6807\u9898\uFF0816px\uFF09\u5C0F\u4E24\u6863 */
@@ -12665,9 +12678,11 @@ window.__ModuleLoader__.load({
 		.jh-tag-warn{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
 		.jh-tag-best{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
 
-		/* \u85AA\u8D44\u5206\u4F4D\uFF1A\u4E00\u6392\u884C\u5185\u6307\u6807\u3002\u6570\u503C\u52A0\u7C97\u3001\u4E2D\u4F4D\u6570\u5E26\u8272 \u2014\u2014
-		   "\u4E3B\u6838\u5FC3\u6307\u6807\u8981\u9AD8\u4EAE"\u7684\u5177\u4F53\u843D\u6CD5\uFF08\u4E5F\u662F\u8FD9\u4E00\u5757\u552F\u4E00\u9700\u8981\u4E00\u773C\u8BB0\u4F4F\u7684\u6570\uFF09\u3002 */
-		.jh-metric-row{display:flex;flex-wrap:wrap;gap:10px 28px}
+		/* \u85AA\u8D44\u4E94\u6570\u6982\u62EC\uFF1A\u4E00\u6392\u884C\u5185\u6307\u6807\uFF0C\u7D27\u8DDF\u7BB1\u7EBF\u56FE\u3002\u6570\u503C\u52A0\u7C97\u3001\u4E2D\u4F4D\u6570\u5E26\u8272 \u2014\u2014
+		   "\u4E3B\u6838\u5FC3\u6307\u6807\u8981\u9AD8\u4EAE"\u7684\u5177\u4F53\u843D\u6CD5\uFF08\u4E5F\u662F\u8FD9\u4E00\u5757\u552F\u4E00\u9700\u8981\u4E00\u773C\u8BB0\u4F4F\u7684\u6570\uFF09\u3002
+		   \u5B83\u662F**\u56FE\u4E4B\u5916\u7684\u5E38\u9A7B\u8BFB\u6570**\uFF1A\u6781\u503C\u5728\u56FE\u4E0A\u6839\u672C\u6CA1\u6709\u523B\u5EA6\uFF0C\u7A84\u9762\u677F\u8FD8\u4F1A\u628A\u523B\u5EA6\u6536\u6389\uFF0C
+		   \u6240\u4EE5\u8FD9\u4E00\u884C\u4E0D\u662F\u88C5\u9970\uFF0C\u662F\u952E\u76D8 / \u89E6\u5C4F\u7528\u6237\u62FF\u5230\u8FD9\u4E9B\u6570\u7684\u552F\u4E00\u5165\u53E3\u3002 */
+		.jh-metric-row{display:flex;flex-wrap:wrap;gap:10px 28px;margin-top:12px}
 		.jh-metric{display:flex;flex-direction:column;gap:1px;min-width:64px}
 		.jh-metric>span{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
 		.jh-metric>b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -13761,7 +13776,10 @@ window.__ModuleLoader__.load({
 		     \u6DF7\u51FA\u6765\u7684\u4F1A\u662F\u53D1\u5149\uFF0C\u4E0D\u662F\u6295\u5F71\u3002\u6536\u6210\u4E00\u4E2A\u53D8\u91CF\u662F\u4E3A\u4E86\u8BA9"\u5F39\u7A97\u7684\u6295\u5F71"\u53EA\u6709\u4E00\u5904\u5B9A\u4E49
 		     \uFF08\u539F\u6765\u662F\u6563\u5728\u5404\u6587\u4EF6\u91CC\u7684 rgba(0,0,0,\u2026)\uFF09\uFF1B\u5C06\u6765\u5BBF\u4E3B\u4E3B\u9898\u82E5\u7ED9\u51FA elevation \u4EE4\u724C\uFF0C
 		     \u6539\u8FD9\u4E00\u884C\u5373\u53EF\u3002 */
-		  --jh-shadow-ink:rgba(0,0,0,.22)}
+		  --jh-shadow-ink:rgba(0,0,0,.22);
+		  /* \u5361\u7247\u7684\u5206\u5C42\u9634\u5F71\uFF1A\u4E0E\u4E0A\u9762\u7684"\u6D6E\u5C42\u62AC\u5347"\u4E0D\u662F\u4E00\u4E2A\u89D2\u8272 \u2014\u2014 \u767D\u5E95\u5361\u7247\u753B\u5728\u767D\u9875\u9762\u4E0A\u65F6\uFF0C
+		     \u8FD9\u4E00\u5C42\u8C08\u7684\u53EA\u662F"\u8FD9\u662F\u4E00\u5757\u72EC\u7ACB\u5185\u5BB9"\uFF0C\u6BD4\u5F39\u7A97/\u60AC\u6D6E\u5361\u5F31\u4E00\u4E2A\u6570\u91CF\u7EA7\u3002 */
+		  --jh-shadow-card:rgba(0,0,0,.04)}
 		`;
 
 		// src/client/styles/screens/settings.ts

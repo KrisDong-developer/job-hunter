@@ -35,10 +35,16 @@ export interface AnalyticsService {
         from?: string;
         to?: string;
     }): SalaryBandDto;
-    /** F1：薪资箱线图（P25–P75 高亮）+ 口径切换。 */
+    /**
+     * F1：薪资箱线图（P25–P75 高亮）+ 口径切换。
+     * 时间窗与 `salaryBand` 同轴（岗位的 `first_seen_at`）—— 三者必须一起收窄，
+     * 否则同一组筛选会在"箱线图"和"薪资分位"上给出两套样本。
+     */
     salaryBox(options?: {
         city?: string;
         keyword?: string;
+        from?: string;
+        to?: string;
         basis?: SalaryBasis;
     }): SalaryBoxChartDto;
     /** F2：本地基准对比 —— 用**自己抓到的岗位库**当基准，不联网、不编行业数据。 */

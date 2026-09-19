@@ -110,11 +110,13 @@ export interface SalaryBoxDto {
 
 /**
  * `GET /analytics/salary/box`（F1）。
+ *
+ * 只有一个 `box`：另一种口径**不**顺带算。此前这里还有 `alternate`（"界面切换时
+ * 不必再请求"），但界面从来没有渲染过它 —— 每次取箱线图都白跑一遍分位计算
+ * （最多 2000 条岗位），而口径切换本来就带 `basis` 重新请求。
  */
 export interface SalaryBoxChartDto {
   box: SalaryBoxDto
-  /** 供界面画刻度的可选口径（同一个方案在另一种口径下的箱体），`null` = 该口径无样本。 */
-  alternate: SalaryBoxDto | null
   /** 箱体样本是否够（`MIN_SAMPLE`）—— 不够时界面只给分布、不给结论。 */
   enoughSample: boolean
   note: string

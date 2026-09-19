@@ -52,12 +52,12 @@ export function FunnelChart(props: { steps: FunnelStepDto[]; onDrillDown: (step:
                   }}
                 />
               </span>
+              {/* 可访问名必须带上层名：按钮里只有一个数字，读屏会连读七个"12 按钮"，
+                  用户只能靠位置猜这是哪一层。名字里保留那个数字，2.5.3 也才对得上。 */}
               <button
                 type="button"
                 className="jh-funnel-count"
                 title="点开看这一段的明细"
-                /* 可访问名必须带上层名：按钮里只有一个数字，读屏会连读七个"12 按钮"，
-                   用户只能靠位置猜这是哪一层。名字里保留那个数字，2.5.3 也才对得上。 */
                 aria-label={`${step.label} ${String(step.count)} 条，点开看这一段的明细`}
                 onClick={() => props.onDrillDown(step.key)}
               >

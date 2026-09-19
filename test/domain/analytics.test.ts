@@ -397,9 +397,6 @@ test('F1：箱线图的两个口径算出**不同**的中位数，且都标明�
     assert.equal(annual.box.median, 375000)
     assert.equal(annual.box.max, 420000)
     assert.notEqual(monthly.box.median, annual.box.median, '两个口径当然不一样 —— 所以口径必须显式')
-
-    // 另一个口径作为 alternate 一起给，界面切换时不必再请求
-    assert.equal(monthly.alternate?.basis, 'annualized')
   })
 })
 
@@ -426,6 +423,49 @@ test('F1：全部样本同值时不会除零（给一个满宽箱体，而不是
     assert.equal(box.max, 20000)
     assert.equal(box.median, 20000)
     assert.equal(box.min === box.max, true)
+  })
+})
+
+/**
+ * 三个薪资入口读的是同一张 `job` 表，时间窗就必须一起收窄。
+ *
+ * 修复前 `salaryBox` / `salaryBaseline` 把 from/to 丢掉了：用户设了日期之后
+ * "薪资分布"仍按全库算，而同一屏的"薪资分位"已经按时间窗缩过了 ——
+ * 两块面板给出两个中位数，用户只会认为其中一个是错的。
+ */
+test('F1/F2：三个薪资入口共用同一个岗位库时间窗（first_seen_at）', () => {
+  withStore((store) => {
+    const early = '2026-09-01T10:00:00.000Z'
+    const late = '2026-09-10T10:00:00.000Z'
+    for (const [index, salaryMin] of [10000, 20000].entries()) {
+      store.job.upsert(
+        jobInput({ platformJobId: `win-early-${String(index)}`, salaryMin, salaryMax: salaryMin + 5000 }),
+        early,
+      )
+    }
+    for (const [index, salaryMin] of [30000, 40000].entries()) {
+      store.job.upsert(
+        jobInput({ platformJobId: `win-late-${String(index)}`, salaryMin, salaryMax: salaryMin + 5000 }),
+        late,
+      )
+    }
+
+    const analytics = createAnalyticsService({ store })
+
+    // 不设时间窗：四条都算
+    assert.equal(analytics.salaryBox({ basis: 'monthly_min' }).box.count, 4)
+    assert.equal(analytics.salaryBaseline().all.count, 4)
+
+    // 设了 from：三个入口必须是同一个样本（2 条晚抓的）
+    const window = { from: late }
+    assert.equal(analytics.salaryBand(window).count, 2)
+    assert.equal(analytics.salaryBox({ ...window, basis: 'monthly_min' }).box.count, 2)
+    assert.equal(analytics.salaryBaseline(window).all.count, 2)
+    assert.equal(
+      analytics.salaryBox({ ...window, basis: 'monthly_min' }).box.min,
+      30000,
+      '时间窗之外的那两条（10000 / 20000）不该还留在分布里',
+    )
   })
 })
 

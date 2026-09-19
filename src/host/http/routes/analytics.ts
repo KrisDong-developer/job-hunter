@@ -112,6 +112,8 @@ export async function salaryBox(ctx: RouteContext): Promise<RouteResult | undefi
       runtime.analytics().salaryBox({
         ...(filter.city === undefined ? {} : { city: filter.city }),
         ...(filter.keyword === undefined ? {} : { keyword: filter.keyword }),
+        ...(filter.from === undefined ? {} : { from: filter.from }),
+        ...(filter.to === undefined ? {} : { to: filter.to }),
         ...(basisRaw === null || basisRaw === '' ? {} : { basis: basisRaw as SalaryBasis }),
       }),
     )

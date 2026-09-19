@@ -37,8 +37,12 @@ export interface AnalyticsService {
   salaryBand(options?: { city?: string; keyword?: string; from?: string; to?: string }): SalaryBandDto
 
   // ── 批次 F：看板遗留 ───────────────────────────────────────────────
-  /** F1：薪资箱线图（P25–P75 高亮）+ 口径切换。 */
-  salaryBox(options?: { city?: string; keyword?: string; basis?: SalaryBasis }): SalaryBoxChartDto
+  /**
+   * F1：薪资箱线图（P25–P75 高亮）+ 口径切换。
+   * 时间窗与 `salaryBand` 同轴（岗位的 `first_seen_at`）—— 三者必须一起收窄，
+   * 否则同一组筛选会在"箱线图"和"薪资分位"上给出两套样本。
+   */
+  salaryBox(options?: { city?: string; keyword?: string; from?: string; to?: string; basis?: SalaryBasis }): SalaryBoxChartDto
   /** F2：本地基准对比 —— 用**自己抓到的岗位库**当基准，不联网、不编行业数据。 */
   salaryBaseline(filter?: AnalyticsFilter): SalaryBaselineDto
   /** F3：简历版本 A/B 对比（每格带样本量，不做显著性）。 */
@@ -94,6 +98,23 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
     city: string
     title: string
     firstSeenAt: string
+  }
+
+  /**
+   * 岗位库的时间窗 —— 按 `first_seen_at`（这个岗位**被抓到**的时间），不是投递时间。
+   *
+   * 三个薪资入口（薪资分位 / 箱线图 / 本地基准）读的是同一张 `job` 表，
+   * 所以必须走**同一个**判定：只要有一个漏掉时间窗，同一组筛选就会在两块面板上
+   * 给出两套样本与两个中位数 —— 修复前"薪资分位"与"薪资分布"对不上就是这个原因。
+   */
+  const inJobWindow = (
+    job: { firstSeenAt: string },
+    from: string | undefined,
+    to: string | undefined,
+  ): boolean => {
+    if (from !== undefined && job.firstSeenAt < from) return false
+    if (to !== undefined && job.firstSeenAt > to) return false
+    return true
   }
 
   /**
@@ -294,25 +315,27 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
     /** F1：薪资箱线图。口径必须显式，否则同一个库能算出好几个"中位数"。 */
     salaryBox(options = {}): SalaryBoxChartDto {
       const basis: SalaryBasis = options.basis ?? 'monthly_min'
-      const jobs = store.job.query(
-        {
-          ...(options.city === undefined || options.city === '' ? {} : { city: options.city }),
-          ...(options.keyword === undefined || options.keyword === '' ? {} : { keyword: options.keyword }),
-        },
-        2000,
-        0,
-      )
+      const jobs = store.job
+        .query(
+          {
+            ...(options.city === undefined || options.city === '' ? {} : { city: options.city }),
+            ...(options.keyword === undefined || options.keyword === '' ? {} : { keyword: options.keyword }),
+          },
+          2000,
+          0,
+        )
+        // 与 salaryBand / salaryBaseline 同一个时间窗判定（见 inJobWindow）
+        .filter((job) => inJobWindow(job, options.from, options.to))
 
       const box = salaryBoxOf(jobs, basis)
-      const alternate = salaryBoxOf(jobs, basis === 'monthly_min' ? 'annualized' : 'monthly_min')
       return {
         box,
-        alternate: alternate.count === 0 ? null : alternate,
         enoughSample: box.count >= MIN_SAMPLE,
         note:
           `口径：${SALARY_BASIS_LABEL[basis]}。P25–P75 是高亮的箱体，` +
           '两端的须是极值（不是离群点剔除后的结果）—— 本工具不做离群点剔除，' +
-          '因为它会悄悄把真实的高薪岗删掉。',
+          '因为它会悄悄把真实的高薪岗删掉。' +
+          '时间窗筛的是岗位被抓到的时间（first_seen_at），不是你的投递时间。',
       }
     },
 
@@ -323,14 +346,17 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
      * 编一个"行业 P75"画在界面上，用户会拿它当真 —— 那是这份文档明令禁止的事。
      */
     salaryBaseline(filter = {}): SalaryBaselineDto {
-      const jobs = store.job.query(
-        {
-          ...(filter.city === undefined || filter.city === '' ? {} : { city: filter.city }),
-          ...(filter.keyword === undefined || filter.keyword === '' ? {} : { keyword: filter.keyword }),
-        },
-        2000,
-        0,
-      )
+      const jobs = store.job
+        .query(
+          {
+            ...(filter.city === undefined || filter.city === '' ? {} : { city: filter.city }),
+            ...(filter.keyword === undefined || filter.keyword === '' ? {} : { keyword: filter.keyword }),
+          },
+          2000,
+          0,
+        )
+        // 时间窗与另外两个薪资入口一致：否则"基准"和它上面那张箱线图不是同一批岗位
+        .filter((job) => inJobWindow(job, filter.from, filter.to))
       const all = salaryBoxOf(jobs, 'monthly_min')
 
       // "我投递过的"：按**岗位**去重 —— 同一个岗位投两次不该把分布往它那边拉两倍
@@ -465,11 +491,7 @@ export function createAnalyticsService(deps: AnalyticsDeps): AnalyticsService {
         )
         // 时间窗在**岗位库**的时间轴上（`first_seen_at`）—— 与投递时间不是一回事，
         // 所以调用方必须把这一点写给用户看（看板上的那句标注）。
-        .filter((job) => {
-          if (options.from !== undefined && job.firstSeenAt < options.from) return false
-          if (options.to !== undefined && job.firstSeenAt > options.to) return false
-          return true
-        })
+        .filter((job) => inJobWindow(job, options.from, options.to))
       // 只用**薪资下限**做分位：上下限混在一起算出来的中位数没有意义
       const values = jobs
         .map((job) => job.salaryMin)
