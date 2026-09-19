@@ -288,6 +288,29 @@ test('exportResume html：落盘的就是含姓名的那份 HTML', async () => {
   })
 })
 
+test('列表带上附件（投递时要选"用哪份"），但**不带磁盘路径**', async () => {
+  await withHarness({}, async ({ service }) => {
+    const resume = service.create({ name: 'Java 后端 · 2026 春', content: resumeContent() })
+    const exported = await service.exportResume(resume.id, { format: 'html' })
+
+    const summary = service.list().find((item) => item.id === resume.id)
+    assert.ok(summary !== undefined)
+    // 投递选择器的选项就是这些 id（`resume_file.id`）——
+    // 列表里不带它，"选哪份简历"就只能靠"每版再请求一次"拼出来
+    assert.equal(summary.files.length, 1, '附件要跟着列表一起下来')
+    assert.equal(summary.files[0]?.id, exported.id)
+    assert.equal(summary.files[0]?.fileName, exported.fileName)
+    assert.equal(summary.counts.files, 1, 'counts.files 与附件列表必须一致')
+    // §4.1：磁盘路径不出 DTO 边界（它只在仓储层，相对 files/）
+    assert.equal(Object.hasOwn(summary.files[0] as object, 'path'), false)
+    assert.equal(
+      JSON.stringify(summary).includes(`resume-${String(resume.id)}/`),
+      false,
+      '序列化结果里也不该出现附件目录名',
+    )
+  })
+})
+
 test('exportResume pdf：注入的渲染器拿到的就是这份简历', async () => {
   await withHarness({ withPdf: true }, async ({ service, pdfHtml }) => {
     const resume = service.create({ name: 'Java 后端', content: resumeContent() })

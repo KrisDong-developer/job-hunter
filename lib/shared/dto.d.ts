@@ -3,7 +3,7 @@
  *
  * **只允许标量 JSON**：禁止 page / session / Cordis service / 任何活对象穿越这一层。
  */
-import type { ApplicationChannel, ApplicationStage, AssessmentKind, AssessmentState, AuthRequirementValue, CampusBatch, CampusStage, ContactStage, CoreField, CoverLetterLanguage, CrawlState, HealthState, InterviewKind, InterviewState, JobFlagType, JobState, MaturityLevel, MessageDirection, StageSource, TripartiteState, VisaStance } from './enums.js';
+import type { ApplicationChannel, ApplicationStage, AssessmentKind, AssessmentState, AuthRequirementValue, CampusBatch, CampusStage, ContactStage, CoreField, CoverLetterLanguage, CrawlState, DeliveryState, HealthState, InterviewKind, InterviewState, JobFlagType, JobState, MaturityLevel, MessageDirection, StageSource, TripartiteState, VisaStance } from './enums.js';
 /** 一条岗位（列表与详情共用；`jd_text` 只在详情里出现）。 */
 export interface JobDto {
     id: number;
@@ -67,6 +67,21 @@ export interface JobDto {
      * 而不是让用户在一屏里看到四条几乎一样的卡片。
      */
     dedupGroupId: number | null;
+    /**
+     * 接触态（§12.2）—— `none` = 还没有任何打招呼记录。
+     *
+     * 之前只有详情能回答"这条打过招呼没有"（详情单独调 `GET /jobs/:id/history`）。
+     * 列表也要能回答：**打招呼与投递是不可逆的对外动作**，行内给了按钮就必须能
+     * 显示"已经发过了"，否则一屏几十行里重复发是迟早的事。
+     */
+    contactStage: ContactStage;
+    /**
+     * 最近一次投递的阶段（§12.1）—— `null` = 没投过。
+     *
+     * 与 `contactStage` **刻意分开**：接触态回答"有没有接触上"（含手工标记），
+     * 这个回答"简历投出去之后走到哪一步了"。两者是两个状态机，不合并。
+     */
+    applicationStage: ApplicationStage | null;
 }
 /** `/health` 的响应体（客户端与诊断共用）。 */
 export interface HealthDto {
@@ -733,8 +748,12 @@ export interface GreetingDto {
     id: number;
     jobId: number | null;
     jobTitle: string | null;
+    /** 公司名。列表要回答"我给谁发过、结果如何"，只有岗位标题不够。 */
+    companyName: string | null;
     platformId: string;
     templateId: number | null;
+    /** 模板名（已删则 null）。话术效果对比（D2）要的可读标签，不是 id。 */
+    templateName: string | null;
     content: string;
     sentAt: string;
     channel: ApplicationChannel;
@@ -868,6 +887,186 @@ export interface FunnelDto {
      * 两边各算一次必然漂移）。
      */
     enoughSample: boolean;
+    note: string;
+}
+/**
+ * 批量发送里"这一条为什么发不出去"。
+ *
+ * 单独一个结构（而不是一句话）是因为**界面要按它分组**：
+ * "平台不支持"和"同一个公司今天已经发过"对用户是两个完全不同的结论
+ * （前者只能放弃，后者明天再来）。
+ */
+export interface GreetingBatchBlockerDto {
+    /** 机器可判的类别。 */
+    code: 'missing' | 'platform_unsupported' | 'not_logged_in' | 'guard_denied' | 'duplicate_company' | 'quota_exhausted' | 'draft_failed';
+    message: string;
+    hint?: string;
+    /** 被闸门拦时，是哪条规则（`switch` / `window` / `quota` / `cooldown` / `stealth`…）。 */
+    reason?: string;
+}
+/** 批量预览里的一条（`POST /greeting/send-batch/preview`）。 */
+export interface GreetingBatchItemDto {
+    jobId: number;
+    title: string;
+    company: string;
+    platformId: string;
+    /** 会不会真的发出去。 */
+    willSend: boolean;
+    /** 不会时给出原因；`willSend` 时为 null。 */
+    blocker: GreetingBatchBlockerDto | null;
+    /**
+     * 将发送的话术全文（只有 `willSend` 的项才有）。
+     *
+     * 为什么预览阶段就把它生成出来：§4.4.2 要求确认时看到**正文全文**。
+     * 只在"能发"的项上生成，是为了不为一批注定发不出去的岗位白花模型调用。
+     */
+    text: string | null;
+    /** 话术来源：模型 / 模板 / 调用方给定。 */
+    via: 'llm' | 'template' | 'given' | null;
+    /** 平台自己还会做的额外动作（如 BOSS 点「立即沟通」会先替你发一句默认招呼语）。 */
+    sideEffect: string | null;
+}
+/** `POST /greeting/send-batch/preview` 的结果。**只读、无副作用**。 */
+export interface GreetingBatchPlanDto {
+    generatedAt: string;
+    items: GreetingBatchItemDto[];
+    /** 能发的条数。 */
+    sendable: number;
+    blocked: number;
+    /** 服务端单次上限；超过要分批（界面按同一个数切）。 */
+    batchMax: number;
+    /** 条与条之间的随机间隔范围 —— 如实告诉用户"慢是故意的"。 */
+    intervalMs: {
+        min: number;
+        max: number;
+    };
+    /**
+     * 逐条说明必须随响应下发的原因：这份预览是**预测**（同公司冷却、当日额度余量都在批内模拟过），
+     * 但真正的判定仍然发生在每一条的闸门上 —— 预测与实际不一致时以实际为准。
+     */
+    note: string;
+}
+/** 批量发送的**逐条回执**。 */
+export interface GreetingBatchReceiptDto {
+    jobId: number;
+    title: string;
+    company: string;
+    ok: boolean;
+    sentAt: string | null;
+    /** 发送成功时的话术长度（审计与回执都只留长度，不留正文）。 */
+    textLength: number | null;
+    /** 失败时的原因（与 `GreetingBatchBlockerDto.code` 同源，便于界面统一渲染）。 */
+    code: string | null;
+    message: string | null;
+    hint: string | null;
+}
+/** `POST /greeting/send-batch` 的结果。 */
+export interface GreetingBatchResultDto {
+    executedAt: string;
+    receipts: GreetingBatchReceiptDto[];
+    sent: number;
+    failed: number;
+    /** 实际耗时（含随机间隔）——用户能看出"慢是故意的"。 */
+    elapsedMs: number;
+    note: string;
+}
+/**
+ * 批量投递的**逐条阻塞原因**（L4）。
+ *
+ * 为什么不与 `GreetingBatchBlockerDto` 合并成一个宽枚举：两边的取值集合本来就不同
+ * （投递多了"平台只吃平台内简历"，少了"话术生成失败"）。合成一个之后，
+ * 两边都看不出自己究竟要处理哪些 —— 而这正是"逐条说清为什么"最容易退化的地方。
+ */
+export interface ApplicationBatchBlockerDto {
+    /** 机器可判的类别。 */
+    code: 
+    /** 岗位不存在（已被清理掉）。 */
+    'missing'
+    /** 适配器没实现投递（`actions.sendResume` 缺失）。 */
+     | 'platform_unsupported' | 'not_logged_in' | 'guard_denied' | 'duplicate_company' | 'quota_exhausted';
+    message: string;
+    hint?: string;
+    /** 被闸门拦时，是哪条规则（`switch` / `window` / `quota` / `cooldown` / `stealth`…）。 */
+    reason?: string;
+}
+/** 批量投递预览里的一条（`POST /applications/deliver-batch/preview`）。 */
+export interface ApplicationBatchItemDto {
+    jobId: number;
+    title: string;
+    company: string;
+    platformId: string;
+    willDeliver: boolean;
+    /** 不会投时给出原因；`willDeliver` 时为 null。 */
+    blocker: ApplicationBatchBlockerDto | null;
+    /** 平台自己还会做的额外动作（如智联投递会顺带替你发一句招呼语）——按**平台事实**给。 */
+    sideEffect: string | null;
+}
+/** `POST /applications/deliver-batch/preview` 的结果。**只读、无副作用**。 */
+export interface ApplicationBatchPlanDto {
+    generatedAt: string;
+    items: ApplicationBatchItemDto[];
+    sendable: number;
+    blocked: number;
+    /** 服务端单次上限；超过要分批（界面按同一个数切）。 */
+    batchMax: number;
+    /** 条与条之间的随机间隔范围 —— 如实告诉用户"慢是故意的"。 */
+    intervalMs: {
+        min: number;
+        max: number;
+    };
+    /**
+     * 整批共用的那份简历（`resume_file.id`）；`null` = 用**平台内简历**。
+     *
+     * §4.4.2 要求确认时能看到"用了哪版简历"，所以它必须随计划一起下发 ——
+     * 而不是等到发送时才由服务端自己决定。
+     */
+    resumeFileId: number | null;
+    /** 上面那份的可读标签（简历名 + 附件文件名）；`null` = 平台内简历。 */
+    resumeLabel: string | null;
+    /**
+     * 指定的那份文件**会不会真的上传给平台**。
+     *
+     * * `null` = 没指定文件（用平台内简历），这一格不适用；
+     * * `true` = 这些平台接受本地附件 ⇒ 适配器会用它投；
+     * * `false` = 这些平台只吃**它们自己那份**（实测：没有"把本地文件发给 HR"的入口）⇒
+     *   文件**不会**上传。这一批**照投**（平台用它自己那份），那份简历只作**本地登记**。
+     *
+     * ⚠️ 这一格存在的唯一理由是"不许让用户误会"：不说清的话，他会以为自己传了一版、
+     * 而平台上收到的其实是另一版 —— 而投递不可逆。
+     */
+    uploadsResumeFile: boolean | null;
+    /**
+     * 逐条说明必须随响应下发的原因：这份预览是**预测**（同公司冷却与当日额度余量都在批内模拟过），
+     * 但真正的判定仍然发生在每一条的闸门上 —— 不一致时以实际为准。
+     */
+    note: string;
+}
+/** 批量投递的**逐条回执**。 */
+export interface ApplicationBatchReceiptDto {
+    jobId: number;
+    title: string;
+    company: string;
+    ok: boolean;
+    sentAt: string | null;
+    /**
+     * 送达状态。投递比打招呼更需要这一格：`pending` = "动作发出去了，但没能确认送达"，
+     * 而投递**不可逆**且可能已经成功 —— 用户据此决定去平台上核对，而不是直接重投。
+     */
+    delivery: DeliveryState | null;
+    /** 失败时的原因（与 `ApplicationBatchBlockerDto.code` 同源，便于界面统一渲染）。 */
+    code: string | null;
+    message: string | null;
+    hint: string | null;
+}
+/** `POST /applications/deliver-batch` 的结果。 */
+export interface ApplicationBatchResultDto {
+    executedAt: string;
+    receipts: ApplicationBatchReceiptDto[];
+    /** 真的投出去的条数（`delivery` 不是 `failed` 的那些）。 */
+    sent: number;
+    failed: number;
+    /** 实际耗时（含随机间隔）——用户能看出"慢是故意的"。 */
+    elapsedMs: number;
     note: string;
 }
 /** 一组归因对比（按渠道 / 按简历版本 / 按平台）。 */
@@ -1243,5 +1442,240 @@ export interface PlatformGovernanceDto {
     cooldownUntil: string | null;
     /** 最近一轮（含 `aborted` / 失败原因）。`null` = 从没跑过。 */
     lastRun: CrawlRunDto | null;
+}
+/**
+ * 一条**被字段断言拦下**的记录（`pending_repair`）。
+ *
+ * 为什么这一屏必须存在：字段断言拦下的记录**不进主表**，而 pending 只以
+ * 一个数字出现在"今日/设置"里 —— 用户看得到"有 20 条待修复"，却看不到
+ * 坏在哪个字段、样本是哪个岗位、什么时候抓的。于是"修选择器"这件事没有入口。
+ *
+ * ⚠️ **没有**原始 HTML：`crawl.ts` 入队时不带 `rawHtml`（§18：原始页面默认不存），
+ * 所以这里**不存在**"离线重放"这种能力 —— 修法是"改选择器覆盖 → 重抓一轮"。
+ */
+export interface RepairDto {
+    id: number;
+    platformId: string;
+    /** 触发这次隔离的抓取轮次；`null` = 那轮已被清理。 */
+    crawlRunId: number | null;
+    capturedAt: string;
+    /** 缺了哪些核心字段（`title` / `salary_raw` / `company` / `source_url`）。 */
+    missingFields: string[];
+    /** 当时**已经解析出来**的标量字段（用来判断是"整体解析崩了"还是"只缺一列"）。 */
+    raw: Record<string, unknown> | null;
+    /** 样本地址；`null` = 连地址那一列也没解析出来。 */
+    sourceUrl: string | null;
+}
+/** `GET /repairs`。 */
+export interface RepairListDto {
+    items: RepairDto[];
+    total: number;
+    /** 按平台汇总的待修复条数（平台行上的角标）。 */
+    byPlatform: Array<{
+        platformId: string;
+        count: number;
+    }>;
+    /**
+     * 口径说明必须随响应下发：没有原始 HTML，所以**没有"重放"这个动作**。
+     */
+    note: string;
+}
+/**
+ * 一个平台的适配器配置：**代码默认 + DB 覆盖 = 实际生效**。
+ *
+ * 界面必须能同时看到三层，否则"改了没生效"无法自查：
+ * 只给生效值 → 不知道哪些是覆盖来的；只给覆盖 → 不知道默认是什么。
+ */
+export interface AdapterConfigDto {
+    platformId: string;
+    displayName: string;
+    /** DB 里那份覆盖；`null` = 从没写过（一切走代码默认）。 */
+    override: unknown;
+    /** 代码默认（`DEFAULT_*_CONFIG`）。 */
+    defaults: unknown;
+    /** 合并后的实际生效值（适配器此刻正在用的那一份）。 */
+    effective: unknown;
+    /** 覆盖占用的大小（字符数）与字段数，用于"这东西是不是长得不正常"。 */
+    overrideKeys: string[];
+}
+/** 一个动作今天的额度读数。 */
+export interface GuardUsageEntryDto {
+    action: string;
+    bucket: 'greeting' | 'application' | 'reply';
+    /** 今天已经成功做了几次（计数来源是审计表）。 */
+    used: number;
+    /** 用户设的每日额度（`guard.dailyLimits`）。 */
+    budget: number;
+    /** 平台侧上限（平台事实）；`null` = 这个动作在该平台没有已知上限。 */
+    platformCap: number | null;
+    /** 真正生效的上限 = `min(budget, platformCap)`。 */
+    limit: number;
+    /**
+     * 被哪一层限住。`'platform'` 时改自己的额度**没有用** ——
+     * 这一格存在的意义就是避免用户白改一场（见 `checkQuota` 的拒绝文案）。
+     */
+    limitedBy: 'budget' | 'platform';
+    /** 今天还能做几次（不会小于 0）。 */
+    remaining: number;
+}
+/** `GET /guard/usage`：额度是**按平台**算的，所以按平台分组。 */
+export interface GuardUsageDto {
+    /** 计数起点（今天的 UTC 00:00，与 `checkQuota` 同一口径）。 */
+    since: string;
+    platforms: Array<{
+        platformId: string;
+        displayName: string;
+        actions: GuardUsageEntryDto[];
+    }>;
+    note: string;
+}
+/**
+ * 保留策略（§18.2 分层保留 / §15）。
+ *
+ * 所有字段都是**天**，`0` = 永不自动清理。默认值来自 `RETENTION_DEFAULTS`。
+ */
+export interface RetentionPolicy {
+    crawlRunsDays: number;
+    auditLogDays: number;
+    /** §18.2 定的是「长期」，所以默认 0；用户也可以给它一个期限。 */
+    llmCallsDays: number;
+    pendingRepairDays: number;
+    /** JD 纯文本：清的是 `job.jd_text` / `jd_summary` **字段**，不删岗位行。 */
+    jdTextDays: number;
+    /** 岗位结构化数据；只有"从没被碰过"的才会被删（见 `store/cleanup.ts`）。 */
+    jobsDays: number;
+    /** 定时清理（默认关，见 `RETENTION_AUTO_CLEAN_DEFAULT` 的理由）。 */
+    autoCleanEnabled: boolean;
+}
+/** 存储占用的一行（按表，`dbstat` 的真实分页大小）。 */
+export interface StorageTableDto {
+    table: string;
+    bytes: number;
+    rows: number;
+}
+/** 一种保留类型的现状（行数与占用）。 */
+export interface StorageTypeDto {
+    id: string;
+    label: string;
+    /** 当前库里符合"该类型"的行数。 */
+    rows: number;
+    /** 该类型所占字节（按所在表的真实分页大小均摊，估算）。 */
+    bytes: number;
+    /** 是否参与自动清理；`false` = 长期保留（用户资产）。 */
+    auto: boolean;
+    /** 当前保留天数（0 = 永久）。长期保留的类型固定为 0。 */
+    retentionDays: number;
+    /** 一句话说明它是什么 —— 尤其长期保留的，要说清为什么留。 */
+    note: string;
+}
+/** `GET /maintenance/storage`（§18.3 P3：磁盘占用可视化）。 */
+export interface StorageUsageDto {
+    generatedAt: string;
+    dataDir: string;
+    /** 主库文件与 WAL 的**实际**大小（`fs.stat`，不是估算）。 */
+    db: {
+        path: string;
+        bytes: number;
+        walBytes: number;
+    };
+    /** 附件目录（`files/`）的实际占用。 */
+    attachments: {
+        dir: string;
+        fileCount: number;
+        bytes: number;
+    };
+    /** 导出归档目录（`exports/`）；不存在时全 0。 */
+    exports: {
+        dir: string;
+        fileCount: number;
+        bytes: number;
+    };
+    /** 按表的真实占用，从大到小。 */
+    tables: StorageTableDto[];
+    /** 按保留类型的现状。 */
+    types: StorageTypeDto[];
+    /**
+     * 口径说明必须随响应下发：`tables` 是真实分页大小，`types` 是均摊估算，
+     * 两者不能相加（同一张表可能被多个类型共用）。
+     */
+    note: string;
+}
+/** 清理预览里的一条（§18.3 P2：**清理前预览**，P0）。 */
+export interface CleanupPlanItemDto {
+    id: string;
+    label: string;
+    /** 将删除的行数（`mode='clear-column'` 时是"将被置空的字段所在行数"）。 */
+    rows: number;
+    /** 预计释放的字节。 */
+    bytes: number;
+    /** 为什么会清它（人话，含"多少条早于多少天前"）。 */
+    reason: string;
+    /** 清它会失去什么 —— 逐条说清，用户据此判断要不要勾上。 */
+    describe: string;
+    /** 真正会被执行吗。`false` = 保留期为 0（永久保留）或这类数据当前不产生。 */
+    willRun: boolean;
+}
+/**
+ * `POST /maintenance/cleanup/preview`。
+ *
+ * **只读、无副作用** —— 它必须能被反复调用而不改变任何东西（否则"预览"这个词就是假的）。
+ */
+export interface CleanupPlanDto {
+    generatedAt: string;
+    items: CleanupPlanItemDto[];
+    totalRows: number;
+    totalBytes: number;
+    /** 清理前的 db 文件大小（真实）。 */
+    dbBytesBefore: number;
+    /** 预计清理后的 db 大小（估算：`dbBytesBefore − totalBytes`，下限为 0）。 */
+    dbBytesAfterEstimate: number;
+    /** §18.1/R16：删完必须 VACUUM 才会真的变小，这句话要如实说。 */
+    note: string;
+}
+/** `POST /maintenance/cleanup` 的执行结果。 */
+export interface CleanupResultDto {
+    executedAt: string;
+    items: Array<{
+        id: string;
+        label: string;
+        rows: number;
+        bytes: number;
+    }>;
+    totalRows: number;
+    /** VACUUM 前后的**真实**文件大小 —— 这一格就是"清理有没有用"的证据。 */
+    dbBytesBefore: number;
+    dbBytesAfter: number;
+    vacuumed: boolean;
+    note: string;
+}
+/** 导出格式：结构化 JSON / 分表 CSV（打成一个 zip）/ 全量归档（含附件）。 */
+export type DataExportFormat = 'json' | 'csv' | 'archive';
+/**
+ * 归档里的一份文件（供界面与工具说明"导出里有什么"，不用于传输）。
+ */
+export interface DataExportEntryDto {
+    name: string;
+    bytes: number;
+    rows: number | null;
+}
+/** `POST /data/import` 的结果。 */
+export interface DataImportResultDto {
+    format: 'csv' | 'json';
+    /** 解析出多少行（含被跳过的）。 */
+    received: number;
+    inserted: number;
+    updated: number;
+    skipped: number;
+    /**
+     * 逐行错误（**最多 20 条**）。不静默吞掉：导入最怕"看起来成功了，
+     * 其实 30 行没进来"，用户拿着残表去投递会比报错糟得多。
+     */
+    errors: Array<{
+        row: number;
+        message: string;
+    }>;
+    /** 被截断的错误条数（>0 时说明还有更多）。 */
+    moreErrors: number;
+    note: string;
 }
 //# sourceMappingURL=dto.d.ts.map

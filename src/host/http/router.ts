@@ -120,7 +120,9 @@ const ROUTES: RouteHandler[] = [
   platforms.list,
 
   // ── 触达（打招呼 / 收件箱 / 接触阶段）与投递 ────────────────────
+  // `greetingBatch`（`/outreach/greetings/send-batch`）是字面量形状，必须排在 `greetingSend` 之前
   outreach.greetingDraft,
+  outreach.greetingBatch,
   outreach.greetingSend,
   outreach.inboxSync,
   outreach.detectStage,
@@ -128,6 +130,9 @@ const ROUTES: RouteHandler[] = [
   outreach.contactStageUpdate,
   outreach.greetings,
   applications.deliver,
+  // `deliverBatch`（`/applications/deliver-batch`）是字面量形状，必须排在
+  // `applications.get`（`/applications/:id`，只认 GET）之前 —— 与 `outreach.greetingBatch` 同一个理由
+  applications.deliverBatch,
   platforms.loginStatus,
   platforms.loginStart,
   platforms.adapterConfig,

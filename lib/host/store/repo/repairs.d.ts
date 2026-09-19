@@ -26,6 +26,15 @@ export interface RepairRepo {
     enqueue(input: EnqueueRepairInput, now: string): number;
     countPending(platformId?: string): number;
     listPending(platformId: string | undefined, limit: number): RepairRecord[];
+    get(id: number): RepairRecord | undefined;
+    /**
+     * 丢弃**单条**待修复记录（`replay_state = 'discarded'`）。
+     *
+     * 与 `clear` 的分工：`clear` 是"这个平台的选择器已修好、整队清掉"，
+     * 这一条是"就这一条没价值/是平台自己的脏数据"。
+     * 两者都不删行 —— 留痕，便于下次遇到同样形态时回看。
+     */
+    discard(id: number): boolean;
     markReplayed(id: number, jobId: number, now: string): void;
     /** 修好选择器、重放完成后清空该平台的队列。 */
     clear(platformId: string): number;

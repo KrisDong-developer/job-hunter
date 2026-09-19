@@ -27,13 +27,29 @@ import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page, type Response } from 'patchright'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
+import {
+  buildJoblistBody,
+  DEFAULT_ZHIPIN_CONFIG,
+  extractJobsInPage,
+  fetchJoblistInPage,
+  salaryMapOf,
+} from '../../src/host/platform/adapters/zhipin.js'
 
 const KEYWORD = process.env['ZHIPIN_KEY'] ?? 'Java'
 /** 城市码来自 BossHunter 的 boss_cities.json（第一方：zhipin 官方 cityGroup 接口）。深圳 = 101280600。 */
 const CITY_CODE = process.env['ZHIPIN_CITY_CODE'] ?? '101280600'
 /** 与 probe:zhipin 共用同一份 profile —— 登录一次，两个探针都受益。 */
 const PROFILE = process.env['ZHIPIN_PROFILE'] ?? join(process.cwd(), '.probe-zhipin-profile')
-const FIXTURE_DIR = join(process.cwd(), 'test', 'fixtures')
+/**
+ * 落盘目录。默认仍是 `test/fixtures/`（这个探针的产物就是**校准夹具**）。
+ *
+ * ⚠️ 但覆写夹具是有代价的：那些文件的首条标题 / 条数被用例硬编码断言，
+ * 直接覆盖会让测试红在"与本次校准无关"的地方。所以给一个逃生开关
+ * `ZHIPIN_CAPTURE_DIR`，把某一次采样落到 `.probe-zhipin-capture/` 里先看
+ * （`.probe*` 已被 gitignore），确认无误再人工搬进 `test/fixtures/`。
+ */
+const FIXTURE_DIR =
+  process.env['ZHIPIN_CAPTURE_DIR'] ?? join(process.cwd(), 'test', 'fixtures')
 const BASE_URL = 'https://www.zhipin.com/web/geek/job'
 const PROBE_URL = `${BASE_URL}?query=${encodeURIComponent(KEYWORD)}&city=${CITY_CODE}`
 const CARD_SELECTOR = '.job-card-wrap'
@@ -281,6 +297,11 @@ async function main(): Promise<void> {
     status: number
     /** 请求体（POST 才有）—— 取"列表薪资明文"接口时必须靠它复现调用。 */
     postData: string | null
+    /**
+     * 请求头。**必须记**：猎聘那边的教训是"少一组 `x-fscp-*` 就全废，而 HTTP 仍是 200"，
+     * 于是"接口能不能自己调通"这件事必须先有一个**带页面原样头的对照组**才能判定。
+     */
+    headers: Record<string, string>
     body: string | null
   }> = []
   page.on('response', (response: Response) => {
@@ -299,20 +320,32 @@ async function main(): Promise<void> {
       } catch {
         postData = null
       }
-      void response
-        .text()
-        .then((body: string) => {
-          apiCaptures.push({
-            url: response.url(),
-            method,
-            status,
-            postData,
-            body: body === '' ? null : body.slice(0, 200_000),
-          })
-        })
-        .catch(() => {
-          apiCaptures.push({ url: response.url(), method, status, postData, body: null })
-        })
+      void (async () => {
+        const headers: Record<string, string> = {}
+        try {
+          const all = await request.allHeaders()
+          const skip = new Set(['cookie', 'content-length', 'host', 'connection', 'accept-encoding'])
+          for (const [name, value] of Object.entries(all)) {
+            const key = name.toLowerCase()
+            // ⚠️ 剔除 **HTTP/2 伪头**（`:authority` / `:method` / `:path` / `:scheme`）与 `priority`：
+            //    它们是协议层的东西，`fetch` 里**不允许设置**。留着它们会让"用捕获的头重放一次"
+            //    这个**对照组直接抛错**，从而把"我们的请求形态对不对"误判成"接口不可用" ——
+            //    2026-09-19 实测就撞上了这个：对照组报"不通"，而真实原因是伪头。
+            if (key.startsWith(':') || key === 'priority') continue
+            if (!skip.has(key)) headers[key] = value
+          }
+        } catch {
+          /* 拿不到头也不许炸 */
+        }
+        let body: string | null = null
+        try {
+          const text = await response.text()
+          body = text === '' ? null : text.slice(0, 200_000)
+        } catch {
+          body = null
+        }
+        apiCaptures.push({ url: response.url(), method, status, postData, headers, body })
+      })()
     } catch {
       /* 监听本身不许炸 */
     }
@@ -466,6 +499,90 @@ async function main(): Promise<void> {
     log(`4b 滚动加载测试失败：${error instanceof Error ? error.message : String(error)}`)
   }
 
+  // ── 6. 列表薪资：验证**适配器的生产路径**（2026-09-19 新增）────────────
+  //
+  // 这条要回答两个问题，且**必须都靠实测**：
+  //   ① 适配器自建的请求形态（`buildJoblistBody` + `fetchJoblistInPage`）能不能调通？
+  //      —— 只带 cookie + content-type 行不行，还是像猎聘那样需要一整套头？
+  //   ② 连接键到底对不对得上 —— 补薪资靠的是 `DOM 卡片 id ↔ encryptJobId`，
+  //      对不上就是白干（"看起来有薪资"其实是错配）。
+  let salaryProbe: {
+    controlOk: boolean
+    adapterOk: boolean
+    domIds: number
+    apiSalaries: number
+    matched: number
+    samples: string[]
+  } | null = null
+  try {
+    const domJobs = await page
+      .evaluate(extractJobsInPage, {
+        selectors: DEFAULT_ZHIPIN_CONFIG.selectors,
+        jobIdPattern: DEFAULT_ZHIPIN_CONFIG.jobIdPattern,
+      })
+      .catch(() => [])
+    const pageCall = apiCaptures.filter((item) => item.url.includes('joblist.json')).at(-1)
+    const controlPayload =
+      pageCall === undefined
+        ? null
+        : await page
+            .evaluate(
+              async (arg: { apiPath: string; body: string; headers: Record<string, string> }) => {
+                const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch
+                if (typeof fetchImpl !== 'function') return null
+                try {
+                  const response = await fetchImpl(arg.apiPath, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: arg.headers,
+                    body: arg.body,
+                  })
+                  return response.ok ? await response.json() : null
+                } catch {
+                  return null
+                }
+              },
+              {
+                apiPath: pageCall.url.split('?')[0] ?? '',
+                body: pageCall.postData ?? '',
+                headers: pageCall.headers,
+              },
+            )
+            .catch(() => null)
+    const adapterPayload = await page
+      .evaluate(fetchJoblistInPage, {
+        apiPath: DEFAULT_ZHIPIN_CONFIG.joblistApiPath,
+        body: buildJoblistBody({
+          query: KEYWORD,
+          cityCode: CITY_CODE,
+          page: 1,
+          pageSize: DEFAULT_ZHIPIN_CONFIG.joblistPageSize,
+        }),
+      })
+      .catch(() => null)
+
+    const controlSalaries = salaryMapOf(controlPayload)
+    const adapterSalaries = salaryMapOf(adapterPayload)
+    const ids = domJobs.map((job) => job.platformJobId).filter((id) => id !== '')
+    const matched = ids.filter((id) => adapterSalaries.has(id)).length
+    salaryProbe = {
+      controlOk: controlSalaries.size > 0,
+      adapterOk: adapterSalaries.size > 0,
+      domIds: ids.length,
+      apiSalaries: adapterSalaries.size,
+      matched,
+      samples: ids.slice(0, 5).map((id) => `${id} → ${adapterSalaries.get(id) ?? '(未匹配)'}`),
+    }
+    log(
+      `6 列表薪资：对照组（页面头+页面体）${controlSalaries.size > 0 ? '通' : '**不通**'} · ` +
+        `适配器生产路径 ${adapterSalaries.size > 0 ? '通' : '**不通**'} · ` +
+        `DOM id ${String(ids.length)} 个 / 接口薪资 ${String(adapterSalaries.size)} 条 / **匹配上 ${String(matched)}**`,
+    )
+    log(`  样本：${salaryProbe.samples.join(' | ')}`)
+  } catch (error) {
+    log(`6 列表薪资验证失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+
   // ── 5. 报告与接口采样落盘 ─────────────────────────────────────────────
   const report = {
     capturedAt: new Date().toISOString(),
@@ -478,6 +595,7 @@ async function main(): Promise<void> {
     firstJobIds: firstIds,
     urlPaging,
     scrollLoading: scrollResult,
+    salaryProbe,
     apiUrls: apiCaptures.map((item) => ({ url: item.url, status: item.status })),
   }
   writeFileSync(FIXTURE_PAGINATION, JSON.stringify(report, null, 2), 'utf8')

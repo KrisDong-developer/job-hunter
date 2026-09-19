@@ -74,6 +74,34 @@ test('详情页解析：JD 正文 / 标题 / 薪资 / 城市 / 公司名（真�
   assert.equal(detail.notes, undefined, `不该有校准警告：${JSON.stringify(detail.notes)}`)
 })
 
+/**
+ * `authRequirement.detail = 'none'`（"未登录也能读全"）的**论据就是这份夹具是未登录抓的**。
+ *
+ * 为什么单独钉一条：把夹具换成登录态捕获时，上面那条解析用例**照样全绿**（结构没变），
+ * 于是"未登录可读详情"这个结论就悄悄失去依据 —— 而 `authRequirement` 会拿去决定
+ * 要不要把猎聘的详情抓取当成"需要登录"，判错的方向是"被登录墙挡住也照抓"。
+ */
+test('authRequirement.detail=none 的论据：这份详情夹具必须是**未登录**抓的', async (t) => {
+  if (!existsSync(FIXTURE)) {
+    t.skip('详情夹具不存在')
+    return
+  }
+  const html = readFileSync(FIXTURE, 'utf8')
+  const adapter = createLiepinAdapter()
+  const page = pageOf(html, 'https://www.liepin.com/job/1984775119.shtml')
+
+  assert.equal(
+    await adapter.auth?.isLoggedIn(page),
+    false,
+    '夹具必须呈现「未登录」页头 —— 否则"未登录可读详情"的说法没有依据，authRequirement 要改成 required',
+  )
+  // 未登录还能读到**完整 JD + 明文薪资**，这才是 detail=none 的实质（不是"页面能打开"就算）
+  assert.ok(adapter.detail !== undefined, '适配器必须声明 detail（否则这条论据无从验证）')
+  const detail = await adapter.detail.extract(page)
+  assert.ok((detail.jdText ?? '').length > 200, '未登录也必须能读到完整 JD')
+  assert.equal(detail.salaryRaw, '15-30k·14薪', '未登录时薪资是明文，不是掩码')
+})
+
 test('详情页解析：选择器被改坏时如实留 notes、不编 JD（降级路径）', async (t) => {
   if (!existsSync(FIXTURE)) {
     t.skip('详情夹具不存在')

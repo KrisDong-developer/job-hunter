@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import type { CompanyProfileDto } from '../../shared/dto.js'
 import {
   CONTACT_STAGE_LABEL,
+  DELIVERY_STATE_LABEL,
   JOB_FLAG_LABEL,
   MANUAL_CONTACT_STAGES,
   type ContactStage,
@@ -9,6 +10,8 @@ import {
 } from '../../shared/enums.js'
 import {
   ApiError,
+  NeedsConfirmError,
+  deliverApplication,
   fetchCompanyDetail,
   fetchGreetings,
   fetchJobDetail,
@@ -19,6 +22,9 @@ import {
   updateContactStage,
 } from '../api.js'
 import { JOB_ACTION_LABEL, JOB_STATE_LABEL, relativeTime, salaryDetail, splitJobTags } from '../labels.js'
+import { FieldHint } from '../field-hint.js'
+import { Modal } from '../modal.js'
+import { ResumeFilePicker } from './resume-file-picker.js'
 import { TailorPanel } from './tailor-panel.js'
 import { OverseasPanel } from './campus.js'
 import { InlineMd } from '../inline-md.js'
@@ -260,6 +266,59 @@ export function JobDetailBody(props: {
   const [probeError, setProbeError] = useState<string | null>(null)
   /** 正在保存的接触态（按钮禁用用）。 */
   const [staging, setStaging] = useState<ContactStage | null>(null)
+  /** 投递简历（L4）：两步（选简历 → 看确认文案 → 确认）、进行中、结果提示。 */
+  const [deliverOpen, setDeliverOpen] = useState(false)
+  /** 这一步投递**登记**用哪份简历（附件 id）；`null` = 平台内简历。 */
+  const [deliverResumeId, setDeliverResumeId] = useState<number | null>(null)
+  const [deliverAsk, setDeliverAsk] = useState<string | null>(null)
+  const [delivering, setDelivering] = useState(false)
+  const [deliverNote, setDeliverNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+
+  /**
+   * 投递简历（L4）——**真的把简历投出去**，不可逆。
+   *
+   * 两段式确认**走 HTTP 协议**：第一次不带 `confirm` → 宿主 409 带回 `confirmText`，
+   * 用户看过之后再带 `confirm: true` 重发。界面不自己编那段文案 ——
+   * §4.4.2 要求它含平台、岗位、用了哪版简历（以及**这份文件到底传不传得上去**），
+   * 而只有宿主知道这些。
+   *
+   * 平台能力与闸门（L4 开关、隐身、额度…）都不在界面里判：这里只负责把宿主的
+   * 说法原样端出来。投不了的时候，用户看到的是"哪个平台没接投递"而不是一句"失败"。
+   */
+  const deliver = async (confirm: boolean): Promise<void> => {
+    setDelivering(true)
+    setDeliverNote(null)
+    try {
+      const result = await deliverApplication({
+        jobId: props.id,
+        resumeFileId: deliverResumeId,
+        ...(confirm ? { confirm: true } : {}),
+      })
+      // 不带 confirm 时宿主必定 409（走 catch），所以走到这里就是真的执行了
+      setDeliverOpen(false)
+      setDeliverAsk(null)
+      setDeliverNote({
+        tone: 'ok',
+        text:
+          `已投递（送达状态：${DELIVERY_STATE_LABEL[result.delivery]}）` +
+          (result.detail === undefined ? '' : ` —— ${result.detail}`),
+      })
+      // 投递会写一条投递记录与状态事件，两边都要重取
+      history.reload()
+      props.onChanged()
+    } catch (error) {
+      if (error instanceof NeedsConfirmError) {
+        // 第一步的回复：宿主把"要你确认什么"交回来，原样展示
+        setDeliverAsk(error.confirmText)
+        return
+      }
+      setDeliverAsk(null)
+      setDeliverOpen(false)
+      setDeliverNote({ tone: 'error', text: error instanceof ApiError ? error.display : String(error) })
+    } finally {
+      setDelivering(false)
+    }
+  }
 
   const probeStage = async (): Promise<void> => {
     setProbing(true)
@@ -360,9 +419,111 @@ export function JobDetailBody(props: {
               {busy === action ? '…' : JOB_ACTION_LABEL[action]}
             </button>
           ))}
+          {/* 投递简历（L4）：单条真投递的入口。
+              之前 `deliverApplication` 在客户端**零调用点** —— 工具里能投、界面上不能投，
+              §22.5 的"GUI 与工具对等"就差这一格。默认关闭（L4 开关），
+              点了之后由宿主决定能不能投（平台没接投递动作会如实说）。 */}
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline"
+            disabled={delivering}
+            onClick={() => {
+              setDeliverAsk(null)
+              setDeliverOpen(true)
+            }}
+          >
+            {delivering ? '投递中…' : '投递简历'}
+          </button>
         </div>
       </header>
       {failure === null ? null : <p className="jh-error">{failure}</p>}
+      {deliverNote === null ? null : (
+        <p className={deliverNote.tone === 'ok' ? 'jh-ok' : 'jh-error'}>{deliverNote.text}</p>
+      )}
+
+      {/* 投递简历（L4）：两步走 —— 先选"这次投递登记哪份简历"，再看宿主给的确认文案。
+          ⚠️ 第二步的文案**原样来自宿主**（含平台 / 岗位 / 简历版本 / 平台会顺带做什么 /
+          这份文件到底传不传得上去），界面不自己编 —— 编出来的必然会与真正的判定漂移。 */}
+      {deliverOpen === false ? null : (
+        <Modal
+          title={deliverAsk === null ? '投递简历' : '确认投递简历'}
+          label={deliverAsk === null ? '投递简历' : '确认投递简历'}
+          onClose={() => {
+            setDeliverOpen(false)
+            setDeliverAsk(null)
+          }}
+          footer={
+            deliverAsk === null ? (
+              <>
+                <span className="jh-muted">下一步会给你看确认文案（含平台、岗位与用了哪版简历）。</span>
+                <span className="jh-spacer" />
+                <button
+                  type="button"
+                  className="jh-btn jh-btn-inline"
+                  onClick={() => {
+                    setDeliverOpen(false)
+                  }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="jh-btn jh-btn-inline jh-btn-primary"
+                  disabled={delivering}
+                  onClick={() => void deliver(false)}
+                >
+                  {delivering ? '检查中…' : '下一步'}
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="jh-muted">投递不可逆，平台一旦收到就撤不回来。</span>
+                <span className="jh-spacer" />
+                <button
+                  type="button"
+                  className="jh-btn jh-btn-inline"
+                  disabled={delivering}
+                  onClick={() => {
+                    setDeliverAsk(null)
+                  }}
+                >
+                  返回改简历
+                </button>
+                <button
+                  type="button"
+                  className="jh-btn jh-btn-inline jh-btn-primary"
+                  disabled={delivering}
+                  onClick={() => void deliver(true)}
+                >
+                  {delivering ? '投递中…' : '确认投递'}
+                </button>
+              </>
+            )
+          }
+        >
+          {deliverAsk === null ? (
+            <>
+              <div className="jh-ctl">
+                <span className="jh-field-label">
+                  用哪份简历
+                  <FieldHint text="**平台上收到的**是平台自己那份简历（平台没有把本地文件发给 HR 的入口，我们改不了它）。这里选的是**这次投递在你的记录里归到哪一版** ——「哪版回复率高」这类对比要靠它，所以选得准一点更有用。不选就不登记版本。" />
+                </span>
+                <ResumeFilePicker
+                  value={deliverResumeId}
+                  disabled={delivering}
+                  onChange={setDeliverResumeId}
+                />
+              </div>
+              <p className="jh-muted">
+                下一步的确认文案里会写清"这份文件到底会不会传上去"，以及平台自己还会做什么
+                （例如智联投递会顺带替你发一句招呼语）。
+              </p>
+            </>
+          ) : (
+            <pre className="jh-approval">{deliverAsk}</pre>
+          )}
+        </Modal>
+      )}
 
       <ul className="jh-kv">
         <li><span>公司</span><span>{job.companyName ?? '—'}</span></li>

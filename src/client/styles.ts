@@ -156,6 +156,19 @@ const CSS = `
 .jh-btn:disabled{opacity:.45;cursor:default}
 /* 用 a 当按钮（导出的下载链接）：去掉链接下划线，否则"按钮上带下划线"看着像没做完 */
 a.jh-btn{display:inline-block;text-decoration:none;text-align:center}
+/* 批量打招呼弹窗里的正文编辑框：它是主内容（用户要逐条读一遍再发），所以给它整行宽度与可读行高 */
+.jh-greeting-edit{width:100%;margin:4px 0 2px;resize:vertical;font:inherit;line-height:1.5;box-sizing:border-box}
+/* 批量工具条：与"已勾选的行"贴在一起（同 plan-editor 的表格工具条） */
+.jh-picked{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;
+  padding:6px 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px}
+/* 岗位行前的勾选框：单独一列，不与"点开详情"抢点击区域 */
+.jh-job-pick{display:flex;align-items:center;padding:0 2px 0 6px}
+/* 高危动作的确认文案（宿主 renderApproval 给的多行文本）。
+   必须原样保留换行：那些行各是一件事（平台/岗位/用了哪版简历/同时会发生什么），
+   折成一坨之后用户就没法逐行核对了。 */
+.jh-approval{white-space:pre-wrap;margin:0;font:inherit;font-size:13px;line-height:1.6;
+  padding:8px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;
+  background:var(--dsw-alias-interactive-bg-hover);overflow-x:auto}
 .jh-btn-inline{margin-top:0}
 .jh-btn-active{border-color:var(--dsw-alias-brand-primary);font-weight:600;
   background:var(--dsw-alias-interactive-bg-active)}
@@ -277,8 +290,8 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-sort-label{font-size:12px;color:var(--jh-muted-fg)}
 .jh-sort-select{width:auto}
 .jh-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-/* 卡片 = 选择主区域 + 右侧快捷标记竖排。列成一行是因为主按钮横贯整张卡，
-   快捷按钮不能嵌进它内部（button 不能套 button）；把它们平放在主按钮右边。 */
+/* 卡片 = 选择主区域 + 右侧行内动作竖排（打招呼 / 投递简历 / 划掉）。列成一行是因为
+   主按钮横贯整张卡，行内按钮不能嵌进它内部（button 不能套 button）；把它们平放在主按钮右边。 */
 .jh-job-row{display:flex;align-items:stretch;gap:8px}
 .jh-job-row .jh-job{flex:1 1 auto}
 .jh-job-quick{display:flex;flex-direction:column;gap:6px;justify-content:center;flex:0 0 auto}
@@ -287,8 +300,7 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .jh-job-qk:hover:not(:disabled){border-color:var(--dsw-alias-border-l4);
   background:var(--dsw-alias-interactive-bg-hover)}
 .jh-job-qk:disabled{opacity:.5;cursor:default}
-.jh-job-qk-on{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary);
-  background:var(--dsw-alias-interactive-bg-active)}
+/* 划掉（ignored）是这一列唯一的处置态开关，选中后染红：与详情里的动作条同一套语义 */
 .jh-job-qk-ign{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);
   background:var(--dsw-alias-interactive-bg-active)}
 /* 卡片必须有边界：白底 + 4% 描边画在白页面上等于没有卡片，滚动时容易看串行 */
@@ -323,14 +335,30 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   font-size:11.5px;color:var(--dsw-alias-label-tertiary)}
 
 /* ── 跨平台去重（批次 4）──────────────────────────────────────────────
-   徽章是**读数**不是操作（操作是右侧那个「对照」按钮），所以它做成一枚
+   徽章是**读数**不是操作（操作是卡片下面那枚「跨平台对照」开关），所以它做成一枚
    低调的描边胶囊：颜色用 label-secondary 而不是品牌色 —— 它表达的是
    "这条岗位在别处也有一份"，不是"这是重点"。 */
 .jh-dedup-badge{display:inline-block;padding:0 6px;border-radius:999px;
   border:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-secondary);
   font-size:10.5px;line-height:16px}
-/* 「对照」比 ★/✕ 宽：两个字放不进 34px 的方块 */
-.jh-job-qk-wide{width:auto;min-width:34px;padding:0 8px;font-size:11.5px}
+/* 行内三个动作（打招呼 / 投递简历 / 划掉）**形状完全一致**：都是 34px 方块 + 一个图标。
+   这一列不随文案长短抖动，也不吃卡片宽度；动作含义由 tooltip 与 aria-label 说。
+   图标是 14px 手画 SVG（见 jobs.tsx 的 IconChat / IconSend），与 15px 的 ✕ / ★ 字形
+   同一档视觉重量 —— 一列里混着字形图标和 SVG 图标，靠的是尺寸对齐，不是颜色。 */
+/* 三个方块共用同一套居中：字形（✕）与 SVG 的基线完全不同，交给 flex 居中才不会
+   一个偏上一个偏下。 */
+.jh-job-quick .jh-job-qk{display:inline-flex;align-items:center;justify-content:center}
+.jh-job-quick .jh-job-qk svg{display:block}
+/* 跨平台对照的开关：排在卡片**下面**（卡片自己是个按钮，里面塞不进按钮），
+   所以用一枚低调的文字开关，而不是再做一个方块 —— 它是对一行数据的"展开读数"，
+   不是对岗位的动作。 */
+.jh-dedup-toggle{margin:4px 0 0 10px;padding:2px 8px;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:transparent;
+  color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:18px;cursor:pointer}
+.jh-dedup-toggle:hover{border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.jh-dedup-toggle-on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-text);
+  background:var(--dsw-alias-interactive-bg-active)}
 /* 展开的对照面板：贴在那一行下面，左边线与卡片对齐，让人看出它属于哪一行 */
 .jh-dedup-pane{margin:6px 0 2px 10px;padding:8px 10px;border-left:2px solid var(--dsw-alias-border-l3);
   display:flex;flex-direction:column;gap:6px}

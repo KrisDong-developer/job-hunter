@@ -299,8 +299,11 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
      *
      * 与 `recordApplication` 的关键差别：**不再走一次闸门** —— 调用方此刻已经在
      * `guard.run` 的令牌上下文里了，再走一次会变成"确认两次"甚至拿不到令牌。
-     * 这条路径**不校验 resumeId**：走平台内简历投递时我们未必有对应的本地版本，
-     * 如实记 null 比编一个版本号好。
+     *
+     * ⚠️ **不认识的版本一律记 null，不回退到"当前默认简历"**。
+     * 适配器投递走的是**平台上那一份**简历，我们并不知道它与本地哪一版对应；
+     * 填一个默认版本会让"按简历版本看转化率"（§13 U7 / F3 的 A/B）把结果归因到
+     * 一份可能根本没投出去的简历上 —— 那比留空糟得多。留空只是少一行样本。
      */
     recordApplicationSent(input): ApplicationDto {
       const job = store.job.detail(input.jobId)
@@ -310,7 +313,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
       const channel = input.channel ?? 'platform'
       const record = insertApplication({
         jobId: job.id,
-        resumeId: input.resumeId ?? store.resume.defaultResume()?.id ?? null,
+        resumeId: input.resumeId ?? null,
         resumeFileId: input.resumeFileId ?? null,
         channel,
         actor: input.actor,

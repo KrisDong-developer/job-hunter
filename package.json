@@ -73,6 +73,7 @@
     "probe:waiqi": "node scripts/run-ts.mjs test/tools/probe-waiqi.ts",
     "probe:zhaopin-login": "node scripts/run-ts.mjs test/tools/probe-zhaopin-login.ts",
     "probe:zhaopin-anon": "node scripts/run-ts.mjs test/tools/probe-zhaopin-anon.ts",
+    "probe:liepin-chat": "node scripts/run-ts.mjs test/tools/probe-liepin-chat.ts",
     "probe:51job": "node scripts/run-ts.mjs test/tools/probe-51job.ts",
     "probe:sinojobs": "node scripts/run-ts.mjs test/tools/probe-sinojobs.ts",
     "probe:hiredchina": "node scripts/run-ts.mjs test/tools/probe-hiredchina.ts",

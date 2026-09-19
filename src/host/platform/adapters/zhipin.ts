@@ -11,7 +11,10 @@
  *
  * * **列表可见但薪资隐藏**：`.job-salary` 元素存在但为空 —— 所以本适配器的
  *   `requiredFields` **不含 salary_raw**（否则每条记录都被字段断言隔离），
- *   `fieldCompleteness: 'medium'` 如实声明；登录后薪资可见，届时再升级；
+ *   `fieldCompleteness: 'medium'` 如实声明。
+ *   ⚠️ 别以为"登录后薪资就可见了"：**登录态下它照样不可用** —— 出现的是字体混淆的
+ *   乱码（见下面「薪资混淆」那一节）。薪资的**唯一**可用来源是列表接口的 `salaryDesc`，
+ *   已接上（见 `ZhipinConfig.salaryApiEnabled`）。
  * * `.boss-name` 装的是**公司名**（未登录视图；BossHunter 选择器
  *   `.boss-name || .company-name` 正是为此）；
  * * 无分页区（`hasNextPage` 恒 false，单页 15 条）；登录后有标准分页，待登录夹具补；
@@ -52,18 +55,23 @@
  *   * 结论：`salaryRaw` 拿到的是乱码 ⇒ 适配器**一律置空 + 记 `salary:obfuscated`**，
  *     绝不把乱码当薪资写库（下游会把它当"读到的薪资"去排序/展示）。
  *
- *   **明文在接口里**（同一份采样报告 `test/fixtures/zhipin-search-api.json` 里就有）：
- *   `GET/POST wapi/zpgeek/search/joblist.json` 与 `wapi/zpgeek/job/detail.json` 的
- *   `salaryDesc` 是 `"12-20K·13薪"` 这样的**明文、无私有区字符**，
- *   连接键是接口的 `encryptJobId` ↔ 卡片 `href="/job_detail/<id>.html"` 的 id
- *   （实测 15/15 完全重合）。接口里还带 `jobName`/`brandName`/`cityName`/`jobExperience`/
- *   `jobDegree`/`skills`/`welfareList`/`brandStageName` 等，字段比 DOM 全。
- *   **但暂时还不能照抄**：现有采样只记了 `url/status/body`，**没有 method 与请求参数**，
- *   而 joblist 的查询条件不可能只靠 URL 里那个 `_=时间戳` 表达 —— 照抄就是猜。
- *   下一步：给探针的接口记录补上 `method` + `postData`，跑一次就知道该怎么发；
- *   在那之前列表薪资按"**拿不到**"对待。
- *   相关副作用：`zhipin.test.ts` 里那句「薪资可见率」现在量的是**混淆率**，
- *   别再把它当"薪资可用"的证据。
+ *   **明文在接口里，而且已经接上了**（2026-09-19 定案 + 落地）：
+ *   `wapi/zpgeek/search/joblist.json` 的 `zpData.jobList[].salaryDesc` 是
+ *   `"12-20K·13薪"` 这样的**明文、无私有区字符**，连接键是接口的 `encryptJobId`
+ *   ↔ 卡片 `href="/job_detail/<id>.html"` 的 id（实测 15/15 完全重合）。
+ *   调用形态也探明了：**POST + 表单体**（不是 JSON），体形如
+ *   `page=1&pageSize=15&city=101280600&query=Java&…&scene=1`；
+ *   而且**只要 cookie + `content-type` 就调得通**（不需要 `zp_token`/`traceid` 那套 ——
+ *   实测适配器自建的请求形态直接通，见 `probe-zhipin-login` 的第 6 步）。
+ *   ⇒ 落地为"**DOM 定列表、接口只补薪资**"：`readListPage` 先走 DOM，再把空薪资按 id 回填
+ *   （见 `ZhipinConfig.salaryApiEnabled`）。**为什么不让接口当主通道**：`sourceUrl` 必须来自
+ *   搜索页返回的原始 href（BOSS 的 URL 带 `securityId`，重构即被拦），接口响应里没有现成 href。
+ *   `requiredFields` 仍然**不含** `salary_raw`：接口通道要登录态，登录静默过期时
+ *   整页记录不该被打成 `pending_repair`。
+ *   `fieldCompleteness` 也仍是 `medium`：薪资现在**能拿到但不保证**（未登录时为空），
+ *   声明 `high` 属于夸大。
+ *   接口里另有 `jobName`/`brandName`/`cityName`/`jobExperience`/`jobDegree`/`skills`/
+ *   `welfareList`/`brandStageName`，字段比 DOM 全 —— 后续想升级可以先从这些下手。
  *
  * ## 详情页：选择器与解析（2026-09-18 由**本仓真实登录态快照**校准）
  *
@@ -350,6 +358,128 @@ export interface ZhipinConfig {
   actionWaitMs: number
   /** 发送后的送达校验轮询（次数 × 间隔）。 */
   deliveryPoll: ZhipinDeliveryPoll
+  /**
+   * ── 登录态锚点（2026-09-19 定案）───────────────────────────────────
+   *
+   * 只认**结构性属性**，不认文案。两个锚点都是实测出来的（未登录夹具
+   * `zhipin-search.html` vs 真实登录态快照 `zhipin-search-logged-in.html`，
+   * 命中数分别 1/0 与 0/1）。
+   *
+   * ⚠️ 挑锚点时踩过一个**只有"数子串"才会踩**的坑：`.header-login-btn` 在**登录态**页面里
+   * 也出现 4 次 —— 全部在 `<style>` 块里的 CSS 规则文本（`#header .header-login-btn{...}`）。
+   * 按子串统计会以为"这个类两边都有"，于是选错锚点。**选择器匹配的是元素**，
+   * 所以用属性选择器（`a[ka="header-login"]`）就天然避开它。
+   */
+  loginSelectors: { loggedIn: string; notLoggedIn: string }
+  /**
+   * ── 列表薪资的**接口来源**（2026-09-19 实测定案）─────────────────────
+   *
+   * 为什么必须有这条通道：DOM 里的薪资要么**登录后才出现**、要么出现的是
+   * **字体混淆的私有区码点**（见文件头「薪资混淆」）⇒ `salary_raw` 常年为空，
+   * 而它是**核心字段**。明文其实就在同一个列表接口里：
+   * `POST wapi/zpgeek/search/joblist.json` 的 `zpData.jobList[].salaryDesc`
+   * （实测值如 `12-18K`、`13-17K·13薪`），连接键 `encryptJobId ↔ 卡片 href 里的 id`。
+   *
+   * 适配器的用法是**只补薪资**：岗位列表仍以 DOM 为准（`sourceUrl` 必须来自搜索页
+   * 返回的原始 href，绝不重构 URL），接口只按 id 回填空缺的薪资。
+   */
+  salaryApiEnabled: boolean
+  /** joblist 接口路径（相对当前站点）。 */
+  joblistApiPath: string
+  /** 接口每页条数（实测站点自己就发 15）。 */
+  joblistPageSize: number
+  /**
+   * 最多为补薪资翻几页接口。
+   *
+   * 为什么要有上限：DOM 滚了 N 屏就有 N×15 张卡，逐页补会把平台流量翻倍。
+   * 默认 5 页（= 75 条）覆盖绝大多数场景；超出部分的薪资留空并保留原 note
+   * （**如实留空**，不编）。
+   */
+  joblistMaxPages: number
+}
+
+/**
+ * 列表接口（**薪资明文的唯一来源**）—— 2026-09-19 实测它的调用形态：
+ * `POST` + 表单体（不是 JSON！），体形如
+ * `page=1&pageSize=15&city=101280600&query=Java&…&scene=1`，
+ * 响应 `{code:0, zpData:{resCount, hasMore, jobList:[{encryptJobId, salaryDesc, …}]}}`。
+ *
+ * ⚠️ 顺带纠正一条旧结论：**接口的 `page` 参数是有效的**（实测站点滚动时会依次发
+ * page=1,2,3…）。之前"BOSS 只能滚动加载、`&page=2` 无效"说的是**搜索页 URL 上的
+ * `page` 参数被 SPA 忽略**，两件事不是一回事 —— 但本适配器的翻页模型没变
+ * （`hasNextPage` 仍恒 false、深度仍走 `scrollRounds`），因为**列表仍以 DOM 为准**。
+ */
+export const ZHIPIN_JOBLIST_API_PATH = '/wapi/zpgeek/search/joblist.json'
+
+/** joblist 的表单体（照抄站点自己的参数集，含那些恒为空的筛选位）。 */
+export function buildJoblistBody(arg: {
+  query: string
+  cityCode: string
+  page: number
+  pageSize: number
+}): string {
+  const params = new URLSearchParams()
+  params.set('page', String(arg.page))
+  params.set('pageSize', String(arg.pageSize))
+  params.set('city', arg.cityCode)
+  params.set('query', arg.query)
+  for (const key of [
+    'expectInfo',
+    'multiSubway',
+    'multiBusinessDistrict',
+    'position',
+    'jobType',
+    'salary',
+    'experience',
+    'degree',
+    'industry',
+    'scale',
+    'stage',
+  ]) {
+    params.set(key, '')
+  }
+  params.set('scene', '1')
+  params.set('encryptExpectId', '')
+  return params.toString()
+}
+
+/**
+ * **在页面上下文里**发 joblist 请求（自包含；用页面自己的 fetch 带 Cookie/指纹/TLS）。
+ * 返回解析后的 JSON；任何失败返回 `null`（调用方**保持 DOM 结果**）。
+ */
+export function fetchJoblistInPage(arg: { apiPath: string; body: string }): Promise<unknown> {
+  const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch
+  if (typeof fetchImpl !== 'function') return Promise.resolve(null)
+  return fetchImpl(arg.apiPath, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: arg.body,
+  })
+    .then((response) => (response.ok ? (response.json() as Promise<unknown>) : null))
+    .catch(() => null)
+}
+
+/**
+ * 从 joblist 响应里取 `encryptJobId → salaryDesc`。
+ *
+ * 连接键是 `encryptJobId` ↔ 卡片 href 里那个 id（2026-09-18 实测重合 15/15）。
+ * 结构不符就返回空表（**不抛错**：这条通道只是"锦上添花"，失败不该让整轮抓取失败）。
+ */
+export function salaryMapOf(payload: unknown): Map<string, string> {
+  const out = new Map<string, string>()
+  if (payload === null || typeof payload !== 'object') return out
+  const list = (payload as { zpData?: { jobList?: unknown } }).zpData?.jobList
+  if (!Array.isArray(list)) return out
+  for (const entry of list) {
+    if (entry === null || typeof entry !== 'object') continue
+    const item = entry as { encryptJobId?: unknown; salaryDesc?: unknown }
+    const id = typeof item.encryptJobId === 'string' ? item.encryptJobId : ''
+    const salary = typeof item.salaryDesc === 'string' ? item.salaryDesc.trim() : ''
+    if (id === '' || salary === '') continue
+    out.set(id, salary)
+  }
+  return out
 }
 
 /**
@@ -532,6 +662,16 @@ export const DEFAULT_ZHIPIN_CONFIG: ZhipinConfig = {
   dwellBeforeGreetMs: [15_000, 30_000],
   actionWaitMs: 15_000,
   deliveryPoll: { attempts: 12, intervalMs: 500 },
+  loginSelectors: {
+    // 已登录：页头那个「求职者」下拉（未登录夹具里命中 0，登录态 1）
+    loggedIn: 'a[ka="header-username"]',
+    // 未登录：页头「登录/注册」按钮（未登录夹具 1，登录态 0）
+    notLoggedIn: 'a[ka="header-login"]',
+  },
+  salaryApiEnabled: true,
+  joblistApiPath: ZHIPIN_JOBLIST_API_PATH,
+  joblistPageSize: 15,
+  joblistMaxPages: 5,
 }
 
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
@@ -595,6 +735,12 @@ export function mergeZhipinConfig(override: unknown): ZhipinConfig {
     dwellBeforeGreetMs: range(patch.dwellBeforeGreetMs, DEFAULT_ZHIPIN_CONFIG.dwellBeforeGreetMs),
     actionWaitMs: positive(patch.actionWaitMs, DEFAULT_ZHIPIN_CONFIG.actionWaitMs),
     deliveryPoll: poll(patch.deliveryPoll, DEFAULT_ZHIPIN_CONFIG.deliveryPoll),
+    loginSelectors: { ...DEFAULT_ZHIPIN_CONFIG.loginSelectors, ...(patch.loginSelectors ?? {}) },
+    salaryApiEnabled:
+      typeof patch.salaryApiEnabled === 'boolean' ? patch.salaryApiEnabled : DEFAULT_ZHIPIN_CONFIG.salaryApiEnabled,
+    joblistApiPath: pattern(patch.joblistApiPath, DEFAULT_ZHIPIN_CONFIG.joblistApiPath),
+    joblistPageSize: positive(patch.joblistPageSize, DEFAULT_ZHIPIN_CONFIG.joblistPageSize),
+    joblistMaxPages: positive(patch.joblistMaxPages, DEFAULT_ZHIPIN_CONFIG.joblistMaxPages),
   }
 }
 
@@ -1416,6 +1562,36 @@ export function detectStageInPage(arg: {
   }
 }
 
+/**
+ * 是否处于「已登录」态（用于 `auth.isLoggedIn`，自包含）。
+ *
+ * 只回答一个问题：**当前页面会不会被登录墙挡住**。
+ *
+ * 判据来自两份真实快照的对比 —— 未登录夹具 `test/fixtures/zhipin-search.html`
+ * vs 真实登录态快照 `test/fixtures/zhipin-search-logged-in.html`：
+ *
+ * | 锚点 | 未登录 | 已登录 |
+ * |---|---|---|
+ * | `a[ka="header-username"]`（页头「求职者」下拉） | 无 | **有** |
+ * | `a[ka="header-login"]`（页头「登录/注册」） | **有** | 无 |
+ *
+ * 两者都不在 ⇒ 返回 `null`（**判不出来**），由适配器落成 `false`（保守：
+ * 宁可漏判"已登录"，也不要把被登录墙挡住当成"今天没有新岗位"）。
+ */
+export function isLoggedInByMarkersInPage(arg: { loggedIn: string; notLoggedIn: string }): boolean | null {
+  const has = (selector: string): boolean => {
+    if (selector === '') return false
+    try {
+      return document.querySelector(selector) !== null
+    } catch {
+      return false
+    }
+  }
+  if (has(arg.loggedIn)) return true
+  if (has(arg.notLoggedIn)) return false
+  return null
+}
+
 export interface ZhipinAdapterOptions {
   config?: ZhipinConfig
   delayRangeMs?: [number, number]
@@ -1428,6 +1604,15 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
 
   /**
+   * 记住每个页面最近一次 `gotoSearch` 的搜索条件 —— 供 `readListPage` 构造
+   * joblist 请求体（那条通道要靠 `query` + `city` 才能问出同一批岗位的薪资）。
+   *
+   * 主链顺序 `gotoSearch → detectBlock → readListPage` 保证了它总是新鲜的
+   * （与 liepin 的 `lastSearch` 同一模式）。
+   */
+  const lastSearch = new WeakMap<object, { query: string; cityCode: string }>()
+
+  /**
    * 本次要滚动加载几轮（`scrollRounds` 维度，方案里配）。
    *
    * 缺省 1 = 只读当前这一屏 15 条（**与改动前行为一致**：保守是默认，加深度要显式配）。
@@ -1437,6 +1622,62 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     const parsed = Number.parseInt(platformCriterion(criteria, 'scrollRounds'), 10)
     if (!Number.isFinite(parsed) || parsed <= 1) return 1
     return Math.min(parsed, ZHIPIN_MAX_SCROLL_ROUNDS)
+  }
+
+  /**
+   * 用 joblist 接口把 DOM 里拿不到的薪资补上（见 `ZhipinConfig.salaryApiEnabled` 的说明）。
+   *
+   * 三条纪律：
+   *   1. **列表仍以 DOM 为准** —— 接口只按 `encryptJobId` 回填薪资，**不引入新岗位**
+   *      （`sourceUrl` 必须来自搜索页返回的原始 href，绝不重构 URL）；
+   *   2. **失败就保持原样** —— 接口挂了 / 结构变了，返回 DOM 的结果与原有 note，
+   *      **不抛错**（这条通道是"锦上添花"，不该让整轮抓取失败）；
+   *   3. **填上之后要撤掉 DOM 通道留下的那两条 note**（`salary:obfuscated` /
+   *      "未登录视图薪资隐藏"）—— 否则数据是新的、说明是旧的，自相矛盾。
+   */
+  const fillSalariesFromApi = async (page: PageLike, jobs: RawJob[]): Promise<RawJob[]> => {
+    if (!config.salaryApiEnabled) return jobs
+    const remembered = lastSearch.get(page as object)
+    if (remembered === undefined || remembered.query === '') return jobs
+    const missing = jobs.filter((job) => job.salaryRaw === '')
+    if (missing.length === 0) return jobs
+
+    const pages = Math.min(
+      config.joblistMaxPages,
+      Math.max(1, Math.ceil(missing.length / config.joblistPageSize)),
+    )
+    const salaries = new Map<string, string>()
+    for (let index = 1; index <= pages; index += 1) {
+      const payload = await page
+        .evaluate(fetchJoblistInPage, {
+          apiPath: config.joblistApiPath,
+          body: buildJoblistBody({
+            query: remembered.query,
+            cityCode: remembered.cityCode,
+            page: index,
+            pageSize: config.joblistPageSize,
+          }),
+        })
+        .catch(() => null)
+      const got = salaryMapOf(payload)
+      // 一页都没解析出东西 ⇒ 视为通道不可用，保持 DOM 结果（不抛错）
+      if (got.size === 0) break
+      for (const [id, salary] of got) salaries.set(id, salary)
+      if (missing.every((job) => salaries.has(job.platformJobId))) break
+    }
+    if (salaries.size === 0) return jobs
+
+    return jobs.map((job) => {
+      const salary = salaries.get(job.platformJobId)
+      if (salary === undefined || salary === '') return job
+      const notes = (job.notes ?? []).filter(
+        (note) => note !== 'salary:obfuscated' && note !== '未登录视图薪资隐藏（登录后可升级）',
+      )
+      const filled: RawJob = { ...job, salaryRaw: salary }
+      if (notes.length === 0) delete filled.notes
+      else filled.notes = notes
+      return filled
+    })
   }
 
   /**
@@ -1644,12 +1885,42 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
       },
     },
 
+    /**
+     * 登录态检测（2026-09-19 补）。
+     *
+     * 为什么必须有它：BOSS 是**最需要登录**的平台（详情页要登录后才有的 `securityId`），
+     * 而在补上这一块之前 `adapter.auth === undefined` ⇒
+     *   * `platforms.loginStatus('zhipin')` 直接抛「没有声明登录入口」，用户在设置里
+     *     既看不到登录态、也没法走登录引导；
+     *   * `account.loggedIn` 恒 `false`，而界面那些"需要登录"的入口都是按它过滤的 ——
+     *     结果就是**打招呼 / 收件箱 / 回复全做好了，入口却永远不亮**。
+     *
+     * 不声明 auth 与"不需要登录"是两件事：后者看 `authRequirement.crawl`（BOSS 的
+     * 搜索确实不需要登录），前者看这里有没有实现。
+     */
+    auth: {
+      // 登录 URL 有据：未登录夹具里 `ka="header-login"` 那个链接的 href 就是它。
+      loginUrl: 'https://www.zhipin.com/web/user/',
+      async isLoggedIn(page): Promise<boolean> {
+        const verdict = await page.evaluate(isLoggedInByMarkersInPage, {
+          loggedIn: config.loginSelectors.loggedIn,
+          notLoggedIn: config.loginSelectors.notLoggedIn,
+        })
+        // 判不出来时按"未登录"处理（保守，见 isLoggedInByMarkersInPage 的说明）。
+        return verdict ?? false
+      },
+    },
+
     crawl: {
       async gotoSearch(page, criteria): Promise<void> {
         const url = buildZhipinSearchUrl(config, criteria)
         if (url === null) {
           throw new Error(`zhipin: 城市码未配置（${criteria.city ?? ''}）—— 拒绝猜测`)
         }
+        lastSearch.set(page as object, {
+          query: criteria.keyword ?? '',
+          cityCode: criteria.city === undefined || criteria.city === '' ? '' : config.cityCodes[criteria.city] ?? '',
+        })
         await page.goto(url)
         if (page.waitForSelector !== undefined) {
           try {
@@ -1674,10 +1945,11 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
       },
 
       async readListPage(page): Promise<RawJob[]> {
-        return await page.evaluate(extractJobsInPage, {
+        const jobs = await page.evaluate(extractJobsInPage, {
           selectors: config.selectors,
           jobIdPattern: config.jobIdPattern,
         })
+        return await fillSalariesFromApi(page, jobs)
       },
 
       async hasNextPage(): Promise<boolean> {

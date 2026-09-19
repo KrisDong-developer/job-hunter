@@ -13,6 +13,7 @@ import type { BrowserConfig } from './browser-config.js';
 import type { SettingsWriteDeps } from './guard/actions/settings.js';
 import type { GuardToken } from './guard/token.js';
 import { type GuardConfig } from './guard/rules.js';
+import type { RetentionPolicy } from '../shared/dto.js';
 import type { Store } from './store/store.js';
 import type { CrawlConfig } from './crawl-config.js';
 export interface SettingsSnapshot {
@@ -22,6 +23,14 @@ export interface SettingsSnapshot {
     browser: BrowserConfig;
     /** 采集运行期设置（单轮预算）。资源/节奏设置，**不是**闸门配置。 */
     crawl: CrawlConfig;
+    /**
+     * 数据保留策略（§18 / §15 的「保留」一栏）。同样是资源设置，**不是**闸门。
+     *
+     * 放在这里而不是塞进 GuardConfig：额度/冷却/审批是"能不能发出去"，
+     * 保留期是"留多久"—— 混在一起会让"模型能不能改"这件事变得含糊
+     * （模型的禁止项清单里有额度，但没有保留期）。
+     */
+    retention: RetentionPolicy;
     /** 供界面展示"这些开关现在是什么状态"的派生信息。 */
     derived: {
         /** 每个用途是否真的可用（总开关 + 用途开关）。 */
@@ -55,6 +64,8 @@ export interface SettingsSnapshot {
                 sendWindow: string;
                 dayOffProbability: number;
             };
+            /** 保留期的出厂默认（界面用它显示"恢复默认"该填什么）。 */
+            retention: RetentionPolicy;
         };
     };
 }
@@ -63,6 +74,7 @@ export interface SettingsPatch {
     guard?: Partial<GuardConfig>;
     browser?: Partial<BrowserConfig>;
     crawl?: Partial<CrawlConfig>;
+    retention?: Partial<RetentionPolicy>;
 }
 export interface SettingsService {
     snapshot(): SettingsSnapshot;
@@ -89,10 +101,21 @@ export interface SettingsDeps extends SettingsWriteDeps {
         read(): CrawlConfig;
         write(patch: Partial<CrawlConfig>): CrawlConfig;
     };
+    /** 数据保留策略（§18）。改动即刻生效 —— 预览与清理每次都现读。 */
+    retention: {
+        read(): RetentionPolicy;
+        write(patch: Partial<RetentionPolicy>): RetentionPolicy;
+    };
     clock?: () => string;
 }
-/** 模型**不能**改的键（与 `guard/rules.ts` 的 `FORBIDDEN_FOR_MODEL` 同源）。 */
-export declare const MODEL_FORBIDDEN_KEYS: readonly ["requireApproval", "auditEnabled", "batchLimit", "dailyLimits", "cooldownMinutes", "sendWindow", "dayOffProbability"];
+/** 模型**不能**改的键（与 `guard/rules.ts` 的 `FORBIDDEN_FOR_MODEL` 同源）。
+ *
+ * `retention` 是 2026-09-19 加进来的：它决定"多久之后删数据"，
+ * 与额度、冷却期是同一类**保护性配置** —— 让模型能把保留期调成 0 天，
+ * 等于给它一个"把用户数据清掉"的间接开关。实现上它本来就不在 `job_settings`
+ * 工具的参数里（模型传不进来），这里只是把这条事实**写进用户能看到的清单**里。
+ */
+export declare const MODEL_FORBIDDEN_KEYS: readonly ["requireApproval", "auditEnabled", "batchLimit", "dailyLimits", "cooldownMinutes", "sendWindow", "dayOffProbability", "retention"];
 /** 模型能改的键：只影响"读什么、用什么"，不影响闸门本身。 */
 export declare const MODEL_EDITABLE_KEYS: readonly ["ai", "levels", "browser"];
 export declare function createSettingsService(deps: SettingsDeps): SettingsService;

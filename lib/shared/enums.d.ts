@@ -35,6 +35,21 @@ export declare const RUN_REASON_LABEL: Record<RunReasonKey, string>;
 /** 触发原因的中文标签；不认识的取值**原样返回**（不静默变成"—"）。 */
 export declare function runReasonLabel(reason: string | null): string | null;
 /**
+ * 对外动作的**送达状态**（适配器 `ActionResult.delivery`）。
+ *
+ * 为什么进 shared：界面**至今看不到这一格** —— 投递/打招呼的结果只有成功或异常，
+ * 而"点了按钮"与"消息真的进了对方会话"是两件事（§12.2）。
+ * 批量回执要逐条写清它，所以它得是 host 与 client 共用的一套取值。
+ *
+ * ⚠️ 最要紧的一格是 `pending`：动作看起来已经发出，但没能验证送达 ——
+ * 它**不可逆**，也可能已经成功。说成"失败"会让人直接重投一次，说成"成功"是撒谎。
+ */
+export declare const DELIVERY_STATES: readonly ["delivered", "pending", "failed", "missing"];
+export type DeliveryState = (typeof DELIVERY_STATES)[number];
+export declare const DELIVERY_STATE_LABEL: Record<DeliveryState, string>;
+/** 送达状态的色调（`pending` 是 warn 而不是 error：它可能已经成功了）。 */
+export declare const DELIVERY_STATE_TONE: Record<DeliveryState, 'ok' | 'warn' | 'error' | 'muted'>;
+/**
  * 核心字段（§4.2.4）：每个适配器都必须声明的一组字段。
  * 任一字段**连续 3 次缺失**即触发降级；不合格的**单条**记录不写主表，进 `pending_repair`。
  */
@@ -141,6 +156,18 @@ export type ResumeFormat = (typeof RESUME_FORMATS)[number];
 export declare const CONTACT_STAGES: readonly ["none", "greeted", "delivered", "read", "replied", "interview_scheduled"];
 export type ContactStage = (typeof CONTACT_STAGES)[number];
 export declare const CONTACT_STAGE_LABEL: Record<ContactStage, string>;
+/**
+ * 用户**手工**可以标记的接触态（`POST /jobs/:id/contact-stage`）。
+ *
+ * 排除 `none`：「未接触」不是能"标记"出来的状态 —— 它的含义是"没有打招呼记录"，
+ * 而手工标记的载体恰恰是一条打招呼记录（§7.0：最新一条即当前接触态）。
+ * 允许把它标成 `none` 只会得到一条写着"未接触"的打招呼记录，自相矛盾。
+ *
+ * 其余五态都允许人工设置/回退：平台侧会误判，用户也可能是补记历史
+ * （"上周其实已经读过了"）—— 所以要能改回来，且每次改动都留一条状态事件。
+ */
+export declare const MANUAL_CONTACT_STAGES: readonly ["greeted", "delivered", "read", "replied", "interview_scheduled"];
+export type ManualContactStage = (typeof MANUAL_CONTACT_STAGES)[number];
 /** 投递阶段（§12.1）—— 落在 `application.stage`。 */
 export declare const APPLICATION_STAGES: readonly ["sent", "viewed", "interviewing", "interviewed", "offer", "rejected", "no_reply"];
 export type ApplicationStage = (typeof APPLICATION_STAGES)[number];

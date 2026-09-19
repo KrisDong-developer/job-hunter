@@ -42,7 +42,7 @@ import { extractJson } from '../ai/prompts.js'
 import { renderResumeDocx } from '../render/docx.js'
 import { renderResumeHtml } from '../render/resume-html.js'
 import type { Store } from '../store/store.js'
-import { toResumeDto, type ResumeRecord } from '../store/repo/resumes.js'
+import { toResumeDto, toResumeFileDto, type ResumeRecord } from '../store/repo/resumes.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import { isoNow, systemClock, type Clock } from '../util/time.js'
 
@@ -103,13 +103,7 @@ export function createResumeService(deps: ResumeServiceDeps): ResumeService {
   const toDto = (record: ResumeRecord): ResumeDto =>
     toResumeDto(
       record,
-      store.resume.listFiles(record.id).map((file) => ({
-        id: file.id,
-        format: file.format,
-        fileName: file.fileName,
-        bytes: file.bytes,
-        createdAt: file.createdAt,
-      })),
+      store.resume.listFiles(record.id).map(toResumeFileDto),
       store.tailoring.countFor(record.id),
     )
 
@@ -298,13 +292,7 @@ export function createResumeService(deps: ResumeServiceDeps): ResumeService {
         },
         clock(),
       )
-      return {
-        id: file.id,
-        format: file.format,
-        fileName: file.fileName,
-        bytes: file.bytes,
-        createdAt: file.createdAt,
-      }
+      return toResumeFileDto(file)
     },
 
     readFile(fileId) {

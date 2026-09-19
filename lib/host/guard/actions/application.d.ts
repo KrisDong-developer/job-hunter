@@ -15,7 +15,9 @@
  */
 import type { AdapterRegistry } from '../../platform/registry.js';
 import type { SessionService } from '../../platform/session.js';
-import type { DeliveryState, PageSource } from '../../platform/types.js';
+import type { DeliveryState } from '../../../shared/enums.js';
+import type { JobDto } from '../../../shared/dto.js';
+import type { PageSource } from '../../platform/types.js';
 import type { Store } from '../../store/store.js';
 import { type Clock } from '../../util/time.js';
 import { type GuardToken } from '../token.js';
@@ -47,7 +49,14 @@ export interface ApplicationSendDeps {
 }
 export interface ApplicationSendInput {
     jobId: number;
-    /** 本地简历文件（绝对路径）；`null` = 走平台内简历（BOSS 求职者网页端只支持这一种）。 */
+    /**
+     * 本地简历文件的**绝对路径**；`null` = 走平台内简历（BOSS 求职者网页端只支持这一种）。
+     *
+     * ⚠️ 这一格**不接受外部输入**：路径由 `runtime/actions.ts` 从 `resume_file.id`
+     * 自己查出来（`join(filesDir, path)`）。HTTP 与工具层只收 id ——
+     * 让请求体直接给一个绝对路径就是一个"任意路径读文件"的洞
+     * （与 `readExportFile` 同一条纪律）。
+     */
     filePath: string | null;
 }
 export interface ApplicationSendResult {
@@ -60,6 +69,59 @@ export interface ApplicationSendResult {
     /** 适配器给的可读说明（例如"平台只支持平台内简历"）。 */
     detail?: string;
 }
+/**
+ * 「用了哪版简历」那句话（§4.4.2 要求审批文案含它）。
+ *
+ * 三段必须都在，因为它们是三件不同的事：**哪一份**、**会不会真的传上去**、
+ * 以及**没传的话平台会用什么**。只写一个文件名（上一版写的是绝对路径）会让用户
+ * 以为自己传了这一版，而平台上收到的其实是另一版 —— 投递不可逆，这种误解代价最大。
+ *
+ * 放在这一层是因为**批量预览与单条审批共用同一句话**：两处各写一句必然漂移。
+ */
+export declare function resumeVersionTextOf(input: {
+    label: string | null;
+    uploads: boolean;
+}): string;
+/** 「这个平台现在能不能投」的**只读预检**结果（与岗位无关，只看平台能力与登录态）。 */
+export interface ApplicationPlatformBlocker {
+    code: 'platform_unsupported' | 'not_logged_in';
+    message: string;
+    hint: string;
+}
+/**
+ * 平台层面的预检：适配器实现了 `sendResume` 没有、登录态还在不在。
+ *
+ * 单条投递、批量预览**共用这一份**（与 `greetingPlatformBlocker` 同一个理由：
+ * 写两份判断迟早漂移，而漂移的表现是"预览说能投、点下去才失败"）。
+ *
+ * 顺序是刻意的：**能力先于登录**。"这个平台压根没接投递"比"你还没登录"更接近事实 ——
+ * 登录了也还是一样投不出去。
+ */
+export declare function applicationPlatformBlocker(deps: {
+    registry: AdapterRegistry;
+    session: SessionService;
+}, platformId: string): ApplicationPlatformBlocker | null;
+/** 「这条现在能不能投」的**只读预检**结果（岗位 + 平台）。 */
+export type ApplicationReadiness = {
+    ok: true;
+    job: JobDto;
+    adapterName: string;
+} | {
+    ok: false;
+    code: 'NOT_FOUND' | 'NOT_LOGGED_IN' | 'ADAPTER_BROKEN';
+    message: string;
+    hint: string;
+};
+/**
+ * 只读预检：岗位在不在，以及这个平台能不能投（后者走 `applicationPlatformBlocker`）。
+ *
+ * @param deps 只要这三个依赖，所以不需要页面、也不会产生任何副作用
+ */
+export declare function applicationReadinessOf(deps: {
+    store: Store;
+    registry: AdapterRegistry;
+    session: SessionService;
+}, jobId: number): ApplicationReadiness;
 /**
  * 投递简历（平台侧执行）。
  * @param guardToken 由 `guard.run()` 签发的一次性令牌；缺参编译不过，伪造则运行期拒绝

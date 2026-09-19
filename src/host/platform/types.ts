@@ -6,7 +6,7 @@
  * `auth.*` 登录态、`guard.selfTest`）在 P2~P5 逐个补上 —— 这里**不放假实现**，
  * 缺什么就明确是可选的、还没做。
  */
-import type { BlockKind, ContactStage, CoreField, HealthState } from '../../shared/enums.js'
+import type { BlockKind, ContactStage, CoreField, DeliveryState, HealthState } from '../../shared/enums.js'
 import type {
   AdapterCapabilitiesDto,
   AdapterImplementationDto,
@@ -159,9 +159,9 @@ export type AdapterMaturityFact = AdapterMaturityDto
  * ⚠️ `delivery` 不是可选的花哨字段，而是**必需信息**：
  * 「点了按钮」与「消息真的进了对方会话」是两件事，而这是本系统最不能猜的问题。
  * 只用 `ok: boolean` 无法区分两者 —— 于是"发出去了吗"只能靠猜。
+ *
+ * `DeliveryState` 的定义在 `shared/enums.ts`（界面也要按同一套取值渲染回执）。
  */
-export type DeliveryState = 'delivered' | 'pending' | 'failed' | 'missing'
-
 export interface ActionResult {
   ok: boolean
   /** 送达状态。适配器没能力验证时给 `'missing'` 并在 `message` 里说明，**不要假装 delivered**。 */
@@ -208,14 +208,20 @@ export interface PageLike {
   evaluate<R, A>(fn: (arg: A) => R, arg: A): Promise<R>
   waitForTimeout(ms: number): Promise<void>
   /**
-   * 等某个选择器出现（可选能力）。
+   * 等某个选择器**挂载**（不要求可见）。可选能力。
    *
    * 需要它是因为**招聘站点基本都是 SPA**：`load` 事件到达时列表还没渲染完，
    * 立刻解析只会拿到 0 条 —— 而 0 条最容易被误读成「今天没有新岗位」。
    * 夹具实现直接查一次静态 DOM。
    *
-   * ⚠️ 真路径是 Playwright 的 `waitForSelector`：超时**抛错**而不是返回 false
-   * （离线夹具返回 false）。调用方一律 try/catch 包住再取布尔值。
+   * ⚠️ **两条路径同形：超时返回 `false`，不抛错**（真路径的归一化见
+   * `browser.ts` 的 `normalizeWaitForSelector`）。这里曾经写的是"真路径超时抛错、
+   * 调用方一律 try/catch"，而那个前提本身就带着一个真 bug：真路径直接透传 Playwright 的
+   * `waitForSelector`，它的第二个参数是**配置对象**，而这里声明的是**数字** ——
+   * 于是 `state` 与 `timeout` **双双失效**（实际用 `visible` + 30s），
+   * 再叠加"抛错"就变成"页面明明加载好了却整轮采集失败"（2026-09-19 猎聘实例）。
+   * 现在调用方**不需要** try/catch，也**不要**把 `false` 当成"站点没有岗位" ——
+   * 后者交给 `detectBlock` 判（0 卡片 + 短文本 ⇒ `blank`）。
    * @returns 等到返回 true；超时返回 false（调用方自行决定降级）
    */
   waitForSelector?(selector: string, timeoutMs: number): Promise<boolean>
@@ -295,9 +301,11 @@ export interface SiteAdapter {
    * `isLoggedIn` 只回答一个问题：**当前页面会不会被登录墙挡住**。
    *
    * ⚠️ 「没有实现检测」与「不需要登录」是两件事，别把它们混成一个 `undefined`：
-   * 前者看这里，后者看 `authRequirement`。之前的注释把 `undefined` 解释成
-   * "不需要登录"，而 `liepin` / `zhipin` 其实**需要**登录（详情页要 `securityId`）——
-   * 于是登录门对它们永远不触发，一个被登录墙挡住的平台会安静地返回 0 条。
+   * 前者看这里，后者看 `authRequirement`。一个平台可以**需要登录**却还没实现检测 ——
+   * 那会让登录门永远不触发，一个被登录墙挡住的平台会安静地返回 0 条。
+   * （`zhipin` 的详情页就属于这种：要带登录后才有的 `securityId`。
+   *  `liepin` 曾经也是 `undefined`，2026-09-19 已补上检测 —— 但注意它**详情页本身不需要登录**，
+   *  见 `platform-facts` 的 `authRequirement`。）
    */
   auth?: {
     loginUrl: string

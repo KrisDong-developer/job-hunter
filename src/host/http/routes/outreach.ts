@@ -77,6 +77,66 @@ export async function greetingSend(ctx: RouteContext): Promise<RouteResult | und
   return undefined
 }
 
+/**
+ * `POST /greeting/send-batch/preview`（批量预览）与 `POST /greeting/send-batch`（批量发送）。
+ *
+ * ## 三条刻意的形状
+ *
+ * 1. **预览与发送分开**，且预览只读（`preview` 路径下不写任何东西、不发任何消息）。
+ *    §4.4.2 要求用户在确认时看到**正文全文** —— 20 条话术塞进一个 409 的确认文案里
+ *    是没法看的，所以批量走"先预览拿到逐条全文、再由界面组织确认"的分工。
+ * 2. **必须带 `confirm: true`**：不带就是 400 并提示先看预览。
+ *    这条与单条发送的 409 两段式是**两个层次**：单条由闸门自己问（`ConfirmRequiredError`），
+ *    批量由这条路由先拦一道，免得出现"只显示了第 1 条正文就发出去了"的怪状态。
+ * 3. **单次条数上限与逐条间隔都在宿主里**：界面与模型都绕不过（D3 的"限速 + 随机间隔"）。
+ */
+export async function greetingBatch(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+
+  // ── 预览：只读 ────────────────────────────────────────────────────
+  if (segments.length === 3 && segments[0] === 'greeting' && segments[1] === 'send-batch' && segments[2] === 'preview') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '批量预览只支持 POST')
+    requireData(runtime)
+    const body = await readObject(req)
+    const jobIds = Array.isArray(body['jobIds'])
+      ? body['jobIds'].filter((item): item is number => typeof item === 'number' && item > 0)
+      : []
+    if (jobIds.length === 0) {
+      throw new DomainError('INVALID_INPUT', 'jobIds 必须是非空的正整数数组')
+    }
+    const plan = await runtime.previewGreetingBatch({ jobIds, actor: 'gui' })
+    return json(200, { ok: true, plan })
+  }
+
+  // ── 发送：逐条过闸门、逐条回执 ────────────────────────────────────
+  if (segments.length === 2 && segments[0] === 'greeting' && segments[1] === 'send-batch') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '批量发送只支持 POST')
+    requireData(runtime)
+    const body = await readObject(req)
+    if (body['confirm'] !== true) {
+      throw new DomainError('INVALID_INPUT', '批量发送需要显式确认', {
+        hint:
+          '先调 POST /greeting/send-batch/preview，把逐条话术全文给用户看过，' +
+          '用户同意后再带 confirm: true 重发（界面只提交用户保留的那些条目）。',
+      })
+    }
+    const rawItems = Array.isArray(body['items']) ? body['items'] : []
+    const items = rawItems
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        jobId: typeof item['jobId'] === 'number' ? item['jobId'] : Number.NaN,
+        ...(typeof item['text'] === 'string' && item['text'].trim() !== '' ? { text: item['text'] } : {}),
+      }))
+    if (items.length === 0 || items.some((item) => !Number.isFinite(item.jobId) || item.jobId <= 0)) {
+      throw new DomainError('INVALID_INPUT', 'items 必须是非空数组，每项含正整数 jobId（text 可选）')
+    }
+    const result = await runtime.sendGreetingBatch({ items, actor: 'gui', guiConfirmed: true })
+    return json(200, { ok: true, result })
+  }
+
+  return undefined
+}
+
 /** 原 router.ts L1157-1174。 */
 export async function inboxSync(ctx: RouteContext): Promise<RouteResult | undefined> {
   const { runtime, req, segments, method } = ctx

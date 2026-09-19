@@ -13,7 +13,7 @@
  */
 import type { ApplicationChannel, ApplicationStage, ContactStage, StageSource } from '../../shared/enums.js';
 import { NO_PROGRESS_DAYS, STAGE_ORDER, TERMINAL_STAGES, stageRank } from '../../shared/enums.js';
-import type { ApplicationDto, BoardDto, StageEventDto } from '../../shared/dto.js';
+import type { ApplicationDto, BoardDto, GreetingDto, StageEventDto } from '../../shared/dto.js';
 import type { Store } from '../store/store.js';
 import type { GreetingRecord } from '../store/repo/pipeline.js';
 import { type Clock } from '../util/time.js';
@@ -77,14 +77,35 @@ export interface PipelineService {
         actor: string;
         templateId?: number | null;
         channel?: ApplicationChannel;
+        /**
+         * 初始接触态。缺省 `'greeted'`。
+         *
+         * 平台侧**已验证送达**时传 `'delivered'` —— 那不是装饰：§3.3 的
+         * "未读超时"建议挂在 `delivered` 上，全记成 `greeted` 会让那条建议永不触发。
+         * 没验证出来就停在 `greeted`，**不猜**。
+         */
+        stage?: ContactStage;
     }): GreetingRecord;
     advanceContact(input: {
         jobId: number;
         to: ContactStage;
         source?: StageSource;
         evidenceRef?: string | null;
+        /** 为什么要改（会进状态事件，回看时能读懂）。 */
+        note?: string | null;
     }): GreetingRecord;
     contactStage(jobId: number): ContactStage;
+    /**
+     * 打招呼记录列表（D6：说了什么、投了哪版、几点发的都要能查）。
+     *
+     * 带上岗位/公司/模板名：话术效果对比（D2）与"我给谁发过"这两件事
+     * 只靠 id 是读不出来的，而让界面为每行再拉一次详情是 N+1 次往返。
+     */
+    listGreetings(filter?: {
+        jobId?: number;
+        stage?: ContactStage;
+        limit?: number;
+    }): GreetingDto[];
     /** 未读超时 / 已读未回超时的**建议**（§12.2 的两条分支，§3.3 的核心洞察）。 */
     followUpSuggestions(): FollowUpSuggestion[];
     /**

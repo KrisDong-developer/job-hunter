@@ -91,6 +91,32 @@ export declare function checkStealth(ctx: RuleContext, input: GuardInput): RuleV
 export declare function checkBatch(store: Store, input: GuardInput): RuleVerdict;
 /** 第 4 项：每日额度（D7）。计数直接读审计表 —— 它就是"今天做了什么"的事实来源。 */
 export declare function checkQuota(ctx: RuleContext, input: GuardInput): RuleVerdict;
+/**
+ * D7 的**读数**：这个平台今天每个动作用了多少、还剩多少。
+ *
+ * 与 `checkQuota` **共用同一份口径**（bucket 映射、平台侧 cap、取较小者、计数起点）——
+ * 各写一份必然漂移，而漂移的表现是「界面说还剩 5 次、实际第 3 次就被拒」。
+ * 判定与读数同源，与 `runtime/gate.ts` 的 `crawlQuotaOf` 是同一条纪律。
+ *
+ * 为什么必须能读：额度以前**只在被拒的那一刻**才说出来（`checkQuota` 的 deny 文案），
+ * 于是 U0 的「额度余量」与 D7 的额度管理都没有载体 —— 用户只能撞墙才知道。
+ */
+export interface GuardUsageEntry {
+    action: string;
+    bucket: keyof GuardConfig['dailyLimits'];
+    /** 今天已经成功做了几次（审计表口径）。 */
+    used: number;
+    /** 用户设的每日额度。 */
+    budget: number;
+    /** 平台侧上限（平台事实）；`null` = 未知。 */
+    platformCap: number | null;
+    /** 真正生效的上限。 */
+    limit: number;
+    /** 被哪一层限住；`'platform'` 时改自己的额度没有用。 */
+    limitedBy: 'budget' | 'platform';
+    remaining: number;
+}
+export declare function guardUsageOf(store: Store, clock: Clock, platformId: string): GuardUsageEntry[];
 /** 第 5 项：冷却期（D10）。同公司重复投递要间隔。 */
 export declare function checkCooldown(ctx: RuleContext, input: GuardInput): RuleVerdict;
 /**

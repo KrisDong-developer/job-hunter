@@ -15,7 +15,9 @@
  */
 import type { AdapterRegistry } from '../../platform/registry.js'
 import type { SessionService } from '../../platform/session.js'
-import type { DeliveryState, PageSource } from '../../platform/types.js'
+import type { DeliveryState } from '../../../shared/enums.js'
+import type { JobDto } from '../../../shared/dto.js'
+import type { PageSource } from '../../platform/types.js'
 import type { Store } from '../../store/store.js'
 import { DomainError, messageOf } from '../../util/errors.js'
 import { systemClock, type Clock } from '../../util/time.js'
@@ -48,7 +50,14 @@ export interface ApplicationSendDeps {
 
 export interface ApplicationSendInput {
   jobId: number
-  /** 本地简历文件（绝对路径）；`null` = 走平台内简历（BOSS 求职者网页端只支持这一种）。 */
+  /**
+   * 本地简历文件的**绝对路径**；`null` = 走平台内简历（BOSS 求职者网页端只支持这一种）。
+   *
+   * ⚠️ 这一格**不接受外部输入**：路径由 `runtime/actions.ts` 从 `resume_file.id`
+   * 自己查出来（`join(filesDir, path)`）。HTTP 与工具层只收 id ——
+   * 让请求体直接给一个绝对路径就是一个"任意路径读文件"的洞
+   * （与 `readExportFile` 同一条纪律）。
+   */
   filePath: string | null
 }
 
@@ -64,6 +73,101 @@ export interface ApplicationSendResult {
 }
 
 /**
+ * 「用了哪版简历」那句话（§4.4.2 要求审批文案含它）。
+ *
+ * 三段必须都在，因为它们是三件不同的事：**哪一份**、**会不会真的传上去**、
+ * 以及**没传的话平台会用什么**。只写一个文件名（上一版写的是绝对路径）会让用户
+ * 以为自己传了这一版，而平台上收到的其实是另一版 —— 投递不可逆，这种误解代价最大。
+ *
+ * 放在这一层是因为**批量预览与单条审批共用同一句话**：两处各写一句必然漂移。
+ */
+export function resumeVersionTextOf(input: { label: string | null; uploads: boolean }): string {
+  if (input.label === null) return '平台内简历（平台侧那一份，本机未登记版本）'
+  return input.uploads
+    ? `${input.label}（会把这份本地文件传给平台）`
+    : `${input.label}（平台只吃它自己那份简历 —— 这份文件不会上传，只作本地登记）`
+}
+
+/** 「这个平台现在能不能投」的**只读预检**结果（与岗位无关，只看平台能力与登录态）。 */
+export interface ApplicationPlatformBlocker {
+  code: 'platform_unsupported' | 'not_logged_in'
+  message: string
+  hint: string
+}
+
+/**
+ * 平台层面的预检：适配器实现了 `sendResume` 没有、登录态还在不在。
+ *
+ * 单条投递、批量预览**共用这一份**（与 `greetingPlatformBlocker` 同一个理由：
+ * 写两份判断迟早漂移，而漂移的表现是"预览说能投、点下去才失败"）。
+ *
+ * 顺序是刻意的：**能力先于登录**。"这个平台压根没接投递"比"你还没登录"更接近事实 ——
+ * 登录了也还是一样投不出去。
+ */
+export function applicationPlatformBlocker(
+  deps: { registry: AdapterRegistry; session: SessionService },
+  platformId: string,
+): ApplicationPlatformBlocker | null {
+  const adapter = deps.registry.get(platformId)
+  if (adapter === undefined) {
+    return {
+      code: 'platform_unsupported',
+      message: `未注册的平台：${platformId}`,
+      hint: '这个平台可能已经从适配器里下线了。',
+    }
+  }
+  if (adapter.actions?.sendResume === undefined) {
+    return {
+      code: 'platform_unsupported',
+      message: `${adapter.displayName} 的适配器还没实现投递动作`,
+      hint:
+        '不会让你点下去再失败，更不会静默变成"已投递"。' +
+        '要留个记录的话，可以用「记录投递」手动记一笔（那一步不碰平台）。',
+    }
+  }
+  const account = deps.session.status(platformId)
+  if (!account.loggedIn) {
+    return {
+      code: 'not_logged_in',
+      message: `${adapter.displayName} 未登录`,
+      hint: `请先在「平台与登录」里完成 ${platformId} 的登录，再重试。`,
+    }
+  }
+  return null
+}
+
+/** 「这条现在能不能投」的**只读预检**结果（岗位 + 平台）。 */
+export type ApplicationReadiness =
+  | { ok: true; job: JobDto; adapterName: string }
+  | { ok: false; code: 'NOT_FOUND' | 'NOT_LOGGED_IN' | 'ADAPTER_BROKEN'; message: string; hint: string }
+
+/**
+ * 只读预检：岗位在不在，以及这个平台能不能投（后者走 `applicationPlatformBlocker`）。
+ *
+ * @param deps 只要这三个依赖，所以不需要页面、也不会产生任何副作用
+ */
+export function applicationReadinessOf(
+  deps: { store: Store; registry: AdapterRegistry; session: SessionService },
+  jobId: number,
+): ApplicationReadiness {
+  const job = deps.store.job.detail(jobId)
+  if (job === undefined) {
+    return { ok: false, code: 'NOT_FOUND', message: `岗位不存在：${String(jobId)}`, hint: '它可能已被删除。' }
+  }
+  const platformBlocker = applicationPlatformBlocker(deps, job.platformId)
+  if (platformBlocker !== null) {
+    return {
+      ok: false,
+      // 两种预检码映射回投递路径原有的错误码：调用方（单条投递）看到的行为与以前一致
+      code: platformBlocker.code === 'not_logged_in' ? 'NOT_LOGGED_IN' : 'ADAPTER_BROKEN',
+      message: platformBlocker.message,
+      hint: platformBlocker.hint,
+    }
+  }
+  return { ok: true, job, adapterName: deps.registry.get(job.platformId)?.displayName ?? job.platformId }
+}
+
+/**
  * 投递简历（平台侧执行）。
  * @param guardToken 由 `guard.run()` 签发的一次性令牌；缺参编译不过，伪造则运行期拒绝
  */
@@ -76,34 +180,18 @@ export async function sendApplication(
   guardAuthority.assert(guardToken, APPLICATION_SEND_ACTION)
 
   const clock = deps.clock ?? systemClock
-  const job = deps.store.job.detail(input.jobId)
-  if (job === undefined) {
-    throw new DomainError('NOT_FOUND', `岗位不存在：${String(input.jobId)}`)
+  // 能力与登录态的判据与批量预览**共用一份**（见 `applicationReadinessOf`）。
+  // 这里再查一次不是重复：审批期间登录可能已经失效。
+  const ready = applicationReadinessOf(deps, input.jobId)
+  if (!ready.ok) {
+    throw new DomainError(ready.code, ready.message, { hint: ready.hint })
   }
+  const job = ready.job
 
-  const adapter = deps.registry.get(job.platformId)
-  if (adapter === undefined) {
-    throw new DomainError('NOT_FOUND', `未注册的平台：${job.platformId}`)
-  }
-
-  // 二次确认登录态：审批期间登录可能已经失效
-  const account = deps.session.status(job.platformId)
-  if (!account.loggedIn) {
-    throw new DomainError('NOT_LOGGED_IN', `${adapter.displayName} 未登录`, {
-      hint: `请先在「平台与登录」里完成 ${job.platformId} 的登录，再重试。`,
-      detail: { platformId: job.platformId },
-    })
-  }
-
-  const sendResume = adapter.actions?.sendResume
+  const sendResume = deps.registry.get(job.platformId)?.actions?.sendResume
   if (sendResume === undefined) {
-    // 诚实地说"还没做"，而不是假装投出去了（P8「失败必须可见」）
-    throw new DomainError('ADAPTER_BROKEN', `${adapter.displayName} 的适配器还没实现投递动作`, {
-      hint:
-        '目前只有 zhipin 实现了投递；在此之前投递一律失败，不会静默变成"已投递"。' +
-        '也可以先用「记录投递」手动记一笔。',
-      detail: { platformId: job.platformId, action: APPLICATION_SEND_ACTION },
-    })
+    // 上面刚查过，这里只是给类型收窄；理论上不可达，所以语气要如实
+    throw new DomainError('ADAPTER_BROKEN', `${ready.adapterName} 的适配器还没实现投递动作`)
   }
 
   const page = await deps.pageSource.acquire()

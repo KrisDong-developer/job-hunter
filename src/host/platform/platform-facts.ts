@@ -36,6 +36,21 @@ export interface PlatformFacts {
    */
   dailyCaps?: { greeting?: number; application?: number }
   /**
+   * 投递时**简历从哪来**（平台事实）。
+   *
+   * `'platform-only'` = 只能用**平台上已有的那份**简历：本地附件一律 fail-closed
+   * （实测如此，不是"没查"）。`'local'` = 支持上传本地文件。
+   *
+   * `undefined` = 该平台不能投递（没有 `sendResume`），或未实测 —— 两者都按
+   * "本地附件发不出去"处理（fail-closed），但**说不出为什么**，所以批量预览里
+   * 只会说"这个平台没接投递"，不会替它编一个理由。
+   *
+   * ⚠️ 这一格存在的意义：批量投递的预览要能**逐条**说清"为什么投不了"。
+   * 光知道"适配器实现了 sendResume"不够 —— 实现里对非空 `filePath` 直接返回
+   * `delivery: 'missing'`，那才是用户实际会撞到的那堵墙。
+   */
+  resumeSource?: 'platform-only' | 'local'
+  /**
    * 投递时**平台自己还会做**的额外动作（平台事实，进审批文案）。
    *
    * 为什么要有这一格：智联的「立即投递」一次点击 = 投简历 **+ 平台自动发一句招呼语**
@@ -101,6 +116,8 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
     },
     // 平台侧硬事实：投递上限约 100（ADAPTERS §7.2 实测）
     dailyCaps: { application: 100 },
+    // 实测：智联的投递入口不接受本地文件（会话页的 file input 都不是"发给 HR"的）
+    resumeSource: 'platform-only',
     // 实测：一次点击 = 投简历 + 平台自动发一句招呼语（内容由平台生成，见 `getUserPrologueNew`）
     applicationSideEffect:
       '智联会在投递的同时**替你发一句招呼语**（内容由平台生成，实测形如「您好，请问<岗位>职位还在招人吗？…」）。' +
@@ -110,14 +127,49 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
   liepin: {
     maturity: {
       level: 'stable',
-      verifiedAt: '2026-09-18',
+      verifiedAt: '2026-09-19',
       notes:
         '真实探针夹具（列表 p1/p2 + 接口 JSON），校准 42/42。检测「CDP 控制页面」本身且探测调试端口 → 必须 patchright 启动式。聊天按钮需 hover。' +
-        '2026-09-18 未登录定谳：全新 profile（无 Cookie）未登录态下搜索列表完整可用（42 卡 + 接口采样成功），夹具即该次捕获 —— 适配器 searchWithoutLogin=true 成立。',
+        '2026-09-18 未登录定谳：全新 profile（无 Cookie）未登录态下搜索列表完整可用（42 卡 + 接口采样成功），夹具即该次捕获 —— 适配器 searchWithoutLogin=true 成立。' +
+        '2026-09-19 登录态走查（`npm run probe:liepin-chat`）补齐六件事：' +
+        '① 沟通入口 `a.btn-main`/`a.btn-chat`「聊一聊」、投递入口 `a.btn-minor`「投简历」；' +
+        '② 收件箱入口是侧边栏 `#im-c-entry`（**不是 `<a>`**，文案「我的沟通」），点了开 AntD 抽屉而非换页；' +
+        '③ IM 会话列表走 `im.c.contact.get-contact-list`（`curPage` 0 起）；' +
+        '④ 打招呼走 `im.c.chat.open-chat`（`jobId` 用**数字 jobId**，不是详情页 URL 上的 id），' +
+        '门坎是**简历完整度**：没完善时 `{"flag":0,"code":"30011","msg":"简历完整度不足"}`，完善后 `flag:1` 受理；' +
+        '⑤ **猎聘不会替你发消息**（与 BOSS 相反）：受理后会话里只有一条平台系统消息' +
+        '「我们为您生成了合适的打招呼语，去使用＞」（`extType:200` / `lptd://lp/p/autoSayHi`）⇒ ' +
+        '平台只是**生成建议**，真正那句话发没发取决于用户点不点。⇒ 猎聘**不写** `greetingSideEffect`；' +
+        '⑥ 「聊一聊」点完会立刻翻成「继续聊」，**即使被平台拒绝也翻**、刷新即复原 ⇒ 按钮文案不能当阶段判据。' +
+        '⑦ **登录检测已补**（结构性标记，两份真实快照对比定案）：`#header-quick-menu-user-info`=已登录、' +
+        '`.header-quick-menu-not-login-item`=未登录；⚠️ 侧边栏那个入口的标题会从「我的沟通」变成' +
+        '「有新消息」（有未读时）⇒ 别把它当固定文案用；' +
+        '⑧ **搜索接口的请求头门槛**：适配器的"接口化列表"通道曾因缺 `x-fscp-*` 一族而**静默回退 DOM**' +
+        '（服务端回 `-1400` 但 HTTP 200），修复后在线复验 `42 条 / publishedAt 42 / industry 42`；' +
+        '那套头不需要 `x-xsrf-token`、也不需要读 cookie，见 `LIEPIN_API_HEADERS`。' +
+        '⑨ **城市码表已补齐 370 个**（2026-09-19 逐省点开页面自己的「请选择城市」弹窗采得，' +
+        '原始数据见 `test/fixtures/liepin-city-codes.json`）—— 此前城市维度只有「全国」；' +
+        '同时把跨平台城市目录 `CITY_DIRECTORY` 从 52 扩到 373 并把猎聘纳入"码表不许与目录脱节"的检查。' +
+        '⚠️ `actions.readInbox`/`detectStage`/`sayHello`/`sendResume` **仍刻意不实现**：会话行形状已拿到' +
+        '（`id`/`oppositeUserId`/`latestMsgTime`/`lastPayload`/`unReadCnt`/`direction`，且 `totalCount` ' +
+        '`pageSize`/`hasNext`/`hasMore` **四项全都不可信** —— 实测 list 有 1 条而它们全是 0/false），' +
+        '但 **`direction` 的语义仍没定论**（两行样本的 `0`/`1` 与"消息方向""谁先发起"两种解释都吻合，' +
+        '类型还不一致），且**猎聘 IM 是"人"维度**（会话行里一个岗位字段都没有，而打招呼是按岗位发起的）' +
+        '⇒ `platformJobId` 与按岗位的 `detectStage` 在收件箱这一层对不上。' +
+        '不过第二批样本（一位猎头主动发来）解掉了一半：`unReadCnt>0` 的正向样本有了，' +
+        '且 `lastPayload.ext.extType` 能区分消息种类（200=平台系统提示、202=带岗位卡片的真实消息，' +
+        '岗位信息就在 `extBody.bizData` 里）。',
     },
-    // crawl=none：**未登录实测**（2026-09-18，全新 profile）—— 搜索列表完整出数。
-    // 曾经写成 required 是无据的猜测，与适配器声明矛盾；detail（securityId 类）/actions 仍需登录。
-    authRequirement: { crawl: 'none', detail: 'required', actions: 'required' },
+    // 三格**都已定谳**（2026-09-19 更正 detail）：
+    //   crawl=none   —— 2026-09-18 全新 profile 未登录实测：搜索列表完整出数（42 卡）。
+    //   detail=none  —— **同一批未登录夹具**：`test/fixtures/liepin-detail.html` 的页头是
+    //                   `.header-quick-menu-not-login-item`（未登录结构标记，×3），而它里面
+    //                   JD 正文完整（>200 字）、薪资是**明文 `15-30k·14薪`**（不是掩码）
+    //                   ⇒ 详情页未登录可读全。**此前写 required 是照抄"详情页要 securityId"
+    //                   那个印象，与自家夹具矛盾** —— 现由用例
+    //                   「authRequirement.detail=none 的论据」钉住（夹具换成登录态捕获会红）。
+    //   actions=required —— IM/打招呼都建立在登录会话上（`im.c.chat.open-chat` 等接口靠 cookie 认人）。
+    authRequirement: { crawl: 'none', detail: 'none', actions: 'required' },
   },
   zhipin: {
     maturity: {
@@ -140,10 +192,26 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
         '两个**纠正 BossHunter 的实测结论**：① 工具条按钮是 `.toolbar-btn`（不是 `.operate-btn`），' +
         '且「发简历」要求**双方回复后**才可用（未回复时带 `unable` + aria-label 明写）；' +
         '② 会话页上的 `input[type=file]` 只有「上传附件简历到我的简历」与「发送图片」两个，**没有**把本地文件发给 HR 的入口。' +
-        '仍未实测：`.choose-resume-dialog`（弹窗没机会打开）、会话行未读徽章、首次沟通/预设招呼语弹窗。',
+        '仍未实测：`.choose-resume-dialog`（弹窗没机会打开）、会话行未读徽章、首次沟通/预设招呼语弹窗。' +
+        '2026-09-19 补齐两件（`probe:zhipin-login` 复跑取证）：' +
+        '① **登录检测已补**（`auth`）—— 此前 `auth === undefined` 会让 `platforms.loginStatus` 直接抛' +
+        '「没有声明登录入口」、`account.loggedIn` 恒 false ⇒ 打招呼/收件箱全实现了、入口却永远不亮；' +
+        '锚点是页头 `a[ka="header-username"]`（登录）/ `a[ka="header-login"]`（未登录），' +
+        '±1 命中数由两份真实快照（未登录夹具 vs 登录态快照）实测；' +
+        '② **列表薪资改用接口明文**：`POST wapi/zpgeek/search/joblist.json`（表单体，' +
+        '**只要 cookie + content-type 就通**）的 `zpData.jobList[].salaryDesc`，' +
+        '连接键 `encryptJobId ↔ 卡片 href id`（实测 **15/15** 命中）⇒ DOM 拿不到的薪资现在能补上；' +
+        '列表本身仍以 DOM 为准（BOSS 的 URL 带 `securityId`，不可重构）。' +
+        '⚠️ 顺带纠正：**接口的 `page` 参数是有效的**（站点滚动时自己发 page=1,2,3…），' +
+        '旧结论"只能滚动加载"说的是**搜索页 URL 的 `&page=` 被 SPA 忽略**，两者不是一回事；' +
+        '适配器的翻页模型未变（`hasNextPage` 仍恒 false、深度仍走 `scrollRounds`）。',
     },
     // 平台侧硬事实：打招呼日上限约 150（ADAPTERS §7.2 实测）
     dailyCaps: { greeting: 150 },
+    // 实测：BOSS 求职者端会话页**没有**"把本地文件发给 HR"的入口
+    // （`input[type=file]` 只有"上传附件简历到我的简历"与"发送图片"两个）⇒ 适配器对
+    // 非空 filePath fail-closed。另外「发简历」还要**双方回复后**才可用。
+    resumeSource: 'platform-only',
     // 实测：点「立即沟通」时平台会**先替你发一句默认招呼语**，随后适配器才发用户那段话术
     // —— 一次 `greeting.send` 在会话里留下**两条**消息（计数仍算一次动作）。
     greetingSideEffect:

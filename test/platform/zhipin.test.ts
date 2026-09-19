@@ -3,12 +3,15 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import {
+  buildJoblistBody,
   buildZhipinSearchUrl,
   createZhipinAdapter,
   DEFAULT_ZHIPIN_CONFIG,
+  isLoggedInByMarkersInPage,
+  salaryMapOf,
 } from '../../src/host/platform/adapters/zhipin.js'
 import type { PageLike } from '../../src/host/platform/types.js'
-import { JsdomPage } from '../support/jsdom-page.js'
+import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
 
 const SEARCH_URL = 'https://www.zhipin.com/web/geek/job?query=Java&city=101280600'
 const FIXTURE_PATH = join(import.meta.dirname, '..', 'fixtures', 'zhipin-search.html')
@@ -25,6 +28,8 @@ const SCROLL_FIXTURE_PATH = join(
   'fixtures',
   'zhipin-search-logged-in-scroll.html',
 )
+/** `/wapi/` 接口采样（含 `joblist.json` 响应：列表薪资明文的来源）。 */
+const API_FIXTURE_PATH = join(import.meta.dirname, '..', 'fixtures', 'zhipin-search-api.json')
 
 function asSerialized<F extends (...args: never[]) => unknown>(fn: F): F {
   return new Function(`return (${String(fn)})`)() as F
@@ -74,6 +79,65 @@ test('适配器声明符合平台事实：未登录可搜、薪资隐藏（mediu
   assert.equal(adapter.capabilities.supportsInbox, true)
   assert.equal(adapter.capabilities.supportsAttachment, true)
   assert.ok(adapter.detail !== undefined, '详情选择器有 BossHunter 验证证据，应声明')
+  // 2026-09-19：补齐登录检测（此前 auth === undefined ⇒ platforms.loginStatus 抛错、
+  // account.loggedIn 恒 false ⇒ 已实现的打招呼/收件箱入口在界面上永远不亮）
+  assert.equal(typeof adapter.auth?.isLoggedIn, 'function')
+  assert.equal(adapter.auth?.loginUrl, 'https://www.zhipin.com/web/user/')
+})
+
+// ── 登录态检测（2026-09-19：未登录夹具 vs 真实登录态快照，两份快照对比定案）────
+test('登录态：未登录夹具判「未登录」、登录态夹具判「已登录」、判不出来时如实返回 null', async (t) => {
+  if (!existsSync(FIXTURE_PATH) || !existsSync(LOGGED_FIXTURE_PATH)) {
+    t.skip('需要 zhipin-search.html 与 zhipin-search-logged-in.html 两份夹具')
+    return
+  }
+  const adapter = createZhipinAdapter()
+  const markers = {
+    loggedIn: DEFAULT_ZHIPIN_CONFIG.loginSelectors.loggedIn,
+    notLoggedIn: DEFAULT_ZHIPIN_CONFIG.loginSelectors.notLoggedIn,
+  }
+
+  // ① 未登录夹具：页头是 `a[ka="header-login"]`「登录/注册」
+  const anon = browserLikePage(readFileSync(FIXTURE_PATH, 'utf8'))
+  assert.equal(await adapter.auth?.isLoggedIn(anon), false, '未登录夹具：应判「未登录」')
+
+  // ② 真实登录态快照：页头是 `a[ka="header-username"]`「求职者」下拉
+  const loggedIn = browserLikePage(readFileSync(LOGGED_FIXTURE_PATH, 'utf8'))
+  assert.equal(await adapter.auth?.isLoggedIn(loggedIn), true, '登录态夹具：应判「已登录」')
+
+  // ③ 两个锚点都不在 ⇒ 页面函数如实返回 null；适配器层再保守落成 false
+  const blank = browserLikePage('<div>页面结构整个换了</div>')
+  assert.equal(
+    await blank.evaluate(isLoggedInByMarkersInPage as unknown as (arg: typeof markers) => boolean | null, markers),
+    null,
+    '判不出来必须是 null，而不是猜一个',
+  )
+  assert.equal(await adapter.auth?.isLoggedIn(blank), false, '适配器层：判不出来按「未登录」兜底（保守）')
+})
+
+test('登录态锚点：必须是属性选择器（`.header-login-btn` 在登录态页面里也"存在"）', async (t) => {
+  if (!existsSync(LOGGED_FIXTURE_PATH)) {
+    t.skip('需要登录态夹具')
+    return
+  }
+  const html = readFileSync(LOGGED_FIXTURE_PATH, 'utf8')
+  // 这条用例守的是一个**只会在"数子串"时踩到**的坑：登录态页面里有 4 处
+  // `header-login-btn`，全部位于 <style> 块里的 CSS 规则文本（`#header .header-login-btn{...}`）。
+  // 也就是说"按子串挑锚点"会把登录态误判成未登录。锚点必须用属性选择器
+  // （选择器匹配元素，不匹配 CSS 文本），这条断言把这份证据钉住。
+  assert.ok(html.includes('header-login-btn'), '前提：登录态页面里确实有该字面量（来自 <style>）')
+  const page = browserLikePage(html)
+  const viaSelector = await page.evaluate(
+    ((): number => {
+      try {
+        return document.querySelectorAll('a.header-login-btn').length
+      } catch {
+        return -1
+      }
+    }) as unknown as () => number,
+    undefined as never,
+  )
+  assert.equal(viaSelector, 0, '用选择器找 `a.header-login-btn` 应当 0 命中（那些只是 CSS 文本）')
 })
 
 test('scrollRounds 维度：声明平台自报的 300 条上限（= 20 轮 × 15 条）', () => {
@@ -83,6 +147,101 @@ test('scrollRounds 维度：声明平台自报的 300 条上限（= 20 轮 × 15
   assert.equal(dimension.max, 20, '上限来自 joblist.json 的 totalCount=300 / 15')
   assert.ok(dimension.values.length === 0, '自由数值输入，不是取值域')
   assert.ok(dimension.hint.includes('滚动加载'), '提示要说清"只能滚动加载"这个平台事实')
+})
+
+// ── 列表薪资：接口通道（2026-09-19；DOM 拿不到的薪资由 joblist 接口回填）────────
+//
+// 这组用例的全部意义在于**薪资是核心字段**：DOM 通道要么没有（未登录）、要么是
+// 字体混淆的私有区码点 ⇒ `salary_raw` 常年为空。明文在 `joblist.json` 的
+// `zpData.jobList[].salaryDesc`，连接键是 `encryptJobId ↔ 卡片 href 里的 id`。
+test('列表薪资：joblist 请求体形态（表单，照抄站点的参数集）', () => {
+  const body = buildJoblistBody({ query: 'Java', cityCode: '101280600', page: 2, pageSize: 15 })
+  assert.ok(body.includes('page=2'), `缺少 page：${body}`)
+  assert.ok(body.includes('pageSize=15'), '每页 15 是站点自己的值')
+  assert.ok(body.includes('city=101280600'), '城市码要传')
+  assert.ok(body.includes('query=Java'), '关键词要传')
+  assert.ok(body.includes('scene=1'), '站点自己带 scene=1，照抄')
+})
+
+test('列表薪资：salaryMapOf 只认 encryptJobId + salaryDesc，结构不符不抛错', () => {
+  const map = salaryMapOf({ zpData: { jobList: [{ encryptJobId: 'a', salaryDesc: '12-18K' }, { encryptJobId: 'b' }, {}] } })
+  assert.equal(map.get('a'), '12-18K')
+  assert.equal(map.size, 1, '缺 salaryDesc 的条目要跳过')
+  assert.equal(salaryMapOf(null).size, 0)
+  assert.equal(salaryMapOf({ zpData: { jobList: 'x' } }).size, 0, '结构变了就返回空表')
+})
+
+test('列表薪资：DOM 拿不到的薪资由接口补齐，且撤掉失效的 note', async (t) => {
+  if (!existsSync(LOGGED_FIXTURE_PATH) || !existsSync(API_FIXTURE_PATH)) {
+    t.skip('需要 zhipin-search-logged-in.html 与 zhipin-search-api.json')
+    return
+  }
+  // 夹具就是**同一次会话**采的：DOM 里的 15 个 id 全部落在接口的 jobList 里 ——
+  // 所以这条用例是真的在验"连接键对得上"，不是拿合成 id 自欺。
+  const apiSamples = JSON.parse(readFileSync(API_FIXTURE_PATH, 'utf8')) as Array<{ url: string; body: string | null }>
+  const joblistPayloads = apiSamples
+    .filter((item) => item.url.includes('joblist.json') && item.body !== null)
+    .map((item) => JSON.parse(item.body ?? '{}') as unknown)
+  assert.ok(joblistPayloads.length > 0, '前置：夹具里要有 joblist 响应')
+
+  const domHtml = readFileSync(LOGGED_FIXTURE_PATH, 'utf8')
+  const domIds = [
+    ...new Set(
+      [...domHtml.matchAll(/\/job_detail\/([A-Za-z0-9_-]+)\.html/g)].map((match) => match[1] ?? ''),
+    ),
+  ]
+  const payload = joblistPayloads
+    .map((item) => salaryMapOf(item))
+    .sort((left, right) => domIds.filter((id) => right.has(id)).length - domIds.filter((id) => left.has(id)).length)[0]
+  assert.ok(payload !== undefined && payload.size > 0, '前置：要有一份能对上的接口响应')
+  const covered = domIds.filter((id) => payload.has(id)).length
+  assert.equal(covered, domIds.length, '全部 DOM id 都应在接口薪资里（实测 15/15）')
+
+  const calls: Array<{ url: string; init: Record<string, unknown> | undefined }> = []
+  const stub: PageFetchStub = async (url, init) => {
+    calls.push({ url, init })
+    return { ok: true, json: async () => joblistPayloads[0] }
+  }
+  const page = new JsdomPage({ html: domHtml, url: SEARCH_URL, fetchStub: stub })
+  const adapter = createZhipinAdapter({ config: { ...DEFAULT_ZHIPIN_CONFIG, scrollStepTimeoutMs: 50 } })
+  await adapter.crawl.gotoSearch(page, { keyword: 'Java', city: '深圳' })
+  const jobs = await adapter.crawl.readListPage(page)
+
+  assert.ok(jobs.length > 0, 'DOM 解析出岗位')
+  const beforeFill = jobs.filter((job) => (job.notes ?? []).includes('salary:obfuscated') && job.salaryRaw === '')
+  assert.equal(beforeFill.length, 0, '混淆码点 / 空薪资都应当被接口补上（这正是这条通道存在的理由）')
+  for (const job of jobs) {
+    if (!payload.has(job.platformJobId)) continue
+    assert.ok(/\d/.test(job.salaryRaw), `薪资应是非空明文，实际「${job.salaryRaw}」`)
+    assert.ok(!/[\uE000-\uF8FF]/.test(job.salaryRaw), '明文里不应有任何私有区码点')
+    assert.equal((job.notes ?? []).includes('salary:obfuscated'), false, '补上之后那条 note 必须撤掉（否则自相矛盾）')
+  }
+
+  // 请求形态：POST + 表单体 + 带城市与关键词
+  assert.ok(calls.length >= 1, '应当发了 joblist 请求')
+  const call = calls[0]
+  assert.equal(call?.init?.['method'], 'POST')
+  assert.ok(String(call?.init?.['body'] ?? '').includes('query=Java'), '请求体要带关键词')
+  assert.ok(String(call?.init?.['body'] ?? '').includes('city=101280600'), '请求体要带城市码')
+})
+
+test('列表薪资：接口失败时保持 DOM 结果（不抛错、不改 note）', async (t) => {
+  if (!existsSync(LOGGED_FIXTURE_PATH)) {
+    t.skip('需要登录态夹具')
+    return
+  }
+  const stub: PageFetchStub = async () => {
+    throw new Error('offline')
+  }
+  const page = new JsdomPage({ html: readFileSync(LOGGED_FIXTURE_PATH, 'utf8'), url: SEARCH_URL, fetchStub: stub })
+  const adapter = createZhipinAdapter({ config: { ...DEFAULT_ZHIPIN_CONFIG, scrollStepTimeoutMs: 50 } })
+  await adapter.crawl.gotoSearch(page, { keyword: 'Java', city: '深圳' })
+  const jobs = await adapter.crawl.readListPage(page)
+  assert.ok(jobs.length > 0, '接口挂了也要给出 DOM 的结果（这条通道是锦上添花，不是必需）')
+  assert.ok(
+    jobs.every((job) => job.salaryRaw === ''),
+    '接口失败 ⇒ 薪资保持为空，绝不用 DOM 里的混淆码点充数',
+  )
 })
 
 test('滚动加载：静态夹具上不挂死，返回当前卡片数即收手', async (t) => {
@@ -270,9 +429,9 @@ test('登录态夹具：薪资可见、滚动加载后一页装 100+ 条', async
       `登录态夹具里应几乎全是混淆字体（实测 15/15），实际 ${String(obfuscated.length)}/${String(many.length)}`,
     )
     console.log(
-      `[zhipin-logged-fixture] 第一屏 ${String(jobs.length)} 条 · 滚动后 ${String(many.length)} 条 · ` +
-        `薪资：**拿不到**（${String(obfuscated.length)}/${String(many.length)} 是字体混淆，已置空并记 note）— ` +
-        '明文在 `wapi/zpgeek/search/joblist.json` 的 `salaryDesc`，但该接口的 method/参数还没探明（见适配器头注释）',
+      `[zhipin-logged-fixture] DOM 通道：第一屏 ${String(jobs.length)} 条 · 滚动后 ${String(many.length)} 条 · ` +
+        `薪资**拿不到**（${String(obfuscated.length)}/${String(many.length)} 是字体混淆，已置空并记 note）` +
+        '—— 明文由 joblist 接口补上（见「列表薪资」那组用例）',
     )
   }
 })

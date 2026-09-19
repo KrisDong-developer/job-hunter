@@ -5,6 +5,7 @@ import { createGuopinAdapter } from '../../src/host/platform/adapters/guopin.js'
 import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina.js'
 import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed.js'
 import { createLagouAdapter } from '../../src/host/platform/adapters/lagou.js'
+import { createLiepinAdapter } from '../../src/host/platform/adapters/liepin.js'
 import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job.js'
 import { createZhaopinAdapter } from '../../src/host/platform/adapters/zhaopin.js'
 import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin.js'
@@ -39,7 +40,9 @@ test('城市目录：归一化与去重共用同一套规则（「深圳市·福
   assert.equal(canonicalCityOf('深圳-南山'), '深圳')
   assert.equal(canonicalCityOf('  杭州  '), '杭州')
   // **不猜**：目录外的城市如实返回 null，不硬套一个"最近的城市"
-  assert.equal(canonicalCityOf('拉萨'), null)
+  // （2026-09-19 目录扩容后，「拉萨」已经进目录了 —— 所以这里改用**县级市**当例子：
+  //  目录收的是平台码表里的地级市，义乌/昆山这类县级市不在其中。）
+  assert.equal(canonicalCityOf('义乌'), null)
   assert.equal(canonicalCityOf(''), null)
   assert.equal(canonicalCityOf('   '), null)
 })
@@ -47,8 +50,8 @@ test('城市目录：归一化与去重共用同一套规则（「深圳市·福
 test('城市目录：排序按目录顺序，目录外的排在最后且保持传入顺序', () => {
   assert.deepEqual(orderCities(['杭州', '北京', '深圳']), ['北京', '深圳', '杭州'])
   assert.deepEqual(
-    orderCities(['拉萨', '深圳', '格尔木']),
-    ['深圳', '拉萨', '格尔木'],
+    orderCities(['义乌', '深圳', '昆山']),
+    ['深圳', '义乌', '昆山'],
     '目录外的值只排在最后，顺序不被重排（否则每次渲染都在跳）',
   )
   assert.deepEqual(orderCities(['深圳', '深圳']), ['深圳'], '去重')
@@ -81,14 +84,17 @@ test('城市支持度：闭不闭是**声明**出来的，不是从 values 空�
 })
 
 test('城市目录：城市级码表里的城市必须都在目录里（脱节了要在这里失败）', () => {
-  // 只挑**城市级**码表：liepin 只有「全国」、sinojobs 是省级码、lagou/indeed 是自由文本，
+  // 只挑**城市级**码表：sinojobs 是省级码、lagou/indeed 是自由文本，
   // 它们都不该被当成"城市集合"。伪城市（全国 = 不带城市参数）单独排除。
+  // ⚠️ `liepin` 2026-09-19 起**进这一组**了 —— 它过去只有「全国」，所以被排除在外；
+  //    现在它的 cityCodes 是逐省实测出来的 370 个市，这条检查正是它的守卫。
   const pseudo = new Set(['全国'])
   const cityLevel: Array<[string, SiteAdapter]> = [
     ['51job', createFiftyOneAdapter()],
     ['zhipin', createZhipinAdapter()],
     ['zhaopin', createZhaopinAdapter()],
     ['waiqi', createWaiqiAdapter()],
+    ['liepin', createLiepinAdapter()],
   ]
   const known = new Set(CITY_DIRECTORY)
   for (const [platformId, adapter] of cityLevel) {

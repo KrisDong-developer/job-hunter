@@ -17,21 +17,37 @@
  * （数据层没起来时是 undefined）。传取值函数而不是快照，
  * 保证"调用那一刻"拿到的是当前那一个 —— 与 `gate.ts` 的 `storeOf` 同一个理由。
  */
-import type { GreetingDraftDto } from '../../shared/dto.js'
+import { join } from 'node:path'
+import type {
+  ApplicationBatchPlanDto,
+  ApplicationBatchResultDto,
+  GreetingBatchPlanDto,
+  GreetingBatchResultDto,
+  GreetingDraftDto,
+} from '../../shared/dto.js'
 import type { OutreachService } from '../domain/outreach.js'
 import type { PipelineService } from '../domain/pipeline.js'
 import type { MessageService } from '../domain/messages.js'
 import {
   APPLICATION_SEND_ACTION,
+  applicationPlatformBlocker,
+  resumeVersionTextOf,
   sendApplication,
   type ApplicationSendResult,
 } from '../guard/actions/application.js'
-import { GREETING_SEND_ACTION, sendGreeting, type GreetingSendResult } from '../guard/actions/greeting.js'
+import {
+  GREETING_SEND_ACTION,
+  greetingPlatformBlocker,
+  greetingReadinessOf,
+  sendGreeting,
+  type GreetingSendResult,
+} from '../guard/actions/greeting.js'
 import { INBOX_SYNC_ACTION, syncInbox, type InboxSyncResult } from '../guard/actions/inbox.js'
 import { REPLY_SEND_ACTION, sendReply, type ReplySendResult } from '../guard/actions/reply.js'
 import { SETTINGS_WRITE_ACTION } from '../guard/actions/settings.js'
 import { STAGE_PROBE_ACTION, probeContactStage, type StageProbeResult } from '../guard/actions/stage.js'
 import type { Guard } from '../guard/index.js'
+import { guardUsageOf, readGuardConfig } from '../guard/rules.js'
 import type { Actor } from '../guard/types.js'
 import type { EventBus } from '../http/sse.js'
 import type { BrowserManager } from '../platform/browser.js'
@@ -44,6 +60,16 @@ import type { Store } from '../store/store.js'
 import { DomainError } from '../util/errors.js'
 import type { Clock } from '../util/time.js'
 import { dataNotReady, type RuntimeFailure } from './contract.js'
+import {
+  previewApplicationBatch,
+  sendApplicationBatch as sendApplicationBatchOf,
+  type ApplicationBatchDeps,
+} from './application-batch.js'
+import {
+  previewGreetingBatch,
+  sendGreetingBatch as sendGreetingBatchOf,
+  type GreetingBatchDeps,
+} from './greeting-batch.js'
 
 /** 只用到 info/warn —— 与装配点的 logger 形状一致，但不必 import 它（避免双向引用）。 */
 export interface ActionLogger {
@@ -63,6 +89,13 @@ export interface ActionDeps {
   browser: BrowserManager
   events: EventBus
   clock: Clock
+  /**
+   * 简历附件所在的目录（`<dataDir>/files`）。
+   *
+   * 只有这里需要它：把 `resume_file.id` 解析成适配器要的绝对路径。
+   * 外部（HTTP / 工具）永远只给 id，路径由这一层自己拼。
+   */
+  filesDir: string
   /** 给 `dataNotReady` 用：数据层为什么没起来（装配点才知道）。 */
   failureOf: () => RuntimeFailure | null
   logger?: ActionLogger
@@ -80,7 +113,27 @@ export interface RuntimeActions {
     text?: string
     actor: Actor
     guiConfirmed?: boolean
+    /**
+     * 这次调用一共涉及几条（批量时为整批条数，单条时不传）。
+     *
+     * 为什么要单独一个字段：§22.4 的批量上限由 `checkBatch` 读 `payload.count`/`payload.jobIds` 判定，
+     * 而批量是**逐条**调这个方法发出去的 —— 不把整批条数带进来，每条看上去都只有 1 条，
+     * 上限就永远不会触发（"逐条过闸门"会变成"逐条绕过批量上限"）。
+     */
+    batchSize?: number
   }): Promise<GreetingSendResult>
+  /**
+   * 批量打招呼的**预览**（D3 / U1）：哪些条能发、为什么不能、将发出什么。
+   *
+   * 只读、无副作用；只为"能发"的项生成话术。
+   */
+  previewGreetingBatch(input: { jobIds: number[]; actor: Actor }): Promise<GreetingBatchPlanDto>
+  /** 批量打招呼：**逐条过闸门、逐条回执**（一条失败不影响其它条）。 */
+  sendGreetingBatch(input: {
+    items: Array<{ jobId: number; text?: string }>
+    actor: Actor
+    guiConfirmed?: boolean
+  }): Promise<GreetingBatchResultDto>
   replyToMessage(input: {
     messageId: number
     content: string
@@ -91,10 +144,36 @@ export interface RuntimeActions {
   probeContactStage(input: { jobId: number; actor: Actor }): Promise<StageProbeResult>
   sendApplication(input: {
     jobId: number
-    filePath?: string | null
+    /**
+     * 这次投递**关联**到哪一份简历附件（`resume_file.id`）；`null` / 不传 = 平台内简历。
+     *
+     * 为什么是 id 而不是路径：路径由宿主从库里查（见 `resolveResumeOf`），
+     * 外部给路径就是一个"任意路径读文件"的洞。传了 id 而平台不收本地附件时，
+     * 批量预览会把它标成 `local_resume_unsupported`（可修：改成平台内简历即可）。
+     */
+    resumeFileId?: number | null
     actor: Actor
     guiConfirmed?: boolean
+    /** 批量时带整批条数（`checkBatch` 的批量上限靠它判定，与打招呼同一格）。 */
+    batchSize?: number
   }): Promise<ApplicationSendResult>
+  /**
+   * 批量投递的**预览**（L4）：哪些条能投、为什么不能、用哪份简历。
+   *
+   * 只读、无副作用。
+   */
+  previewApplicationBatch(input: {
+    jobIds: number[]
+    resumeFileId: number | null
+    actor: Actor
+  }): Promise<ApplicationBatchPlanDto>
+  /** 批量投递：**逐条过闸门、逐条回执**（一条失败不影响其它条；不可逆，所以回执带送达状态）。 */
+  sendApplicationBatch(input: {
+    jobIds: number[]
+    resumeFileId: number | null
+    actor: Actor
+    guiConfirmed?: boolean
+  }): Promise<ApplicationBatchResultDto>
   updateSettings(patch: SettingsPatch, actor: Actor, guiConfirmed?: boolean): Promise<SettingsSnapshot>
 }
 
@@ -104,7 +183,125 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
   /** 数据层没就绪时的统一错误（形状只要求 `failure()`，见 contract.ts）。 */
   const notReady = (): DomainError => dataNotReady({ failure: deps.failureOf })
 
-  return {
+  /**
+   * 批量打招呼的依赖装配。
+   *
+   * `sendOne` 由调用方传进来（就是下面对象上的 `sendGreeting`）——
+   * 这样"逐条过闸门"走的是**同一条单条发送路径**，批量里没有任何绕过闸门的捷径。
+   */
+  const batchDepsOf = (input: {
+    opened: Store
+    gate: Guard
+    session: SessionService
+    sendOne: GreetingBatchDeps['sendOne']
+  }): GreetingBatchDeps => ({
+    store: input.opened,
+    draft: async (draftInput) => {
+      const service = deps.outreachOf()
+      if (service === undefined) throw notReady()
+      return await service.draft(draftInput)
+    },
+    sendOne: input.sendOne,
+    previewGuard: (guardInput) => input.gate.preview(guardInput),
+    canSend: (platformId) => {
+      // 判据与单条发送**共用一份**（`greetingPlatformBlocker`）——
+      // 预览里说能发、点下去才失败是最糟的形态，而两份判断迟早会漂移。
+      return greetingPlatformBlocker({ registry, session: input.session }, platformId)
+    },
+    sideEffectOf: (platformId) => platformFacts(platformId).greetingSideEffect ?? null,
+    cooldownMinutes: () => readGuardConfig(input.opened).cooldownMinutes,
+    remainingToday: (platformId) => {
+      // 与 `checkQuota` 同源的读数（`guardUsageOf`）：预览说"还剩 3 条"与实际被拒的时机一致
+      const entry = guardUsageOf(input.opened, clock, platformId).find(
+        (row) => row.action === GREETING_SEND_ACTION,
+      )
+      if (entry === undefined) return null
+      return { remaining: entry.remaining, limit: entry.limit, used: entry.used }
+    },
+    clock,
+    sleep: (ms) => new Promise<void>((resolve) => { setTimeout(resolve, ms) }),
+    random: () => Math.random(),
+  })
+
+  /**
+   * 把「这次投递**登记**用哪份简历」解析成：适配器要的绝对路径（**只有平台接受上传时**）+
+   * 审批文案要的可读标签 + 记账归因要的版本 id。
+   *
+   * ⚠️ 两件事必须分清（这是本函数存在的全部理由）：
+   *   1. **登记**：这份简历写进 `application.resume_id` / `resume_file_id` —— 归因要用（§11.3 / R6）；
+   *   2. **上传**：把文件真的交给平台。**只有平台事实 `resumeSource === 'local'` 时才做** ——
+   *      其余平台（实测 zhipin / zhaopin）没有"把本地文件发给 HR"的入口，硬把路径交给适配器
+   *      只会让它 fail-closed，把一次本来能成的投递变成失败。
+   *      那种情况下我们**照投**（平台用它自己那份），并如实把这件事写进审批文案。
+   *
+   * ⚠️ 入参只能是 `resume_file.id`：路径由这里自己从库里查。让请求体直接给一个绝对路径，
+   * 就是一个"任意路径读文件"的洞（与 `readExportFile` 同一条纪律）。
+   */
+  const resolveResumeOf = (
+    opened: Store,
+    platformId: string,
+    resumeFileId: number | null,
+  ): { uploadPath: string | null; label: string | null; resumeId: number | null; uploads: boolean } => {
+    if (resumeFileId === null) {
+      return { uploadPath: null, label: null, resumeId: null, uploads: false }
+    }
+    const file = opened.resume.getFile(resumeFileId)
+    if (file === undefined) {
+      throw new DomainError('NOT_FOUND', `简历附件不存在：#${String(resumeFileId)}`, {
+        hint: '它可能已经被删掉了；到「简历」页重新导出一份再投。',
+      })
+    }
+    const resume = opened.resume.get(file.resumeId)
+    const uploads = platformFacts(platformId).resumeSource === 'local'
+    return {
+      uploadPath: uploads ? join(deps.filesDir, file.path) : null,
+      // 标签里带简历名与文件名 —— §4.4.2 要的"用了哪版简历"指的就是这个，
+      // 而不是一个绝对路径（路径对用户没有信息量，还会把本机目录结构写进库）
+      label: `${resume?.name ?? `简历 #${String(file.resumeId)}`} · ${file.fileName}`,
+      resumeId: file.resumeId,
+      uploads,
+    }
+  }
+
+  /**
+   * 批量投递的依赖装配（与 `batchDepsOf` 同一个理由：`sendOne` 就是上面那个
+   * `sendApplication`，所以批量里没有任何绕过闸门的捷径）。
+   */
+  const applicationBatchDepsOf = (input: {
+    opened: Store
+    gate: Guard
+    session: SessionService
+    sendOne: ApplicationBatchDeps['sendOne']
+  }): ApplicationBatchDeps => ({
+    store: input.opened,
+    sendOne: input.sendOne,
+    previewGuard: (guardInput) => input.gate.preview(guardInput),
+    platformBlocker: (platformId) =>
+      // 判据与单条投递**共用一份**（`applicationPlatformBlocker`）
+      applicationPlatformBlocker({ registry, session: input.session }, platformId),
+    acceptsLocalResume: (platformId) => platformFacts(platformId).resumeSource === 'local',
+    resumeLabelOf: (resumeFileId) => {
+      const file = input.opened.resume.getFile(resumeFileId)
+      if (file === undefined) return null
+      const resume = input.opened.resume.get(file.resumeId)
+      return `${resume?.name ?? `简历 #${String(file.resumeId)}`} · ${file.fileName}`
+    },
+    sideEffectOf: (platformId) => platformFacts(platformId).applicationSideEffect ?? null,
+    cooldownMinutes: () => readGuardConfig(input.opened).cooldownMinutes,
+    remainingToday: (platformId) => {
+      // 与 `checkQuota` 同源的读数（`guardUsageOf`）
+      const entry = guardUsageOf(input.opened, clock, platformId).find(
+        (row) => row.action === APPLICATION_SEND_ACTION,
+      )
+      if (entry === undefined) return null
+      return { remaining: entry.remaining, limit: entry.limit, used: entry.used }
+    },
+    clock,
+    sleep: (ms) => new Promise<void>((resolve) => { setTimeout(resolve, ms) }),
+    random: () => Math.random(),
+  })
+
+  const actions: RuntimeActions = {
     async draftGreeting(input): Promise<GreetingDraftDto> {
       const service = deps.outreachOf()
       if (service === undefined) throw notReady()
@@ -160,6 +357,9 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
             // §4.4.2 要求审批文案显示"用了哪版简历" —— 打招呼不用简历，如实写出来
             resumeVersion: '不适用（打招呼只发文本）',
             draftVia: via,
+            // §22.4 的批量上限：批量逐条发送时把**整批条数**带上，否则每条都像单条，
+            // `checkBatch` 永远不触发（那等于没有上限）
+            ...(input.batchSize === undefined || input.batchSize <= 1 ? {} : { count: input.batchSize }),
             // 平台自己还会做的额外动作（平台事实）：BOSS 点了「立即沟通」会**先替你发一句
             // 平台默认招呼语**，随后我们才发上面这段 text —— 一次动作两条消息，用户得知道。
             ...(greetingSideEffect === undefined ? {} : { sideEffect: greetingSideEffect }),
@@ -400,7 +600,9 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
         })
       }
 
-      const filePath = input.filePath ?? null
+      // 简历：外部只给 id，路径由这里查出来（见 `resolveResumeOf`）
+      const resumeFileId = input.resumeFileId ?? null
+      const resume = resolveResumeOf(opened, job.platformId, resumeFileId)
       const sideEffect = platformFacts(job.platformId).applicationSideEffect
       const result = await gate.run(
         {
@@ -415,13 +617,14 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
           payload: {
             jobTitle: job.title,
             company: job.companyName ?? '',
-            // §4.4.2 要求审批文案写清"用了哪版简历"
-            resumeVersion:
-              filePath === null ? '平台内简历（未指定本地版本）' : `本地文件：${filePath}`,
-            resumeFileId: filePath === null ? null : filePath,
+            // §4.4.2 要求审批文案写清"用了哪版简历" —— 而且必须连"会不会真的传上去"一起说
+            resumeVersion: resumeVersionTextOf({ label: resume.label, uploads: resume.uploads }),
+            resumeFileId,
             // 平台自己还会做的额外动作（如智联投递时会替你发一句招呼语）——
             // **来自平台事实表**，不是各入口自己写死；没有这一格的平台就不会出现这一行。
             ...(sideEffect === undefined ? {} : { sideEffect }),
+            // §22.4 的批量上限：批量逐条投递时把**整批条数**带上（与打招呼同一格）
+            ...(input.batchSize === undefined || input.batchSize <= 1 ? {} : { count: input.batchSize }),
           },
           ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
         },
@@ -438,16 +641,22 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
               record: (recorded) => {
                 deps.pipelineOf()?.recordApplicationSent({
                   jobId: recorded.jobId,
+                  // R6 的"这版投了哪个岗"：以前这两格从来没从投递路径传下来，
+                  // 于是适配器投出去的记录只能退回"默认简历"——归因是错的。
+                  resumeId: resume.resumeId,
+                  resumeFileId,
                   actor: recorded.actor,
                   note:
-                    recorded.filePath === null
+                    resume.label === null
                       ? '平台内简历投递（适配器执行）'
-                      : `本地简历投递（适配器执行）：${recorded.filePath}`,
+                      : `本地简历投递（适配器执行）：${resume.label}`,
                 })
               },
             },
             token,
-            { jobId: job.id, filePath },
+            // 只有平台接受上传时才把路径交出去（否则适配器会 fail-closed，
+            // 把一次本来能成的投递变成失败 —— 见 `resolveResumeOf`）
+            { jobId: job.id, filePath: resume.uploadPath },
           ),
       )
 
@@ -487,5 +696,114 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
         },
       )
     },
+
+    async previewGreetingBatch(input): Promise<GreetingBatchPlanDto> {
+      const opened = deps.storeOf()
+      const gate = deps.guardOf()
+      const sessionService = deps.sessionOf()
+      if (opened === undefined || gate === undefined || sessionService === undefined) {
+        throw notReady()
+      }
+      const plan = await previewGreetingBatch(
+        batchDepsOf({ opened, gate, session: sessionService, sendOne: (one) => actions.sendGreeting(one) }),
+        { jobIds: input.jobIds, actor: input.actor },
+      )
+      events.publish('greeting.batch.previewed', {
+        total: plan.items.length,
+        sendable: plan.sendable,
+        blocked: plan.blocked,
+      })
+      return plan
+    },
+
+    async sendGreetingBatch(input): Promise<GreetingBatchResultDto> {
+      const opened = deps.storeOf()
+      const gate = deps.guardOf()
+      const sessionService = deps.sessionOf()
+      if (opened === undefined || gate === undefined || sessionService === undefined) {
+        throw notReady()
+      }
+      const result = await sendGreetingBatchOf(
+        batchDepsOf({ opened, gate, session: sessionService, sendOne: (one) => actions.sendGreeting(one) }),
+        {
+          items: input.items,
+          actor: input.actor,
+          ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
+        },
+      )
+      // 逐条会各自发 `greeting.sent`（在 sendGreeting 里），这里再补一条批级事件
+      // 让「今日」这类页面知道该整体刷新一次
+      events.publish('greeting.batch.sent', {
+        sent: result.sent,
+        failed: result.failed,
+        actor: input.actor,
+      })
+      logger?.info(
+        `[actions] 批量打招呼：成功 ${String(result.sent)} 条 · 失败 ${String(result.failed)} 条 · ` +
+          `耗时 ${String(result.elapsedMs)} ms`,
+      )
+      return result
+    },
+
+    async previewApplicationBatch(input): Promise<ApplicationBatchPlanDto> {
+      const opened = deps.storeOf()
+      const gate = deps.guardOf()
+      const sessionService = deps.sessionOf()
+      if (opened === undefined || gate === undefined || sessionService === undefined) {
+        throw notReady()
+      }
+      const plan = await previewApplicationBatch(
+        applicationBatchDepsOf({
+          opened,
+          gate,
+          session: sessionService,
+          sendOne: (one) => actions.sendApplication(one),
+        }),
+        { jobIds: input.jobIds, resumeFileId: input.resumeFileId, actor: input.actor },
+      )
+      events.publish('application.batch.previewed', {
+        total: plan.items.length,
+        sendable: plan.sendable,
+        blocked: plan.blocked,
+      })
+      return plan
+    },
+
+    async sendApplicationBatch(input): Promise<ApplicationBatchResultDto> {
+      const opened = deps.storeOf()
+      const gate = deps.guardOf()
+      const sessionService = deps.sessionOf()
+      if (opened === undefined || gate === undefined || sessionService === undefined) {
+        throw notReady()
+      }
+      const result = await sendApplicationBatchOf(
+        applicationBatchDepsOf({
+          opened,
+          gate,
+          session: sessionService,
+          sendOne: (one) => actions.sendApplication(one),
+        }),
+        {
+          jobIds: input.jobIds,
+          resumeFileId: input.resumeFileId,
+          actor: input.actor,
+          ...(input.guiConfirmed === true ? { guiConfirmed: true } : {}),
+        },
+      )
+      // 逐条各自发 `application.sent`（在 sendApplication 里），这里再补一条批级事件
+      // 让「今日」/「流水线」这类页面知道该整体刷新一次
+      events.publish('application.batch.sent', {
+        sent: result.sent,
+        failed: result.failed,
+        actor: input.actor,
+      })
+      logger?.info(
+        `[actions] 批量投递：成功 ${String(result.sent)} 条 · 失败 ${String(result.failed)} 条 · ` +
+          `耗时 ${String(result.elapsedMs)} ms`,
+      )
+      return result
+    },
   }
+
+  return actions
 }

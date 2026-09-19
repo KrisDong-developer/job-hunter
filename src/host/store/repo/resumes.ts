@@ -54,7 +54,7 @@ export interface ResumeRepo {
   /** 把某一版设为"当前启用"。同方向内互斥。 */
   setDefault(id: number, now: string): ResumeRecord
   defaultResume(): ResumeRecord | undefined
-  /** 列表用的轻量视图（不把整份简历读出来）。 */
+  /** 列表用的轻量视图（不把整份简历正文塞进 DTO）；带上各版附件，投递时选简历要用。 */
   summaries(options?: { includeArchived?: boolean }): ResumeSummaryDto[]
   count(): number
 
@@ -62,7 +62,6 @@ export interface ResumeRepo {
   listFiles(resumeId: number): ResumeFileRecord[]
   getFile(fileId: number): ResumeFileRecord | undefined
   removeFile(fileId: number): boolean
-  countFiles(resumeId: number): number
 
   /** 匹配分失效判断需要知道"当前版本是哪一份、rev 多少"（§4.1）。 */
   revision(): { resumeId: number | null; rev: number }
@@ -110,7 +109,6 @@ export function createResumeRepo(db: DatabaseSync): ResumeRepo {
   const selectFiles = db.prepare('SELECT * FROM resume_file WHERE resume_id = ? ORDER BY id DESC')
   const selectFile = db.prepare('SELECT * FROM resume_file WHERE id = ?')
   const deleteFile = db.prepare('DELETE FROM resume_file WHERE id = ?')
-  const countFilesStmt = db.prepare('SELECT count(*) AS n FROM resume_file WHERE resume_id = ?')
 
   const toFile = (row: Row): ResumeFileRecord => ({
     id: asInt(row['id']),
@@ -203,25 +201,29 @@ export function createResumeRepo(db: DatabaseSync): ResumeRepo {
     },
 
     summaries(options = {}): ResumeSummaryDto[] {
-      const records = this.list(options)
-      return records.map((record) => ({
-        id: record.id,
-        name: record.name,
-        direction: record.direction,
-        language: record.language,
-        state: record.state,
-        isDefault: record.isDefault,
-        rev: record.rev,
-        updatedAt: record.updatedAt,
-        counts: {
-          skills: record.content.skills.length,
-          experiences: record.content.experiences.length,
-          projects: record.content.projects.length,
-          education: record.content.education.length,
-          files: this.countFiles(record.id),
-        },
-        issues: inspectResume(record.content).length,
-      }))
+      return this.list(options).map((record) => {
+        // 附件一次读出来：`counts.files` 就是它的长度，不必再多查一次 count
+        const files = this.listFiles(record.id).map(toResumeFileDto)
+        return {
+          id: record.id,
+          name: record.name,
+          direction: record.direction,
+          language: record.language,
+          state: record.state,
+          isDefault: record.isDefault,
+          rev: record.rev,
+          updatedAt: record.updatedAt,
+          files,
+          counts: {
+            skills: record.content.skills.length,
+            experiences: record.content.experiences.length,
+            projects: record.content.projects.length,
+            education: record.content.education.length,
+            files: files.length,
+          },
+          issues: inspectResume(record.content).length,
+        }
+      })
     },
 
     count(): number {
@@ -255,17 +257,29 @@ export function createResumeRepo(db: DatabaseSync): ResumeRepo {
       return deleteFile.run(fileId).changes > 0
     },
 
-    countFiles(resumeId): number {
-      const row = countFilesStmt.get(resumeId) as Row | undefined
-      return asInt(row?.['n'])
-    },
-
     revision(): { resumeId: number | null; rev: number } {
       const current = this.defaultResume()
       return current === undefined
         ? { resumeId: null, rev: 0 }
         : { resumeId: current.id, rev: current.rev }
     },
+  }
+}
+
+/**
+ * `ResumeFileDto` 投影：**刻意不含 `path`**。
+ *
+ * 磁盘路径只活在仓储层（相对 `files/`），出不了 DTO 边界（§4.1）。
+ * 放成导出的函数而不是各写一遍：投递选简历、简历详情、导出回执都要用它 ——
+ * 三处各写一遍的话，哪天给 DTO 加一格就必然漏掉两处。
+ */
+export function toResumeFileDto(file: ResumeFileRecord): ResumeFileDto {
+  return {
+    id: file.id,
+    format: file.format,
+    fileName: file.fileName,
+    bytes: file.bytes,
+    createdAt: file.createdAt,
   }
 }
 

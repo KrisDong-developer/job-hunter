@@ -136,6 +136,36 @@ export interface BrowserManagerOptions {
  */
 export declare function createBrowserManager(options: BrowserManagerOptions): BrowserManager;
 /**
+ * 把 Playwright 的 `waitForSelector` 归一成 `PageLike` 声明的那个形状。
+ *
+ * ## 为什么必须在**这里**做（而不是逐个适配器补）
+ *
+ * `PageLike` 声明的是 `waitForSelector(selector: string, timeoutMs: number): Promise<boolean>`，
+ * 而 Playwright 的签名是 `waitForSelector(selector, options?: { state?, timeout? })` ——
+ * 第二个参数是**配置对象**。适配器传了个**数字**，于是：
+ *
+ *   * `options.state` 取不到 ⇒ 用默认的 **`'visible'`**（而适配器的注释写的是"等卡片挂载，不要求可见"）；
+ *   * `options.timeout` 取不到 ⇒ 用默认的 **30s**（调用方传的 `waitForListMs` **完全失效**）。
+ *
+ * 2026-09-19 的真实故障就是这么来的：猎聘一次定时采集报「连搜索页都没打开成功」，
+ * 而 Playwright 的日志自相矛盾 —— **locator 解析到了 42 个元素**，却判"不可见"直到 30s 超时。
+ * 卡片明明在 DOM 里（页面早就加载好了，跟网络无关），只是被判成了"不可见"
+ * （窗口最小化 / 布局未成形时，元素可以有零尺寸框）。
+ *
+ * ## 归一化的两条约定
+ *
+ * 1. **等的是"挂载"（`attached`）而不是"可见"** —— 适配器随后是 `evaluate` 读文本，
+ *    根本不需要像素可见；把"可见"当门槛等于白白引入一个失败模式。
+ * 2. **超时返回 `false`，不抛错** —— 这与离线夹具的行为一致（`jsdom-page.ts` 返回 false），
+ *    从此两条路径**同形**。抛错的版本还顺带把"等地雷"变成了"炸掉整轮采集"：
+ *    适配器里那些 `await page.waitForSelector(...)` 大多没包 try/catch，
+ *    于是一次"没等到"直接变成导航失败。
+ *
+ * 归一化之后，"到底有没有内容"由 `detectBlock` 判（它是为这件事设计的：
+ * 0 卡片 + 短文本 ⇒ `blank`、命中验证码 ⇒ `captcha`…），错误分类也不再误导用户去查网络。
+ */
+export declare function normalizeWaitForSelector(page: BrowserPage): BrowserPage;
+/**
  * 把浏览器管理器接成采集层要的 `PageSource`。
  * 离线夹具实现同一个接口，于是 `runCrawl` 对两条路径完全无感。
  */

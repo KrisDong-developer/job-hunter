@@ -1,11 +1,21 @@
 import { useState, type FormEvent } from 'react'
-import { JOB_FLAG_LABEL, JOB_FLAG_TYPES, JOB_STATES, type JobFlagType, type JobState } from '../../shared/enums.js'
+import {
+  APPLICATION_STAGE_LABEL,
+  CONTACT_STAGE_LABEL,
+  JOB_FLAG_LABEL,
+  JOB_FLAG_TYPES,
+  JOB_STATES,
+  type JobFlagType,
+  type JobState,
+} from '../../shared/enums.js'
 import { buildExpChips, sortEduValues, type ExpChip } from '../../shared/facets.js'
 import { fetchDedupGroup, fetchJobFacets, fetchJobs, markJob } from '../api.js'
 import { FieldHint } from '../field-hint.js'
 import { JOB_STATE_LABEL, relativeTime } from '../labels.js'
 import { useAsync } from '../use-async.js'
 import { JobDetailPane } from './job-detail.js'
+import { BatchDeliverModal } from './jobs/batch-deliver-modal.js'
+import { BatchGreetingModal } from './jobs/batch-greeting-modal.js'
 
 interface Filters {
   q: string
@@ -227,6 +237,33 @@ function DedupComparePane(props: { groupId: number; onSelect: (id: number) => vo
 }
 
 /**
+ * 行内「打招呼 / 投递简历」的两枚小图标 —— 与 ✕ 排在同一列、同一个 34px 方块里。
+ *
+ * 手画 SVG 而不是图标字体：✕ / ★ 这类字形在部分中文字体里会退回豆腐块
+ * （`.jh-chip-neg` 那段注释已经吃过一次亏），而 SVG + `stroke="currentColor"`
+ * 跟着按钮颜色走、两套主题都在，缩放与强制色彩模式下也不会丢。
+ * 14px 是为了与 15px 的 ✕ 字形对齐视觉重量（字形本身的墨迹比它的字号小）。
+ */
+function IconChat() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+      <path d="M2 3.6A1.6 1.6 0 0 1 3.6 2h8.8A1.6 1.6 0 0 1 14 3.6v5.8a1.6 1.6 0 0 1-1.6 1.6H6.8L4 13.6V11A1.6 1.6 0 0 1 2 9.4z" />
+    </svg>
+  )
+}
+
+function IconSend() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+      <path d="M14.5 1.5 9.6 14.5 6.7 9.3 1.5 6.4z" />
+      <path d="M14.5 1.5 6.7 9.3" />
+    </svg>
+  )
+}
+
+/**
  * U1 岗位库 —— 核心工作界面（§5.4）。
  *
  * **左边列表、右边详情，都在同一屏**：这个屏的主任务是"浏览 → 比较 → 决定"，
@@ -253,6 +290,23 @@ export function JobsScreen(props: {
    * 常规那几个（关键词 / 城市 / 月薪 / 状态）才是每次筛选都要看的。
    */
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  /**
+   * 勾选的岗位（批量打招呼用，D3 / U1）。
+   *
+   * 保的是 **id 数组**而不是"当前页哪些行"：用户翻页再选也不会丢
+   * （批量本来就是"先把要发的挑齐、再一次性看预览"的动作）。
+   */
+  const [picked, setPicked] = useState<number[]>([])
+  /**
+   * 两个弹窗的**目标岗位**（`null` = 关着）。
+   *
+   * 存的是 id 数组而不是一个布尔开关：批量入口传勾选集合，行内入口传 `[job.id]`。
+   * 一个弹窗一份目标，就不会出现"单条点击悄悄混进批量列表"这种事。
+   */
+  const [greetTargets, setGreetTargets] = useState<number[] | null>(null)
+  const [deliverTargets, setDeliverTargets] = useState<number[] | null>(null)
+  /** 批量发送的结果提示（这一屏没有全局 toast，就地显示最直接）。 */
+  const [batchNote, setBatchNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
 
   // 筛选器的选项集：一次性拉取，失败不阻塞筛选。
   // **必须排在 jobs 查询之前** —— 经验筛选存的是梯队 id，要先用它把 id 展开成原始取值，
@@ -609,6 +663,27 @@ export function JobsScreen(props: {
                     这里改完当场重排（跨平台折叠不在这儿：它改的是"结果有哪些"，属于筛选条件，
                     已经放回上面的折叠面板）。 */}
                 <span className="jh-listbar-right">
+                  {/* 全选只覆盖**本页**：跨页"全选"在分页列表里是歧义动作
+                      （用户以为选了 20 条，实际选了 200 条）——所以文案里写明"本页" */}
+                  {state.data.items.length === 0 ? null : (
+                    <label className="jh-check">
+                      <input
+                        type="checkbox"
+                        checked={
+                          state.data.items.every((job) => picked.includes(job.id)) &&
+                          state.data.items.length > 0
+                        }
+                        onChange={(event) =>
+                          setPicked((current) => {
+                            const ids = state.data.items.map((job) => job.id)
+                            if (!event.target.checked) return current.filter((id) => !ids.includes(id))
+                            return [...current, ...ids.filter((id) => !current.includes(id))]
+                          })
+                        }
+                      />
+                      <span>选中本页</span>
+                    </label>
+                  )}
                   <label className="jh-sort">
                     <span className="jh-sort-label">排序</span>
                     <select
@@ -627,6 +702,43 @@ export function JobsScreen(props: {
                 </span>
               </div>
 
+              {batchNote === null ? null : (
+                <p className={batchNote.tone === 'ok' ? 'jh-ok' : 'jh-error'}>{batchNote.text}</p>
+              )}
+
+              {/* 批量工具条：只在有勾选时出现（没勾选时它占的那一行是纯粹的噪音） */}
+              {picked.length === 0 ? null : (
+                <div className="jh-picked">
+                  <span>已选 {picked.length} 条</span>
+                  <span className="jh-spacer" />
+                  <button
+                    type="button"
+                    className="jh-btn jh-btn-inline"
+                    onClick={() => {
+                      setBatchNote(null)
+                      setGreetTargets(picked)
+                    }}
+                  >
+                    批量打招呼（{picked.length}）
+                  </button>
+                  <button
+                    type="button"
+                    className="jh-btn jh-btn-inline"
+                    onClick={() => {
+                      setBatchNote(null)
+                      setDeliverTargets(picked)
+                    }}
+                  >
+                    批量投递（{picked.length}）
+                  </button>
+                  <button type="button" className="jh-btn jh-btn-inline" onClick={() => setPicked([])}>
+                    清除选择
+                  </button>
+                  <FieldHint text="批量打招呼会先做一次**只读预览**：逐条列出能不能发、为什么不能，正文可以逐条改或跳过。真正的发送要你在预览里确认一次，之后按每批最多 5 条依次发出（条与条之间会等 3–9 秒 —— 连点是最明显的机器信号，慢是有意的）。" />
+                  <FieldHint text="批量投递（L4）走的是**平台上已有的那份**简历，投出去**不可逆**。它会先做一次只读预览：逐条列出能不能投、为什么不能（只有接了投递动作的平台能投）。默认关闭 —— 需要在「设置 → 系统控制中心 → 发送分层」里先打开 L4 投递。" />
+                </div>
+              )}
+
               <ul className="jh-jobs">
                 {state.data.items.map((job) => {
                   const active = job.id === props.selected
@@ -640,6 +752,23 @@ export function JobsScreen(props: {
                   return (
                     <li key={job.id}>
                       <div className="jh-job-row">
+                        {/* 勾选框：单独一列，不嵌在"点开详情"的按钮里
+                            （按钮嵌控件是无效 HTML，读屏与键盘都会乱）。
+                            它的存在只为一件事：批量打招呼（D3 / U1）。 */}
+                        <span className="jh-job-pick">
+                          <input
+                            type="checkbox"
+                            checked={picked.includes(job.id)}
+                            aria-label={`选中「${job.title}」（用于批量打招呼）`}
+                            onChange={(event) =>
+                              setPicked((current) =>
+                                event.target.checked
+                                  ? [...current, job.id]
+                                  : current.filter((id) => id !== job.id),
+                              )
+                            }
+                          />
+                        </span>
                         <button
                           type="button"
                           className={`jh-job${active ? ' jh-job-active' : ''}`}
@@ -671,7 +800,7 @@ export function JobsScreen(props: {
                               <span title={job.crawledAt}>抓取 {crawled}</span>
                               <span title={job.lastSeenAt}>最近见到 {seen}</span>
                               {/* 批次 4：这条岗位在别的平台也在招（同一组）。
-                                  徽章只是**读数**，"展开对照"在右侧那个按钮上。 */}
+                                  徽章只是**读数**；"展开对照"是卡片下面那枚开关。 */}
                               {job.dedupGroupId === null ? null : (
                                 <span className="jh-dedup-badge" title="与其它平台的同一岗位合并成了一组">
                                   跨平台
@@ -701,34 +830,54 @@ export function JobsScreen(props: {
                           </span>
                           <span className={`jh-state jh-state-${job.state}`} aria-hidden="true">{JOB_STATE_LABEL[job.state]}</span>
                         </button>
-                        {/* 卡片右侧的快捷标记：处理单个岗位不用每次先进详情。
-                            划掉 = ignored，收藏 = saved；再点一次回到中性的 seen。
-                            与详情里的动作条看同一份状态，改完整列重载。 */}
-                        <span className="jh-job-quick" role="group" aria-label="快捷标记">
-                          {/* 批次 4：跨平台对照。放在主按钮**外面** ——
-                              按钮嵌按钮是无效 HTML，读屏与键盘都会乱。 */}
-                          {job.dedupGroupId === null ? null : (
-                            <button
-                              type="button"
-                              className={`jh-job-qk jh-job-qk-wide${openGroup === job.dedupGroupId ? ' jh-job-qk-on' : ''}`}
-                              aria-expanded={openGroup === job.dedupGroupId}
-                              title="这条岗位在别的平台也在招 —— 点开看各平台的对照"
-                              onClick={() =>
-                                setOpenGroup(openGroup === job.dedupGroupId ? null : job.dedupGroupId)
-                              }
-                            >
-                              对照
-                            </button>
-                          )}
+                        {/* 卡片右侧的行内动作，自上而下：打招呼 → 投递简历 → 划掉。
+                            这一列只放"对这一条做什么"，「收藏」因此去掉了：★ 与 ✕ 本来是
+                            一对互斥的处置态开关，而现在这一列要放两个对外动作 —— 三个按钮
+                            各 34px 已经够高，收藏在详情里照样能改，不必两条路径并列。
+                            跨平台「对照」也移出了这一列（见下面那枚独立的开关）。 */}
+                        <span className="jh-job-quick" role="group" aria-label="行内动作">
+                          {/* 打招呼 / 投递简历：与 ✕ **同一种形态**（34px 方块 + 一个图标），
+                              三个按钮排成一列，宽度一致、不随文案长短抖动。
+                              动作含义靠 tooltip 与 aria-label 说，不占卡片宽度。
+                              点下去不直接发送：把这一条预置进既有弹窗，预览、话术、限额、
+                              回执与批量入口完全同一套，不另长一条发送链路。
+                              已经接触过 / 投过的置灰（`:disabled`），tooltip 里写明是哪个阶段。 */}
                           <button
                             type="button"
-                            className={`jh-job-qk${job.state === 'saved' ? ' jh-job-qk-on' : ''}`}
-                            aria-label={job.state === 'saved' ? '取消收藏' : '收藏'}
-                            aria-pressed={job.state === 'saved'}
-                            title={job.state === 'saved' ? '取消收藏（回到已读）' : '收藏'}
-                            disabled={marking === job.id}
-                            onClick={() => void quickMark(job.id, job.state === 'saved' ? 'seen' : 'saved')}
-                          >★</button>
+                            className="jh-job-qk"
+                            aria-label={job.contactStage === 'none' ? '打招呼' : CONTACT_STAGE_LABEL[job.contactStage]}
+                            title={
+                              job.contactStage === 'none'
+                                ? '打招呼（先只读预览，确认后才发）'
+                                : `${CONTACT_STAGE_LABEL[job.contactStage]} —— 不重复发`
+                            }
+                            disabled={job.contactStage !== 'none'}
+                            onClick={() => {
+                              setBatchNote(null)
+                              setGreetTargets([job.id])
+                            }}
+                          >
+                            <IconChat />
+                          </button>
+                          <button
+                            type="button"
+                            className="jh-job-qk"
+                            aria-label={job.applicationStage === null ? '投递简历' : APPLICATION_STAGE_LABEL[job.applicationStage]}
+                            title={
+                              job.applicationStage === null
+                                ? '投递简历（不可逆，预览里确认后才发）'
+                                : `${APPLICATION_STAGE_LABEL[job.applicationStage]} —— 不重复投`
+                            }
+                            disabled={job.applicationStage !== null}
+                            onClick={() => {
+                              setBatchNote(null)
+                              setDeliverTargets([job.id])
+                            }}
+                          >
+                            <IconSend />
+                          </button>
+                          {/* 划掉 = ignored，再点一次回到中性的 seen。
+                              与详情里的动作条看同一份状态，改完整列重载。 */}
                           <button
                             type="button"
                             className={`jh-job-qk${job.state === 'ignored' ? ' jh-job-qk-ign' : ''}`}
@@ -740,6 +889,21 @@ export function JobsScreen(props: {
                           >✕</button>
                         </span>
                       </div>
+                      {/* 跨平台对照的开关。放在卡片**下面**而不是卡片里面：卡片本身就是一个
+                          按钮（点它 = 看详情），按钮里再嵌按钮是无效 HTML，读屏与键盘都会乱 ——
+                          它原来挤在快捷列里也是这个原因。展开的内容仍落在这一行下面，
+                          不遮住列表其它行。 */}
+                      {job.dedupGroupId === null ? null : (
+                        <button
+                          type="button"
+                          className={`jh-dedup-toggle${openGroup === job.dedupGroupId ? ' jh-dedup-toggle-on' : ''}`}
+                          aria-expanded={openGroup === job.dedupGroupId}
+                          title="这条岗位在别的平台也在招 —— 点开看各平台的对照"
+                          onClick={() => setOpenGroup(openGroup === job.dedupGroupId ? null : job.dedupGroupId)}
+                        >
+                          {openGroup === job.dedupGroupId ? '收起跨平台对照' : '跨平台对照'}
+                        </button>
+                      )}
                       {/* 跨平台对照：展开在那一行**下面**，不遮住列表其它行 */}
                       {job.dedupGroupId === null || openGroup !== job.dedupGroupId ? null : (
                         <DedupComparePane groupId={job.dedupGroupId} onSelect={props.onSelect} />
@@ -759,6 +923,35 @@ export function JobsScreen(props: {
           onSelect={props.onSelect}
         />
       </div>
+
+      {/* 打招呼（D3 / U1）：勾选走批量，行内点单条走同一套 —— 预览（逐条正文可改/可跳过）
+          → 一次确认 → 分批发送 → 逐条回执，两个入口只有"目标是谁"这一点不同 */}
+      {greetTargets === null ? null : (
+        <BatchGreetingModal
+          jobIds={greetTargets}
+          onClose={() => setGreetTargets(null)}
+          onBatchDone={() => {
+            // 每批发完刷一次：接触态与列表里的状态可能都变了
+            reload()
+            props.onChanged()
+          }}
+          notify={(tone, text) => setBatchNote({ tone, text })}
+        />
+      )}
+
+      {/* 投递（L4）：**不可逆** —— 预览里只有"投哪些/跳过哪些"，没有可编辑内容 */}
+      {deliverTargets === null ? null : (
+        <BatchDeliverModal
+          jobIds={deliverTargets}
+          onClose={() => setDeliverTargets(null)}
+          onBatchDone={() => {
+            // 每批发完刷一次：投递记录、看板与岗位状态都可能变了
+            reload()
+            props.onChanged()
+          }}
+          notify={(tone, text) => setBatchNote({ tone, text })}
+        />
+      )}
     </div>
   )
 }

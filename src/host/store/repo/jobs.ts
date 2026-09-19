@@ -1,8 +1,8 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/constants.js'
 import type { JobDto } from '../../../shared/dto.js'
-import { JOB_STATES, type JobFlagType, type JobState } from '../../../shared/enums.js'
-import { asId, asInt, asIntOrNull, asJson, asRealOrNull, asText, asTextOrNull, type Row } from '../row.js'
+import { APPLICATION_STAGES, CONTACT_STAGES, JOB_STATES, type JobFlagType, type JobState } from '../../../shared/enums.js'
+import { asId, asInt, asIntOrNull, asJson, asRealOrNull, asText, asTextOrNull, type Row, type SqlValue } from '../row.js'
 
 /** 岗位写入/筛选所需的标量字段（活对象已被适配器剥掉，§4.3 P7）。 */
 export interface JobUpsertInput {
@@ -123,9 +123,15 @@ export interface JobRepo {
 /* 平台名在服务端 JOIN 出来，而不是让界面自己拿 platformId 去查一遍：
    岗位详情的内嵌栏被岗位库 / 流水线 / 消息 / 面试四个屏共用，
    放在客户端就意味着每个屏都要各自拉一次平台列表，还会各自漂。
-   这与 `company_name` 的做法保持一致。 */
+   这与 `company_name` 的做法保持一致。
+
+   接触态与投递阶段也是**相关子查询**取各自最近一条，而不是 LEFT JOIN：
+   一个岗位可能打过多次招呼、投过多次简历，JOIN 会把列表行翻倍。
+   两条走 `idx_greeting_job` / `idx_application_job`。 */
 const SELECT_BASE = `
-SELECT j.*, c.name AS company_name, p.display_name AS platform_name
+SELECT j.*, c.name AS company_name, p.display_name AS platform_name,
+  (SELECT g.stage FROM greeting g WHERE g.job_id = j.id ORDER BY g.sent_at DESC LIMIT 1) AS contact_stage,
+  (SELECT a.stage FROM application a WHERE a.job_id = j.id ORDER BY a.sent_at DESC LIMIT 1) AS application_stage
 FROM job j
 LEFT JOIN company c ON c.id = j.company_id
 LEFT JOIN platform p ON p.id = j.platform_id`
@@ -137,6 +143,16 @@ const ORDER_COLUMNS: Record<NonNullable<JobQuery['orderBy']>, string> = {
   title: 'j.title',
   last_seen_at: 'j.last_seen_at',
   first_seen_at: 'j.first_seen_at',
+}
+
+/**
+ * 状态列的读回：库里是 TEXT，出现未知取值（手工改库、老版本写入）时**当作没有记录**，
+ * 而不是把它当成一个合法状态往外传 —— 界面拿它去查文案表会得到 `undefined`。
+ */
+function asEnumOrNull<T extends string>(value: SqlValue | undefined, allowed: readonly T[]): T | null {
+  const text = asTextOrNull(value)
+  if (text === null) return null
+  return (allowed as readonly string[]).includes(text) ? (text as T) : null
 }
 
 function toDto(row: Row): JobDto {
@@ -176,6 +192,9 @@ function toDto(row: Row): JobDto {
     flagTypes: [],
     // 跨平台去重分组（批次 4）：列表据此**按组折叠**，同一条岗位在多个平台各抓一条时只占一行
     dedupGroupId: asIntOrNull(row['dedup_group_id']),
+    // 行内「打招呼 / 投递」的只读态：发过的不能再点（投递不可逆，重复发撤不回来）
+    contactStage: asEnumOrNull(row['contact_stage'], CONTACT_STAGES) ?? 'none',
+    applicationStage: asEnumOrNull(row['application_stage'], APPLICATION_STAGES),
   }
 }
 

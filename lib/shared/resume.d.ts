@@ -188,6 +188,14 @@ export interface ResumeSummaryDto {
     isDefault: boolean;
     rev: number;
     updatedAt: string;
+    /**
+     * 这一版导出的附件（**不含磁盘路径**，见 `ResumeFileDto`）。
+     *
+     * 为什么要带在列表里：投递时要选"用哪份简历"，而那个选择落在**附件**上
+     * （`resume_file.id`）—— 列表里不带 id，选简历这件事就只能靠"每版再请求一次"拼出来。
+     * 本身是几个标量，不违反"列表不带正文"的那条纪律。
+     */
+    files: ResumeFileDto[];
     /** 结构化程度概览，让用户一眼看出"这份填得全不全"。 */
     counts: {
         skills: number;

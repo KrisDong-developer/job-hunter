@@ -75,6 +75,34 @@ export function runReasonLabel(reason: string | null): string | null {
 }
 
 /**
+ * 对外动作的**送达状态**（适配器 `ActionResult.delivery`）。
+ *
+ * 为什么进 shared：界面**至今看不到这一格** —— 投递/打招呼的结果只有成功或异常，
+ * 而"点了按钮"与"消息真的进了对方会话"是两件事（§12.2）。
+ * 批量回执要逐条写清它，所以它得是 host 与 client 共用的一套取值。
+ *
+ * ⚠️ 最要紧的一格是 `pending`：动作看起来已经发出，但没能验证送达 ——
+ * 它**不可逆**，也可能已经成功。说成"失败"会让人直接重投一次，说成"成功"是撒谎。
+ */
+export const DELIVERY_STATES = ['delivered', 'pending', 'failed', 'missing'] as const
+export type DeliveryState = (typeof DELIVERY_STATES)[number]
+
+export const DELIVERY_STATE_LABEL: Record<DeliveryState, string> = {
+  delivered: '已确认送达',
+  pending: '已发出·未确认',
+  failed: '失败',
+  missing: '无从确认',
+}
+
+/** 送达状态的色调（`pending` 是 warn 而不是 error：它可能已经成功了）。 */
+export const DELIVERY_STATE_TONE: Record<DeliveryState, 'ok' | 'warn' | 'error' | 'muted'> = {
+  delivered: 'ok',
+  pending: 'warn',
+  failed: 'error',
+  missing: 'muted',
+}
+
+/**
  * 核心字段（§4.2.4）：每个适配器都必须声明的一组字段。
  * 任一字段**连续 3 次缺失**即触发降级；不合格的**单条**记录不写主表，进 `pending_repair`。
  */

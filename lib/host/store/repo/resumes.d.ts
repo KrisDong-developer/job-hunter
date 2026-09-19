@@ -52,7 +52,7 @@ export interface ResumeRepo {
     /** 把某一版设为"当前启用"。同方向内互斥。 */
     setDefault(id: number, now: string): ResumeRecord;
     defaultResume(): ResumeRecord | undefined;
-    /** 列表用的轻量视图（不把整份简历读出来）。 */
+    /** 列表用的轻量视图（不把整份简历正文塞进 DTO）；带上各版附件，投递时选简历要用。 */
     summaries(options?: {
         includeArchived?: boolean;
     }): ResumeSummaryDto[];
@@ -61,7 +61,6 @@ export interface ResumeRepo {
     listFiles(resumeId: number): ResumeFileRecord[];
     getFile(fileId: number): ResumeFileRecord | undefined;
     removeFile(fileId: number): boolean;
-    countFiles(resumeId: number): number;
     /** 匹配分失效判断需要知道"当前版本是哪一份、rev 多少"（§4.1）。 */
     revision(): {
         resumeId: number | null;
@@ -69,6 +68,14 @@ export interface ResumeRepo {
     };
 }
 export declare function createResumeRepo(db: DatabaseSync): ResumeRepo;
+/**
+ * `ResumeFileDto` 投影：**刻意不含 `path`**。
+ *
+ * 磁盘路径只活在仓储层（相对 `files/`），出不了 DTO 边界（§4.1）。
+ * 放成导出的函数而不是各写一遍：投递选简历、简历详情、导出回执都要用它 ——
+ * 三处各写一遍的话，哪天给 DTO 加一格就必然漏掉两处。
+ */
+export declare function toResumeFileDto(file: ResumeFileRecord): ResumeFileDto;
 /** 把仓储记录转成对外 DTO（补上附件列表与定制数）。 */
 export declare function toResumeDto(record: ResumeRecord, files: ResumeFileDto[], tailoringCount: number): ResumeDto;
 export { asTextOrNull };

@@ -11,6 +11,7 @@ import {
   APPLICATION_CHANNEL_LABEL,
   APPLICATION_STAGES,
   APPLICATION_STAGE_LABEL,
+  DELIVERY_STATE_LABEL,
   INTERVIEW_KINDS,
   INTERVIEW_KIND_LABEL,
   INTERVIEW_STATES,
@@ -40,36 +41,103 @@ export function applicationsTools(runtime: HostRuntime): ToolDefinition[] {
   const tool = toolDefiner(runtime)
 
   return [
-    tool<Record<string, unknown>, { text: string }>({
+    tool<Record<string, unknown>, { text: string; jobId: number }>({
       name: 'application_deliver',
       description:
         '**投递简历**（高危，必须经用户审批）。与 `application_send`（"记一笔我投了"）不同 —— ' +
-        '这条会**真的用适配器把简历发出去**，成功后自动记一笔投递。' +
-        '不传 filePath 时用平台内简历（BOSS 求职者网页端只支持这种）；传了本地文件而平台不支持上传时会如实失败。',
-      timeoutMs: 6 * 60 * 1000,
+        '这条会**真的用适配器把简历投出去**，成功后自动记一笔投递（含用了哪版简历）。\n' +
+        '单条：给 `jobId`。**批量**：给 `jobIds`（同一次调用受批量上限约束，见设置里的"批量上限"，' +
+        '超出必须分批）。批量是**逐条过闸门、逐条回执**：\n' +
+        '· **每一条都会单独问你一次审批** —— 这是刻意的，一次问 5 条会让人看不清自己在批准什么；\n' +
+        '· 一条失败不影响其它条，返回值里有逐条的成功/失败原因与**送达状态**；\n' +
+        '· 条与条之间宿主会插入 3–9 秒随机间隔，所以批量会明显慢。\n' +
+        '`resumeFileId` 是这次投递**登记**哪份本地简历（记录与归因用）。' +
+        '⚠️ 注意它**不决定平台收到哪个文件**：平台用它自己那份（实测接入的平台都没有"把本地文件发给 HR"的入口），' +
+        '所以传了本地附件**不会**让投递失败，只是那份文件不会上传 —— 这一条会如实写进审批文案。\n' +
+        '⚠️ 投递**不可逆**。回执里写「已发出·未确认」的那些，可能已经生效 —— 先去平台上核对，不要直接重投。\n' +
+        '⚠️ 不是所有平台都能投：只有适配器实现了投递动作的才行（其余会如实报错，不会静默变成"已投递"）。',
+      timeoutMs: 8 * 60 * 1000,
       parameters: schema(
         {
-          jobId: int('岗位 id'),
-          filePath: str('本地简历文件的绝对路径；不填 = 用平台内简历'),
+          jobId: int('岗位 id（单条投递用；与 jobIds 二选一）'),
+          jobIds: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: '岗位 id 数组（批量投递用；与 jobId 二选一）',
+          },
+          resumeFileId: int(
+            '关联的简历附件 id（resume_list 的 files[].id）；不填 = 用平台内简历。**不接受文件路径**',
+          ),
         },
-        ['jobId'],
+        [],
       ),
-      ...textResult,
+      outputSchema: {
+        type: 'object',
+        properties: { text: { type: 'string' }, jobId: { type: 'integer' } },
+      },
+      render: renderText,
       async run(args) {
         requireData(runtime)
+        const rawResume = args['resumeFileId']
+        if (
+          rawResume !== undefined &&
+          (typeof rawResume !== 'number' || !Number.isInteger(rawResume) || rawResume <= 0)
+        ) {
+          throw new DomainError('INVALID_INPUT', 'resumeFileId 必须是正整数（简历附件的 id）', {
+            hint: '附件 id 在 resume_list 的 files[].id 里。这里**不接受文件路径** —— 路径由宿主自己从库里查。',
+          })
+        }
+        const resumeFileId = typeof rawResume === 'number' ? rawResume : null
+        const jobIds = (Array.isArray(args['jobIds']) ? args['jobIds'] : []).filter(
+          (item): item is number => typeof item === 'number' && Number.isInteger(item) && item > 0,
+        )
+
+        // ── 批量：逐条过闸门、逐条回执 ──────────────────────────────
+        if (jobIds.length > 0) {
+          // 先在工具层挡一道：闸门里每条也会挡（§22.4），但那样用户要等
+          // 3–9 秒 × N 的间隔、最后拿到一屏全是"超过上限"的回执
+          const limit = runtime.settings().snapshot().guard.batchLimit
+          if (jobIds.length > limit) {
+            throw new DomainError(
+              'GUARD_DENIED',
+              `模型单次调用最多涉及 ${String(limit)} 个岗位（§22.4 批量上限），这次是 ${String(jobIds.length)} 个`,
+              {
+                hint: `请分批，每批不超过 ${String(limit)} 个，并逐批让用户确认。`,
+                detail: { reason: 'batch' },
+              },
+            )
+          }
+          const result = await runtime.sendApplicationBatch({ jobIds, resumeFileId, actor: 'model' })
+          const lines = [
+            `批量投递：成功 ${String(result.sent)} 条、失败 ${String(result.failed)} 条` +
+              `（耗时 ${(result.elapsedMs / 1000).toFixed(1)} 秒，含条间随机间隔）。`,
+            '',
+            ...result.receipts.map((receipt, index) => {
+              const who = `${receipt.company || receipt.title}（#${String(receipt.jobId)}）`
+              if (receipt.ok) {
+                const delivery = receipt.delivery === null ? '未报告' : DELIVERY_STATE_LABEL[receipt.delivery]
+                return `${String(index + 1)}. ✅ ${who}：已投递（${delivery}）`
+              }
+              const hint = receipt.hint === null ? '' : ` —— ${receipt.hint}`
+              return `${String(index + 1)}. ❌ ${who}：${receipt.message ?? '失败'}${hint}`
+            }),
+            '',
+            '「失败」是**逐条**的：没有"整批失败"这种状态，成功的那些已经真的投出去了。',
+            '⚠️ 投递不可逆：写「已发出·未确认」的那些可能已经生效，先去平台上核对，不要直接重投。',
+          ]
+          return { text: lines.join('\n'), jobId: jobIds[0] ?? 0 }
+        }
+
+        // ── 单条 ────────────────────────────────────────────────────
         const id = positiveId(args.jobId, 'jobId')
-        const filePath = asString(args['filePath'])
 
         // 注意：这里**没有** guiConfirmed —— 模型不能自我确认，guard 会走 ctx.approval。
-        const result = await runtime.sendApplication({
-          jobId: id,
-          filePath: filePath ?? null,
-          actor: 'model',
-        })
+        const result = await runtime.sendApplication({ jobId: id, resumeFileId, actor: 'model' })
         return {
+          jobId: result.jobId,
           text:
             `已向「${result.company || result.title}」投递简历` +
-            `（${result.platformId}，送达状态 ${result.delivery}，${result.sentAt}）。` +
+            `（${result.platformId}，送达状态 ${DELIVERY_STATE_LABEL[result.delivery]}，${result.sentAt}）。` +
             (result.detail === undefined ? '' : `\n${result.detail}`),
         }
       },

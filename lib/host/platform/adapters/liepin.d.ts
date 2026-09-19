@@ -43,6 +43,20 @@ export interface LiepinSelectors {
      * 只有 `dt=职位介绍` 那块是正文，其余是「其他信息」（语言/行业/部门要求）。
      */
     detailIntroTitleText: string;
+    /**
+     * ── 登录态标记（2026-09-19 由两份快照对比定案）─────────────────────
+     * 只认**结构性信号**，不认文案 —— 文案会改，而且「登录/注册」这类字样在页脚也可能出现。
+     */
+    /** **已登录**才有：页头「你好，<名字>」+ 头像那个下拉（`id` 是 `header-quick-menu-user-info`）。 */
+    loggedInMarker: string;
+    /**
+     * **未登录**才有：`.header-quick-menu-not-login-item`（类名自带 `not-login` 语义）。
+     *
+     * ⚠️ 别把它和已登录态的 `class="header-quick-menu-login"`（页头快捷菜单容器）搞混 ——
+     * 后者**没有** `not-`，而且**未登录页里存在的是 `id="header-quick-menu-login"`（登录链接那个 span）**。
+     * 一字之差、id 与 class 含义相反，差点写错。
+     */
+    notLoggedInMarker: string;
 }
 /** 字段 → URL 参数映射（get_jobs `getSearchUrl()` 同款：city 与 dq 双参数）。 */
 export interface LiepinUrlParams {
@@ -57,11 +71,25 @@ export interface LiepinConfig {
     selectors: LiepinSelectors;
     urlParams: LiepinUrlParams;
     /**
-     * 城市名 → 平台城市码。**只放验证过的**；未列出的城市 buildSearchUrl 返回
-     * null（入口层拒绝），**不猜**。城市码可在自己浏览器里开猎聘搜索页从 URL 抄，
-     * 写进 DB 覆盖。`全国` → 空串 = 不带城市参数。
+     * 城市名 → 平台城市码（**370 个实测值**，2026-09-19 逐省点开「请选择城市」弹窗采得）。
+     *
+     * ⚠️ 这份表**一次都不要靠猜**：错一个码就会把用户搜到另一个城市去，而且看不出来。
+     * 采样方式、原始数据与三个坑见 `test/fixtures/liepin-city-codes.json`；
+     * 重新采样跑 `npm run probe:liepin-chat`。
+     *
+     * `全国` → 空串 = **不带城市参数**（平台自己的全国码是 410，两者不是一回事）。
+     * 未列出的城市 `buildSearchUrl` 返回 null（入口层拒绝）—— 单测会检查这里的城市
+     * 都在跨平台城市目录 `CITY_DIRECTORY` 里。
      */
     cityCodes: Record<string, string>;
+    /**
+     * 搜索接口的**静态请求头**（2026-09-19 逐组削减实测出的最小充分集，见 `LIEPIN_API_HEADERS`）。
+     *
+     * 为什么放进配置：其中 `x-fscp-std-info` 的 `client_id` 与 `x-fscp-version` 是**前端版本号**
+     * 一类的值，猎聘发版就可能变。DB 覆盖（`adapter-config`）能在不改代码的前提下补上，
+     * 探针 `npm run probe:liepin-chat` 会在线复验这套头是否还有效。
+     */
+    apiHeaders: Record<string, string>;
     /** 薪资文本模式（字符串形态，会序列化进页面）。 */
     salaryPattern: string;
     /** 职位链接里抠平台 id 的模式。 */
@@ -96,6 +124,36 @@ export declare const LIEPIN_JOB_ID_PATTERN = "/(?:job|a)/(\\d+)\\.shtml";
  * publishedAt 首次可用。请求体结构来自真实采样（见 fixtures/liepin-search-api.json）。
  */
 export declare const LIEPIN_SEARCH_API_PATH = "/api/com.liepin.searchfront4c.pc-search-job";
+/**
+ * 搜索接口的**静态请求头** —— 2026-09-19 用"逐组削减"实测出的最小充分集。
+ *
+ * ## 为什么这份常量必须存在（真踩过）
+ *
+ * `readListPage` 是**双通道**（接口优先、失败静默回退 DOM），而接口这条一度是**死代码**：
+ * 当初只带了 `content-type`，服务端一律回 `{"flag":0,"code":"-1400","msg":"出错了（400）！"}`
+ * （HTTP 仍是 200），于是**每次都静默回退 DOM**，丢掉了接口独有的
+ * `publishedAt`（`refreshTime`）/`industry`/`companySize`/`labels` —— 而且**没有任何信号**。
+ *
+ * ## 实测（`npm run probe:liepin-chat` 的变体实验，一次只动一个变量）
+ *
+ * | 请求头 | 结果 |
+ * |---|---|
+ * | 页面原样（对照组） | `flag=1`，42 条 |
+ * | 页面头 + **适配器构造的 body** | `flag=1`，42 条 ⇒ **body 构造没问题**（`ckId` 留空无妨） |
+ * | 只有 `content-type` | ❌ `-1400` |
+ * | 本常量（六项静态）+ **遥测三项** | `flag=1`，42 条 |
+ * | 本常量**不含**遥测三项 | ❌ `-1400` ⇒ **门就是 `x-fscp-*` 这一族的完整性** |
+ * | 去掉 `x-xsrf-token` | `flag=1` ⇒ **xsrf 不需要**（所以不必去读任何 cookie） |
+ * | 遥测三项改用**自造值**（随机 UUID / 当前页 URL / 空串） | `flag=1` ⇒ 可以自己造 |
+ *
+ * 结论：**这六项静态头 + 三个自造的 `x-fscp-*`**（见 `fetchListInPage`）就够，
+ * 不需要 `x-xsrf-token`、也不需要从页面的请求里抄任何东西。
+ *
+ * ⚠️ `x-fscp-std-info` 的 `client_id: 40108` 与 DOM 里那串 `_40108cpKKS` 类名前缀**同号**
+ * （互相印证这是前端应用号）；`x-fscp-version: 1.1` 与 `client_id` 都是**会随发版变的值**，
+ * 所以放在 `LiepinConfig.apiHeaders` 里允许 DB 覆盖。
+ */
+export declare const LIEPIN_API_HEADERS: Record<string, string>;
 /** 城市：夹具实测「Java工程师【佛山-顺德区】急聘15-30k·14薪」——【】里就是城市。 */
 export declare const LIEPIN_CITY_PATTERN = "\u3010([^\u3011]{2,15})\u3011";
 /** 经验/学历词表（夹具实测位于链接文本尾部，如「5年以上本科」）。 */
@@ -124,11 +182,21 @@ export declare function buildSearchRequestBody(criteria: SearchCriteria, cityCod
 /**
  * **在页面上下文里**发搜索接口请求（自包含；用页面自己的 fetch 带完整
  * Cookie/指纹/TLS，与 waiqi 适配器同一铁律：绝不回退宿主 Node 的 fetch）。
+ *
+ * ⚠️ 请求头**不是可选的**：少一组 `x-fscp-*` 服务端就回 `{"flag":0,"code":"-1400"}`
+ * （HTTP 200！），而调用方会静默回退 DOM —— 见 `LIEPIN_API_HEADERS` 的实测表。
+ * 其中三项必须在**页面里现造**（序列化进来的函数不能引用闭包）：
+ *   * `x-fscp-trace-id`：每请求一个 UUID（实测服务端不校验其内容，格式对即可）；
+ *   * `x-fscp-bi-stat`：`{"location": <当前页 URL>}`；
+ *   * `x-fscp-fe-version`：实测是**空字符串**（但必须存在）。
+ *
  * 返回解析后的 JSON；任何失败返回 null（调用方走 DOM 兜底）。
  */
 export declare function fetchListInPage(arg: {
     apiPath: string;
     body: Record<string, unknown>;
+    /** 静态头（来自 `LiepinConfig.apiHeaders`；页面函数不能引用模块作用域的东西）。 */
+    headers: Record<string, string>;
 }): Promise<unknown>;
 /** `yyyymmddHHMMss` → ISO（接口 refreshTime 形态，夹具实测）。 */
 export declare function refreshTimeToIso(raw: string): string | null;
@@ -186,6 +254,30 @@ export declare function extractJobDetailInPage(arg: {
     expPattern: string;
     eduPattern: string;
 }): RawJobDetail;
+/**
+ * 是否处于「已登录」态（用于 `auth.isLoggedIn`，自包含）。
+ *
+ * 只回答一个问题：**当前页面会不会被登录墙挡住**。
+ *
+ * 判据来自两份真实快照的对比（2026-09-19）——
+ * 匿名夹具（`test/fixtures/liepin-search.html`，全新 profile 抓的）
+ * vs 登录态捕获（`.probe-liepin-capture/liepin-walk-01-search.html`）：
+ *
+ * | 信号 | 未登录 | 已登录 |
+ * |---|---|---|
+ * | `#header-quick-menu-user-info`（`loggedInMarker`） | 无 | **有** |
+ * | `.header-quick-menu-not-login-item`（`notLoggedInMarker`） | **有** | 无 |
+ *
+ * ⚠️ 两个都**不能**用文案判：「登录/注册」在匿名页出现 2 次、登录页 0 次，看着也能用，
+ * 但文案一变就静默失效（本仓库有明文纪律：只认结构性信号）。
+ *
+ * 两个标记都不在 ⇒ 返回 `null`（**判不出来**），由调用方决定怎么落地 ——
+ * 适配器里按 `false` 处理（保守：宁可漏判"已登录"，也不要把被登录墙挡住当成"今天没有新岗位"）。
+ */
+export declare function isLoggedInInPage(arg: {
+    loggedInMarker: string;
+    notLoggedInMarker: string;
+}): boolean | null;
 export interface LiepinAdapterOptions {
     config?: LiepinConfig;
     /** 抓取请求之间的随机延时区间（§P5 保守优先；高斯 + 犹豫见 pacing.ts）。 */

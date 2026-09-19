@@ -132,12 +132,23 @@ export interface PipelineRepo {
         content: string;
         channel?: ApplicationChannel;
         actor: string;
+        /**
+         * 初始接触态。缺省 `'greeted'`。
+         *
+         * 为什么要能传：§12.2 里「已打招呼」与「已送达」是两态，而适配器
+         * **可能已经验证了送达**（`ActionResult.delivery === 'delivered'`）。
+         * 全都记成 `greeted` 的后果不是少一列数据的装饰问题 ——
+         * `followUpSuggestions()` 的"未读超时"分支挂在 `delivered` 上，
+         * 永远到不了那一态就等于那条跟进建议永远不触发。
+         */
+        stage?: ContactStage;
     }, now: string): GreetingRecord;
     listGreetings(filter?: {
         jobId?: number;
         stage?: ContactStage;
         limit?: number;
     }): GreetingRecord[];
+    getGreeting(id: number): GreetingRecord | undefined;
     latestGreeting(jobId: number): GreetingRecord | undefined;
     /** 推进某条 greeting 的接触态；返回是否真的变了。 */
     advanceGreeting(id: number, to: ContactStage, now: string): boolean;

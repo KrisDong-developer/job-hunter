@@ -11,10 +11,12 @@
  *   * 详情 URL 是 `/wn/jobs/<纯数字id>.html`；
  *   * 翻页是 `/<城市拼音>-zhaopin/<关键词>/<页>/`，拼音 slug 只能读站点生成的分页链接。
  *
- * 一次运行完成：环境验证 + WAF/登录等待 + 夹具保存（test/fixtures/lagou-search.html）
- * + 分页链接采样。用法：npm run probe:lagou
+ * 一次运行完成：环境验证 + WAF/登录等待 + **列表夹具**（test/fixtures/lagou-search.html）
+ * + **详情页夹具**（test/fixtures/lagou-detail.html）+ 分页链接采样
+ * + **未登录侧登录态锚点**（test/fixtures/lagou-auth-markers.json，与 `probe:lagou-login`
+ *   写的"已登录侧"合起来才能定出 `auth.isLoggedIn` 判据）。用法：npm run probe:lagou
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page, type Response } from 'patchright'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
@@ -26,6 +28,10 @@ const CITY = process.env['LAGOU_CITY'] ?? '北京'
 const PROFILE = process.env['LAGOU_PROFILE'] ?? join(process.cwd(), '.probe-lagou-profile')
 const FIXTURE_DIR = join(process.cwd(), 'test', 'fixtures')
 const FIXTURE_PATH = join(FIXTURE_DIR, 'lagou-search.html')
+/** 详情页夹具（2026-09-19 补）：从列表第一张卡进去存一份**匿名**详情页。 */
+const DETAIL_FIXTURE_PATH = join(FIXTURE_DIR, 'lagou-detail.html')
+/** 登录态锚点证据（只记选择器命中与元素标签/类名，**不记文案** —— 会含用户名）。 */
+const AUTH_MARKERS_PATH = join(FIXTURE_DIR, 'lagou-auth-markers.json')
 const PROBE_URL =
   `https://www.lagou.com/jobs/list_${encodeURIComponent(KEYWORD)}` +
   `${CITY === '全国' || CITY === '' ? '' : '?city=' + encodeURIComponent(CITY)}&px=new`
@@ -35,6 +41,58 @@ const POLL_MS = 3_000
 
 function log(message: string): void {
   console.log(`[probe-lagou] ${new Date().toISOString()} ${message}`)
+}
+
+/**
+ * 登录态锚点候选（自包含，`page.evaluate` 里跑）。
+ *
+ * 为什么把这件事放进探针：`auth.isLoggedIn` 的判据必须是**结构性**的，而"哪个锚点是
+ * 判别式"只有在**两种状态**下各测一次才知道（只出现于一侧的那个才是）。
+ * 拉勾适配器现在的 `isLoggedIn` 还标着"待含登录夹具校准" —— 跑一遍这个扫描就能定案，
+ * 不用肉眼翻 500KB HTML。
+ *
+ * ⚠️ 只记 `tag` / `class`，**不记文本**：页头文案里有真实用户名，而这份产物会进版本库。
+ */
+export const LAGOU_AUTH_CANDIDATES: string[] = [
+  'a[href*="login"]',
+  'a[href*="passport"]',
+  'a[href*="logout"]',
+  '.login',
+  '.header-login',
+  '.unlogin',
+  '.not-login',
+  '.user-nav',
+  '.user-info',
+  '.header-user',
+  '.nav-user',
+  '.username',
+  '.user-name',
+  '.avatar',
+  'img[class*="avatar"]',
+]
+
+export function scanAuthMarkersInPage(arg: { candidates: string[] }): {
+  url: string
+  hits: Array<{ selector: string; count: number; samples: Array<{ tag: string; cls: string }> }>
+} {
+  const hits: Array<{ selector: string; count: number; samples: Array<{ tag: string; cls: string }> }> = []
+  for (const selector of arg.candidates) {
+    let nodes: Element[] = []
+    try {
+      nodes = Array.from(document.querySelectorAll(selector))
+    } catch {
+      nodes = []
+    }
+    if (nodes.length === 0) continue
+    hits.push({
+      selector,
+      count: nodes.length,
+      samples: nodes
+        .slice(0, 3)
+        .map((el) => ({ tag: el.tagName.toLowerCase(), cls: el.getAttribute('class') ?? '' })),
+    })
+  }
+  return { url: location.href, hits }
 }
 
 async function main(): Promise<void> {
@@ -168,6 +226,67 @@ async function main(): Promise<void> {
     const apiPath = join(FIXTURE_DIR, 'lagou-search-api.json')
     writeFileSync(apiPath, JSON.stringify(apiCaptures, null, 2), 'utf8')
     log(`接口采样已保存：${apiPath}（${String(apiCaptures.length)} 条）—— 供 parseSearchApiResponse 校准`)
+  }
+
+  // ── 6. 登录态锚点扫描（**未登录侧**）────────────────────────────────
+  // 与 `probe:lagou-login` 写的"已登录侧"合起来才能定出 `auth.isLoggedIn` 的判据：
+  // 只有"只出现于一侧"的锚点才是判别式。这一步**必须在未登录时做**，所以放在这里。
+  try {
+    const markers = await page.evaluate(scanAuthMarkersInPage, { candidates: LAGOU_AUTH_CANDIDATES })
+    const existing = ((): Record<string, unknown> => {
+      try {
+        return JSON.parse(readFileSync(AUTH_MARKERS_PATH, 'utf8')) as Record<string, unknown>
+      } catch {
+        return {}
+      }
+    })()
+    writeFileSync(
+      AUTH_MARKERS_PATH,
+      JSON.stringify(
+        {
+          ...existing,
+          anonymous: markers,
+          candidates: LAGOU_AUTH_CANDIDATES,
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+    log(
+      `未登录侧锚点：${markers.hits.map((hit) => `${hit.selector}=${String(hit.count)}`).join(' ') || '(一个都没命中)'}`,
+    )
+  } catch (error) {
+    log(`锚点扫描失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  // ── 7. 详情页夹具（匿名；从列表第一张卡进去）──────────────────────────
+  // 适配器声明了 `detail`，但平台事实标着"夹具缺失、选择器自称待校准" ——
+  // 没有详情页夹具，那条解析就等于没被验证过。列表里就有现成的详情链接，顺手抓一份。
+  const detailHref = await page
+    .evaluate(() => {
+      for (const anchor of Array.from(document.querySelectorAll("a[href*='/wn/jobs/']"))) {
+        const href = anchor.getAttribute('href') ?? ''
+        if (!/\/wn\/jobs\/\d+\.html/.test(href)) continue
+        return href.startsWith('http') ? href : `https://www.lagou.com${href}`
+      }
+      return ''
+    })
+    .catch(() => '')
+  if (detailHref === '') {
+    log('⚠️ 列表里没找到 /wn/jobs/<id>.html 链接 —— 跳过详情页夹具')
+  } else {
+    try {
+      log(`详情页：${detailHref}`)
+      await page.goto(detailHref, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      await page.waitForTimeout(6_000)
+      const detailHtml = await page.content()
+      writeFileSync(DETAIL_FIXTURE_PATH, detailHtml, 'utf8')
+      log(`详情页夹具已保存：${DETAIL_FIXTURE_PATH}（${String(detailHtml.length)} 字符）`)
+    } catch (error) {
+      log(`详情页抓取失败：${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   log('✔ 探测完成 —— 跑 npm test，lagou 的离线解析用例会自动用上夹具。')

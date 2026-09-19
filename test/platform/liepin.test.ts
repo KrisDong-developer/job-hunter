@@ -7,6 +7,8 @@ import {
   buildSearchRequestBody,
   createLiepinAdapter,
   DEFAULT_LIEPIN_CONFIG,
+  isLoggedInInPage,
+  LIEPIN_API_HEADERS,
   mergeLiepinConfig,
   parseSearchApiResponse,
   refreshTimeToIso,
@@ -197,8 +199,11 @@ test('适配器声明符合平台事实：antiBot=high、免登录可搜、打�
   assert.equal(adapter.capabilities.supportsGreeting, false)
   assert.equal(adapter.actions, undefined)
   assert.equal(adapter.maxPages, 8)
-  // 不声明 auth：v1 按"免登录可搜"处理，登录墙信号等夹具校准（防"永远未登录"死锁）
-  assert.equal(adapter.auth, undefined)
+  // auth 已实现（2026-09-19）：此前不声明会让 `platforms.loginStatus` 直接抛
+  // 「没有声明登录入口」、`account.loggedIn` 恒 false —— 界面入口永远不亮。
+  // 注意"搜索不需要登录"由 searchWithoutLogin 表达，与"有没有登录检测"是两件事。
+  assert.equal(typeof adapter.auth?.isLoggedIn, 'function')
+  assert.equal(adapter.auth?.loginUrl, 'https://www.liepin.com/')
 })
 
 // ── 真实夹具（由 npm run probe:liepin 保存；没有就跳过） ────────────────
@@ -314,6 +319,122 @@ test('双通道：接口可用走 API（publishedAt 非空）；接口失败回�
   const viaDom = await adapter.crawl.readListPage(page2)
   assert.equal(viaDom.length, 2, 'DOM 兜底解析合成样本的两张卡')
   assert.equal(viaDom[0]?.publishedAt, undefined, 'DOM 通道没有 publishedAt → 证明走的是兜底')
+})
+
+// ── 搜索接口的请求头（2026-09-19 定案：少一组 x-fscp 就**静默**回退 DOM）────
+//
+// 这条用例的存在理由不是"函数签名对不对"，而是**防止这份头集被悄悄删掉**：
+// 接口调不通的表现是"一切正常"，只是永远拿不到 publishedAt/industry/companySize，
+// 所以只能靠用例把形状钉死（在线新鲜度由 `probe:liepin-chat` 的"生产路径"变体复验）。
+test('搜索接口请求头：必须带 x-fscp 那一族（少了服务端回 -1400，而通道会静默死掉）', async () => {
+  const captured: Array<Record<string, string>> = []
+  const stub: PageFetchStub = async (_url, init) => {
+    captured.push((init?.['headers'] ?? {}) as Record<string, string>)
+    // 不需要真数据：本用例只看**请求形态**
+    return { ok: false, json: async () => ({}) }
+  }
+  const page = new JsdomPage({ html: SYNTHETIC_LIST, url: SEARCH_URL, fetchStub: stub })
+  const adapter = createLiepinAdapter()
+  await adapter.crawl.gotoSearch(page, { keyword: 'Java', page: 1 })
+  await adapter.crawl.readListPage(page)
+
+  assert.equal(captured.length, 1, '应当发了一次搜索接口请求')
+  const headers = captured[0] ?? {}
+  for (const name of ['accept', 'content-type', 'x-client-type', 'x-fscp-version', 'x-fscp-std-info', 'x-requested-with']) {
+    assert.ok(headers[name] !== undefined && headers[name] !== '', `缺静态头 ${name} ⇒ 接口会 -1400`)
+  }
+  // 这一族**少一项就全废**（实测），所以用 `in` 判存在，不看值 —— fe-version 实测就是空串。
+  for (const name of ['x-fscp-trace-id', 'x-fscp-bi-stat', 'x-fscp-fe-version']) {
+    assert.ok(name in headers, `缺 ${name} ⇒ 接口会 -1400（实测：这一族少一项就全废）`)
+  }
+  assert.equal(headers['x-fscp-fe-version'], '', '实测 fe-version 是空串，但必须存在')
+  assert.match(
+    headers['x-fscp-trace-id'] ?? '',
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    'trace-id 要是 UUID 形状（实测服务端不校验出处，只验形状）',
+  )
+  const biStat = JSON.parse(headers['x-fscp-bi-stat'] ?? '{}') as { location?: unknown }
+  assert.equal(biStat.location, SEARCH_URL, 'bi-stat 里要带当前页 URL')
+})
+
+// ── 登录态检测（2026-09-19：匿名夹具 vs 登录态捕获，两份真实快照对比定案）────
+test('登录态：匿名夹具判「未登录」、带用户菜单的页头判「已登录」、判不出来时如实返回 null', async (t) => {
+  if (!existsSync(FIXTURE_PATH)) {
+    t.skip('需要匿名夹具 test/fixtures/liepin-search.html')
+    return
+  }
+  const adapter = createLiepinAdapter()
+  const markers = {
+    loggedInMarker: DEFAULT_LIEPIN_CONFIG.selectors.loggedInMarker,
+    notLoggedInMarker: DEFAULT_LIEPIN_CONFIG.selectors.notLoggedInMarker,
+  }
+
+  // ① 真实匿名夹具（全新 profile 抓的）——里面是 `.header-quick-menu-not-login-item`
+  const anon = browserLikePage(readFileSync(FIXTURE_PATH, 'utf8'))
+  assert.equal(await adapter.auth?.isLoggedIn(anon), false, '匿名夹具：应判「未登录」')
+
+  // ② 登录态页头（结构抄自 2026-09-19 的真实捕获，只把用户名换成占位符）
+  const loggedInHtml =
+    '<header><div class="header-quick-menu-box"><ul class="header-quick-menu-login">' +
+    '<li class="header-menu-item header-quick-menu-login-item"><div id="header-quick-menu-user-info" ' +
+    'class="ant-dropdown-trigger"><span>你好，</span>' +
+    '<span class="header-quick-menu-username ellipsis-1">某用户</span>' +
+    '<img class="header-quick-menu-user-photo" alt=""></div></li></ul></div></header>'
+  const loggedIn = browserLikePage(loggedInHtml)
+  assert.equal(await adapter.auth?.isLoggedIn(loggedIn), true, '带用户菜单的页头：应判「已登录」')
+
+  // ③ 两个标记都不在 ⇒ 页面函数如实返回 null；适配器再保守落成 false
+  const blank = browserLikePage('<div>页面结构整个换了</div>')
+  assert.equal(
+    await blank.evaluate(isLoggedInInPage as unknown as (arg: typeof markers) => boolean | null, markers),
+    null,
+    '判不出来必须是 null，而不是猜一个',
+  )
+  assert.equal(await adapter.auth?.isLoggedIn(blank), false, '适配器层：判不出来按「未登录」兜底（保守）')
+})
+
+test('配置覆盖：apiHeaders 按 key 浅合并（发版变了只覆盖变的那一两个头）', () => {
+  const merged = mergeLiepinConfig({ apiHeaders: { 'x-fscp-version': '9.9' } })
+  assert.equal(merged.apiHeaders['x-fscp-version'], '9.9', '被覆盖的项生效')
+  assert.equal(merged.apiHeaders['x-client-type'], 'web', '未覆盖的项保留默认')
+  assert.equal(LIEPIN_API_HEADERS['x-fscp-version'], '1.1', '默认常量绝不被就地改动')
+})
+
+// ── 城市码表（2026-09-19 逐省采样；配置与夹具不许脱节）──────────────────
+test('城市码表：cityCodes 与采样夹具一一对应（码写错一个就把用户搜到别的城市）', (t) => {
+  const fixturePath = join(import.meta.dirname, '..', 'fixtures', 'liepin-city-codes.json')
+  if (!existsSync(fixturePath)) {
+    t.skip('需要采样夹具 test/fixtures/liepin-city-codes.json')
+    return
+  }
+  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+    cities: Array<{ code: string; name: string }>
+  }
+  const config = DEFAULT_LIEPIN_CONFIG.cityCodes
+  // 归一化只去尾部「市」——与 CITY_DIRECTORY 的收录写法一致。
+  for (const city of fixture.cities) {
+    const key = city.name.replace(/市$/, '')
+    assert.equal(config[key], city.code, `「${key}」的城市码与采样不符（夹具 ${city.code}）`)
+  }
+  // 直辖市：采样时点开是 0 个市（它们本身就是市级码），码取自筛选区的热门行。
+  assert.equal(config['北京'], '010')
+  assert.equal(config['上海'], '020')
+  assert.equal(config['天津'], '030')
+  assert.equal(config['重庆'], '040')
+  // 全国 = 不带城市参数（平台的全国码 410 是另一回事，只在接口请求体里兜底）
+  assert.equal(config['全国'], '')
+  assert.equal(
+    Object.keys(config).length,
+    fixture.cities.length + 5,
+    '配置里的城市数应当 = 采样到的市级数 + 4 个直辖市 + 全国',
+  )
+})
+
+test('城市表外一律拒绝：未知城市返回 null，不去猜一个相近的码', () => {
+  assert.equal(buildLiepinSearchUrl(DEFAULT_LIEPIN_CONFIG, { city: '义乌', page: 1 }), null)
+  // 采样到的城市要能构造出带 city+dq 双参数的 URL
+  const url = buildLiepinSearchUrl(DEFAULT_LIEPIN_CONFIG, { city: '石家庄', page: 1 })
+  assert.ok(url !== null && url.includes('city=140020') && url.includes('dq=140020'), `实际：${String(url)}`)
 })
 
 test('翻页回归（p2 夹具存在时）：URL 翻页换数据 —— 两页 jobId 零重叠', async (t) => {

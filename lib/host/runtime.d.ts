@@ -1,4 +1,4 @@
-import type { CrawlStatusDto, CrawlSummaryDto, DeadlineDto, GreetingDraftDto, HealthDto, LoginStatusDto, PlatformOverviewDto, SchedulerStatusDto, TodayDto } from '../shared/dto.js';
+import type { AdapterConfigDto, CleanupPlanDto, CleanupResultDto, CrawlStatusDto, CrawlSummaryDto, DataExportFormat, DataExportEntryDto, DataImportResultDto, DeadlineDto, ApplicationBatchPlanDto, ApplicationBatchResultDto, GreetingBatchPlanDto, GreetingBatchResultDto, GreetingDraftDto, GuardUsageDto, HealthDto, LoginStatusDto, PlatformOverviewDto, SchedulerStatusDto, StorageUsageDto, TodayDto } from '../shared/dto.js';
 import type { AiService } from './ai/client.js';
 import type { CompanyService } from './domain/companies.js';
 import type { DedupSweepResult } from './domain/dedupe-sweep.js';
@@ -127,7 +127,34 @@ export interface HostRuntime {
         text?: string;
         actor: Actor;
         guiConfirmed?: boolean;
+        /** 整批条数（批量逐条发送时透传给闸门，用于 §22.4 的批量上限）。 */
+        batchSize?: number;
     }): Promise<GreetingSendResult>;
+    /**
+     * 批量打招呼的**预览**（D3 / U1）：哪些条能发、为什么不能、将发出什么。
+     *
+     * **只读、无副作用**（界面必须先调它、把逐条结果给用户看过，才允许发）。
+     * 只为"能发"的项生成话术 —— 注定发不出去的岗位不值得花模型调用。
+     */
+    previewGreetingBatch(input: {
+        jobIds: number[];
+        actor: Actor;
+    }): Promise<GreetingBatchPlanDto>;
+    /**
+     * 批量打招呼 —— **高危**（§22.4）。
+     *
+     * **逐条过闸门、逐条回执**：每条都独立走 `greeting.send` 的完整检查链与审批，
+     * 一条失败不影响其它条（没有"整批失败"这种状态）。
+     * 条与条之间由宿主插入 3–9 秒随机间隔（D3 的"随机间隔"，界面与模型都绕不过）。
+     */
+    sendGreetingBatch(input: {
+        items: Array<{
+            jobId: number;
+            text?: string;
+        }>;
+        actor: Actor;
+        guiConfirmed?: boolean;
+    }): Promise<GreetingBatchResultDto>;
     /**
      * 回复一条 HR 消息 —— **高危**（§22.4），走 `message.reply` 闸门，**真的发到平台上**。
      *
@@ -168,14 +195,32 @@ export interface HostRuntime {
      * 投递简历 —— **高危**（§22.4），走 `application.send` 闸门。
      *
      * 与 `pipeline.recordApplication` 的区别：那是"记一笔我投了"，这是**真的投出去**。
-     * `filePath` 省略/null = 用平台内简历（BOSS 求职者网页端只支持这种）。
+     * `resumeFileId` 省略/null = 用平台内简历（BOSS 与智联的网页端都只支持这种）。
      */
     sendApplication(input: {
         jobId: number;
-        filePath?: string | null;
+        /** 关联哪份简历附件（`resume_file.id`）；`null` = 平台内简历。**不接受路径**。 */
+        resumeFileId?: number | null;
         actor: Actor;
         guiConfirmed?: boolean;
+        /** 批量时带整批条数（`checkBatch` 的批量上限靠它判定）。 */
+        batchSize?: number;
     }): Promise<ApplicationSendResult>;
+    /**
+     * 批量投递的**预览**（L4）：逐条给出"能不能投 + 为什么 + 用哪份简历"。只读、无副作用。
+     */
+    previewApplicationBatch(input: {
+        jobIds: number[];
+        resumeFileId: number | null;
+        actor: Actor;
+    }): Promise<ApplicationBatchPlanDto>;
+    /** 批量投递：**逐条过闸门、逐条回执**（不可逆，所以回执带送达状态）。 */
+    sendApplicationBatch(input: {
+        jobIds: number[];
+        resumeFileId: number | null;
+        actor: Actor;
+        guiConfirmed?: boolean;
+    }): Promise<ApplicationBatchResultDto>;
     /** 写插件配置。走 `settings.write` 闸门。 */
     updateSettings(patch: SettingsPatch, actor: Actor, guiConfirmed?: boolean): Promise<SettingsSnapshot>;
     /** 简历服务（版本、定制、附件生成）。 */
@@ -220,6 +265,65 @@ export interface HostRuntime {
     loginStatuses(): LoginStatusDto[];
     startLogin(platformId: string): LoginStatusDto;
     closeTodo(id: number): boolean;
+    /**
+     * D7 的额度读数：每个平台、每个动作今天用了几次、还剩几次。
+     *
+     * ⚠️ 它与**抓取配额**（`PlatformGovernanceDto.todayRuns`）是两回事：那个数的是
+     * "自动跑了几轮采集"，这个数的是"发了几条招呼 / 投了几份 / 回了几条"。
+     * 以前只有前者有读数，所以 U0 的「额度余量」其实一直是抓取配额。
+     *
+     * @param platformId 省略 = 所有已注册平台
+     */
+    guardUsage(platformId?: string): GuardUsageDto;
+    /** 某个平台的适配器配置三层视图（默认 / 覆盖 / 生效）。数据层未就绪时抛 `DATA_UNAVAILABLE`。 */
+    adapterConfig(platformId: string): AdapterConfigDto;
+    /**
+     * 写入适配器配置覆盖并**热替换**适配器（J2：不要求重启插件）。
+     *
+     * `override === null` = 清除覆盖，回到代码默认。
+     */
+    updateAdapterConfig(platformId: string, override: unknown): AdapterConfigDto;
+    /** 磁盘占用（§18.3 P3）：真实文件大小 + 按表 dbstat 占用 + 按类型的行数。 */
+    storage(): StorageUsageDto;
+    /**
+     * 清理**预览**（§18.3 P2，P0）：**只读、无副作用**，可反复调用。
+     *
+     * 它给出"将删多少行 / 预计释放多少"，并如实说明"只有 VACUUM 之后文件才会变小"。
+     */
+    cleanupPreview(): CleanupPlanDto;
+    /**
+     * 执行清理。**调用方必须先确认**（路由层两段式）且**必须持有租约**。
+     *
+     * @param only 只清这几类；缺省 = 预览里所有 `willRun` 的项
+     */
+    runCleanup(only?: readonly string[]): CleanupResultDto;
+    /** 导出到**内存**（HTTP 直接回给浏览器下载）。 */
+    exportData(format: DataExportFormat): {
+        fileName: string;
+        bytes: Uint8Array;
+        entries: DataExportEntryDto[];
+        note: string;
+    };
+    /**
+     * 导出并**落盘**到 `<dataDir>/exports/`（模型工具用：对话里没法接二进制流）。
+     *
+     * 为什么限定这个目录：与 `system/reveal` 同一条纪律 —— 不接受任意路径，
+     * 于是"导出"永远不会写到你没预期的地方。
+     */
+    saveExport(format: DataExportFormat): {
+        fileName: string;
+        path: string;
+        bytes: number;
+        entries: DataExportEntryDto[];
+        note: string;
+    };
+    /** 读 `exports/` 下的一个文件（模型工具导入用）；只认文件名，不认路径。 */
+    readExportFile(fileName: string): string;
+    /** 导入岗位（CSV / JSON）。幂等。 */
+    importJobs(input: {
+        format: 'csv' | 'json';
+        content: string;
+    }): DataImportResultDto;
     store(): Store | undefined;
     jobs(): JobService | undefined;
     companies(): CompanyService | undefined;

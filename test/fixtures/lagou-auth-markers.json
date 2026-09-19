@@ -1,0 +1,53 @@
+{
+  "anonymous": {
+    "url": "https://www.lagou.com/jobs/list_Java?city=%E5%8C%97%E4%BA%AC&px=new",
+    "hits": [
+      {
+        "selector": "a[href*=\"passport\"]",
+        "count": 9,
+        "samples": [
+          {
+            "tag": "a",
+            "cls": "forgot_pwd"
+          },
+          {
+            "tag": "a",
+            "cls": "weibo"
+          },
+          {
+            "tag": "a",
+            "cls": "wechat"
+          }
+        ]
+      },
+      {
+        "selector": ".login",
+        "count": 1,
+        "samples": [
+          {
+            "tag": "a",
+            "cls": "login"
+          }
+        ]
+      }
+    ]
+  },
+  "candidates": [
+    "a[href*=\"login\"]",
+    "a[href*=\"passport\"]",
+    "a[href*=\"logout\"]",
+    ".login",
+    ".header-login",
+    ".unlogin",
+    ".not-login",
+    ".user-nav",
+    ".user-info",
+    ".header-user",
+    ".nav-user",
+    ".username",
+    ".user-name",
+    ".avatar",
+    "img[class*=\"avatar\"]"
+  ],
+  "updatedAt": "2026-09-19T09:51:45.818Z"
+}

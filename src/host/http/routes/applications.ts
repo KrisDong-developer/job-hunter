@@ -29,11 +29,10 @@ export async function deliver(ctx: RouteContext): Promise<RouteResult | undefine
     if (!Number.isFinite(jobId) || jobId <= 0) {
       throw new DomainError('INVALID_INPUT', 'jobId 必须是正整数')
     }
-    const filePath = typeof body['filePath'] === 'string' && body['filePath'].trim() !== '' ? body['filePath'] : null
     // `confirm: true` 是**界面上的用户**这一次的确认（两段式 HTTP）；模型工具没有这条路径
     const result = await runtime.sendApplication({
       jobId,
-      filePath,
+      resumeFileId: readResumeFileId(body['resumeFileId']),
       actor: 'gui',
       ...(body['confirm'] === true ? { guiConfirmed: true } : {}),
     })
@@ -41,6 +40,86 @@ export async function deliver(ctx: RouteContext): Promise<RouteResult | undefine
   }
 
   return undefined
+}
+
+/**
+ * 批量投递（L4，两段式：先预览再带 `confirm` 发送）。
+ *
+ * 与 `/greeting/send-batch` 同构，但**载荷更薄**：打招呼每条都能改正文，所以那边收 `items`；
+ * 投递是整批共用一份简历（`resumeFileId`），所以这里收 `jobIds`。
+ */
+export async function deliverBatch(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+
+  // ── 预览：只读、无副作用 ─────────────────────────────────────────
+  if (
+    segments.length === 3 &&
+    segments[0] === 'applications' &&
+    segments[1] === 'deliver-batch' &&
+    segments[2] === 'preview'
+  ) {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '批量投递预览只支持 POST')
+    requireData(runtime)
+    const body = await readObject(req)
+    const plan = await runtime.previewApplicationBatch({
+      jobIds: readJobIds(body['jobIds']),
+      resumeFileId: readResumeFileId(body['resumeFileId']),
+      actor: 'gui',
+    })
+    return json(200, { ok: true, plan })
+  }
+
+  // ── 发送：逐条过闸门、逐条回执 ───────────────────────────────────
+  if (segments.length === 2 && segments[0] === 'applications' && segments[1] === 'deliver-batch') {
+    if (method !== 'POST') throw new DomainError('INVALID_INPUT', '批量投递只支持 POST')
+    requireData(runtime)
+    const body = await readObject(req)
+    if (body['confirm'] !== true) {
+      throw new DomainError('INVALID_INPUT', '批量投递需要显式确认', {
+        hint:
+          '先调 POST /applications/deliver-batch/preview，把"哪几条能投、为什么不能、用哪版简历"' +
+          '给用户看过，用户同意后再带 confirm: true 重发（界面只提交用户保留的那些岗位）。',
+      })
+    }
+    const result = await runtime.sendApplicationBatch({
+      jobIds: readJobIds(body['jobIds']),
+      resumeFileId: readResumeFileId(body['resumeFileId']),
+      actor: 'gui',
+      guiConfirmed: true,
+    })
+    return json(200, { ok: true, result })
+  }
+
+  return undefined
+}
+
+/**
+ * 简历附件 id（可选）——`null` = 用平台内简历。
+ *
+ * 刻意**只认正整数**。上一版这里收的是 `filePath`（任意字符串路径，**零校验**），
+ * 而两个实现了投递的适配器都只吃平台内简历：用户填了也只会失败，
+ * 同时白留一个"任意路径"的口子。路径现在由宿主从 id 查出来
+ * （`runtime/actions.ts` 的 `resolveResumeOf`），外部只能给 id。
+ */
+function readResumeFileId(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === '') return null
+  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw <= 0) {
+    throw new DomainError('INVALID_INPUT', 'resumeFileId 必须是正整数（简历附件的 id），省略表示用平台内简历', {
+      hint: '附件 id 在 GET /resumes 的 files[].id 里。这里**不接受文件路径**。',
+    })
+  }
+  return raw
+}
+
+/** 非空的正整数岗位 id 数组。 */
+function readJobIds(raw: unknown): number[] {
+  const ids = Array.isArray(raw)
+    ? raw.filter((item): item is number => typeof item === 'number' && Number.isInteger(item) && item > 0)
+    : []
+  if (ids.length === 0) {
+    throw new DomainError('INVALID_INPUT', 'jobIds 必须是非空的正整数数组')
+  }
+  return ids
 }
 
 // ── P7：投递流水线（§4.7 / §13 U5）────────────────────────────────

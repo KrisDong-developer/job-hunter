@@ -153,7 +153,9 @@ npm test
 
 > **探针覆盖**：10 个适配器现在都有至少一个在线探针（`package.json` 里的 `probe:*`）——
 > 浏览器型：`probe:51job` · `probe:liepin` · `probe:zhipin` · `probe:lagou` · `probe:guopin`
-> · `probe:zhaopin-login`；纯 HTTP 型：`probe:sinojobs` · `probe:hiredchina` · `probe:indeed` · `probe:waiqi`。
+> · `probe:zhaopin-login` · `probe:liepin-chat`（猎聘**登录态**走查：hover 沟通入口 / 点侧边栏
+> 「我的沟通」抽屉 / 采 IM 接口；全程只读，沟通与投递入口按语义护栏默认不点）
+> · `probe:zhipin-chat` · `probe:zhaopin-anon`；纯 HTTP 型：`probe:sinojobs` · `probe:hiredchina` · `probe:indeed` · `probe:waiqi`。
 > 它们都是**手动跑一次**的校准工具（§14），产物落到仓库根的 `.probe-<平台>-capture/`
 > （已被 `.gitignore` 的 `.probe*` 忽略），**刻意不覆盖 `test/fixtures/` 里被用例钉住的夹具** ——
 > 那些文件的首条记录标题/条数/源地址被硬编码断言，静默替换只会让测试红在与本次校准无关的地方。
@@ -273,14 +275,28 @@ npm test
     绝不把乱码写库（下游会把它当"读到的薪资"去排序/展示）。**薪资数值目前拿不到**。
     适配器**不**把 `salary_raw` 列进必需字段：登录态会静默过期，列进去会让一次会话失效
     把整页记录打成 `pending_repair`（宁可让逐字段健康计数去报警）；
-  - **薪资明文在哪**：`wapi/zpgeek/search/joblist.json` 与 `wapi/zpgeek/job/detail.json` 的
-    `salaryDesc`（如 `"12-20K·13薪"`，无私有区字符）。连接键是接口 `encryptJobId`
-    ↔ 卡片 `href="/job_detail/<id>.html"` 的 id（实测 15/15 完全重合）；接口另有
+  - **薪资明文在哪（2026-09-19 已接上）**：`wapi/zpgeek/search/joblist.json` 的
+    `zpData.jobList[].salaryDesc`（如 `"12-20K·13薪"`，无私有区字符）。连接键是接口 `encryptJobId`
+    ↔ 卡片 `href="/job_detail/<id>.html"` 的 id（实测 **15/15** 命中）；接口另有
     `jobName`/`brandName`/`cityName`/`jobExperience`/`jobDegree`/`skills`/`welfareList` 等，比 DOM 全。
-    ⚠️ **暂时不能照抄**：`test/fixtures/zhipin-search-api.json` 早期只记了 `url/status/body`，
-    没有 method 与请求参数，而搜索条件不可能只靠 URL 里的 `_=时间戳` 表达。
-    探针现已补记 `method` + `postData` ⇒ **下次跑 `npm run probe:zhipin-login` 就能拿到调用形态**，
-    拿到后即可把列表薪资换成明文（DOM 定结构、接口取字段）。
+    调用形态：**POST + 表单体**（不是 JSON），体形如
+    `page=1&pageSize=15&city=101280600&query=Java&…&scene=1`；而且**只要 cookie + `content-type` 就调得通**
+    （不需要页面那套 `zp_token`/`traceid` —— 实测适配器自建的请求形态直接成功）。
+    落地方式："**DOM 定列表、接口只补薪资**"：`readListPage` 先走 DOM，再把空薪资按 id 回填
+    （`ZhipinConfig.salaryApiEnabled` / `joblistMaxPages`）。**不让接口当主通道**的理由是
+    `sourceUrl` 必须来自搜索页返回的原始 href（BOSS 的 URL 带 `securityId`，重构即被拦），
+    而接口响应里没有现成 href。
+    ⚠️ 纠正一条旧结论：**接口的 `page` 参数是有效的**（站点滚动时自己依次发 page=1,2,3…）；
+    旧结论"只能滚动加载、`&page=2` 无效"说的是**搜索页 URL 的 `page` 参数被 SPA 忽略**，
+    两者不是一回事。适配器的翻页模型没变（`hasNextPage` 仍恒 false、深度仍走 `scrollRounds`）。
+  - **登录态检测（2026-09-19 补）**：只认**结构性属性**，锚点由两份真实快照对比定案 ——
+    已登录 `a[ka="header-username"]`（页头「求职者」下拉）/ 未登录 `a[ka="header-login"]`
+    （命中数分别 0→1 与 1→0）。补它的直接动机：`auth === undefined` 会让
+    `platforms.loginStatus('zhipin')` **抛错**、`account.loggedIn` 恒 false ⇒
+    **打招呼 / 收件箱 / 回复全都实现了，界面入口却永远不亮**。
+    ⚠️ 挑锚点时踩过一个**只有"数子串"才会踩**的坑：`header-login-btn` 在**登录态**页面里也出现
+    4 次 —— 全部是 `<style>` 块里的 CSS 规则文本（`#header .header-login-btn{...}`）。
+    按子串统计会以为"两边都有"从而选错锚点；**选择器匹配的是元素**，用属性选择器天然避开。
   - **批量打开 >6 个 tab 要错开 1–2 秒**，同时开一批会触发风控；
   - 打招呼平台侧日上限约 150（get_jobs README 经验值）。
   - **求职者端的打招呼 / 收件箱 / 发简历（2026-09-18 落地，选择器来自 BossHunter 的
@@ -425,6 +441,143 @@ npm test
       `section.love-job-container`（「猜你喜欢」推荐位），第一个命中是**别家公司**的岗位卡，
       会静默把公司名写错（回归测试固化）；
   - 聊天按钮需要 **hover 后才出现**（get_jobs 实测）；点击前做鼠标像素微调可显著降低风控命中率。
+  - **2026-09-19 登录态走查（`npm run probe:liepin-chat`，`stable` 之后第一次看登录态）**：
+    - ⚠️ **收件箱入口不是 `<a>`** —— 它是页头侧边栏的 `#im-c-entry`，里面是
+      `.im-ui-basic-entry`（气泡图标，**文本为空**）+ `.im-ui-basic-entry-title`（文案是
+      **「我的沟通」**，不是「消息」）。点击后开 **AntD 抽屉**（`.ant-im-drawer.ant-im-drawer-right`，
+      不换页、不新开 tab）。**按 href 找（命中 0）或按文案「消息」找（命中 0）都会失败** ——
+      两条都踩过，只能按选择器定位 + 真鼠标点（`el.click()` 的 `isTrusted=false` 在这里同样会被识破）；
+    - 沟通 / 投递入口（详情页）：沟通 `a.btn-main` / `a.btn-chat`（文案「聊一聊」），
+      投递 `a.btn-minor`（文案「投简历」）。**必须排除侧边栏的「我的沟通」/「我的投递」**
+      （`.sider-bar-item-box`）—— 按"最内层 + 文档顺序"取第一个命中的话会取到它们，白采一轮；
+    - **详情页上 `CONFIG.selectors.card` 会命中 ~20 张卡**：详情页的「猜你喜欢」复用同一套
+      `job-card-pc-container` / `job-detail-job-info` 组件（与 §上面公司名那个坑同源）。
+      ⇒ 任何"数卡片判断列表渲染"的逻辑都必须限定在搜索页上下文；
+    - **登录检测（2026-09-19 落地）**：只认**结构性标记** —— 由两份真实快照对比定案
+      （匿名夹具 `test/fixtures/liepin-search.html` vs 登录态捕获）：
+      `#header-quick-menu-user-info`（已登录才有）/ `.header-quick-menu-not-login-item`（未登录才有）。
+      ⚠️ 有个**一字之差**的坑：未登录页里存在的是 **`id="header-quick-menu-login"`（登录链接那个 span）**，
+      而登录页里是 **`class="header-quick-menu-login"`（页头快捷菜单容器）** —— id 与 class 含义相反。
+      ⚠️ 也不能用文案判（「登录/注册」匿名页出现 2 次、登录页 0 次，看着能用，但文案一改就静默失效）。
+      两个标记都不在 ⇒ 页面函数如实返回 `null`（不知道），适配器层按"未登录"兜底（保守）。
+      顺带定谳 **`authRequirement` 三格 = `none` / `none` / `required`**：`detail=none` 由**同一批未登录夹具**
+      证明（`liepin-detail.html` 带未登录标记，而 JD 完整 >200 字、薪资是**明文** `15-30k·14薪`）；
+      此前写 `required` 是照抄"详情页要 securityId"的印象，与自家夹具矛盾 —— 现由用例钉住。
+      补 `auth` 的直接动机：`auth === undefined` 会让 `platforms.loginStatus` **抛错**、
+      `account.loggedIn` 恒 false ⇒ 界面上所有"需要登录"的入口永远不亮；
+    - **城市码表已补齐（370 个，2026-09-19）**：`criteria` 的城市维度过去**只有「全国」**。
+      码表的来源不是第三方表、也不是"从 URL 抄"，而是**页面自己的城市弹窗**：
+      点开筛选区的 `#filter-option-other-city`（「其他」）→ `.ant-modal.city-modal`「请选择城市」，
+      左列省级（`data-code` 3 位码）/ 右列市级（`id="code_<6 位>"`），**逐省点开**把市读下来。
+      结果：**31 个省里 27 个采到市，共 366 条**，加上 4 个直辖市（它们本身就是市级码
+      010/020/030/040，弹窗里点开是 0 个市）⇒ **370 个城市码**；
+      原始数据 + 采样方式 + 坑都落在 `test/fixtures/liepin-city-codes.json`。
+      ⚠️ 采样时踩的三个坑（都已写进探针注释，避免下次重踩）：
+      1. **市级项的码在 `id="code_050020"` 上，没有 `data-code`**（只有省级有）——
+         按 `li[data-code]` 找市级项会得到 0，看起来像"点省没用"；
+      2. **市级那一列不在 `.ant-modal.city-modal` 里**（在兄弟容器 `.data-container`）——
+         查询范围限死在 modal 内就永远读不到它；
+      3. **定位某省时必须"只定位它一个、立刻点"** —— 一次批量 `scrollIntoView` 会把先算好的
+         坐标作废（实测：点北京却显示贵州、点上海显示云南）。所以探针里加了一条
+         **"点的省"与"列头显示的省"必须一致**的校验：不一致就丢弃，
+         否则会把上一个省的城市安静地记到这个省头上（这份表要写进配置）。
+      ⇒ 接线时另外两件事：**跨平台城市目录 `CITY_DIRECTORY` 从 52 扩到 373**（采到的市必须进目录，
+      否则 `test/platform/cities.test.ts` 的"码表不许与目录脱节"会红），并把 `liepin` 纳入那条检查；
+      目录扩容后**两个用例的例子要换**（「拉萨」进了目录 —— 改用县级市「义乌」「昆山」当"目录外"的例子）。
+    - IM 是**接口驱动的微前端**（`feim.liepin.com/lp-manifest.json` → `lp_fe_im_pc`）：
+      - 会话列表 `POST api-c.liepin.com/api/com.liepin.im.c.contact.get-contact-list`，
+        表单体 `imUserType=0&imId=<可空>&imApp=1&pageSize=30&curPage=0`（**`curPage` 0 起**）；
+        响应 `{flag:1,data:{list,pageSize,curPage,totalCount,hasNext,hasMore}}`；
+      - **`imId` 不必自己去找**：它来自 cookie `imId_0`（**非 httpOnly，页面 JS 可见**），
+        但实测**空 `imId`、甚至完全不传 `imId` 参数都调得通**（服务端靠 cookie 认人）⇒ 适配器不必解析它；
+      - ⚠️ **必须带上页面那套请求头，否则会得到"假失败"**：只带 `content-type` 时，
+        **连"带真实 imId"的对照组都返回 `{"flag":0,"code":"-1400","msg":"出错了（400）！"}`（HTTP 200）**。
+        ⇒ 做这类"接口能不能调"的实验**必须带对照组**，不然会把"我的请求形态不对"误读成"接口不可用"；
+      - **搜索接口的门槛也在这儿，而且我们自己的适配器就栽在这上面**（2026-09-19 逐组削减定案）：
+        适配器的 `readListPage` 是**双通道**（接口优先、失败**静默**回退 DOM），而接口那条
+        **一度是死代码** —— 当初只带 `content-type`，服务端一律回 `{"flag":0,"code":"-1400"}`（HTTP 200），
+        于是每次都静默回退 DOM，丢掉了接口独有的 `publishedAt`（`refreshTime`）/`industry`/`companySize`。
+        削减实验（一次只动一个变量）的结论：
+        | 请求头 | 结果 |
+        |---|---|
+        | 页面原样（对照组） | `flag=1`，42 条 |
+        | 页面头 + **适配器构造的 body** | `flag=1`，42 条 ⇒ **body 本身没问题**（`ckId` 留空无妨） |
+        | 只有 `content-type`（=修复前的适配器） | ❌ `-1400` |
+        | 六项静态头 + 遥测三项 | `flag=1`，42 条 |
+        | 上面这组**去掉遥测三项** | ❌ `-1400` ⇒ **门是 `x-fscp-*` 这一族的完整性**（少一项就全废） |
+        | 再去掉 `x-xsrf-token` | `flag=1` ⇒ **xsrf 不需要**（不必读任何 cookie） |
+        | 遥测三项换成**自造值** | `flag=1` ⇒ 适配器可以自己造 |
+        ⇒ 落地为 `LIEPIN_API_HEADERS`（六项静态，允许 DB 覆盖：`x-fscp-std-info` 的
+        `client_id: 40108` 与 `x-fscp-version: 1.1` 会随发版变）＋ `fetchListInPage` 现造
+        `x-fscp-trace-id`（UUID）/ `x-fscp-bi-stat`（当前页 URL）/ `x-fscp-fe-version`（**空串，但必须在**）。
+        **修复后在线复验**：`RawJob 42 条 · publishedAt 有值 42 · industry 有值 42`（此前恒为空）。
+        用例「搜索接口请求头」把这份头集钉住（删任何一项都会红）；
+      - ⚠️ `x-fscp-std-info` 的 `client_id: 40108` 与 DOM 里那串 `_40108cpKKS` 类名前缀**同号**
+        （互相印证那是前端应用号）；
+      - 未读数 `im.c.chat.unread-count` → `{count}`；`imbusiness.superchat.get-home-card-v2`
+        → `{companyNum,messageCardVo[]}`；`userId` / `imId` 都出现在 `cresume.get-current-userinfo` 的响应里；
+      - 长连接走 `api-im.liepin.com/api/com.liepin.cbp.socket.get-socket-conf`
+        → `socket-long.liepin.com:443`（wss）⇒ 与智联同类：**发消息走私有 WS，别指望接口化**；
+    - **会话行字段形状**（2026-09-19 拿到 1 行**真实样本**，打招呼成功后才出现）：
+      `{ name, title, company, userTag, photo, photoFrame, homePage, hunterLevel, intentionFlag, id,
+         oppositeUserId, oppositeImId, oppositeImUserType, oppositeRead, quiet, stickStatus, topuser,
+         toptime, sortValue, latestMsgId, latestMsgTime, latestMsgType, latestMsgIsRevoke, unReadCnt,
+         direction, contact, chatType, imId, imUserType, userId, lastPayload }`：
+      - `id` = 招聘者 id，**与 `oppositeUserId`、以及打招呼请求里的 `recruiterId` 三者相等**（可当 join 键）；
+      - `latestMsgTime` 是**毫秒**时间戳；`lastPayload` 是**一个 JSON 字符串**（要再解一层），
+        内层 `bodies[].msg` 才是文案；
+      - ⚠️ **`totalCount` / `pageSize` / `hasNext` / `hasMore` 四项全都不可信**：实测 `list.length = 1`
+        却有 `totalCount = 0`、`pageSize = 0`、`hasNext = hasMore = false`
+        ⇒ **判空只能看 `list` 本身**；翻页也不能靠这几个字段（只剩"本页不满一页即停"这一条）；
+    - **第二批会话样本（2026-09-19 晚些时候，会话数 1 → 2）**：一位猎头**主动**发来消息，
+      这才补上了第一批缺的"真实收发"样本。对比两行：
+      | 行 | `direction` | `unReadCnt` | `lastPayload.ext.extType` | 最后一条是什么 |
+      |---|---|---|---|---|
+      | 我打招呼的（诸女士） | `"0"`（**字符串**） | 0 | `200` | 平台系统提示「我们为您生成了…去使用＞」 |
+      | 猎头主动发来的 | `1`（**数字**） | **1** | `202` | 真实文案「你好，请问考虑新的工作机会吗？…」 |
+      ⇒ 由此新增三条可用事实：
+      1. **`unReadCnt > 0` ⇒ HR 发过未读消息**（"已回复"档）**有了正向样本**；
+      2. **`extType` 区分消息种类**：`200` = 平台系统提示（`clickScheme: lptd://lp/p/autoSayHi`），
+         `202` = **带岗位卡片的真实消息**；
+      3. **岗位信息藏在 `extType:202` 的 `extBody.bizData` 里**（`jobId`/`jobTitle`/`jobCompany`/
+         `jobSalary`/`jobDqName`/`labels`/`publisherImId`）⇒ 下面那条"人维度 vs 岗位维度"的缺口
+         **在"HR 主动联系"这类会话上其实有解**（我发起的会话则要看会话内消息体）。
+      ⚠️ `direction` 的语义**仍然没定**：两个取值（`0`/`1`）与"最后一条消息方向"和
+      "会话由谁发起"两种解释**都吻合**，而且类型还不一致（一个是字符串一个是数字）。
+      两个样本分不清 —— 不许当判据用。
+    - ⚠️ **`readInbox` / `detectStage` 仍然刻意不实现**，卡点是**两条**（都属"没样本/结构不符"，不是技术难）：
+      1. **`direction` 的语义没有定论**（上面那张表）—— 而 `RawInboxMessage.direction`
+         （`'hr' | 'me'`）**只能**由它推出来。虽然"有未读 ⇒ 对方发的"这条可以覆盖一部分，
+         但已读会话的最后一条是谁发的仍判不出来；
+      2. **猎聘 IM 是"人"维度，不是"岗位"维度** —— 会话行里**一个岗位字段都没有**
+         （只有 `id`/`name`/`title`/`company`/`userTag`/`homePage` 这些招聘者与公司信息）。
+         而 `RawInboxMessage.platformJobId` 与按岗位的 `detectStage` 都要"从会话反查到岗位"。
+         猎聘的打招呼是**按岗位**发起的（`open-chat` 带 `jobId` + `recruiterId`），
+         但落成的会话**按人**归并 ⇒ **同一个人招多个岗时，会话与岗位对应关系在收件箱这一层丢失**。
+         补法已找到一半：**HR 主动发来的消息**带 `extType:202` 的岗位卡片（见上），
+         但"我发起"的会话得看会话内消息体 —— 那份数据还没采。
+
+      硬写就是编 —— 与 BOSS 的 `.choose-resume-dialog`（要先有 HR 回复）同类：**卡在账号状态，不卡在技术**。
+    - **打招呼（`sayHello`）的接口契约与门坎**（2026-09-19 实测两次点击，简历完善前后各一次）：
+      - 点详情页 `.btn-main`「聊一聊」触发
+        `POST api-c.liepin.com/api/com.liepin.im.c.chat.open-chat`，表单体
+        `head_id=&ck_id=<搜索页 ck_id>&jobId=<数字 jobId>&jobKind=2&recruiterId=<…>&shieldComp=true`；
+      - ⚠️ `jobId` 是**数字 id**（实测 `85463261`），**不是**详情页 URL 里那个 id
+        （`/job/1985463261.shtml`）—— 数字 id 出现在列表卡片的埋点参数
+        `pgRef=…job_listcard%402_85463261%3A1` 里；`ck_id` 来自搜索页，`recruiterId` 只在详情页上下文里有；
+      - **门坎 = 简历完整度**：没完善时返回 `{"flag":0,"code":"30011","msg":"简历完整度不足"}`
+        并弹 `.complete-resume-modal`（「完善简历…立即完善简历」）；**完善后同一次点击返回 `flag:1`（已受理）**。
+        **HTTP 200 + `flag:0`** ⇒ 判成功必须看 `flag`/`code`，**只看状态码会把失败当成功**；
+      - ⚠️ **猎聘不会替你发消息**（与 BOSS 相反）：`flag:1` 之后会话里最后一条是**平台系统消息**
+        （`lastPayload` 内层 `ext.extType: 200` / `bizType: "1"` / `clickScheme: "lptd://lp/p/autoSayHi"`，
+        文案「我们为您生成了合适的打招呼语，去使用＞」）⇒ 平台只是**生成一句招呼语建议**，
+        那句话到底发没发出去取决于用户点不点「去使用」。
+        所以猎聘**不该**写 `greetingSideEffect`（别照抄 BOSS 那句"平台会先替你发一句"）；
+      - ⚠️ **「聊一聊」→「继续聊」是乐观假象**：点击后按钮文案**即使被平台拒绝也立刻翻**，
+        刷新后回到「聊一聊」⇒ **按钮文案不能当"已联系"的阶段判据**（一个很诱人但会撒谎的启发式）。
+    - 投递相关的输入（`sendResume` 仍未实现）：`cresume.get-resume-ids` 给 `defaultResId`
+      （平台内简历 id）、`cbusi.applyprior.get-info-for-jobdetail` 是「投递优先」付费位
+      （实测 `status:false`）；猎聘投递**有没有二级确认未实测**。
   - 详情补抓的边界（`crawl.ts` 的 `fetchNewJobDetails`）：**只补本轮新增**（老岗位 JD 已取过）、
     每轮上限 `DETAIL_FETCH_MAX_PER_ROUND=20`、与列表同一个单轮预算（到点即停）、
     命中风控**即整轮停手**（记 `failed` + 平台级信号，绝不硬闯）。

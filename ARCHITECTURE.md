@@ -1010,7 +1010,12 @@ const sameOrigin = (req) => {
 | POST | `/jobs/:id/mark` | 收藏/忽略/标签 |
 | POST | `/jobs/:id/greeting/draft` | 生成话术（不发送） |
 | POST | `/greeting/send` | **高危 → guard** |
-| POST | `/application/send` | **高危 → guard** |
+| POST | `/greeting/send-batch/preview` | 批量打招呼**预览**（D3）：只读、无副作用，逐条给出"能不能发 + 为什么 + 将发出什么" |
+| POST | `/greeting/send-batch` | 批量打招呼（D3）：**逐条过闸门、逐条回执**（需 `confirm: true`；一条失败不影响其它条） |
+| POST | `/applications` | 记一笔投递（**不碰平台**）：渠道、用了哪版简历 |
+| POST | `/applications/deliver` | **真的把简历投出去** → **高危 → guard**（两段式确认）。收 `resumeFileId`（简历附件 id），**不接受文件路径** |
+| POST | `/applications/deliver-batch/preview` | 批量投递**预览**（L4）：只读、无副作用，逐条给出"能不能投 + 为什么 + 用哪份简历" |
+| POST | `/applications/deliver-batch` | 批量投递（L4）：**逐条过闸门、逐条回执**（需 `confirm: true`；回执带送达状态，投递不可逆） |
 | GET/POST/PATCH | `/plans` | 搜索方案与定时 |
 | POST | `/plans/:id/run` | 手动触发抓取 |
 | GET | `/crawl/runs` `/crawl/status` | 运行历史与健康 |

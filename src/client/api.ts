@@ -8,6 +8,7 @@ import type {
   CampusStage,
   ContactStage,
   CoverLetterLanguage,
+  DeliveryState,
   InterviewKind,
   InterviewState,
   MessageDirection,
@@ -30,8 +31,15 @@ import type {
   DataExportFormat,
   DataImportResultDto,
   DeadlineDto,
+  ApplicationBatchItemDto,
+  ApplicationBatchPlanDto,
+  ApplicationBatchReceiptDto,
+  ApplicationBatchResultDto,
   FollowUpDto,
   FunnelDto,
+  GreetingBatchPlanDto,
+  GreetingBatchReceiptDto,
+  GreetingBatchResultDto,
   GreetingDto,
   GuardUsageDto,
   InboxDto,
@@ -660,6 +668,39 @@ export async function draftGreeting(
 }
 
 /**
+ * 批量打招呼的**预览**（D3 / U1）：哪些条能发、为什么不能、将发出什么。
+ *
+ * **只读**：可以放心在打开弹窗时调一次。它只为"能发"的条目生成话术 ——
+ * 注定发不出去的岗位不花模型调用。
+ */
+export async function previewGreetingBatch(jobIds: number[]): Promise<GreetingBatchPlanDto> {
+  const result = await request<{ ok: boolean; plan: GreetingBatchPlanDto }>(
+    '/greeting/send-batch/preview',
+    { method: 'POST', body: JSON.stringify({ jobIds }) },
+  )
+  return result.plan
+}
+
+/**
+ * 批量打招呼：**一次确认、分批发送、逐条回执**。
+ *
+ * `items` 里的 `text` 来自预览（用户看过或改过的那一段）—— 不传就会在发送那一刻重新生成，
+ * 那样"用户确认的"与"实际发出的"可能不是同一段文字。
+ *
+ * 超过 `batchMax` 时宿主会拒绝（400）：调用方按 `batchMax` 自行分批，
+ * 因为每一条都要开页面发送，一次请求塞太多会长时间不返回。
+ */
+export async function sendGreetingBatch(
+  items: Array<{ jobId: number; text?: string }>,
+): Promise<GreetingBatchResultDto> {
+  const result = await request<{ ok: boolean; result: GreetingBatchResultDto }>('/greeting/send-batch', {
+    method: 'POST',
+    body: JSON.stringify({ confirm: true, items }),
+  })
+  return result.result
+}
+
+/**
  * 「高危动作需要用户二次确认」的客户端错误。
  *
  * 宿主对危险操作采用**两段式确认**协议：第一次请求不带确认标志时，宿主返回
@@ -974,21 +1015,41 @@ export async function probeContactStage(jobId: number): Promise<{
 }
 
 /**
- * 投递简历：**真的用适配器把简历发出去**（与 `createApplication` 的"记一笔"不同）。
+ * 投递简历：**真的用适配器把简历投出去**（与 `createApplication` 的"记一笔"不同）。
  *
  * 高危，两段式确认：不带 `confirm` 时宿主抛 `NEEDS_CONFIRM`，这里翻译成
  * `NeedsConfirmError`，界面显示 `confirmText` 后再带 `confirm: true` 重发。
+ *
+ * `resumeFileId` 是这次投递**关联**的本地简历附件（用于记录与归因），不是"上传这个文件"——
+ * 目前 BOSS 与智联都只吃平台上已有的那份简历。直接传**文件路径是不允许的**
+ * （宿主只认 id，路径由它自己从库里查）。
  */
 export async function deliverApplication(input: {
   jobId: number
-  filePath?: string | null
+  resumeFileId?: number | null
   confirm?: boolean
-}): Promise<Record<string, unknown>> {
+}): Promise<{
+  jobId: number
+  platformId: string
+  company: string
+  title: string
+  sentAt: string
+  delivery: DeliveryState
+  detail?: string
+}> {
   try {
-    const result = await request<{ ok: boolean; result: Record<string, unknown> }>(
-      '/applications/deliver',
-      { method: 'POST', body: JSON.stringify(input) },
-    )
+    const result = await request<{
+      ok: boolean
+      result: {
+        jobId: number
+        platformId: string
+        company: string
+        title: string
+        sentAt: string
+        delivery: DeliveryState
+        detail?: string
+      }
+    }>('/applications/deliver', { method: 'POST', body: JSON.stringify(input) })
     return result.result
   } catch (error) {
     if (error instanceof ApiError && error.code === 'NEEDS_CONFIRM') {
@@ -999,6 +1060,42 @@ export async function deliverApplication(input: {
     }
     throw error
   }
+}
+
+/**
+ * 批量投递的**预览**（L4）：哪些条能投、为什么不能、用哪份简历。
+ *
+ * **只读**：可以放心在打开弹窗时调一次。`resumeFileId` 省略/null = 用平台内简历。
+ */
+export async function previewApplicationBatch(
+  jobIds: number[],
+  resumeFileId: number | null,
+): Promise<ApplicationBatchPlanDto> {
+  const result = await request<{ ok: boolean; plan: ApplicationBatchPlanDto }>(
+    '/applications/deliver-batch/preview',
+    { method: 'POST', body: JSON.stringify({ jobIds, resumeFileId }) },
+  )
+  return result.plan
+}
+
+/**
+ * 批量投递：**一次确认、分批投递、逐条回执**。
+ *
+ * 超过 `batchMax` 时宿主会拒绝（400）：调用方按 `batchMax` 自行分批，
+ * 因为每一条都要开平台页面点「投递」，一次请求塞太多会长时间不返回。
+ *
+ * ⚠️ 投递**不可逆**：回执里 `delivery` 不是 `delivered` 的那些（尤其 `pending`）
+ * 必须提示用户去平台上核对，而不是直接重投。
+ */
+export async function sendApplicationBatch(
+  jobIds: number[],
+  resumeFileId: number | null,
+): Promise<ApplicationBatchResultDto> {
+  const result = await request<{ ok: boolean; result: ApplicationBatchResultDto }>(
+    '/applications/deliver-batch',
+    { method: 'POST', body: JSON.stringify({ confirm: true, jobIds, resumeFileId }) },
+  )
+  return result.result
 }
 
 export async function advanceApplication(input: {
@@ -1402,10 +1499,17 @@ export async function fetchGuardUsage(platformId?: string, signal?: AbortSignal)
 // ── 数据保留、清理与可携带性（§18 / J8）────────────────────────
 
 export type {
+  ApplicationBatchItemDto,
+  ApplicationBatchPlanDto,
+  ApplicationBatchReceiptDto,
+  ApplicationBatchResultDto,
   CleanupPlanDto,
   CleanupResultDto,
   DataExportFormat,
   DataImportResultDto,
+  GreetingBatchPlanDto,
+  GreetingBatchReceiptDto,
+  GreetingBatchResultDto,
   RetentionPolicy,
   StorageUsageDto,
 }
