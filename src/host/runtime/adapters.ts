@@ -19,16 +19,24 @@
  * 否则很容易把"刻意保守"当成"没写完"。更细的锚点与实测记录在各适配器文件头。
  */
 import { PLUGIN_ID, REQUEST_DELAY_MAX_MS, REQUEST_DELAY_MIN_MS } from '../../shared/constants.js'
-import { createFiftyOneAdapter, mergeFiftyOneConfig } from '../platform/adapters/fiftyone-job.js'
-import { createGuopinAdapter, mergeGuopinConfig } from '../platform/adapters/guopin.js'
-import { createHiredChinaAdapter, mergeHiredChinaConfig } from '../platform/adapters/hiredchina.js'
-import { createIndeedAdapter, mergeIndeedConfig } from '../platform/adapters/indeed.js'
-import { createLagouAdapter, mergeLagouConfig } from '../platform/adapters/lagou.js'
-import { createLiepinAdapter, mergeLiepinConfig } from '../platform/adapters/liepin.js'
-import { createSinoJobsAdapter, mergeSinoJobsConfig } from '../platform/adapters/sinojobs.js'
-import { createWaiqiAdapter, mergeWaiqiConfig } from '../platform/adapters/waiqi-job.js'
-import { createZhaopinAdapter, mergeZhaopinConfig } from '../platform/adapters/zhaopin.js'
-import { createZhipinAdapter, mergeZhipinConfig } from '../platform/adapters/zhipin.js'
+import {
+  createFiftyOneAdapter,
+  DEFAULT_FIFTYONE_CONFIG,
+  mergeFiftyOneConfig,
+} from '../platform/adapters/fiftyone-job.js'
+import { createGuopinAdapter, DEFAULT_GUOPIN_CONFIG, mergeGuopinConfig } from '../platform/adapters/guopin.js'
+import {
+  createHiredChinaAdapter,
+  DEFAULT_HIREDCHINA_CONFIG,
+  mergeHiredChinaConfig,
+} from '../platform/adapters/hiredchina.js'
+import { createIndeedAdapter, DEFAULT_INDEED_CONFIG, mergeIndeedConfig } from '../platform/adapters/indeed.js'
+import { createLagouAdapter, DEFAULT_LAGOU_CONFIG, mergeLagouConfig } from '../platform/adapters/lagou.js'
+import { createLiepinAdapter, DEFAULT_LIEPIN_CONFIG, mergeLiepinConfig } from '../platform/adapters/liepin.js'
+import { createSinoJobsAdapter, DEFAULT_SINOJOBS_CONFIG, mergeSinoJobsConfig } from '../platform/adapters/sinojobs.js'
+import { createWaiqiAdapter, DEFAULT_WAIQI_CONFIG, mergeWaiqiConfig } from '../platform/adapters/waiqi-job.js'
+import { createZhaopinAdapter, DEFAULT_ZHAOPIN_CONFIG, mergeZhaopinConfig } from '../platform/adapters/zhaopin.js'
+import { createZhipinAdapter, DEFAULT_ZHIPIN_CONFIG, mergeZhipinConfig } from '../platform/adapters/zhipin.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import type { SiteAdapter } from '../platform/types.js'
 import type { Store } from '../store/store.js'
@@ -45,6 +53,18 @@ export interface AdapterSpec {
   id: string
   /** 用 DB 里那份覆盖（可能为 undefined）构造适配器。 */
   build: (override: unknown, delayRangeMs: [number, number]) => SiteAdapter
+  /**
+   * 配置的两层视图（J2 / `GET|PUT /platforms/:id/adapter-config`）。
+   *
+   * `defaults` = 代码默认（界面用来对照"哪些是覆盖来的"）；
+   * `merge` **必须与 `build` 内部用的是同一个函数** —— 否则界面上看到的"生效值"
+   * 与适配器实际拿到的不是同一份，而那种不一致比不显示更糟
+   * （用户会照着错的生效值去判断选择器改没改对）。
+   */
+  config: {
+    defaults: unknown
+    merge: (override: unknown) => unknown
+  }
   /** 没有 DB 覆盖时要额外说的一句话（拼在"配置来源"后面）。 */
   noOverrideNote?: string
 }
@@ -60,6 +80,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: '51job',
     build: (override, delayRangeMs) =>
       createFiftyOneAdapter({ config: mergeFiftyOneConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_FIFTYONE_CONFIG, merge: (override) => mergeFiftyOneConfig(override) },
   },
 
   // 拉勾（lagou.com）：列表公开可爬，但被 WAF 滑块挡门（antiBot=high）——
@@ -69,6 +90,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'lagou',
     build: (override, delayRangeMs) =>
       createLagouAdapter({ config: mergeLagouConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_LAGOU_CONFIG, merge: (override) => mergeLagouConfig(override) },
   },
 
   // 神仙外企（waiqi.com）：列表走接口、DOM 不承载岗位数据 —— 详见适配器文件头。
@@ -76,6 +98,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'waiqi',
     build: (override, delayRangeMs) =>
       createWaiqiAdapter({ config: mergeWaiqiConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_WAIQI_CONFIG, merge: (override) => mergeWaiqiConfig(override) },
   },
 
   // 智联招聘（zhaopin.com）：搜索页是 /sou/jl<城市码>，**不是** /jobs?jl= 那条老路由 ——
@@ -84,6 +107,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'zhaopin',
     build: (override, delayRangeMs) =>
       createZhaopinAdapter({ config: mergeZhaopinConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_ZHAOPIN_CONFIG, merge: (override) => mergeZhaopinConfig(override) },
   },
 
   // 猎聘（liepin.com）：风控最强（检测"CDP 控制页面"本身）—— 依赖 D-17a
@@ -93,6 +117,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'liepin',
     build: (override, delayRangeMs) =>
       createLiepinAdapter({ config: mergeLiepinConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_LIEPIN_CONFIG, merge: (override) => mergeLiepinConfig(override) },
   },
 
   // BOSS 直聘（zhipin.com）：与猎聘同路线（D-17a 三件套）。2026-09-18 夹具校准：
@@ -102,6 +127,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'zhipin',
     build: (override, delayRangeMs) =>
       createZhipinAdapter({ config: mergeZhipinConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_ZHIPIN_CONFIG, merge: (override) => mergeZhipinConfig(override) },
   },
 
   // Indeed（cn.indeed.com）：⚠️ 中国大陆站 2022 起停运，2026-09-18 实测搜索入口
@@ -112,6 +138,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'indeed',
     build: (override, delayRangeMs) =>
       createIndeedAdapter({ config: mergeIndeedConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_INDEED_CONFIG, merge: (override) => mergeIndeedConfig(override) },
     noOverrideNote: '⚠️ 中国大陆站已停运，默认 host 不可用',
   },
 
@@ -122,6 +149,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'guopin',
     build: (override, delayRangeMs) =>
       createGuopinAdapter({ config: mergeGuopinConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_GUOPIN_CONFIG, merge: (override) => mergeGuopinConfig(override) },
   },
 
   // HiredChina（hiredchina.com）：面向在华外国人的招聘平台（eChinacities 同源）。
@@ -133,6 +161,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'hiredchina',
     build: (override, delayRangeMs) =>
       createHiredChinaAdapter({ config: mergeHiredChinaConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_HIREDCHINA_CONFIG, merge: (override) => mergeHiredChinaConfig(override) },
   },
 
   // SinoJobs 中欧招聘（sinojobs.com.cn）：中欧双向求职平台，岗位多为德企/欧洲企业在华
@@ -142,6 +171,7 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     id: 'sinojobs',
     build: (override, delayRangeMs) =>
       createSinoJobsAdapter({ config: mergeSinoJobsConfig(override), delayRangeMs }),
+    config: { defaults: DEFAULT_SINOJOBS_CONFIG, merge: (override) => mergeSinoJobsConfig(override) },
   },
 ]
 
@@ -151,6 +181,18 @@ export interface RegisterAdaptersOptions {
   clock: Clock
   logger?: AdapterLogger
 }
+
+/** 适配器配置覆盖在 `setting` 表里的键（ADR-19：DB 为权威）。 */
+export const ADAPTER_CONFIG_KEY = 'adapter-config'
+
+/**
+ * 一份配置覆盖的字符上限。
+ *
+ * 覆盖的语义是"只写要改的那几个键"（`mergeAdapterConfig` 会把没写的沿用默认值），
+ * 所以正常值是几百字符。给一个上界是为了让"把整份配置复制进来"这种用法
+ * **当场被拒**，而不是在库里悄悄长出一团没人看得懂、也没人敢删的 JSON。
+ */
+export const ADAPTER_CONFIG_MAX_CHARS = 64_000
 
 /**
  * 按 `ADAPTER_SPECS` 注册全部适配器，并顺带登记平台实体。
@@ -165,7 +207,7 @@ export function registerAdapters(options: RegisterAdaptersOptions): void {
 
   for (const spec of ADAPTER_SPECS) {
     // 适配器配置以 DB 为权威（ADR-19）：DB 覆盖合并到代码默认值之上
-    const override = store.setting.get<unknown>('adapter-config', 'platform', spec.id)
+    const override = store.setting.get<unknown>(ADAPTER_CONFIG_KEY, 'platform', spec.id)
     const adapter = spec.build(override, delayRangeMs)
     // 表里的 id 要读 DB 覆盖，适配器里的 id 决定注册键 —— 两者不一致会注册到一个
     // 用错配置的平台下，而且不报错。宁可在这里断掉。
@@ -182,4 +224,29 @@ export function registerAdapters(options: RegisterAdaptersOptions): void {
       clock(),
     )
   }
+}
+
+/** 按 id 找注册规格（`GET|PUT /platforms/:id/adapter-config` 用）。 */
+export function adapterSpecOf(id: string): AdapterSpec | undefined {
+  return ADAPTER_SPECS.find((spec) => spec.id === id)
+}
+
+/**
+ * 用一份新的覆盖**重建并热替换**适配器（J2：改完立刻生效，不要求重启插件）。
+ *
+ * 为什么必须重建而不是只写库：适配器的配置是在 `build` 时**快照**进闭包的
+ * （`createXxxAdapter({ config })`），只写库要等下次装配才生效 ——
+ * 而"界面说改好了、实际还是旧选择器"正是 J2 要消灭的那类问题。
+ */
+export function rebuildAdapter(
+  spec: AdapterSpec,
+  override: unknown,
+  registry: AdapterRegistry,
+): SiteAdapter {
+  const adapter = spec.build(override, [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS])
+  if (adapter.id !== spec.id) {
+    throw new Error(`适配器表 id 与实现不符：表里是 ${spec.id}，实际构造出 ${adapter.id}`)
+  }
+  registry.replace(adapter)
+  return adapter
 }

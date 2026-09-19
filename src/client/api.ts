@@ -17,6 +17,7 @@ import type {
   TripartiteState,
 } from '../shared/enums.js'
 import type {
+  AdapterConfigDto,
   AnalyticsFilter,
   ApplicationDto,
   AssessmentDto,
@@ -27,12 +28,16 @@ import type {
   DeadlineDto,
   FollowUpDto,
   FunnelDto,
+  GreetingDto,
+  GuardUsageDto,
   InboxDto,
   InterviewConflictDto,
   InterviewDto,
   InterviewPrepDto,
   InterviewSuggestionDto,
   MessageDto,
+  RepairDto,
+  RepairListDto,
   ReplyDraftDto,
   ResumeCompareDto,
   SalaryBandDto,
@@ -1282,6 +1287,104 @@ export async function fetchGreetingTemplates(
   signal?: AbortSignal,
 ): Promise<{ items: GreetingTemplateDto[] }> {
   return await request<{ items: GreetingTemplateDto[] }>('/greeting/templates', signal === undefined ? {} : { signal })
+}
+
+// ── 接触态 / 打招呼记录（§12.2 / D6）────────────────────────────────
+
+export type { GreetingDto }
+
+/** 人工标记接触态的结果。低危（只写本地库、不碰平台）。 */
+export interface ContactStageUpdateDto {
+  ok: boolean
+  contactStage: ContactStage
+  greetingId: number
+  stageAt: string
+  repliedAt: string | null
+  /** 改之前是什么 —— 界面据此显示"从 X → Y"。 */
+  previousStage: ContactStage
+}
+
+/**
+ * 打招呼记录（D6）。
+ *
+ * 为什么需要它：话术效果对比（D2）要"发了什么 + 用哪套模板 + 结果如何"，
+ * 而这些此前只散在 `/jobs/:id/history` 的事件流里。
+ */
+export async function fetchGreetings(
+  params: { jobId?: number; stage?: ContactStage; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<{ items: GreetingDto[] }> {
+  const query = new URLSearchParams()
+  if (params.jobId !== undefined) query.set('jobId', String(params.jobId))
+  if (params.stage !== undefined) query.set('stage', params.stage)
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  const suffix = query.size === 0 ? '' : `?${query.toString()}`
+  return await request<{ items: GreetingDto[] }>(`/greetings${suffix}`, signal === undefined ? {} : { signal })
+}
+
+/**
+ * 改本地接触态（`to` 见 `MANUAL_CONTACT_STAGES`）。
+ *
+ * ⚠️ 它**不改平台上任何东西**（不改已读、不发消息）—— 只是把"我看到的事实"记下来。
+ * 不传 `confirm`：这不是危险动作（服务端也只过同源校验）。
+ */
+export async function updateContactStage(
+  jobId: number,
+  input: { to: ContactStage; note?: string; evidenceRef?: string },
+): Promise<ContactStageUpdateDto> {
+  return await request<ContactStageUpdateDto>(`/jobs/${String(jobId)}/contact-stage`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+// ── 待修复队列（B13 / J2）───────────────────────────────────────────
+
+export type { AdapterConfigDto, GuardUsageDto, RepairDto, RepairListDto }
+
+export async function fetchRepairs(platformId?: string, signal?: AbortSignal): Promise<RepairListDto> {
+  const suffix = platformId === undefined || platformId === '' ? '' : `?platformId=${encodeURIComponent(platformId)}`
+  return await request<RepairListDto>(`/repairs${suffix}`, signal === undefined ? {} : { signal })
+}
+
+/** 丢弃单条待修复记录（行保留、状态置 discarded，用于留痕）。 */
+export async function discardRepair(id: number): Promise<void> {
+  await request<{ ok: boolean }>(`/repairs/${String(id)}/discard`, { method: 'POST', body: JSON.stringify({}) })
+}
+
+/** 清空某平台的待修复队列（改好选择器、确认新数据正常之后）。返回清掉了几条。 */
+export async function clearRepairs(platformId: string): Promise<number> {
+  const result = await request<{ ok: boolean; cleared: number }>('/repairs/clear', {
+    method: 'POST',
+    body: JSON.stringify({ platformId }),
+  })
+  return result.cleared
+}
+
+// ── 适配器配置覆盖（J2 / ADAPTERS.md §4）─────────────────────────
+
+/** 读三层视图：代码默认 / DB 覆盖 / 实际生效。 */
+export async function fetchAdapterConfig(platformId: string, signal?: AbortSignal): Promise<AdapterConfigDto> {
+  return await request<AdapterConfigDto>(
+    `/platforms/${encodeURIComponent(platformId)}/adapter-config`,
+    signal === undefined ? {} : { signal },
+  )
+}
+
+/** 写入覆盖并**热生效**（宿主会重建适配器）。`override: null` = 清除覆盖。 */
+export async function updateAdapterConfig(platformId: string, override: unknown): Promise<AdapterConfigDto> {
+  const result = await request<{ ok: boolean; config: AdapterConfigDto }>(
+    `/platforms/${encodeURIComponent(platformId)}/adapter-config`,
+    { method: 'PUT', body: JSON.stringify({ override }) },
+  )
+  return result.config
+}
+
+// ── 每日额度读数（D7 / U0「额度余量」）──────────────────────────
+
+export async function fetchGuardUsage(platformId?: string, signal?: AbortSignal): Promise<GuardUsageDto> {
+  const suffix = platformId === undefined || platformId === '' ? '' : `?platformId=${encodeURIComponent(platformId)}`
+  return await request<GuardUsageDto>(`/guard/usage${suffix}`, signal === undefined ? {} : { signal })
 }
 
 // ── P8：校招与海外支线 ───────────────────────────────────────────────

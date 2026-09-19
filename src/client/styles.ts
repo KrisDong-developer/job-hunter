@@ -695,6 +695,8 @@ button.jh-stat:hover{background:var(--dsw-alias-interactive-bg-hover)}
   border-color:var(--dsw-alias-link);box-shadow:0 0 0 3px var(--dsw-alias-state-business-tertiary)}
 .jh-input::placeholder,.jh-textarea::placeholder{color:var(--dsw-alias-label-caption)}
 .jh-input-narrow{max-width:90px}
+/* 卡片标题行里的紧凑下拉：width:100% 只在表单里合理，放进标题行会撑满整行。 */
+.jh-select-inline{width:auto;flex:0 0 auto;max-width:200px;padding:3px 8px;font-size:12px}
 .jh-textarea{resize:vertical;line-height:1.7}
 /* 内联可编辑的标题：平时长得像标题，悬停/聚焦才露出"这里能改" */
 .jh-editable{width:auto;min-width:180px;max-width:320px;font-size:14.5px;font-weight:600;

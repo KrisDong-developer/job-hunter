@@ -6,7 +6,7 @@
  */
 import type { ToolDefinition } from '../../shared/dsh.js'
 import type { JobDto } from '../../shared/dto.js'
-import { JOB_FLAG_LABEL, JOB_STATES, type JobState } from '../../shared/enums.js'
+import { CONTACT_STAGE_LABEL, JOB_FLAG_LABEL, JOB_STATES, type JobState } from '../../shared/enums.js'
 import { JOB_STATE_LABEL } from '../../shared/labels.js'
 import {
   DETAIL_KEYS,
@@ -237,6 +237,17 @@ export function jobsTools(runtime: HostRuntime): ToolDefinition[] {
         lines.push(formatDetailLine(DETAIL_KEYS.jd, summarizeJd(store.job.jdText(job.id))))
         lines.push(formatDetailLine(DETAIL_KEYS.url, job.sourceUrl))
         lines.push(`当前处置态：${JOB_STATE_LABEL[job.state]}`)
+        // 接触态与最近一次打招呼：此前 job_detail 完全不提这两件事，
+        // 于是模型在对话里只能看到"处置态"，回答不了"我打过招呼了吗、HR 读了吗"。
+        const pipeline = runtime.pipeline()
+        const latestGreeting = pipeline.listGreetings({ jobId: job.id, limit: 1 })[0]
+        lines.push(
+          `接触态：${CONTACT_STAGE_LABEL[pipeline.contactStage(job.id)]}` +
+            (latestGreeting === undefined
+              ? '（还没有打招呼记录）'
+              : `（最近一次打招呼 ${latestGreeting.sentAt.slice(0, 16).replace('T', ' ')}` +
+                `${latestGreeting.templateName === null ? '' : ` · 模板「${latestGreeting.templateName}」`}）`),
+        )
 
         return { text: lines.join('\n') }
       },

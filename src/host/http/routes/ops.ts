@@ -1,11 +1,12 @@
 /**
- * 运维类端点：宿主自检操作、模型调用留痕、审计、插件配置。
+ * 运维类端点：宿主自检操作、模型调用留痕、审计、插件配置、额度读数。
  *
  * 这个模块管这些端点：
  * - `POST /system/reveal` —— 打开数据文件所在目录；
  * - `GET /llm/calls` —— 模型调用留痕（I5 知情同意要可查）；
  * - `GET /audit` —— 审计日志；
- * - `GET /settings` / `PATCH /settings` —— 插件配置读写。
+ * - `GET /settings` / `PATCH /settings` —— 插件配置读写；
+ * - `GET /guard/usage` —— 每日额度读数（D7 / U0「额度余量」）。
  */
 import { dataNotReady } from '../../runtime/contract.js'
 import type { SettingsPatch } from '../../settings.js'
@@ -77,6 +78,31 @@ export async function audit(ctx: RouteContext): Promise<RouteResult | undefined>
   })
 }
 
+/**
+ * `GET /guard/usage` —— D7 的额度读数（U0「额度余量」的数据面）。
+ *
+ * 在它之前，额度**只在被拒的那一刻**才说出来（`checkQuota` 的 deny 文案）：
+ * 用户会去设置里把每日额度调大，却发现还是被拒 —— 因为限住他的是**平台侧上限**。
+ * 所以每一格都带 `platformCap` 与 `limitedBy`，让"该改哪里"是读得出来的。
+ *
+ * 与抓取配额（`/platforms` 的 `governance.todayRuns`）**不是一回事**：
+ * 那个数的是"自动跑了几轮采集"，这个数的是"发了几条招呼 / 投了几份 / 回了几条"。
+ */
+export async function guardUsage(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(method === 'GET' && segments.length === 2 && segments[0] === 'guard' && segments[1] === 'usage')) {
+    return undefined
+  }
+  const platformId = req.query.get('platformId')
+  // 数据层未就绪时由 runtime 返回空结构 + 说明（U0 要能把"为什么没有数据"显示出来），
+  // 所以这里**不**做 requireData
+  return json(
+    200,
+    runtime.guardUsage(platformId === null || platformId === '' ? undefined : platformId),
+  )
+}
+
+/** 原 router.ts 的 `GET /settings`。 */
 export async function settingsGet(ctx: RouteContext): Promise<RouteResult | undefined> {
   const { runtime, segments, method } = ctx
 

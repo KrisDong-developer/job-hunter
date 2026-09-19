@@ -1,7 +1,22 @@
 import { useRef, useState, type FormEvent } from 'react'
 import type { CompanyProfileDto } from '../../shared/dto.js'
-import { JOB_FLAG_LABEL, CONTACT_STAGE_LABEL, type ContactStage, type JobState } from '../../shared/enums.js'
-import { ApiError, fetchCompanyDetail, fetchJobDetail, markJob, probeContactStage, updateCompanyReview } from '../api.js'
+import {
+  CONTACT_STAGE_LABEL,
+  JOB_FLAG_LABEL,
+  MANUAL_CONTACT_STAGES,
+  type ContactStage,
+  type JobState,
+} from '../../shared/enums.js'
+import {
+  ApiError,
+  fetchCompanyDetail,
+  fetchJobDetail,
+  fetchJobHistory,
+  markJob,
+  probeContactStage,
+  updateCompanyReview,
+  updateContactStage,
+} from '../api.js'
 import { JOB_ACTION_LABEL, JOB_STATE_LABEL, relativeTime, salaryDetail, splitJobTags } from '../labels.js'
 import { TailorPanel } from './tailor-panel.js'
 import { OverseasPanel } from './campus.js'
@@ -224,12 +239,15 @@ export function JobDetailBody(props: {
   onSelect?: ((id: number) => void) | undefined
 }) {
   const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision])
+  const history = useAsync((signal) => fetchJobHistory(props.id, signal), [props.id, props.revision])
   const [busy, setBusy] = useState<JobState | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   /** 平台侧接触阶段的探测结果（**只读**：不改本地状态、不发任何消息）。 */
   const [probing, setProbing] = useState(false)
   const [probe, setProbe] = useState<{ stage: ContactStage | null; note: string } | null>(null)
   const [probeError, setProbeError] = useState<string | null>(null)
+  /** 正在保存的接触态（按钮禁用用）。 */
+  const [staging, setStaging] = useState<ContactStage | null>(null)
 
   const probeStage = async (): Promise<void> => {
     setProbing(true)
@@ -241,6 +259,27 @@ export function JobDetailBody(props: {
       setProbeError(error instanceof ApiError ? error.display : String(error))
     } finally {
       setProbing(false)
+    }
+  }
+
+  /**
+   * 保存**本地**接触态（§12.2）。
+   *
+   * ⚠️ 它不改平台上任何东西 —— 探测只报事实，要不要落成状态由用户显式点。
+   * 这正是 §4.3「识别 ≠ 改状态」的落点：规则识别会误判，而误判一次会让一个
+   * 真在推进的岗位被漏掉。
+   */
+  const saveContactStage = async (to: ContactStage): Promise<void> => {
+    setStaging(to)
+    setProbeError(null)
+    try {
+      await updateContactStage(props.id, { to })
+      history.reload()
+      props.onChanged()
+    } catch (error) {
+      setProbeError(error instanceof ApiError ? error.display : String(error))
+    } finally {
+      setStaging(null)
     }
   }
 
@@ -274,6 +313,11 @@ export function JobDetailBody(props: {
 
   const { job, jdText, company, flags, matchReasons } = state.data
   const grouped = splitJobTags(job.tags)
+  /** 本地那条接触态（§12.2：最新一条打招呼记录即当前接触态）。 */
+  const localStage: ContactStage = history.state.status === 'ok' ? history.state.data.contactStage : 'none'
+  const contactEvents = history.state.status === 'ok' ? history.state.data.items.slice(0, 6) : []
+  /** 平台探测到的态与本地不一致时，才值得提"要不要采纳"。 */
+  const adoptable = probe?.stage != null && probe.stage !== localStage ? probe.stage : null
   // 解析不出来就退回原始串：宁可显示 ISO，也不要留一格空白
   const lastSeen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt
 
@@ -319,12 +363,16 @@ export function JobDetailBody(props: {
         <li><span>当前状态</span><span>{JOB_STATE_LABEL[job.state]}</span></li>
       </ul>
 
-      {/* 平台上的接触阶段：**只探测、不改状态**（识别 ≠ 改状态）。
-          本地那条接触态由状态事件推进，这里给的是"平台上现在是什么样"的事实 ——
-          所以结论下面永远跟着 probe.note（它明说"没有改动任何本地状态"）。 */}
+      {/* 接触态（§12.2）—— 上下两块，界线是刻意的：
+          · **本地**那条是可以改的记录（状态机，改了要留事件）；
+          · **平台**上那条是只读的事实（探测），所以永远跟着 probe.note
+            （它明说"没有改动任何本地状态"）。
+          在此之前本地接触态**在界面上根本看不到也改不了** —— `advanceContact` 写好了却零调用，
+          于是它永远停在「已打招呼」，而"未读超时 / 已读未回"两条跟进建议分别挂在
+          「已送达」/「HR 已读」上 …… 整条跟进链路是空的。 */}
       <div className="jh-card jh-card-tight">
         <div className="jh-row-head">
-          <span className="jh-tag-group-name">平台上的接触阶段</span>
+          <span className="jh-tag-group-name">接触态</span>
           <span className="jh-spacer" />
           <button
             type="button"
@@ -332,10 +380,38 @@ export function JobDetailBody(props: {
             disabled={probing}
             onClick={() => void probeStage()}
           >
-            {probing ? '探测中…' : '探测'}
+            {probing ? '探测中…' : '探测平台状态'}
           </button>
         </div>
+
         {probeError === null ? null : <p className="jh-error">{probeError}</p>}
+
+        <p className="jh-muted">
+          {history.state.status === 'loading'
+            ? '正在读取接触记录…'
+            : localStage === 'none'
+              ? '还没有本地接触记录（打过招呼之后才会有）。下面是人工标记的入口。'
+              : `本地记录：${CONTACT_STAGE_LABEL[localStage]}。改动只写本地账，平台上不会有任何动作。`}
+        </p>
+        <div className="jh-detail-actions">
+          {MANUAL_CONTACT_STAGES.map((stage) => (
+            <button
+              key={stage}
+              type="button"
+              className={`jh-btn jh-btn-inline${stage === localStage ? ' jh-btn-active' : ''}`}
+              disabled={staging !== null || stage === localStage}
+              title={
+                stage === localStage
+                  ? '当前就是这一态'
+                  : `记成「${CONTACT_STAGE_LABEL[stage]}」（只改本地记录，不碰平台）`
+              }
+              onClick={() => void saveContactStage(stage)}
+            >
+              {staging === stage ? '…' : CONTACT_STAGE_LABEL[stage]}
+            </button>
+          ))}
+        </div>
+
         {probe === null ? (
           <p className="jh-muted">
             还没探测过。探测只**读**平台上的状态（不发消息、不投递），也不会改动本地状态。
@@ -343,10 +419,37 @@ export function JobDetailBody(props: {
         ) : (
           <>
             <p>
-              <b>{probe.stage === null ? '判不出来' : CONTACT_STAGE_LABEL[probe.stage]}</b>
+              平台上：<b>{probe.stage === null ? '判不出来' : CONTACT_STAGE_LABEL[probe.stage]}</b>
+              {adoptable === null ? null : (
+                <button
+                  type="button"
+                  className="jh-link"
+                  disabled={staging !== null}
+                  onClick={() => void saveContactStage(adoptable)}
+                >
+                  采纳为本地状态
+                </button>
+              )}
             </p>
             <p className="jh-muted">{probe.note}</p>
           </>
+        )}
+
+        {contactEvents.length === 0 ? null : (
+          <details className="jh-details">
+            <summary>变更记录（{contactEvents.length} 条，最近在前）</summary>
+            <ul className="jh-tailor-notes">
+              {contactEvents.map((event) => (
+                <li key={event.id} className="jh-muted">
+                  {event.at.slice(0, 16).replace('T', ' ')} ·{' '}
+                  {event.fromStage === null ? '—' : event.fromStage} → {event.toStage}
+                  {' · '}
+                  {event.source === 'model' ? '模型' : event.source === 'auto' ? '自动识别' : '人工'}
+                  {event.note === null ? '' : ` · ${event.note}`}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </div>
 

@@ -71,6 +71,7 @@ export function createPlanService(
   /** 没有注册表时的空注册表 —— 校验退化到"只查名字与平台非空"。 */
   const emptyRegistry: AdapterRegistry = {
     register: () => () => undefined,
+    replace: () => undefined,
     get: () => undefined,
     list: () => [],
     has: () => true,

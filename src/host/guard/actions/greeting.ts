@@ -9,7 +9,7 @@
  */
 import type { AdapterRegistry } from '../../platform/registry.js'
 import type { SessionService } from '../../platform/session.js'
-import type { PageSource } from '../../platform/types.js'
+import type { DeliveryState, PageSource } from '../../platform/types.js'
 import type { Store } from '../../store/store.js'
 import { DomainError, messageOf } from '../../util/errors.js'
 import { systemClock, type Clock } from '../../util/time.js'
@@ -38,6 +38,14 @@ export interface GreetingSendDeps {
     content: string
     actor: string
     templateId?: number | null
+    /**
+     * 送达状态，原样交给上层。
+     *
+     * 为什么要传：`delivered` 是「已打招呼」与「已送达」两态的分界（§12.2），
+     * 而"未读超时"的跟进建议只在 `delivered` 上成立 —— 上层据此决定记哪一态。
+     * 这一层不自己判断（判断口径属于 pipeline 的语义），只如实转交。
+     */
+    delivery: DeliveryState
   }) => void
 }
 
@@ -120,6 +128,7 @@ export async function sendGreeting(
         platformId: job.platformId,
         content: input.text,
         actor: guardToken.actor,
+        delivery: result.delivery,
       })
     } catch (error) {
       deps.logger?.warn(`[guard] 打招呼已发出，但接触记录写入失败：${messageOf(error)}`)

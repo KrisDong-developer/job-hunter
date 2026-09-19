@@ -57,6 +57,7 @@ import { CapabilityMatrix } from './collect/capability-matrix.js'
 import { RunHistoryTable, RunLogCard } from './collect/run-history.js'
 import { PlanEditorModal } from './collect/plan-editor-modal.js'
 import { DedupGroupsCard } from './collect/dedup-groups-card.js'
+import { AdapterConfigCard, RepairQueueCard } from './collect/adapter-maintenance.js'
 
 interface Feedback {
   running: boolean
@@ -177,6 +178,8 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const status: SchedulerStatusDto | null = scheduler.state.status === 'ok' ? scheduler.state.data : null
   const planList: PlanDto[] = plans.state.status === 'ok' ? plans.state.data.items : []
   const platformList: PlatformOverviewDto[] = platforms.state.status === 'ok' ? platforms.state.data.items : []
+  /** 适配器维护那两块只需要 id + 显示名（下拉与筛选），不传整个概览对象。 */
+  const platformOptions = platformList.map((item) => ({ id: item.id, displayName: item.displayName }))
 
   /**
    * **加载态 ≠ 空态**。
@@ -632,6 +635,13 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
               />
             )}
           </section>
+
+          {/* ── 适配器维护（B13 / J2）：待修复队列 + 配置覆盖 ──────────────
+              「待修复」原来只以一个数字出现在「今日」上，点不进去；而修选择器所需的
+              "写 DB 覆盖"这条路径**根本不存在**（ADAPTERS.md §1 的注脚）。
+              两块放在平台总览之后：它们正是"某个平台坏了"的下一步动作。 */}
+          <RepairQueueCard revision={props.revision} platforms={platformOptions} />
+          <AdapterConfigCard revision={props.revision} platforms={platformOptions} onChanged={reload} />
         </>
       ) : null}
 

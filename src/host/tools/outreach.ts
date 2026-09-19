@@ -7,7 +7,8 @@
  * 工具层**没有**绕过闸门的能力：它只调用 `runtime` 上那几个已经接了 guard 的方法。
  */
 import type { ToolDefinition } from '../../shared/dsh.js'
-import { CONTACT_STAGE_LABEL } from '../../shared/enums.js'
+import { CONTACT_STAGE_LABEL, MANUAL_CONTACT_STAGES } from '../../shared/enums.js'
+import type { ManualContactStage } from '../../shared/enums.js'
 import { TONE_LABEL } from '../../shared/labels.js'
 import type { HostRuntime } from '../runtime.js'
 import { DomainError } from '../util/errors.js'
@@ -157,17 +158,54 @@ export function outreachTools(runtime: HostRuntime): ToolDefinition[] {
     tool<Record<string, unknown>, { text: string }>({
       name: 'contact_stage',
       description:
-        '**探测某个岗位在平台上的接触阶段**（HR 是否已读 / 已回复）。低危（只看不发，也不写任何东西），' +
-        '所以**不需要审批**。⚠️ 它**只报事实、不改状态** —— 要不要推进接触态由用户决定（识别 ≠ 改状态）。' +
-        '接口返回 null 表示"判不出来"（会话不在列表里、或状态标记认不出来），**不是** "未接触"；' +
-        '此时如实告诉用户判不出来，不要自己推断。',
+        '岗位的接触阶段（§12.2）。两种用法：\n' +
+        '· **不传 stage** = 探测：去平台上看 HR 是否已读 / 已回复。低危（只看不发、也不写任何东西），不需审批。' +
+        '返回 null 表示"判不出来"，**不是** "未接触"。\n' +
+        '· **传 stage** = 标记：把本地接触态记成给定值（也用于回退）。只改本地库、**平台上什么都不发生**，' +
+        '不需要审批；但会写一条状态事件（来源记为"模型"）。\n' +
+        '⚠️ 探测与标记是两件事：识别 ≠ 改状态。探测到事实后要不要落成状态，是下一步显式动作 —— ' +
+        '不要因为探到"HR 已读"就自动标记。',
       timeoutMs: 3 * 60 * 1000,
-      parameters: schema({ jobId: int('岗位 id') }, ['jobId']),
+      parameters: schema(
+        {
+          jobId: int('岗位 id'),
+          stage: enumStr(
+            [...MANUAL_CONTACT_STAGES],
+            '要标记的接触态（不传则只探测）。"未接触/无记录"不是能标出来的状态。',
+          ),
+        },
+        ['jobId'],
+      ),
       ...textResult,
       async run(args) {
         requireData(runtime)
         const jobId = positiveId(args.jobId, 'jobId')
-        // 低危动作：模型发起也不打扰用户
+
+        // ── 标记：只写本地，不碰平台 ──────────────────────────────
+        const stage = asString(args['stage'])
+        if (stage !== undefined) {
+          if (!(MANUAL_CONTACT_STAGES as readonly string[]).includes(stage)) {
+            throw new DomainError('INVALID_INPUT', `stage 取值不合法：${stage}`, {
+              hint: `合法取值：${MANUAL_CONTACT_STAGES.join(' / ')}（"未接触"不可标记：它等于"没有打招呼记录"）。`,
+            })
+          }
+          const pipeline = runtime.pipeline()
+          const from = pipeline.contactStage(jobId)
+          const greeting = pipeline.advanceContact({
+            jobId,
+            to: stage as ManualContactStage,
+            source: 'model',
+            note: '模型在对话中标记',
+          })
+          runtime.events().publish('contact.stage.changed', { jobId, from, stage: greeting.stage })
+          return {
+            text:
+              `岗位 #${String(jobId)} 的接触态：${CONTACT_STAGE_LABEL[from]} → **${CONTACT_STAGE_LABEL[greeting.stage]}**。\n` +
+              '这一步**只改本地记录**（平台上什么都没发生），已留一条状态事件。',
+          }
+        }
+
+        // ── 探测：低危动作，模型发起也不打扰用户 ──────────────────
         const result = await runtime.probeContactStage({ jobId, actor: 'model' })
         const stageText =
           result.stage === null ? '判不出来（会话不在列表里，或状态标记认不出来）' : CONTACT_STAGE_LABEL[result.stage]

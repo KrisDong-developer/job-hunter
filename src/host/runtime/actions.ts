@@ -177,7 +177,15 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
               ...(logger === undefined ? {} : { logger }),
               // P7：发送**成功后**记一笔接触记录（接触态的载体，§7.0）
               record: (recorded) => {
-                deps.pipelineOf()?.recordGreetingSent(recorded)
+                deps.pipelineOf()?.recordGreetingSent({
+                  jobId: recorded.jobId,
+                  platformId: recorded.platformId,
+                  content: recorded.content,
+                  actor: recorded.actor,
+                  // 平台侧**确认送达**才记「已送达」，否则停在「已打招呼」——
+                  // 这一步决定了"未读超时"那条跟进建议会不会触发（§3.3 / §12.2）
+                  stage: recorded.delivery === 'delivered' ? 'delivered' : 'greeted',
+                })
                 events.publish('greeting.recorded', {
                   jobId: recorded.jobId,
                   actor: recorded.actor,

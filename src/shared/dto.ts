@@ -801,8 +801,12 @@ export interface GreetingDto {
   id: number
   jobId: number | null
   jobTitle: string | null
+  /** 公司名。列表要回答"我给谁发过、结果如何"，只有岗位标题不够。 */
+  companyName: string | null
   platformId: string
   templateId: number | null
+  /** 模板名（已删则 null）。话术效果对比（D2）要的可读标签，不是 id。 */
+  templateName: string | null
   content: string
   sentAt: string
   channel: ApplicationChannel
@@ -1333,4 +1337,98 @@ export interface PlatformGovernanceDto {
   cooldownUntil: string | null
   /** 最近一轮（含 `aborted` / 失败原因）。`null` = 从没跑过。 */
   lastRun: CrawlRunDto | null
+}
+
+// ── 待修复队列（§4.2.4 / B13 / J2）───────────────────────────────────
+
+/**
+ * 一条**被字段断言拦下**的记录（`pending_repair`）。
+ *
+ * 为什么这一屏必须存在：字段断言拦下的记录**不进主表**，而 pending 只以
+ * 一个数字出现在"今日/设置"里 —— 用户看得到"有 20 条待修复"，却看不到
+ * 坏在哪个字段、样本是哪个岗位、什么时候抓的。于是"修选择器"这件事没有入口。
+ *
+ * ⚠️ **没有**原始 HTML：`crawl.ts` 入队时不带 `rawHtml`（§18：原始页面默认不存），
+ * 所以这里**不存在**"离线重放"这种能力 —— 修法是"改选择器覆盖 → 重抓一轮"。
+ */
+export interface RepairDto {
+  id: number
+  platformId: string
+  /** 触发这次隔离的抓取轮次；`null` = 那轮已被清理。 */
+  crawlRunId: number | null
+  capturedAt: string
+  /** 缺了哪些核心字段（`title` / `salary_raw` / `company` / `source_url`）。 */
+  missingFields: string[]
+  /** 当时**已经解析出来**的标量字段（用来判断是"整体解析崩了"还是"只缺一列"）。 */
+  raw: Record<string, unknown> | null
+  /** 样本地址；`null` = 连地址那一列也没解析出来。 */
+  sourceUrl: string | null
+}
+
+/** `GET /repairs`。 */
+export interface RepairListDto {
+  items: RepairDto[]
+  total: number
+  /** 按平台汇总的待修复条数（平台行上的角标）。 */
+  byPlatform: Array<{ platformId: string; count: number }>
+  /**
+   * 口径说明必须随响应下发：没有原始 HTML，所以**没有"重放"这个动作**。
+   */
+  note: string
+}
+
+// ── 适配器配置覆盖（J2 / ADAPTERS.md §4）────────────────────────────
+
+/**
+ * 一个平台的适配器配置：**代码默认 + DB 覆盖 = 实际生效**。
+ *
+ * 界面必须能同时看到三层，否则"改了没生效"无法自查：
+ * 只给生效值 → 不知道哪些是覆盖来的；只给覆盖 → 不知道默认是什么。
+ */
+export interface AdapterConfigDto {
+  platformId: string
+  displayName: string
+  /** DB 里那份覆盖；`null` = 从没写过（一切走代码默认）。 */
+  override: unknown
+  /** 代码默认（`DEFAULT_*_CONFIG`）。 */
+  defaults: unknown
+  /** 合并后的实际生效值（适配器此刻正在用的那一份）。 */
+  effective: unknown
+  /** 覆盖占用的大小（字符数）与字段数，用于"这东西是不是长得不正常"。 */
+  overrideKeys: string[]
+}
+
+// ── 每日额度读数（D7 / U0「额度余量」）────────────────────────────
+
+/** 一个动作今天的额度读数。 */
+export interface GuardUsageEntryDto {
+  action: string
+  bucket: 'greeting' | 'application' | 'reply'
+  /** 今天已经成功做了几次（计数来源是审计表）。 */
+  used: number
+  /** 用户设的每日额度（`guard.dailyLimits`）。 */
+  budget: number
+  /** 平台侧上限（平台事实）；`null` = 这个动作在该平台没有已知上限。 */
+  platformCap: number | null
+  /** 真正生效的上限 = `min(budget, platformCap)`。 */
+  limit: number
+  /**
+   * 被哪一层限住。`'platform'` 时改自己的额度**没有用** ——
+   * 这一格存在的意义就是避免用户白改一场（见 `checkQuota` 的拒绝文案）。
+   */
+  limitedBy: 'budget' | 'platform'
+  /** 今天还能做几次（不会小于 0）。 */
+  remaining: number
+}
+
+/** `GET /guard/usage`：额度是**按平台**算的，所以按平台分组。 */
+export interface GuardUsageDto {
+  /** 计数起点（今天的 UTC 00:00，与 `checkQuota` 同一口径）。 */
+  since: string
+  platforms: Array<{
+    platformId: string
+    displayName: string
+    actions: GuardUsageEntryDto[]
+  }>
+  note: string
 }

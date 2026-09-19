@@ -1,16 +1,20 @@
 /**
  * 触达域路由：`POST /jobs/:id/greeting/draft`（生成话术）、`POST /greeting/send`（发送，两段式确认）、
  * `POST /inbox/sync`（同步收件箱）、`POST /jobs/:id/detect-stage`（探测接触阶段）、
+ * `POST /jobs/:id/contact-stage`（**人工标记**接触态）、`GET /greetings`（打招呼记录）、
  * `GET|POST /greeting/templates`（话术模板）。
  *
- * 归属规则：`/jobs/:id/greeting/draft` 与 `/jobs/:id/detect-stage` 虽然挂在 `/jobs` 前缀下，
- * 但按**行为**归属在本模块 —— 它们调用的是 `runtime.draftGreeting` / `runtime.probeContactStage`，
+ * 归属规则：`/jobs/:id/greeting/draft`、`/jobs/:id/detect-stage` 与 `/jobs/:id/contact-stage`
+ * 虽然挂在 `/jobs` 前缀下，但按**行为**归属在本模块 —— 它们调用的是
+ * `runtime.draftGreeting` / `runtime.probeContactStage` / `runtime.pipeline().advanceContact`，
  * 而不是 jobs.ts 里的岗位读写。
  */
 import { dataNotReady } from '../../runtime/contract.js'
+import { CONTACT_STAGES, MANUAL_CONTACT_STAGES } from '../../../shared/enums.js'
+import type { ContactStage, ManualContactStage } from '../../../shared/enums.js'
 import { TONE_LABEL } from '../../../shared/labels.js'
 import { DomainError } from '../../util/errors.js'
-import { json, readObject, requireData, type RouteContext } from './kit.js'
+import { json, parsePositiveInt, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'
 
 /** 原 router.ts L1111-1135。 */
@@ -120,6 +124,87 @@ export async function detectStage(ctx: RouteContext): Promise<RouteResult | unde
   }
 
   return undefined
+}
+
+/**
+ * `POST /jobs/:id/contact-stage` —— **人工标记**接触态（§12.2）。
+ *
+ * 为什么必须有这一条：`probeContactStage`（探测）是刻意"只报事实、不改状态"的，
+ * 而在此之前**没有任何入口能把结果落成状态** —— `pipeline.advanceContact` 写好了
+ * 却零调用。后果不是少一个按钮：接触态永远停在 `greeted`，而
+ * `followUpSuggestions()` 的"未读超时 / 已读未回"两条分支分别挂在
+ * `delivered` / `read` 上 → **整条跟进链路是空的**。
+ *
+ * 低危（只写本地库、不碰平台）→ 不过闸门，但过同源校验（`POST` 自动过，见 router.ts）。
+ * 每次变更都写一条 `stage_event`（`source='manual'`），所以回退也有痕迹。
+ */
+export async function contactStageUpdate(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(method === 'POST' && segments.length === 3 && segments[0] === 'jobs' && segments[2] === 'contact-stage')) {
+    return undefined
+  }
+  requireData(runtime)
+  const id = Number.parseInt(segments[1] ?? '', 10)
+  if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法岗位 id：${segments[1] ?? ''}`)
+
+  const body = await readObject(req)
+  const to = body['to']
+  if (typeof to !== 'string' || !(MANUAL_CONTACT_STAGES as readonly string[]).includes(to)) {
+    throw new DomainError('INVALID_INPUT', 'to 必须是可手工标记的接触态', {
+      hint:
+        `合法取值：${MANUAL_CONTACT_STAGES.join(' / ')}。` +
+        '「未接触」不在其中 —— 它的含义是"没有打招呼记录"，标不出来。',
+    })
+  }
+  const pipeline = runtime.pipeline()
+  const from = pipeline.contactStage(id)
+  const greeting = pipeline.advanceContact({
+    jobId: id,
+    to: to as ManualContactStage,
+    source: 'manual',
+    ...(typeof body['evidenceRef'] === 'string' && body['evidenceRef'] !== ''
+      ? { evidenceRef: body['evidenceRef'] }
+      : {}),
+    ...(typeof body['note'] === 'string' && body['note'] !== '' ? { note: body['note'] } : {}),
+  })
+  runtime.events().publish('contact.stage.changed', { jobId: id, from, stage: greeting.stage })
+  return json(200, {
+    ok: true,
+    contactStage: greeting.stage,
+    /** 承载这次接触态的那条打招呼记录（§7.0：最新一条即当前接触态）。 */
+    greetingId: greeting.id,
+    stageAt: greeting.stageAt,
+    repliedAt: greeting.repliedAt,
+    /** 改之前是什么（界面据此显示"从 X → Y"，回退也看得见）。 */
+    previousStage: from,
+  })
+}
+
+/**
+ * `GET /greetings` —— 打招呼记录（D6：说了什么、几点发的、结果如何）。
+ *
+ * 在它之前，这些事实只以 `stage_event` 的形式散在 `/jobs/:id/history` 里，
+ * 拿不到"实际发送内容 + 模板 + 渠道"这张表 —— 于是话术效果对比（D2）没有数据面。
+ */
+export async function greetings(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(method === 'GET' && segments.length === 1 && segments[0] === 'greetings')) return undefined
+  requireData(runtime)
+
+  const jobId = Number.parseInt(req.query.get('jobId') ?? '', 10)
+  const stageRaw = req.query.get('stage')
+  if (stageRaw !== null && stageRaw !== '' && !(CONTACT_STAGES as readonly string[]).includes(stageRaw)) {
+    throw new DomainError('INVALID_INPUT', `非法接触态：${stageRaw}`, {
+      hint: `合法取值：${CONTACT_STAGES.join(' / ')}`,
+    })
+  }
+  return json(200, {
+    items: runtime.pipeline().listGreetings({
+      ...(Number.isFinite(jobId) ? { jobId } : {}),
+      ...(stageRaw === null || stageRaw === '' ? {} : { stage: stageRaw as ContactStage }),
+      limit: parsePositiveInt(req.query.get('limit'), 50, 1, 200),
+    }),
+  })
 }
 
 /** 原 router.ts L1908-1941。 */

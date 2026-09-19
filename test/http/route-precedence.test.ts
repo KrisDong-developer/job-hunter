@@ -107,6 +107,17 @@ test('路由顺序：字面量段必须赢过参数段', async () => {
     // `/greeting/templates` 不能被 `/greeting/send` 之类同长度的块先接走
     const templates = await call(runtime, 'GET', '/greeting/templates')
     assert.equal(templates.status, 200, '/greeting/templates 被同长度的 /greeting/* 吞掉了')
+
+    // `/repairs/clear` 是字面量，必须排在 `/repairs/:id/discard` 之前 ——
+    // 若被当成 id，报的会是"非法待修复 id"，而正确结果是 clear 自己的平台校验
+    const clear = await call(runtime, 'POST', '/repairs/clear', { body: {} })
+    assert.equal(clear.status, 400, '/repairs/clear 被 /repairs/:id/discard 吞掉了')
+    assert.ok((messageOf(clear) ?? '').includes('platformId'), `应当是 clear 自己的校验，实际：${String(messageOf(clear))}`)
+
+    // 反向确认参数路径仍会解析 id（`abc` 报 400 而不是 404）
+    const badRepairId = await call(runtime, 'POST', '/repairs/abc/discard', { body: {} })
+    assert.equal(badRepairId.status, 400)
+    assert.equal(messageOf(badRepairId), '非法待修复 id：abc')
   } finally {
     runtime.close()
     cleanup(dir)

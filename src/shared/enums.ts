@@ -303,6 +303,19 @@ export const CONTACT_STAGE_LABEL: Record<ContactStage, string> = {
   interview_scheduled: '已约面',
 }
 
+/**
+ * 用户**手工**可以标记的接触态（`POST /jobs/:id/contact-stage`）。
+ *
+ * 排除 `none`：「未接触」不是能"标记"出来的状态 —— 它的含义是"没有打招呼记录"，
+ * 而手工标记的载体恰恰是一条打招呼记录（§7.0：最新一条即当前接触态）。
+ * 允许把它标成 `none` 只会得到一条写着"未接触"的打招呼记录，自相矛盾。
+ *
+ * 其余五态都允许人工设置/回退：平台侧会误判，用户也可能是补记历史
+ * （"上周其实已经读过了"）—— 所以要能改回来，且每次改动都留一条状态事件。
+ */
+export const MANUAL_CONTACT_STAGES = ['greeted', 'delivered', 'read', 'replied', 'interview_scheduled'] as const
+export type ManualContactStage = (typeof MANUAL_CONTACT_STAGES)[number]
+
 /** 投递阶段（§12.1）—— 落在 `application.stage`。 */
 export const APPLICATION_STAGES = [
   'sent',

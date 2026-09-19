@@ -39,8 +39,21 @@ export function settingsTools(runtime: HostRuntime): ToolDefinition[] {
         requireData(runtime)
         const action = asString(args['action'])
 
-        const render = (snapshot: SettingsSnapshot): string =>
-          [
+        const render = (snapshot: SettingsSnapshot): string => {
+          // 额度读数（D7）：只列出**今天真的用过**的那些，否则 10 个平台 × 3 个动作
+          // 会把这行字淹掉。读它回答的是"为什么发不出去了"。
+          const usage = runtime.guardUsage()
+          const used = usage.platforms.flatMap((platform) =>
+            platform.actions
+              .filter((entry) => entry.used > 0)
+              .map(
+                (entry) =>
+                  `· ${platform.displayName} ${entry.action}：今天已用 ${String(entry.used)}/${String(entry.limit)}` +
+                  `（剩 ${String(entry.remaining)}）` +
+                  (entry.limitedBy === 'platform' ? '，上限来自平台侧（改自己的额度没用）' : ''),
+              ),
+          )
+          return [
             '模型用途：',
             ...snapshot.derived.purposes.map(
               (purpose) => `· ${purpose.label}（${purpose.purpose}）：${purpose.enabled ? '开' : '关'}`,
@@ -53,6 +66,8 @@ export function settingsTools(runtime: HostRuntime): ToolDefinition[] {
             `每日额度：打招呼 ${String(snapshot.guard.dailyLimits.greeting)} / 投递 ${String(
               snapshot.guard.dailyLimits.application,
             )} / 回复 ${String(snapshot.guard.dailyLimits.reply)}`,
+            '今日用量：',
+            ...(used.length === 0 ? ['· 今天还没有成功发出的对外动作。'] : used),
             `冷却期：${String(snapshot.guard.cooldownMinutes)} 分钟｜批量上限：${String(
               snapshot.guard.batchLimit,
             )}`,
@@ -62,6 +77,7 @@ export function settingsTools(runtime: HostRuntime): ToolDefinition[] {
             `模型可改：${snapshot.derived.modelEditable.join('、')}`,
             `模型禁止改：${snapshot.derived.modelForbidden.join('、')}`,
           ].join('\n')
+        }
 
         const settings = runtime.settings()
         if (action === 'get') return { text: render(settings.snapshot()) }

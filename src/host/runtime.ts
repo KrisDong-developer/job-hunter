@@ -24,10 +24,12 @@ import {
   PLUGIN_ID,
 } from '../shared/constants.js'
 import type {
+  AdapterConfigDto,
   CrawlStatusDto,
   CrawlSummaryDto,
   DeadlineDto,
   GreetingDraftDto,
+  GuardUsageDto,
   HealthDto,
   LoginStatusDto,
   PlatformOverviewDto,
@@ -94,12 +96,19 @@ import { createAdapterRegistry } from './platform/registry.js'
 import type { LoginFlow, SessionService } from './platform/session.js'
 import { createLoginFlow, createSessionService } from './platform/session.js'
 import type { SearchCriteria } from './platform/types.js'
-import { registerAdapters } from './runtime/adapters.js'
+import {
+  ADAPTER_CONFIG_KEY,
+  ADAPTER_CONFIG_MAX_CHARS,
+  adapterSpecOf,
+  rebuildAdapter,
+  registerAdapters,
+} from './runtime/adapters.js'
 import { createRuntimeActions } from './runtime/actions.js'
 import { dataNotReady } from './runtime/contract.js'
 import type { RuntimeFailure } from './runtime/contract.js'
 import { createPlatformGate } from './runtime/gate.js'
 import { readOnlyReasonOf, requireLease, startHeartbeat, takeOverLease } from './runtime/lifecycle.js'
+import { guardUsageOf } from './guard/rules.js'
 import {
   buildCrawlStatus,
   buildHealth,
@@ -318,6 +327,24 @@ export interface HostRuntime {
   loginStatuses(): LoginStatusDto[]
   startLogin(platformId: string): LoginStatusDto
   closeTodo(id: number): boolean
+  /**
+   * D7 的额度读数：每个平台、每个动作今天用了几次、还剩几次。
+   *
+   * ⚠️ 它与**抓取配额**（`PlatformGovernanceDto.todayRuns`）是两回事：那个数的是
+   * "自动跑了几轮采集"，这个数的是"发了几条招呼 / 投了几份 / 回了几条"。
+   * 以前只有前者有读数，所以 U0 的「额度余量」其实一直是抓取配额。
+   *
+   * @param platformId 省略 = 所有已注册平台
+   */
+  guardUsage(platformId?: string): GuardUsageDto
+  /** 某个平台的适配器配置三层视图（默认 / 覆盖 / 生效）。数据层未就绪时抛 `DATA_UNAVAILABLE`。 */
+  adapterConfig(platformId: string): AdapterConfigDto
+  /**
+   * 写入适配器配置覆盖并**热替换**适配器（J2：不要求重启插件）。
+   *
+   * `override === null` = 清除覆盖，回到代码默认。
+   */
+  updateAdapterConfig(platformId: string, override: unknown): AdapterConfigDto
 
   store(): Store | undefined
   jobs(): JobService | undefined
@@ -585,6 +612,37 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
   /** 本实例为什么是只读的（`null` = 不是）。说法只有一份，见 runtime/lifecycle.ts。 */
   const readOnlyReason = (): string | null =>
     readOnlyReasonOf({ storeReady: store !== undefined, failureMessage: failure?.message, lease })
+
+  /** 一条覆盖里"顶层键有哪些"（用于界面判断这东西是不是长得不正常）。非对象一律空。 */
+  const overrideKeysOf = (override: unknown): string[] =>
+    override !== null && typeof override === 'object' && !Array.isArray(override)
+      ? Object.keys(override as Record<string, unknown>)
+      : []
+
+  /**
+   * 组装适配器配置的三层视图。
+   *
+   * `effective` 走的是 `spec.config.merge` —— 与 `build` 内部同一个函数，
+   * 所以界面上看到的生效值**就是**适配器此刻拿在手里的那一份（见 `AdapterSpec.config`）。
+   */
+  const buildAdapterConfigOf = (opened: Store, platformId: string): AdapterConfigDto => {
+    const spec = adapterSpecOf(platformId)
+    if (spec === undefined) {
+      throw new DomainError('NOT_FOUND', `未注册的平台：${platformId}`, {
+        hint: '平台清单见 GET /platforms。',
+        detail: { platformId },
+      })
+    }
+    const override = opened.setting.get<unknown>(ADAPTER_CONFIG_KEY, 'platform', platformId) ?? null
+    return {
+      platformId,
+      displayName: registry.get(platformId)?.displayName ?? platformId,
+      override,
+      defaults: spec.config.defaults,
+      effective: spec.config.merge(override ?? undefined),
+      overrideKeys: overrideKeysOf(override),
+    }
+  }
 
   /**
    * 把硬截止同步进待办（§12.7）。规则本身在 `domain/campus.ts`，这里只做两件事：
@@ -1275,6 +1333,86 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
 
     closeTodo(id): boolean {
       return need(store).todo.close(id, clock())
+    },
+
+    guardUsage(platformId): GuardUsageDto {
+      const opened = store
+      const since = `${clock().slice(0, 10)}T00:00:00.000Z`
+      // 数据层没就绪时 U0 仍要能渲染：如实说明，而不是抛错让首屏整块空掉
+      if (opened === undefined) {
+        return { since, platforms: [], note: '数据层尚未就绪 —— 暂时读不到额度余量。' }
+      }
+      const targets =
+        platformId === undefined
+          ? registry.list().map((adapter) => ({ id: adapter.id, displayName: adapter.displayName }))
+          : (() => {
+              const adapter = registry.get(platformId)
+              if (adapter === undefined) {
+                throw new DomainError('NOT_FOUND', `未注册的平台：${platformId}`, {
+                  hint: '平台清单见 GET /platforms。',
+                  detail: { platformId },
+                })
+              }
+              return [{ id: adapter.id, displayName: adapter.displayName }]
+            })()
+      return {
+        since,
+        platforms: targets.map((target) => ({
+          platformId: target.id,
+          displayName: target.displayName,
+          actions: guardUsageOf(opened, clock, target.id),
+        })),
+        note:
+          '计数只算**今天成功**的动作（口径与闸门拒绝时同一份：审计表 + UTC 日）。' +
+          'limit 是 min(你的每日额度, 平台侧上限)；limitedBy=platform 时改自己的额度没有用。',
+      }
+    },
+
+    adapterConfig(platformId): AdapterConfigDto {
+      return buildAdapterConfigOf(need(store), platformId)
+    },
+
+    updateAdapterConfig(platformId, override): AdapterConfigDto {
+      const opened = need(store)
+      const spec = adapterSpecOf(platformId)
+      if (spec === undefined) {
+        throw new DomainError('NOT_FOUND', `未注册的平台：${platformId}`, {
+          hint: '平台清单见 GET /platforms。',
+          detail: { platformId },
+        })
+      }
+      // 只接受普通对象或 null：数组/字符串/数字都不是"一份配置覆盖"，
+      // 放进去会在 merge 时被当成"没改"而静默无效（那正是最难查的一类问题）
+      if (override !== null && (typeof override !== 'object' || Array.isArray(override))) {
+        throw new DomainError('INVALID_INPUT', 'override 必须是一个 JSON 对象，或 null（清除覆盖）', {
+          hint: '只写你要改的键即可（会与代码默认值合并），例如 {"selectors":{"card":".joblist-item"}}。',
+        })
+      }
+      const serialized = JSON.stringify(override ?? null)
+      if (serialized.length > ADAPTER_CONFIG_MAX_CHARS) {
+        throw new DomainError('INVALID_INPUT', `覆盖太大了（${String(serialized.length)} 字符，上限 ${String(ADAPTER_CONFIG_MAX_CHARS)}）`, {
+          hint: '配置覆盖只该写"要改的那几个键"，不该整份复制进来。',
+        })
+      }
+      if (override === null) {
+        opened.setting.remove(ADAPTER_CONFIG_KEY, 'platform', platformId)
+      } else {
+        opened.setting.set(ADAPTER_CONFIG_KEY, 'platform', platformId, override, clock())
+      }
+      // **重建并热替换**：配置是在 build 时快照进闭包的，只写库要等下次装配才生效（J2）
+      const adapter = rebuildAdapter(spec, override ?? undefined, registry)
+      const next = buildAdapterConfigOf(opened, platformId)
+      bus.publish('adapter.config.updated', {
+        platformId,
+        keys: next.overrideKeys,
+        cleared: override === null,
+      })
+      logger?.info(
+        `[${PLUGIN_ID}] 适配器 ${platformId} 配置已更新并热生效（覆盖键：${
+          next.overrideKeys.length === 0 ? '无（回到代码默认）' : next.overrideKeys.join('、')
+        }；适配器 ${adapter.displayName}）`,
+      )
+      return next
     },
 
     store(): Store | undefined {

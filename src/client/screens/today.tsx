@@ -9,6 +9,7 @@ import { formatClock, formatJitter, formatRelative } from '../../shared/time-for
 import {
   ApiError,
   closeTodo,
+  fetchGuardUsage,
   fetchPlatforms,
   fetchSchedulerStatus,
   fetchToday,
@@ -16,6 +17,7 @@ import {
   runDefaultPlan,
   runPlan,
   startLogin,
+  type GuardUsageDto,
   type TodayDto,
 } from '../api.js'
 import { InlineMd } from '../inline-md.js'
@@ -100,6 +102,7 @@ export function TodayScreen(props: {
   const today = useAsync((signal) => fetchToday(signal), [props.revision])
   const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision])
   const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision])
+  const usage = useAsync((signal) => fetchGuardUsage(undefined, signal), [props.revision])
   const [feedback, setFeedback] = useState<Feedback>(IDLE)
 
   const now = useMemo(() => new Date(), [props.revision])
@@ -116,6 +119,7 @@ export function TodayScreen(props: {
     today.reload()
     scheduler.reload()
     platforms.reload()
+    usage.reload()
   }
 
   const act = async (message: string, run: () => Promise<string>): Promise<void> => {
@@ -184,6 +188,17 @@ export function TodayScreen(props: {
   const data: TodayDto | null = useSticky(today.state)
   const sched = useSticky(scheduler.state)
   const platformItems = useSticky(platforms.state)?.items ?? []
+  /**
+   * 额度余量（D7）。只列**今天用过**或**已经用满**的那些 ——
+   * 10 个平台 × 3 个动作全铺开会把首屏淹掉，而"还剩多少"只在快撞线时才需要看。
+   * 完整读数在「设置」，模型侧在 `job_settings` 里。
+   */
+  const usageData: GuardUsageDto | null = useSticky(usage.state)
+  const usageRows = (usageData?.platforms ?? []).flatMap((platform) =>
+    platform.actions
+      .filter((entry) => entry.used > 0 || entry.remaining === 0)
+      .map((entry) => ({ ...entry, displayName: platform.displayName })),
+  )
   const unhealthy = platformItems.filter(
     (item) =>
       item.health !== 'healthy' ||
@@ -333,15 +348,44 @@ export function TodayScreen(props: {
               <b>{data.jobCount}</b>
               <span>岗位总数</span>
             </button>
-            <div className={`jh-stat${data.pendingRepair > 0 ? ' jh-stat-warn' : ''}`}>
+            <button
+              type="button"
+              className={`jh-stat${data.pendingRepair > 0 ? ' jh-stat-warn' : ''}`}
+              title="被字段断言拦下的记录（没进主表）。点进去看坏在哪个字段、样本是哪个岗位，并修选择器。"
+              onClick={props.onGoCollect}
+            >
               <b>{data.pendingRepair}</b>
               <span>待修复记录</span>
-            </div>
+            </button>
             <div className={`jh-stat${data.todos.some((todo) => todo.level === 'urgent') ? ' jh-stat-error' : ''}`}>
               <b>{data.openTodoCount}</b>
               <span>待办</span>
             </div>
           </div>
+
+          {/* ── 额度余量（D7 / U0）───────────────────────────────────────
+              以前首屏只有**抓取配额**（"今天还能自动跑几轮"），而真正会卡住用户的是
+              "今天还能发几条招呼 / 投几份" —— 那个数字只在被拒的那一刻才出现。
+              只在真的用过或已用满时才出现，避免首屏被 10 个平台 × 3 个动作淹掉。 */}
+          {usageRows.length === 0 ? null : (
+            <section className="jh-card jh-card-tight">
+              <h2 className="jh-card-title">今日额度余量</h2>
+              <ul className="jh-kv">
+                {usageRows.map((row) => (
+                  <li key={`${row.displayName}-${row.action}`}>
+                    <span>
+                      {row.displayName} · {row.bucket === 'greeting' ? '打招呼' : row.bucket === 'application' ? '投递' : '回复'}
+                    </span>
+                    <span>
+                      已用 {row.used}/{row.limit}
+                      {row.remaining > 0 ? `（剩 ${row.remaining}）` : '（已用满）'}
+                      {row.limitedBy === 'platform' ? ' · 上限来自平台侧' : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="jh-card">
             <h2 className="jh-card-title">待办</h2>

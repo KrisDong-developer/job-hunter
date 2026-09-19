@@ -51,10 +51,10 @@
 [job-hunter] 适配器 51job 已注册（配置来源：代码默认 | DB 覆盖）
 ```
 
-> ⚠️ **实测与源码注释不一致的一处**：`fiftyone-job.ts` 的注释写着「选择器坏了自己在 UI 改」，
-> 但**写入路径没有实现** —— 全仓库只有 `ai-config` 与 `guard-config` 两个键有 `setting.set()` 调用，
-> **没有任何 HTTP 路由或界面能改 `adapter-config`**。目前改它只能直接写 sqlite（见 §4）。
-> UI 编辑是待办，不是已完成项。
+> ✅ **2026-09-19 更新**：写入路径已经实现 —— 采集页（U9）底部有「适配器配置覆盖」卡片，
+> 对应 `GET|PUT /platforms/:id/adapter-config`。它读回**三层**（代码默认 / DB 覆盖 / 实际生效），
+> 写入后**热替换适配器**（不要求重启插件，J2）。下面 §4 的 sqlite 手法仍然可用，
+> 但它现在只是"没有界面时的兜底"，不是唯一路径。
 
 ## 2. 解析函数的硬约束（真踩过一次）
 
@@ -131,7 +131,12 @@ node scripts/run-ts.mjs test/tools/crawl-fixture.ts --break-selectors --rounds 3
 #    位置：test/fixtures/51job-sz.html（仓库里已提交一份 51job 深圳 Java 的样本）
 #    ⚠️ 抓取前先确认目标站点条款与 robots；本项目不提供任何反检测能力
 
-# ③ 写 DB 覆盖（只写要改的键，会与代码默认值合并）
+# ③ 在界面上写覆盖（推荐）：采集页（U9）→「适配器配置覆盖」→ 选平台 → 只写要改的键 → 保存并热生效
+#    对应接口：PUT /job-hunter/platforms/51job/adapter-config
+#    请求体：{"override":{"selectors":{"card":".joblist-item","title":".jname"}}}
+#    想先看当前生效的是什么：GET /job-hunter/platforms/51job/adapter-config（默认/覆盖/生效三层）
+
+# ③' 没有界面时的兜底：直接写 DB 覆盖（只写要改的键，会与代码默认值合并）
 node -e "const{DatabaseSync}=require('node:sqlite');\
 const db=new DatabaseSync(process.env.DSH_HOME+'/job-hunter/data.db');\
 db.prepare(\"INSERT INTO setting(key,scope,scope_ref,value_json,updated_at) \
@@ -139,7 +144,10 @@ VALUES('adapter-config','platform','51job',?,datetime('now')) \
 ON CONFLICT(key,scope,scope_ref) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at\") \
 .run(JSON.stringify({selectors:{card:'.joblist-item',title:'.jname'}}))"
 
-# ④ 离线全绿（绝不访问真实招聘站）
+# ④ 重跑一轮抓取确认新数据正常，然后在界面「待修复记录」卡里清空该平台那一队
+#    （GET /repairs 看缺哪些字段；POST /repairs/clear 按平台清空）
+
+# ⑤ 离线全绿（绝不访问真实招聘站）
 npm test
 ```
 
@@ -156,7 +164,8 @@ npm test
 > 平台各自的实测记录（端点、参数、取值域、坑）写在 `docs/PLATFORM-WAIQI.md` 这类平台文档里，
 > 本手册只讲**通用机制**。改一个平台前先读它那一份。
 
-生效时机：**配置在装配时读取一次**，改完 DB 需要让插件重新加载（重启该 profile 最稳）。
+生效时机：**走界面/接口写的是热生效**（宿主会重建适配器，不需要重启插件）；
+只有直接改 DB（②' 那条兜底）才需要在装配时读取 —— 那时重启该 profile 最稳。
 改稳之后，把最终值回写到 `DEFAULT_FIFTYONE_CONFIG`，让新用户不必手工写 DB。
 
 ## 5. 新增一个平台

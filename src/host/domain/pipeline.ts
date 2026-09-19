@@ -25,7 +25,7 @@ import {
   TERMINAL_STAGES,
   stageRank,
 } from '../../shared/enums.js'
-import type { ApplicationDto, BoardDto, BoardCardDto, StageEventDto } from '../../shared/dto.js'
+import type { ApplicationDto, BoardDto, BoardCardDto, GreetingDto, StageEventDto } from '../../shared/dto.js'
 import type { Store } from '../store/store.js'
 import type { ApplicationRecord, GreetingRecord } from '../store/repo/pipeline.js'
 import { systemClock, type Clock } from '../util/time.js'
@@ -93,14 +93,31 @@ export interface PipelineService {
     actor: string
     templateId?: number | null
     channel?: ApplicationChannel
+    /**
+     * 初始接触态。缺省 `'greeted'`。
+     *
+     * 平台侧**已验证送达**时传 `'delivered'` —— 那不是装饰：§3.3 的
+     * "未读超时"建议挂在 `delivered` 上，全记成 `greeted` 会让那条建议永不触发。
+     * 没验证出来就停在 `greeted`，**不猜**。
+     */
+    stage?: ContactStage
   }): GreetingRecord
   advanceContact(input: {
     jobId: number
     to: ContactStage
     source?: StageSource
     evidenceRef?: string | null
+    /** 为什么要改（会进状态事件，回看时能读懂）。 */
+    note?: string | null
   }): GreetingRecord
   contactStage(jobId: number): ContactStage
+  /**
+   * 打招呼记录列表（D6：说了什么、投了哪版、几点发的都要能查）。
+   *
+   * 带上岗位/公司/模板名：话术效果对比（D2）与"我给谁发过"这两件事
+   * 只靠 id 是读不出来的，而让界面为每行再拉一次详情是 N+1 次往返。
+   */
+  listGreetings(filter?: { jobId?: number; stage?: ContactStage; limit?: number }): GreetingDto[]
   /** 未读超时 / 已读未回超时的**建议**（§12.2 的两条分支，§3.3 的核心洞察）。 */
   followUpSuggestions(): FollowUpSuggestion[]
   /**
@@ -401,6 +418,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
 
     // ── 接触态 ────────────────────────────────────────────────────
     recordGreetingSent(input): GreetingRecord {
+      const stage = input.stage ?? 'greeted'
       const record = store.pipeline.createGreeting(
         {
           jobId: input.jobId,
@@ -409,6 +427,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
           content: input.content,
           channel: input.channel ?? 'platform',
           actor: input.actor,
+          stage,
         },
         clock(),
       )
@@ -417,7 +436,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
           entity: 'greeting',
           entityId: record.id,
           fromStage: 'none',
-          toStage: 'greeted',
+          toStage: stage,
           source: input.actor === 'model' ? 'model' : 'manual',
         },
         clock(),
@@ -447,6 +466,7 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
           toStage: input.to,
           source: input.source ?? 'manual',
           evidenceRef: input.evidenceRef ?? null,
+          note: input.note ?? null,
         },
         clock(),
       )
@@ -459,6 +479,30 @@ export function createPipelineService(deps: PipelineDeps): PipelineService {
 
     contactStage(jobId): ContactStage {
       return store.pipeline.latestGreeting(jobId)?.stage ?? 'none'
+    },
+
+    listGreetings(filter = {}): GreetingDto[] {
+      const templates = new Map(store.pipeline.listTemplates().map((template) => [template.id, template.name]))
+      return store.pipeline.listGreetings(filter).map((record): GreetingDto => {
+        const job = record.jobId === null ? undefined : store.job.detail(record.jobId)
+        return {
+          id: record.id,
+          jobId: record.jobId,
+          jobTitle: job?.title ?? null,
+          companyName: job?.companyName ?? null,
+          platformId: record.platformId,
+          templateId: record.templateId,
+          // 模板被删了就是 null：宁可显示"没有模板"，也不要显示一个指向空处的 id
+          templateName: record.templateId === null ? null : (templates.get(record.templateId) ?? null),
+          content: record.content,
+          sentAt: record.sentAt,
+          channel: record.channel,
+          actor: record.actor,
+          stage: record.stage,
+          stageAt: record.stageAt,
+          repliedAt: record.repliedAt,
+        }
+      })
     },
 
     followUpSuggestions(): FollowUpSuggestion[] {
