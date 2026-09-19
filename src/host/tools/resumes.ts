@@ -289,5 +289,131 @@ export function resumesTools(runtime: HostRuntime): ToolDefinition[] {
         )
       },
     }),
+    tool<Record<string, unknown>, { text: string }>({
+      name: 'resume_import',
+      description:
+        '把**粘贴进来的简历正文**解析成一版新简历（A3），或把用户**自己的** PDF/DOCX 存成某版简历的附件（R9）。' +
+        '**中危**：模型发起时需要审批。' +
+        '⚠️ 解析只吃文本 —— 本工具**不解析 PDF/DOCX 字节**（没有解析库，硬做只会把脏数据写进简历库）：' +
+        'PDF 里的文字要用户自己复制出来。解析会把简历文本发给模型，受「简历导入解析」用途开关与隐私闸门约束（默认关）。',
+      timeoutMs: 3 * 60 * 1000,
+      parameters: schema(
+        {
+          action: enumStr(['parse', 'upload'], 'parse = 粘贴文本解析；upload = 上传自有附件'),
+          text: str('parse 必填：从 PDF/Word 复制出来的简历正文'),
+          name: str('新简历的版本名；不填取解析出来的目标岗位'),
+          direction: str('岗位方向'),
+          language: enumStr(RESUME_LANGUAGES, '简历语言'),
+          save: { type: 'boolean', description: 'parse 时是否直接存成一版新简历（默认 true）；false = 只看解析结果' },
+          useLlm: { type: 'boolean', description: 'parse 时是否允许调用模型（false = 只做兜底保留原文）' },
+          resumeId: int('upload 必填：挂到哪一版简历下'),
+          fileName: str('upload 必填：文件名（HR 那一侧看到的就是它）'),
+          contentBase64: str('upload 必填：文件内容的纯 base64（不带 data: 前缀）'),
+          format: str('upload 可选：pdf / docx（不传则按文件名后缀判断）'),
+        },
+        ['action'],
+      ),
+      ...textResult,
+      async run(args) {
+        requireData(runtime)
+        const action = asString(args['action']) ?? 'parse'
+        const service = runtime.resumes()
+
+        if (action === 'upload') {
+          const resumeId = positiveId(args['resumeId'], 'resumeId')
+          const fileName = asString(args['fileName'])
+          const contentBase64 = asString(args['contentBase64'])
+          if (fileName === undefined || contentBase64 === undefined) {
+            throw new DomainError('INVALID_INPUT', 'upload 需要 resumeId、fileName 与 contentBase64', {
+              hint:
+                'contentBase64 是**用户自己的**文件内容。模型手上没有文件时，' +
+                '应当让用户自己在界面上传（这条入口是给"手上确实有字节"的场景用的）。',
+            })
+          }
+          const format = asString(args['format'])
+          return await runtime.guard().run(
+            {
+              action: 'resume.upload',
+              actor: 'model',
+              danger: 'mid',
+              payload: { resumeId, fileName, base64Bytes: contentBase64.length },
+            },
+            async () => {
+              const file = service.uploadFile(resumeId, {
+                fileName,
+                contentBase64,
+                ...(format === undefined ? {} : { format }),
+              })
+              runtime.events().publish('resume.file.uploaded', {
+                resumeId,
+                fileId: file.id,
+                format: file.format,
+                bytes: file.bytes,
+              })
+              return {
+                text:
+                  `已把「${file.fileName}」存成简历 #${String(resumeId)} 的附件` +
+                  `（${file.format}，${String(file.bytes)} 字节，附件 #${String(file.id)}）。\n` +
+                  '注意：选它投递时，平台侧用的仍是平台内那份简历 —— 这个附件的用处是**记录这次投的是哪一版**（归因）。',
+              }
+            },
+          )
+        }
+
+        const text = asString(args['text'])
+        if (text === undefined) {
+          throw new DomainError('INVALID_INPUT', 'parse 需要 text（把简历正文粘贴进来）', {
+            hint: '从 PDF / Word 里选中正文复制。本工具不解析 PDF 字节。',
+          })
+        }
+        const direction = asString(args['direction'])
+        const language = asString(args['language'])
+        const name = asString(args['name'])
+        return await runtime.guard().run(
+          {
+            action: 'resume.import',
+            actor: 'model',
+            danger: 'mid',
+            payload: { chars: text.length, save: args['save'] !== false, direction: direction ?? null },
+          },
+          async () => {
+            const result = await service.importResume({
+              text,
+              ...(name === undefined ? {} : { name }),
+              ...(direction === undefined ? {} : { direction }),
+              ...(language === undefined ? {} : { language: language as never }),
+              ...(typeof args['save'] === 'boolean' ? { save: args['save'] } : {}),
+              ...(typeof args['useLlm'] === 'boolean' ? { useLlm: args['useLlm'] } : {}),
+            })
+            if (result.resume !== null) {
+              runtime.events().publish('resume.imported', {
+                id: result.resume.id,
+                via: result.via,
+                issues: result.issues.length,
+              })
+            }
+            const counts = result.content
+            const lines = [
+              result.resume === null
+                ? `已解析但**没有落库**（save=false）：姓名「${counts.basics.name || '未解析出'}」，` +
+                  `技能 ${String(counts.skills.length)} 项、经历 ${String(counts.experiences.length)} 段、` +
+                  `项目 ${String(counts.projects.length)} 个。`
+                : `已导入简历 #${String(result.resume.id)}「${result.resume.name}」` +
+                  `（${result.via === 'llm' ? '模型解析' : '未解析，原文已保留'}）：` +
+                  `技能 ${String(counts.skills.length)} 项、经历 ${String(counts.experiences.length)} 段、` +
+                  `项目 ${String(counts.projects.length)} 个。`,
+              result.notes.length === 0 ? '' : `说明：${result.notes.join('；')}`,
+              result.issues.length === 0
+                ? '体检没有发现问题。'
+                : `体检 ${String(result.issues.length)} 项待改：${result.issues
+                    .slice(0, 5)
+                    .map((issue) => issue.message)
+                    .join('；')}`,
+            ]
+            return { text: lines.filter((line) => line !== '').join('\n') }
+          },
+        )
+      },
+    }),
   ]
 }

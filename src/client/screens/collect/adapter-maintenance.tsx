@@ -17,18 +17,13 @@
  * 改配置（热生效）→ 重跑一轮 → **丢弃 / 清空这一队**。
  */
 import { useEffect, useState } from 'react'
-import type { AdapterConfigDto } from '../../api.js'
-import {
-  ApiError,
-  clearRepairs,
-  discardRepair,
-  fetchAdapterConfig,
-  fetchRepairs,
-  updateAdapterConfig,
-} from '../../api.js'
-import { FieldHint } from '../../field-hint.js'
-import { Modal } from '../../modal.js'
-import { useAsync } from '../../use-async.js'
+import type { AdapterConfigDto } from '../../../shared/dto.js'
+import { ApiError } from '../../net/client.js'
+import { clearRepairs, discardRepair, fetchAdapterConfig, fetchRepairs, updateAdapterConfig } from '../../net/collect/platforms.js'
+import { ErrorLine, LoadingLine } from '../../ui/async-view.js'
+import { FieldHint } from '../../ui/field-hint.js'
+import { Modal } from '../../ui/modal.js'
+import { useAsync } from '../../hooks/use-async.js'
 
 /** 时间戳的紧凑显示（与消息页同一口径：切掉秒与 T）。 */
 function stamp(at: string): string {
@@ -99,17 +94,17 @@ export function RepairQueueCard(props: { revision: number; platforms: Array<{ id
       </div>
 
       {error === null ? null : (
-        <p className="jh-error" role="alert">
+        <ErrorLine role="alert">
           {error}
-        </p>
+        </ErrorLine>
       )}
 
-      {repairs.state.status === 'error' ? <p className="jh-error">{repairs.state.message}</p> : null}
+      {repairs.state.status === 'error' ? <ErrorLine>{repairs.state.message}</ErrorLine> : null}
 
       {repairs.state.status === 'loading' ? (
-        <p className="jh-muted" aria-busy="true">
+        <LoadingLine busy>
           正在读取待修复记录…
-        </p>
+        </LoadingLine>
       ) : items.length === 0 ? (
         <p className="jh-muted">
           {total === 0
@@ -303,17 +298,17 @@ export function AdapterConfigCard(props: {
       {props.platforms.length === 0 ? (
         <p className="jh-muted">还没有注册平台。</p>
       ) : config.state.status === 'loading' ? (
-        <p className="jh-muted" aria-busy="true">
+        <LoadingLine busy>
           正在读取…
-        </p>
+        </LoadingLine>
       ) : config.state.status === 'error' ? (
-        <p className="jh-error">{config.state.message}</p>
+        <ErrorLine>{config.state.message}</ErrorLine>
       ) : current === null ? null : (
         <>
           {error === null ? null : (
-            <p className="jh-error" role="alert">
+            <ErrorLine role="alert">
               {error}
-            </p>
+            </ErrorLine>
           )}
           {saved === null ? null : <p className="jh-note">{saved}</p>}
 

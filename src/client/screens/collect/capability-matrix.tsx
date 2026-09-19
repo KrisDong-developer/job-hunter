@@ -7,7 +7,7 @@ import {
   MATURITY_LEVEL_SHORT,
   MATURITY_LEVEL_TONE,
 } from '../../../shared/enums.js'
-import type { PlatformOverviewDto } from '../../api.js'
+import type { PlatformOverviewDto } from '../../../shared/dto.js'
 
 /** 「高/中/低」三档的短标签（平台事实里没有中文名可取，这里只是把枚举翻成人话）。 */
 const LEVEL_SHORT: Record<'high' | 'medium' | 'low', string> = {

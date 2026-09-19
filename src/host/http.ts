@@ -10,7 +10,7 @@
  * 以及把 SSE 流挂上。所有路由与业务判断在 `router.ts`（可离线单测）里。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { MAX_BODY_BYTES, ROUTE_PREFIX } from '../shared/constants.js'
+import { ATTACHMENT_BODY_MAX_BYTES, MAX_BODY_BYTES, ROUTE_PREFIX } from '../shared/constants.js'
 import type { Disposer, PluginContext, WebServerService } from '../shared/dsh.js'
 import { serviceOf } from '../shared/dsh.js'
 import type { HostRuntime } from './runtime.js'
@@ -116,14 +116,28 @@ export function isSameOrigin(req: IncomingMessage): boolean {
   }
 }
 
+/**
+ * 某条路径允许的请求体上限。
+ *
+ * 默认 64KB；**只有简历附件上传**那一条放宽 —— 一份真实的 PDF 简历（100KB–500KB）
+ * 装不进 64KB，而 base64 还要再膨胀 4/3。刻意不做成"全局放宽"：
+ * 体积闸门张开的范围越小，出事的面积就越小。
+ *
+ * 注意这只是**传输层**的兜底：业务上限（5MB、文件头是不是真 PDF）在领域层
+ * `resumes.uploadFile` 里判 —— 界面、模型工具与这条 HTTP 路径过的是同一套判断。
+ */
+export function bodyLimitFor(path: string): number {
+  return /^\/resumes\/\d+\/files$/.test(path) ? ATTACHMENT_BODY_MAX_BYTES : MAX_BODY_BYTES
+}
+
 /** 读取并解析 JSON 请求体；超限 413，坏 JSON 400。 */
-export async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+export async function readJsonBody(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<unknown> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
     const buffer = chunk as Buffer
     size += buffer.length
-    if (size > MAX_BODY_BYTES) throw new HttpError(413, 'BODY_TOO_LARGE')
+    if (size > limit) throw new HttpError(413, 'BODY_TOO_LARGE')
     chunks.push(buffer)
   }
   if (size === 0) return undefined
@@ -218,7 +232,7 @@ export function registerHttpRoutes(ctx: PluginContext, runtime: HostRuntime): Di
           query: url.searchParams,
           headers: req.headers,
           sameOrigin: isSameOrigin(req),
-          readJson: async () => await readJsonBody(req),
+          readJson: async () => await readJsonBody(req, bodyLimitFor(path)),
         })
 
         if (result.kind === 'sse') {

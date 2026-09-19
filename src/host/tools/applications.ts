@@ -1,9 +1,9 @@
 /**
- * 投递与面试工具：真的投出去、记一笔投递、推进阶段、面试日程、面试准备包。
+ * 投递与面试工具：真的投出去、记一笔投递、推进阶段、面试日程、面试准备包、面试错题本。
  *
  * 危险级：`application_deliver` / `application_send` 是**高危**（会真的对外发东西），
- * `application_update` / `interview_manage` 是**中危**（模型发起时审批），
- * `interview_prep` 是只读。分级不是我们这个文件说了算 —— 由 `runtime` 上那层 guard 判。
+ * `application_update` / `interview_manage` / `interview_questions`（写操作）是**中危**（模型发起时审批），
+ * `interview_prep` / `interview_questions`（查询）是只读。分级不是我们这个文件说了算 —— 由 `runtime` 上那层 guard 判。
  */
 import type { ToolDefinition } from '../../shared/dsh.js'
 import {
@@ -396,7 +396,11 @@ export function applicationsTools(runtime: HostRuntime): ToolDefinition[] {
             ? '错题本：还没有记录'
             : `错题本（问过 ${String(prep.questionNotes[0]?.times ?? 0)} 次以上的排前面）：\n${prep.questionNotes
                 .slice(0, 5)
-                .map((note) => `  · ${note.question}（${String(note.times)} 次）`)
+                .map(
+                  (note) =>
+                    `  · ${note.question}（${String(note.times)} 次）` +
+                    (note.betterAnswer === '' ? '' : `\n    上次整理的答法：${note.betterAnswer.slice(0, 120)}`),
+                )
                 .join('\n')}`,
           '',
           '检查清单：',
@@ -404,6 +408,129 @@ export function applicationsTools(runtime: HostRuntime): ToolDefinition[] {
           ...prep.notes.map((note) => `\n注意：${note}`),
         ]
         return { text: lines.filter((line) => line !== '').join('\n') }
+      },
+    }),
+
+    tool<Record<string, unknown>, { text: string }>({
+      name: 'interview_questions',
+      description:
+        '面试错题本：记下被问到的题 / 当时怎么答的 / 下次怎么答更好，或按主题翻出来复习（G6）。' +
+        '同一个「问题 + 主题」再记一次是**累加次数**，所以反复被问的题会自动排到前面。' +
+        '写入是中危（模型发起需审批），查询是低危只读。',
+      parameters: schema(
+        {
+          action: enumStr(['list', 'add', 'update', 'remove'], '要做的操作'),
+          interviewId: int('add 必填：这场面试的 id（题目总在某场面试里被问到）'),
+          questionId: int('update / remove 必填：错题 id'),
+          question: str('面试官问了什么（记原话最好用）'),
+          myAnswer: str('我当时怎么答的（卡在哪一句）'),
+          betterAnswer: str('复盘后更好的答法'),
+          topic: str('主题 / 技术点，用于归档与筛选'),
+          limit: int('list 返回条数，默认 20'),
+        },
+        ['action'],
+      ),
+      ...textResult,
+      async run(args) {
+        requireData(runtime)
+        const action = asString(args['action'])
+        const service = runtime.interviews()
+
+        if (action === 'list') {
+          const topic = asString(args['topic'])
+          const items = service.listQuestions({
+            ...(topic === undefined ? {} : { topic }),
+            limit: toInt(args['limit'], 20, 1, 100),
+          })
+          if (items.length === 0) {
+            return {
+              text:
+                '错题本还是空的。面试完趁记得，用 interview_questions(action="add") 把被问到的题记下来 —— ' +
+                '同一道题在不同公司被反复问是常态，攒下来才越面越强。',
+            }
+          }
+          return {
+            text: [
+              `共 ${String(items.length)} 道题（按被问次数排）：`,
+              ...items.map(
+                (item) =>
+                  `#${String(item.id)} ${item.question}｜被问 ${String(item.times)} 次` +
+                  `${item.topic === '' ? '' : `｜${item.topic}`}` +
+                  (item.betterAnswer === '' ? '' : `\n    更好的答法：${item.betterAnswer.slice(0, 120)}`),
+              ),
+            ].join('\n'),
+          }
+        }
+
+        if (action === 'add') {
+          const interviewId = positiveId(args['interviewId'], 'interviewId')
+          const question = asString(args['question'])
+          if (question === undefined) {
+            throw new DomainError('INVALID_INPUT', 'add 需要 interviewId 与 question')
+          }
+          const myAnswer = asString(args['myAnswer'])
+          const betterAnswer = asString(args['betterAnswer'])
+          const topic = asString(args['topic'])
+          return await runtime.guard().run(
+            {
+              action: 'interview.question.add',
+              actor: 'model',
+              danger: 'mid',
+              payload: { interviewId, question: question.slice(0, 80) },
+            },
+            async () => {
+              const note = service.addQuestion(interviewId, {
+                question,
+                ...(myAnswer === undefined ? {} : { myAnswer }),
+                ...(betterAnswer === undefined ? {} : { betterAnswer }),
+                ...(topic === undefined ? {} : { topic }),
+              })
+              return {
+                text:
+                  `已记下：${note.question}（这题累计被问 ${String(note.times)} 次）。` +
+                  (note.times > 1
+                    ? '\n反复出现的题就是必须背熟的那几道 —— 下次面试前翻一遍。'
+                    : '\n趁热把「更好的答法」补上，比回忆整场面试容易得多。'),
+              }
+            },
+          )
+        }
+
+        const questionId = positiveId(args['questionId'], 'questionId')
+        const patch = {
+          ...(asString(args['question']) === undefined ? {} : { question: asString(args['question']) as string }),
+          ...(asString(args['myAnswer']) === undefined ? {} : { myAnswer: asString(args['myAnswer']) as string }),
+          ...(asString(args['betterAnswer']) === undefined
+            ? {}
+            : { betterAnswer: asString(args['betterAnswer']) as string }),
+          ...(asString(args['topic']) === undefined ? {} : { topic: asString(args['topic']) as string }),
+        }
+
+        if (action === 'update') {
+          return await runtime.guard().run(
+            { action: 'interview.question.update', actor: 'model', danger: 'mid', payload: { questionId, keys: Object.keys(patch) } },
+            async () => {
+              const note = service.updateQuestion(questionId, patch)
+              return { text: `已更新错题 #${String(note.id)}（${note.question}）。` }
+            },
+          )
+        }
+
+        if (action === 'remove') {
+          return await runtime.guard().run(
+            { action: 'interview.question.remove', actor: 'model', danger: 'mid', payload: { questionId } },
+            async () => {
+              if (!service.removeQuestion(questionId)) {
+                throw new DomainError('NOT_FOUND', `错题不存在：${String(questionId)}`)
+              }
+              return { text: `已删除错题 #${String(questionId)}。` }
+            },
+          )
+        }
+
+        throw new DomainError('INVALID_INPUT', `不认识的操作：${String(action)}`, {
+          hint: '合法取值：list / add / update / remove',
+        })
       },
     }),
   ]

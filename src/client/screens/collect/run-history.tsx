@@ -7,6 +7,7 @@ import { runReasonLabel } from '../../../shared/enums.js'
 import { humanizeFailure, type FailureText } from '../../../shared/error-text.js'
 import { formatDuration, formatLocalMoment, formatRelative } from '../../../shared/time-format.js'
 import type { RecentRunDto } from '../../../shared/dto.js'
+import { LoadingLine } from '../../ui/async-view.js'
 import { StateTag } from './state-tag.js'
 
 /**
@@ -49,9 +50,9 @@ export function RunHistoryTable(props: {
   // 加载态与空态必须分开（见上面 `plansLoading` 的注释）
   if (props.loading) {
     return (
-      <p className="jh-muted" aria-busy="true" aria-live="polite">
+      <LoadingLine busy live="polite">
         正在读取运行记录…
-      </p>
+      </LoadingLine>
     )
   }
   if (props.runs.length === 0) {
@@ -182,9 +183,9 @@ export function RunLogCard(props: {
 }) {
   if (props.loading) {
     return (
-      <p className="jh-muted" aria-busy="true" aria-live="polite">
+      <LoadingLine busy live="polite">
         正在读取运行记录…
-      </p>
+      </LoadingLine>
     )
   }
 

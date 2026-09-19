@@ -145,6 +145,7 @@ const JOBS_SAFE_FILTER = `
   AND NOT EXISTS (SELECT 1 FROM interview i WHERE i.job_id = job.id)
   AND NOT EXISTS (SELECT 1 FROM tailoring t WHERE t.job_id = job.id)
   AND NOT EXISTS (SELECT 1 FROM campus_application c WHERE c.job_id = job.id)
+  AND NOT EXISTS (SELECT 1 FROM offer o WHERE o.job_id = job.id)
 `
 
 /** JD 字段清理的条件（与 `SPECS` 里 jdText 那一项共用）。 */
@@ -225,6 +226,8 @@ const LONG_TERM_TYPES: ReadonlyArray<{ id: string; label: string; table: string;
   { id: 'tailorings', label: '简历定制记录', table: 'tailoring', note: '哪一版投了哪个岗' },
   { id: 'resumes', label: '简历版本', table: 'resume', note: '用户资产，只由用户显式删除（含附件）' },
   { id: 'campus', label: '校招记录', table: 'campus_application', note: '笔试与三方是不可逆节点' },
+  { id: 'questions', label: '面试错题本', table: 'question_note', note: '自己攒的题与答案，只由用户显式删除' },
+  { id: 'offers', label: 'Offer', table: 'offer', note: '拿到手之后的报价与截止时间，是决策依据' },
 ]
 
 // ─────────────────────────────────────────────────────────────────────

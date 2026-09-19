@@ -39,6 +39,26 @@ export interface ResumeService {
         format?: ResumeFormat;
         template?: ResumeTemplate;
     }): Promise<ResumeFileDto>;
+    /**
+     * A3：把**粘贴进来的简历文本**解析成结构化内容，并（默认）存成一版新简历。
+     *
+     * ⚠️ 只接受**文本**，不接受 PDF/DOCX 字节：本仓库没有 PDF/DOCX 解析库，
+     * 硬造一个只会把脏数据写进简历库。用户从 PDF 里选中复制再粘进来即可
+     * （Word 与 PDF 都能复制）。想把手上的 PDF 原样存档，用下面的 `uploadFile`。
+     */
+    importResume(input: ResumeImportInput): Promise<ResumeImportResult>;
+    /**
+     * 把**用户自己的** PDF / DOCX 存成这一版简历的附件（R9 / D7）。
+     *
+     * 与 `exportResume` 的分工：那个是"从结构化内容生成文件"，
+     * 这个是"把你手上已有的文件原样收进来"——用途是投递归因（R6：这次投的是哪一份）
+     * 以及平台要求的自有模板表。
+     */
+    uploadFile(resumeId: number, input: {
+        fileName: string;
+        contentBase64: string;
+        format?: string;
+    }): ResumeFileDto;
     /** 读回已生成的文件（下载路由用）。 */
     readFile(fileId: number): {
         fileName: string;
@@ -70,6 +90,27 @@ export interface ResumeWriteInput {
     content: ResumeContent;
     state?: ResumeState;
     isDefault?: boolean;
+}
+export interface ResumeImportInput {
+    /** 从 PDF / Word 里复制出来的简历正文（纯文本）。 */
+    text: string;
+    name?: string;
+    direction?: string;
+    language?: ResumeLanguage;
+    /** 是否存成一版新简历；`false` = 只解析给用户看。默认 `true`。 */
+    save?: boolean;
+    useLlm?: boolean;
+}
+export interface ResumeImportResult {
+    /** 落库后的简历；`save: false` 时为 null。 */
+    resume: ResumeDto | null;
+    /** 解析（或兜底）得到的结构化内容 —— 即使没落库也返回，界面让用户先看再决定。 */
+    content: ResumeContent;
+    /** `llm` = 模型解析；`rule` = 未解析（原始文本原样保留在 `extras` 里）。 */
+    via: 'llm' | 'rule';
+    /** 事实说明：降级原因、外发字段、以及需要人工核对的项。 */
+    notes: string[];
+    issues: ResumeIssue[];
 }
 export declare function createResumeService(deps: ResumeServiceDeps): ResumeService;
 /**

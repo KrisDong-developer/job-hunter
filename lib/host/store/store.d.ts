@@ -17,6 +17,7 @@ import { type FieldHealthRepo } from './repo/field-health.js';
 import { type FlagRepo } from './repo/flags.js';
 import { type JobRepo } from './repo/jobs.js';
 import { type LlmCallRepo } from './repo/llm-calls.js';
+import { type OfferRepo } from './repo/offers.js';
 import { type PlanRepo } from './repo/plans.js';
 import { type PipelineRepo } from './repo/pipeline.js';
 import { type PlatformRepo } from './repo/platforms.js';
@@ -50,6 +51,8 @@ export interface Store {
     readonly resume: ResumeRepo;
     readonly tailoring: TailoringRepo;
     readonly pipeline: PipelineRepo;
+    /** Offer（§4.H H1/H3）：拿到手之后的逐项对比与截止倒计时。 */
+    readonly offer: OfferRepo;
     /** 校招与海外支线（P8）：两条支线的表放在一起，因为它们共享"不可逆节点"这个约束。 */
     readonly branch: BranchRepo;
     close(): void;

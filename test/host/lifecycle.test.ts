@@ -30,6 +30,7 @@ const SERVICE_ACCESSORS = [
   'messages',
   'interviews',
   'analytics',
+  'offers',
   'campus',
   'overseas',
 ] as const

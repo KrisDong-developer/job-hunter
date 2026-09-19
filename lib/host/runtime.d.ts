@@ -4,6 +4,7 @@ import type { CompanyService } from './domain/companies.js';
 import type { DedupSweepResult } from './domain/dedupe-sweep.js';
 import type { JobService } from './domain/jobs.js';
 import type { PipelineService, FollowUpSuggestion } from './domain/pipeline.js';
+import { type OfferService } from './domain/offers.js';
 import type { MessageService } from './domain/messages.js';
 import type { InterviewService } from './domain/interviews.js';
 import type { AnalyticsService } from './domain/analytics.js';
@@ -233,6 +234,8 @@ export interface HostRuntime {
     messages(): MessageService;
     interviews(): InterviewService;
     analytics(): AnalyticsService;
+    /** Offer（§4.H）：逐项对比与截止倒计时（拿到 offer 之后的那一段决策）。 */
+    offers(): OfferService;
     /** 跟进建议（未读超时 / 已读未回超时是**两条不同分支**，§12.2）。 */
     followUps(): FollowUpSuggestion[];
     /** 未读消息数（U0 与侧栏角标用）。 */

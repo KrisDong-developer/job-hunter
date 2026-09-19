@@ -1,8 +1,8 @@
 // LeasePanel：租约面板（R20），把"死胡同"提示换成带动作的面板。
 // 「接管调度」只在对方心跳已过期时才可用 —— 抢一个还活着的实例会让两个调度器同时抓取。
 // 「重新检测」已移到顶部工具条，这里只留与租约强相关的「接管调度」。纯展示组件。
-import { InlineMd } from '../../inline-md.js'
-import { Term } from '../../terms.js'
+import { InlineMd } from '../../ui/inline-md.js'
+import { Term } from '../../ui/terms.js'
 import { formatRelative } from '../../../shared/time-format.js'
 import type { SchedulerStatusDto } from '../../../shared/dto.js'
 

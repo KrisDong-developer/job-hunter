@@ -118,6 +118,23 @@ test('路由顺序：字面量段必须赢过参数段', async () => {
     const badRepairId = await call(runtime, 'POST', '/repairs/abc/discard', { body: {} })
     assert.equal(badRepairId.status, 400)
     assert.equal(messageOf(badRepairId), '非法待修复 id：abc')
+
+    // `/offers/compare` 若排在 `/offers/:id` 之后，`compare` 会被当成 offer id →
+    // 报的是"非法 Offer id"而不是 compare 自己的"至少要两份 offer"
+    const compare = await call(runtime, 'POST', '/offers/compare', { body: {} })
+    assert.equal(compare.status, 400, '/offers/compare 被 /offers/:id 吞掉了')
+    assert.ok(
+      (messageOf(compare) ?? '').includes('两份'),
+      `应当是 compare 自己的校验，实际：${String(messageOf(compare))}`,
+    )
+
+    // `/resumes/import` 是字面量：若被 `/resumes/:id` 抢走，`import` 会被当成简历 id
+    const importResume = await call(runtime, 'POST', '/resumes/import', { body: {} })
+    assert.equal(importResume.status, 400, '/resumes/import 被 /resumes/:id 吞掉了')
+    assert.ok(
+      (messageOf(importResume) ?? '').includes('text'),
+      `应当是 import 自己的校验，实际：${String(messageOf(importResume))}`,
+    )
   } finally {
     runtime.close()
     cleanup(dir)

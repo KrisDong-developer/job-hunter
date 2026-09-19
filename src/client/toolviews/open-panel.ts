@@ -1,6 +1,6 @@
 import { PANEL_KEY } from '../../shared/constants.js'
-import { requestPanelIntent } from '../intent.js'
-import { showPanel } from '../runtime.js'
+import { requestPanelIntent } from '../app/intent.js'
+import { showPanel } from '../app/runtime.js'
 
 /**
  * 把一次「在主面板里打开这个岗位」的意图送过去。

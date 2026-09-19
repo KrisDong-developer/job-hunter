@@ -1,8 +1,9 @@
 /**
- * 简历（P6）相关端点：`/resumes` 系列 —— 列表（GET /resumes）、新建（POST /resumes）、
- * 单条（GET /resumes/:id）、更新（PATCH /resumes/:id）、删除（DELETE /resumes/:id）、
- * 复制（POST /resumes/:id/duplicate）、设为默认（POST /resumes/:id/default）、
- * 预览（GET /resumes/:id/preview，返回 bytes）、导出（POST /resumes/:id/export）；
+ * 简历（P6 / A3 / R9）相关端点：`/resumes` 系列 —— 列表（GET /resumes）、新建（POST /resumes）、
+ * **导入（POST /resumes/import：粘贴文本 → 结构化）**、单条（GET /resumes/:id）、
+ * 更新（PATCH /resumes/:id）、删除（DELETE /resumes/:id）、复制（POST /resumes/:id/duplicate）、
+ * 设为默认（POST /resumes/:id/default）、预览（GET /resumes/:id/preview，返回 bytes）、
+ * 导出（POST /resumes/:id/export）、**上传自有附件（POST /resumes/:id/files）**；
  * 附件下载/删除（/files/:id）；简历定制（POST /resume/tailor）与定制记录（/tailorings）。
  */
 import { RESUME_FORMATS, RESUME_LANGUAGES, RESUME_STATES, RESUME_TEMPLATES } from '../../../shared/enums.js'
@@ -10,7 +11,7 @@ import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '
 import { normalizeResumeContent } from '../../../shared/resume.js'
 import type { ResumeWriteInput } from '../../domain/resumes.js'
 import { DomainError } from '../../util/errors.js'
-import { json, parsePositiveInt, readObject, requireData, type RouteContext } from './kit.js'
+import { json, parsePositiveInt, parseRecordId, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'
 
 /**
@@ -113,6 +114,100 @@ export async function get(ctx: RouteContext): Promise<RouteResult | undefined> {
 
   const resume = service.get(resumeId)
   return json(200, { ...resume, issues: service.inspect(resumeId) })
+}
+
+/**
+ * `POST /resumes/import` —— 把粘贴的简历文本解析成结构化（A3）。
+ *
+ * ## 为什么收的是**文本**而不是文件
+ *
+ * 本仓库没有 PDF/DOCX 解析库。硬写一个"看起来能跑"的解析器，结果是**脏数据进简历库**
+ * ——而那正是本仓库最不愿写进去的东西（宁可不做，也不写错的）。
+ * 用户从 PDF / Word 里选中复制再粘进来即可（两者都能复制文本）；
+ * 想把 PDF 原样存档就调 `POST /resumes/:id/files`。
+ *
+ * ## 为什么 200 与 201 都可能
+ *
+ * `save: false` 时只解析、不落库（返回 200）——那是"先看看解析成什么样"的用法；
+ * 落库成功返回 201，与其他创建类端点一致。
+ */
+export async function importResume(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(method === 'POST' && segments.length === 2 && segments[0] === 'resumes' && segments[1] === 'import')) {
+    return undefined
+  }
+  requireData(runtime)
+
+  const body = await readObject(req)
+  const text = body['text']
+  if (typeof text !== 'string') {
+    throw new DomainError('INVALID_INPUT', 'text 必填（把简历正文粘贴进来）', {
+      hint:
+        '从 PDF / Word 里选中正文复制再粘进来。本工具**不解析 PDF/DOCX 字节** —— ' +
+        '扫描件先转成可复制的文本，或者用 POST /resumes/:id/files 把原文件存成附件。',
+    })
+  }
+  const language = body['language']
+  const result = await runtime.resumes().importResume({
+    text,
+    ...(typeof body['name'] === 'string' ? { name: body['name'] } : {}),
+    ...(typeof body['direction'] === 'string' ? { direction: body['direction'] } : {}),
+    ...(typeof language === 'string' && (RESUME_LANGUAGES as readonly string[]).includes(language)
+      ? { language: language as ResumeLanguage }
+      : {}),
+    ...(typeof body['save'] === 'boolean' ? { save: body['save'] } : {}),
+    ...(typeof body['useLlm'] === 'boolean' ? { useLlm: body['useLlm'] } : {}),
+  })
+  if (result.resume !== null) {
+    runtime.events().publish('resume.imported', {
+      id: result.resume.id,
+      via: result.via,
+      issues: result.issues.length,
+    })
+  }
+  return json(result.resume === null ? 200 : 201, { ok: true, ...result })
+}
+
+/**
+ * `POST /resumes/:id/files` —— 上传用户**自己的** PDF / DOCX 作为附件（R9 / D7）。
+ *
+ * 形状（`fileName` + `contentBase64`）是刻意的：
+ *   * 不收**路径**——路径会让"上传"变成"读宿主任意文件"，与本仓库
+ *     `system/reveal` 不收路径是同一条纪律；
+ *   * 体积与文件头校验在**领域层**（`uploadFile`），这一层只做类型检查 ——
+ *     这样界面、工具与 HTTP 三条入口过的是同一套判断。
+ */
+export async function uploadFile(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(method === 'POST' && segments.length === 3 && segments[0] === 'resumes' && segments[2] === 'files')) {
+    return undefined
+  }
+  requireData(runtime)
+
+  const resumeId = parseRecordId(segments[1] ?? null, '简历')
+  const body = await readObject(req)
+  const fileName = body['fileName']
+  const contentBase64 = body['contentBase64']
+  if (typeof fileName !== 'string' || fileName.trim() === '') {
+    throw new DomainError('INVALID_INPUT', 'fileName 必填（附件的文件名，用于 HR 那一侧显示）')
+  }
+  if (typeof contentBase64 !== 'string' || contentBase64.trim() === '') {
+    throw new DomainError('INVALID_INPUT', 'contentBase64 必填', {
+      hint: '把文件读成纯 base64（不带 data: 前缀）放进这个字段。',
+    })
+  }
+  const file = runtime.resumes().uploadFile(resumeId, {
+    fileName,
+    contentBase64,
+    ...(typeof body['format'] === 'string' ? { format: body['format'] } : {}),
+  })
+  runtime.events().publish('resume.file.uploaded', {
+    resumeId,
+    fileId: file.id,
+    format: file.format,
+    bytes: file.bytes,
+  })
+  return json(201, { ok: true, file })
 }
 
 export async function patch(ctx: RouteContext): Promise<RouteResult | undefined> {

@@ -246,17 +246,34 @@ export interface PipelineRepo {
         limit?: number;
     }): InterviewRecord[];
     removeInterview(id: number): boolean;
+    /**
+     * 记一道题。**同一个「问题 + 主题」再记一次是累加 `times`**，不是新增一行 ——
+     * G6 的价值就在"这题被问过 3 次"这个计数上（反复被问的才是必须背下来的）。
+     */
     upsertQuestionNote(input: {
         question: string;
         myAnswer?: string;
         betterAnswer?: string;
         topic?: string;
+        companyId?: number | null;
         interviewId?: number | null;
     }, now: string): QuestionNoteRecord;
     listQuestionNotes(filter?: {
         topic?: string;
+        companyId?: number;
         limit?: number;
     }): QuestionNoteRecord[];
+    getQuestionNote(id: number): QuestionNoteRecord | undefined;
+    /** 改正答案 / 改主题 / 换关联公司。**不动 `times`**（那是事实，不是可编辑字段）。 */
+    updateQuestionNote(id: number, patch: Partial<{
+        question: string;
+        myAnswer: string;
+        betterAnswer: string;
+        topic: string;
+        companyId: number | null;
+        interviewId: number | null;
+    }>, now: string): QuestionNoteRecord | undefined;
+    removeQuestionNote(id: number): boolean;
 }
 export declare function createPipelineRepo(db: DatabaseSync): PipelineRepo;
 //# sourceMappingURL=pipeline.d.ts.map

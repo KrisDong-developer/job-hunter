@@ -2,10 +2,12 @@
 // 合并了哪些 / 依据是什么 / 能不能拆开都可查可逆（去重必须可逆）。
 // 全库复核的按钮不在这里 —— 已搬到页面顶部固定工具条，结果由统一 Alert 播报。
 import { useState } from 'react'
-import { ApiError, deleteDedupGroup, fetchDedupGroups, splitDedupMember } from '../../api.js'
-import { useAsync } from '../../use-async.js'
-import { FieldHint } from '../../field-hint.js'
-import { Modal } from '../../modal.js'
+import { ApiError } from '../../net/client.js'
+import { deleteDedupGroup, fetchDedupGroups, splitDedupMember } from '../../net/dedup.js'
+import { useAsync } from '../../hooks/use-async.js'
+import { ErrorLine, LoadingLine } from '../../ui/async-view.js'
+import { FieldHint } from '../../ui/field-hint.js'
+import { Modal } from '../../ui/modal.js'
 
 /**
  * 跨平台去重分组（A2）。
@@ -52,13 +54,13 @@ export function DedupGroupsCard(props: { revision: number }) {
       </div>
 
       {error === null ? null : (
-        <p className="jh-error" role="alert">
+        <ErrorLine role="alert">
           {error}
-        </p>
+        </ErrorLine>
       )}
 
       {groups.state.status === 'loading' ? (
-        <p className="jh-muted" aria-busy="true">正在读取去重分组…</p>
+        <LoadingLine busy>正在读取去重分组…</LoadingLine>
       ) : items.length === 0 ? (
         <p className="jh-muted">
           目前没有去重分组。多平台同时在抓同一批岗位时，重复的那几条才会被合并到这里。

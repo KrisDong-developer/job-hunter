@@ -11,6 +11,13 @@ export const AI_PURPOSES = [
   'greeting_draft',
   'resume_tailor',
   'resume_tone_check',
+  /**
+   * A3：把用户粘进来的简历文本解析成结构化内容。
+   *
+   * 与 `resume_tailor` 是两件事（那个是"改写"，这个是"读懂"），所以分开一个用途：
+   * 用户可以只想让模型做定制、不让它碰导入，也可以反过来。
+   */
+  'resume_import',
   'interview_prep',
   'mock_interview',
   'company_intel',
@@ -33,6 +40,7 @@ export const AI_PURPOSE_LABEL: Record<AiPurpose, string> = {
   greeting_draft: '打招呼话术',
   resume_tailor: '简历定制',
   resume_tone_check: '简历语气检查',
+  resume_import: '简历导入解析',
   interview_prep: '面试准备',
   mock_interview: '模拟面试',
   company_intel: '公司情报',
@@ -56,6 +64,14 @@ export const AI_PURPOSE_DEFAULT_ENABLED: Record<AiPurpose, boolean> = {
   greeting_draft: true,
   resume_tailor: false,
   resume_tone_check: false,
+  /**
+   * 简历导入：**默认关**。
+   *
+   * 它会把用户整份简历文本发给模型（比定制更彻底 —— 定制至少还有防编造检查兜底），
+   * 属于 I5 要求"用户显式同意"的范围。关掉时导入仍可用，只是**不做解析**：
+   * 如实告诉用户"模型未开启，请手动填写"，而不是塞一个瞎猜的结构给他。
+   */
+  resume_import: false,
   interview_prep: false,
   mock_interview: false,
   company_intel: false,

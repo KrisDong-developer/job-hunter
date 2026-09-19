@@ -17,22 +17,15 @@
  *   没有引号（引号内可能有换行，按行切会把一行切成两半）—— 有引号时不分批并说明。
  */
 import { useState } from 'react'
-import {
-  ApiError,
-  dataExportUrl,
-  fetchStorage,
-  importJobsPayload,
-  previewCleanup,
-  runCleanup,
-  type CleanupPlanDto,
-  type DataImportResultDto,
-  type RetentionPolicy,
-  type SettingsDto,
-} from '../../api.js'
-import { FieldHint } from '../../field-hint.js'
-import { Modal } from '../../modal.js'
-import { Switch } from '../../switch.js'
-import { useAsync } from '../../use-async.js'
+import { ApiError } from '../../net/client.js'
+import { dataExportUrl, fetchStorage, importJobsPayload, previewCleanup, runCleanup } from '../../net/ops.js'
+import type { SettingsDto } from '../../net/types.js'
+import type { CleanupPlanDto, DataImportResultDto, RetentionPolicy } from '../../../shared/dto.js'
+import { ErrorLine, LoadingLine } from '../../ui/async-view.js'
+import { FieldHint } from '../../ui/field-hint.js'
+import { Modal } from '../../ui/modal.js'
+import { Switch } from '../../ui/switch.js'
+import { useAsync } from '../../hooks/use-async.js'
 
 /** 一次导入请求最多带多少行（64KB 上限下留足余量）。 */
 const CHUNK_ROWS = 300
@@ -164,7 +157,7 @@ export function DataPanel(props: {
           <FieldHint text="单位是「天」，0 = 永久保留。投递记录、打招呼、消息、面试、简历与附件**不在清理范围内**（下面「磁盘占用」里列为长期保留）—— 它们是归因与复盘的资产，只能由你自己删。" />
         </div>
         {retention === null ? (
-          <p className="jh-muted">正在读取…</p>
+          <LoadingLine>正在读取…</LoadingLine>
         ) : (
           <>
             {RETENTION_FIELDS.map((field) => (
@@ -249,9 +242,9 @@ export function DataPanel(props: {
           </button>
           <FieldHint text={storage.state.status === 'ok' ? storage.state.data.note : '按表字节数来自 SQLite 的 dbstat（真实分页大小）。'} />
         </div>
-        {storage.state.status === 'error' ? <p className="jh-error">{storage.state.message}</p> : null}
+        {storage.state.status === 'error' ? <ErrorLine>{storage.state.message}</ErrorLine> : null}
         {storage.state.status !== 'ok' ? (
-          <p className="jh-muted">正在统计…</p>
+          <LoadingLine>正在统计…</LoadingLine>
         ) : (
           <>
             <ul className="jh-kv">

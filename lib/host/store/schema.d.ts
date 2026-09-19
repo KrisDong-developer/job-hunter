@@ -142,4 +142,32 @@ export declare const SCHEMA_V8 = "\n-- \u672A\u8BFB\u6D88\u606F\uFF1A\u53EA\u7D2
  * 而收益只是"少一列"。分开存，各自表达各自的东西。
  */
 export declare const SCHEMA_V9 = "\nALTER TABLE plan ADD COLUMN platform_overrides_json TEXT NOT NULL DEFAULT '{}';\n";
+/**
+ * v10 · Offer（§4.H H1/H3/H4）。
+ *
+ * ## 为什么现在才建这张表
+ *
+ * 在此之前，"拿到 offer"只以 `application.stage = 'offer'` 的形式存在 ——
+ * 那是一个**阶段**，不是一份**报价**。而 H1 要的是逐项对比（月 base × 月数、
+ * 公积金比例与基数、试用期比例、竞业补偿、违约金…），H3 要的是截止倒计时。
+ * 这些字段塞进 `application` 会把投递流水线变成一张什么都不是的表。
+ *
+ * ## 为什么明细是 `comp_json` + 少量标量列
+ *
+ * 明细有 20 项、且随时可能加项（谈薪的坑只会越踩越多），逐项建列意味着每加一项
+ * 都要一次迁移；而对比表**不靠 SQL 聚合**（它是在内存里逐项渲染的，见
+ * `shared/offer.ts` 的字段清单），所以 JSON 足够。
+ *
+ * 但有三样**必须能查**，所以留成真列：
+ *   * `annual_cash` —— 排序与"谁给得多"要靠它（也是 U0 与今日提醒的入口）；
+ *   * `deadline` —— 截止倒计时要按它排序、筛选"7 天内到期"；
+ *   * `state` —— "还没决定的"是唯一的提醒对象（`OFFER_OPEN_STATES`）。
+ *
+ * ## 三条外键都是 SET NULL，且都允许为空
+ *
+ * offer 经常来自**平台之外**（官网直投、内推、猎头），未必有对应的 `job` 行；
+ * 也未必经过本工具的投递动作。所以 `company_name` 单独留一列：
+ * 公司不在库里时，登记的公司名不能丢。
+ */
+export declare const SCHEMA_V10 = "\nCREATE TABLE offer (\n  id             INTEGER PRIMARY KEY,\n  company_id     INTEGER REFERENCES company(id) ON DELETE SET NULL,\n  company_name   TEXT NOT NULL DEFAULT '',\n  job_id         INTEGER REFERENCES job(id) ON DELETE SET NULL,\n  application_id INTEGER REFERENCES application(id) ON DELETE SET NULL,\n  role           TEXT NOT NULL DEFAULT '',\n  comp_json      TEXT NOT NULL DEFAULT '{}',\n  annual_cash    INTEGER,\n  deadline       TEXT,\n  state          TEXT NOT NULL DEFAULT 'pending',\n  note           TEXT,\n  created_at     TEXT NOT NULL,\n  updated_at     TEXT NOT NULL\n);\nCREATE INDEX idx_offer_state ON offer(state, deadline);\nCREATE INDEX idx_offer_company ON offer(company_id);\n\n-- \u9519\u9898\u672C\u6309\"\u516C\u53F8\"\u56DE\u6EAF\uFF08\"\u8FD9\u5BB6\u95EE\u8FC7\u4EC0\u4E48\"\uFF09\u6B64\u524D\u6CA1\u6709\u7D22\u5F15\uFF0C\u53EA\u80FD\u5168\u8868\u626B\nCREATE INDEX idx_question_company ON question_note(company_id);\n";
 //# sourceMappingURL=schema.d.ts.map

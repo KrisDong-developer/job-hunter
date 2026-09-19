@@ -21,6 +21,7 @@ import {
   SCHEMA_V7,
   SCHEMA_V8,
   SCHEMA_V9,
+  SCHEMA_V10,
 } from './schema.js'
 
 export interface Migration {
@@ -40,6 +41,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 7, name: 'scheduling', sql: SCHEMA_V7 },
   { version: 8, name: 'indexes', sql: SCHEMA_V8 },
   { version: 9, name: 'plan-platform-overrides', sql: SCHEMA_V9 },
+  { version: 10, name: 'offer', sql: SCHEMA_V10 },
 ]
 
 export interface MigrationReport {

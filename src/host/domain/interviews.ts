@@ -19,9 +19,10 @@ import type {
   InterviewConflictDto,
   InterviewDto,
   InterviewPrepDto,
+  QuestionNoteDto,
 } from '../../shared/dto.js'
 import type { Store } from '../store/store.js'
-import type { InterviewRecord } from '../store/repo/pipeline.js'
+import type { InterviewRecord, QuestionNoteRecord } from '../store/repo/pipeline.js'
 import { systemClock, type Clock } from '../util/time.js'
 import { DomainError } from '../util/errors.js'
 
@@ -56,6 +57,25 @@ export interface InterviewService {
   prep(id: number): InterviewPrepDto
   /** U0 今日要用：接下来 N 天内即将到来的面试。 */
   upcoming(withinHours?: number): InterviewDto[]
+
+  // ── 错题本（G6）─────────────────────────────────────────────────
+  /**
+   * 记一道面试题。**同一个「问题 + 主题」再记一次是累加 `times`** ——
+   * "这题被问过 3 次"是自动攒出来的，所以要能重复调用同一个入口。
+   *
+   * 挂在一场面试下（`POST /interviews/:id/questions`）：这样公司维度能自动补上
+   * （从面试关联的岗位推），而"哪家问过什么"正是错题本的第二个用法。
+   */
+  addQuestion(
+    interviewId: number,
+    input: { question: string; myAnswer?: string; betterAnswer?: string; topic?: string },
+  ): QuestionNoteDto
+  listQuestions(filter?: { topic?: string; companyId?: number; limit?: number }): QuestionNoteDto[]
+  updateQuestion(
+    id: number,
+    patch: Partial<{ question: string; myAnswer: string; betterAnswer: string; topic: string }>,
+  ): QuestionNoteDto
+  removeQuestion(id: number): boolean
 }
 
 export interface InterviewDeps {
@@ -87,6 +107,28 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
     const record = store.pipeline.getInterview(id)
     if (record === undefined) {
       throw new DomainError('NOT_FOUND', `面试不存在：${String(id)}`, { detail: { interviewId: id } })
+    }
+    return record
+  }
+
+  /** 错题本记录 → DTO（记录形状与 DTO 一一对应，这里只做一次显式搬运，便于两边各自演进）。 */
+  const toQuestionDto = (record: QuestionNoteRecord): QuestionNoteDto => ({
+    id: record.id,
+    question: record.question,
+    myAnswer: record.myAnswer,
+    betterAnswer: record.betterAnswer,
+    topic: record.topic,
+    companyId: record.companyId,
+    interviewId: record.interviewId,
+    times: record.times,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  })
+
+  const requireQuestion = (id: number): QuestionNoteRecord => {
+    const record = store.pipeline.getQuestionNote(id)
+    if (record === undefined) {
+      throw new DomainError('NOT_FOUND', `错题不存在：${String(id)}`, { detail: { questionId: id } })
     }
     return record
   }
@@ -302,12 +344,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         }
       }
 
-      const questionNotes = store.pipeline.listQuestionNotes({ limit: 20 }).map((note) => ({
-        id: note.id,
-        question: note.question,
-        times: note.times,
-        topic: note.topic,
-      }))
+      const questionNotes = store.pipeline.listQuestionNotes({ limit: 20 }).map(toQuestionDto)
 
       const checklistBase = [
         '确认时间与形式（视频要提前测麦克风与网络）',
@@ -368,6 +405,65 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         .filter((record) => record.state !== 'cancelled' && record.at >= now && record.at <= limit)
         .map((record) => decorate(record, all))
         .sort((a, b) => a.at.localeCompare(b.at))
+    },
+
+    // ── 错题本（G6）───────────────────────────────────────────────
+    addQuestion(interviewId, input): QuestionNoteDto {
+      // 必须先确认这场面试存在：错题挂在一场真实面试下，"这题是哪家问的"才有出处
+      const interview = requireInterview(interviewId)
+      const question = input.question.trim()
+      if (question === '') {
+        throw new DomainError('INVALID_INPUT', '题目不能为空', {
+          hint: '把面试官的原话记下来最好用（"你项目里那个超时是怎么处理的"）。',
+        })
+      }
+      if (question.length > 300) {
+        throw new DomainError('INVALID_INPUT', '题目太长了（上限 300 字）', {
+          hint: '记要点即可；详细讨论写进「我当时怎么答的」。',
+        })
+      }
+      // 公司从面试关联的岗位推 —— 用户不该为了记一道题再去选一次公司
+      const job = interview.jobId === null ? undefined : store.job.detail(interview.jobId)
+      const record = store.pipeline.upsertQuestionNote(
+        {
+          question,
+          ...(input.myAnswer === undefined ? {} : { myAnswer: input.myAnswer.slice(0, 2000) }),
+          ...(input.betterAnswer === undefined ? {} : { betterAnswer: input.betterAnswer.slice(0, 2000) }),
+          ...(input.topic === undefined ? {} : { topic: input.topic.trim().slice(0, 60) }),
+          companyId: job?.companyId ?? null,
+          interviewId,
+        },
+        clock(),
+      )
+      return toQuestionDto(record)
+    },
+
+    listQuestions(filter = {}): QuestionNoteDto[] {
+      return store.pipeline.listQuestionNotes(filter).map(toQuestionDto)
+    },
+
+    updateQuestion(id, patch): QuestionNoteDto {
+      requireQuestion(id)
+      const next: Parameters<typeof store.pipeline.updateQuestionNote>[1] = {}
+      if (patch.question !== undefined) {
+        const question = patch.question.trim()
+        if (question === '') {
+          throw new DomainError('INVALID_INPUT', '题目不能改成空')
+        }
+        next.question = question.slice(0, 300)
+      }
+      if (patch.myAnswer !== undefined) next.myAnswer = patch.myAnswer.slice(0, 2000)
+      if (patch.betterAnswer !== undefined) next.betterAnswer = patch.betterAnswer.slice(0, 2000)
+      if (patch.topic !== undefined) next.topic = patch.topic.trim().slice(0, 60)
+      const updated = store.pipeline.updateQuestionNote(id, next, clock())
+      if (updated === undefined) {
+        throw new DomainError('NOT_FOUND', `错题不存在：${String(id)}`)
+      }
+      return toQuestionDto(updated)
+    },
+
+    removeQuestion(id): boolean {
+      return store.pipeline.removeQuestionNote(id)
     },
   }
 }

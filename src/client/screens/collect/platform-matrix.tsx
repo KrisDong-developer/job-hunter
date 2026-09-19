@@ -13,8 +13,8 @@ import {
   maturityNeedsWarning,
 } from '../../../shared/enums.js'
 import { formatClock } from '../../../shared/time-format.js'
-import type { PlatformOverviewDto } from '../../api.js'
-import { Term } from '../../terms.js'
+import type { PlatformOverviewDto } from '../../../shared/dto.js'
+import { Term } from '../../ui/terms.js'
 import { StateTag } from './state-tag.js'
 
 function cooldownActive(until: string | null, now: Date): Date | null {

@@ -16,18 +16,14 @@
  * 而投递没法撤回 —— 用户会以为"关了就等于没投"。
  */
 import { useEffect, useState } from 'react'
-import {
-  ApiError,
-  previewApplicationBatch,
-  sendApplicationBatch,
-  type ApplicationBatchPlanDto,
-  type ApplicationBatchReceiptDto,
-} from '../../api.js'
+import { ApiError } from '../../net/client.js'
+import { previewApplicationBatch, sendApplicationBatch } from '../../net/pipeline.js'
+import type { ApplicationBatchPlanDto, ApplicationBatchReceiptDto } from '../../../shared/dto.js'
 import { DELIVERY_STATE_LABEL, DELIVERY_STATE_TONE } from '../../../shared/enums.js'
-import { FieldHint } from '../../field-hint.js'
-import { InlineMd } from '../../inline-md.js'
-import { Modal } from '../../modal.js'
-import { ResumeFilePicker } from '../resume-file-picker.js'
+import { FieldHint } from '../../ui/field-hint.js'
+import { InlineMd } from '../../ui/inline-md.js'
+import { Modal } from '../../ui/modal.js'
+import { ResumeFilePicker } from '../../views/resume-file-picker.js'
 
 function reasonOf(error: unknown): string {
   return error instanceof ApiError ? error.display : String(error)

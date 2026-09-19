@@ -6,6 +6,7 @@
  */
 import type { TodayDto } from '../../shared/dto.js'
 import type { Store } from '../store/store.js'
+import type { OfferService } from './offers.js'
 import { readAdapterHealth } from '../platform/health.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import { isOfflineMode } from '../util/offline.js'
@@ -14,12 +15,28 @@ import { systemClock, type Clock } from '../util/time.js'
 /** 「今日新增」的窗口。 */
 const NEW_JOB_WINDOW_MS = 24 * 60 * 60 * 1000
 
+/**
+ * 首屏展示 offer 截止倒计时的窗口（天）。
+ *
+ * 取 7 天：再远的事放进首屏只会变成噪音，而"一周内要答复"是真实的决策压力
+ * （H3：offer 截止与"再等等别家"的博弈）。**已过期的也会出现**（`upcoming` 含过去），
+ * 那是最需要立刻看到的一种。
+ */
+const OFFER_DUE_WINDOW_DAYS = 7
+
 export interface TodayDeps {
   store: Store
   registry: AdapterRegistry
   clock?: Clock
   /** 未关闭待办最多返回多少条。 */
   todoLimit?: number
+  /**
+   * Offer 服务（可选）。
+   *
+   * 为什么用 `Pick` 而不是整个 `OfferService`：首屏只要两个读数，
+   * 而"首屏依赖了哪些能力"应当一眼看得出来 —— 传整个服务会让这里慢慢长成第二个聚合层。
+   */
+  offers?: Pick<OfferService, 'openCount' | 'upcoming'>
 }
 
 export function buildToday(deps: TodayDeps): TodayDto {
@@ -48,6 +65,8 @@ export function buildToday(deps: TodayDeps): TodayDto {
     })),
     openTodoCount: store.todo.countOpen(),
     pendingRepair: store.repair.countPending(),
+    offerOpenCount: deps.offers?.openCount() ?? 0,
+    offersDueSoon: deps.offers?.upcoming(OFFER_DUE_WINDOW_DAYS) ?? [],
     adapters: deps.registry.list().map((adapter) => {
       const snapshot = readAdapterHealth(store, adapter.id)
       return {
@@ -76,6 +95,8 @@ export function buildTodayUnavailable(reason: string, now: string): TodayDto {
     todos: [],
     openTodoCount: 0,
     pendingRepair: 0,
+    offerOpenCount: 0,
+    offersDueSoon: [],
     adapters: [],
     lastCrawl: null,
   }

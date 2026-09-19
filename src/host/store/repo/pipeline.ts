@@ -270,11 +270,37 @@ export interface PipelineRepo {
   removeInterview(id: number): boolean
 
   // ── 错题本 ─────────────────────────────────────────────────────
+  /**
+   * 记一道题。**同一个「问题 + 主题」再记一次是累加 `times`**，不是新增一行 ——
+   * G6 的价值就在"这题被问过 3 次"这个计数上（反复被问的才是必须背下来的）。
+   */
   upsertQuestionNote(
-    input: { question: string; myAnswer?: string; betterAnswer?: string; topic?: string; interviewId?: number | null },
+    input: {
+      question: string
+      myAnswer?: string
+      betterAnswer?: string
+      topic?: string
+      companyId?: number | null
+      interviewId?: number | null
+    },
     now: string,
   ): QuestionNoteRecord
-  listQuestionNotes(filter?: { topic?: string; limit?: number }): QuestionNoteRecord[]
+  listQuestionNotes(filter?: { topic?: string; companyId?: number; limit?: number }): QuestionNoteRecord[]
+  getQuestionNote(id: number): QuestionNoteRecord | undefined
+  /** 改正答案 / 改主题 / 换关联公司。**不动 `times`**（那是事实，不是可编辑字段）。 */
+  updateQuestionNote(
+    id: number,
+    patch: Partial<{
+      question: string
+      myAnswer: string
+      betterAnswer: string
+      topic: string
+      companyId: number | null
+      interviewId: number | null
+    }>,
+    now: string,
+  ): QuestionNoteRecord | undefined
+  removeQuestionNote(id: number): boolean
 }
 
 const toTemplate = (row: Row): GreetingTemplateRecord => ({
@@ -468,18 +494,34 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
   const deleteInterview = db.prepare('DELETE FROM interview WHERE id = ?')
 
   const insertQuestionNote = db.prepare(
-    `INSERT INTO question_note (question, my_answer, better_answer, topic, interview_id, times, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+    `INSERT INTO question_note
+       (question, my_answer, better_answer, topic, company_id, interview_id, times, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
   )
   const selectQuestionByText = db.prepare(
     'SELECT * FROM question_note WHERE question = ? AND topic = ? ORDER BY id DESC LIMIT 1',
   )
+  // `company_id` 用 coalesce：第一次记的时候公司还不知道（没关联岗位），
+  // 后来又记一次时知道"这是哪家问的" —— 那时应当补上，而不是永远留空
   const bumpQuestion = db.prepare(
-    'UPDATE question_note SET times = times + 1, my_answer = ?, better_answer = ?, updated_at = ? WHERE id = ?',
+    `UPDATE question_note
+        SET times = times + 1, my_answer = ?, better_answer = ?,
+            company_id = coalesce(?, company_id), updated_at = ?
+      WHERE id = ?`,
+  )
+  const updateQuestion = db.prepare(
+    `UPDATE question_note
+        SET question = ?, my_answer = ?, better_answer = ?, topic = ?,
+            company_id = ?, interview_id = ?, updated_at = ?
+      WHERE id = ?`,
   )
   const selectQuestion = db.prepare('SELECT * FROM question_note WHERE id = ?')
   const selectQuestionsAll = db.prepare('SELECT * FROM question_note ORDER BY times DESC, id DESC LIMIT ?')
   const selectQuestionsByTopic = db.prepare('SELECT * FROM question_note WHERE topic = ? ORDER BY times DESC LIMIT ?')
+  const selectQuestionsByCompany = db.prepare(
+    'SELECT * FROM question_note WHERE company_id = ? ORDER BY times DESC, id DESC LIMIT ?',
+  )
+  const deleteQuestion = db.prepare('DELETE FROM question_note WHERE id = ?')
 
   const getInterviewOrThrow = (id: number): InterviewRecord => {
     const row = selectInterview.get(id) as Row | undefined
@@ -778,7 +820,13 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
       const existing = selectQuestionByText.get(input.question, topic) as Row | undefined
       if (existing !== undefined) {
         const record = toQuestionNote(existing)
-        bumpQuestion.run(input.myAnswer ?? record.myAnswer, input.betterAnswer ?? record.betterAnswer, now, record.id)
+        bumpQuestion.run(
+          input.myAnswer ?? record.myAnswer,
+          input.betterAnswer ?? record.betterAnswer,
+          input.companyId ?? null,
+          now,
+          record.id,
+        )
         return toQuestionNote(selectQuestion.get(record.id) as Row)
       }
       const result = insertQuestionNote.run(
@@ -786,6 +834,7 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
         input.myAnswer ?? '',
         input.betterAnswer ?? '',
         topic,
+        input.companyId ?? null,
         input.interviewId ?? null,
         now,
         now,
@@ -798,9 +847,36 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
       const rows = (
         filter.topic !== undefined
           ? selectQuestionsByTopic.all(filter.topic, limit)
-          : selectQuestionsAll.all(limit)
+          : filter.companyId !== undefined
+            ? selectQuestionsByCompany.all(filter.companyId, limit)
+            : selectQuestionsAll.all(limit)
       ) as Row[]
       return rows.map(toQuestionNote)
+    },
+
+    getQuestionNote(id): QuestionNoteRecord | undefined {
+      const row = selectQuestion.get(id) as Row | undefined
+      return row === undefined ? undefined : toQuestionNote(row)
+    },
+
+    updateQuestionNote(id, patch, now): QuestionNoteRecord | undefined {
+      const current = this.getQuestionNote(id)
+      if (current === undefined) return undefined
+      updateQuestion.run(
+        patch.question ?? current.question,
+        patch.myAnswer ?? current.myAnswer,
+        patch.betterAnswer ?? current.betterAnswer,
+        patch.topic ?? current.topic,
+        patch.companyId === undefined ? current.companyId : patch.companyId,
+        patch.interviewId === undefined ? current.interviewId : patch.interviewId,
+        now,
+        id,
+      )
+      return toQuestionNote(selectQuestion.get(id) as Row)
+    },
+
+    removeQuestionNote(id): boolean {
+      return Number(deleteQuestion.run(id).changes) > 0
     },
   }
 }

@@ -35,8 +35,10 @@ import {
   isResumeContentUsable,
   normalizeResumeContent,
   resumeFileName,
+  sanitizeFileName,
   techTokensOf,
 } from '../../shared/resume.js'
+import { ATTACHMENT_MAX_BYTES, RESUME_IMPORT_MAX_CHARS } from '../../shared/constants.js'
 import type { AiService } from '../ai/client.js'
 import { extractJson } from '../ai/prompts.js'
 import { renderResumeDocx } from '../render/docx.js'
@@ -75,6 +77,25 @@ export interface ResumeService {
   preview(id: number, template?: ResumeTemplate): string
   /** 生成附件并记账。 */
   exportResume(id: number, input?: { format?: ResumeFormat; template?: ResumeTemplate }): Promise<ResumeFileDto>
+  /**
+   * A3：把**粘贴进来的简历文本**解析成结构化内容，并（默认）存成一版新简历。
+   *
+   * ⚠️ 只接受**文本**，不接受 PDF/DOCX 字节：本仓库没有 PDF/DOCX 解析库，
+   * 硬造一个只会把脏数据写进简历库。用户从 PDF 里选中复制再粘进来即可
+   * （Word 与 PDF 都能复制）。想把手上的 PDF 原样存档，用下面的 `uploadFile`。
+   */
+  importResume(input: ResumeImportInput): Promise<ResumeImportResult>
+  /**
+   * 把**用户自己的** PDF / DOCX 存成这一版简历的附件（R9 / D7）。
+   *
+   * 与 `exportResume` 的分工：那个是"从结构化内容生成文件"，
+   * 这个是"把你手上已有的文件原样收进来"——用途是投递归因（R6：这次投的是哪一份）
+   * 以及平台要求的自有模板表。
+   */
+  uploadFile(
+    resumeId: number,
+    input: { fileName: string; contentBase64: string; format?: string },
+  ): ResumeFileDto
   /** 读回已生成的文件（下载路由用）。 */
   readFile(fileId: number): { fileName: string; format: string; bytes: Uint8Array } | undefined
   removeFile(fileId: number): boolean
@@ -93,6 +114,29 @@ export interface ResumeWriteInput {
   content: ResumeContent
   state?: ResumeState
   isDefault?: boolean
+}
+
+export interface ResumeImportInput {
+  /** 从 PDF / Word 里复制出来的简历正文（纯文本）。 */
+  text: string
+  name?: string
+  direction?: string
+  language?: ResumeLanguage
+  /** 是否存成一版新简历；`false` = 只解析给用户看。默认 `true`。 */
+  save?: boolean
+  useLlm?: boolean
+}
+
+export interface ResumeImportResult {
+  /** 落库后的简历；`save: false` 时为 null。 */
+  resume: ResumeDto | null
+  /** 解析（或兜底）得到的结构化内容 —— 即使没落库也返回，界面让用户先看再决定。 */
+  content: ResumeContent
+  /** `llm` = 模型解析；`rule` = 未解析（原始文本原样保留在 `extras` 里）。 */
+  via: 'llm' | 'rule'
+  /** 事实说明：降级原因、外发字段、以及需要人工核对的项。 */
+  notes: string[]
+  issues: ResumeIssue[]
 }
 
 export function createResumeService(deps: ResumeServiceDeps): ResumeService {
@@ -273,9 +317,10 @@ export function createResumeService(deps: ResumeServiceDeps): ResumeService {
 
       const dir = dirFor(id)
       mkdirSync(dir, { recursive: true })
+      // 显示名（可能含中文）与落盘名分开，见 `storedNameOf` 的说明
       const fileName = resumeFileName(record.content, extension)
       // 文件名带时间戳，避免同一秒内两次导出互相覆盖
-      const stored = `${clock().replace(/[:.]/g, '-')}-${fileName}`
+      const stored = `${clock().replace(/[:.]/g, '-')}-${storedNameOf(fileName, extension)}`
       const absolute = join(dir, stored)
       writeFileSync(absolute, bytes)
       deps.logger?.info(`[resume] 已生成 ${format} 附件：${absolute}（${String(bytes.byteLength)} 字节）`)
@@ -305,6 +350,146 @@ export function createResumeService(deps: ResumeServiceDeps): ResumeService {
         return undefined
       }
       return { fileName: file.fileName, format: file.format, bytes: readFileSync(absolute) }
+    },
+
+    async importResume(input): Promise<ResumeImportResult> {
+      const text = input.text.trim()
+      if (text === '') {
+        throw new DomainError('INVALID_INPUT', '简历文本是空的', {
+          hint: '从 PDF / Word 里**选中正文复制**再粘进来（本工具不解析 PDF 字节，见 importResume 的说明）。',
+        })
+      }
+      if (text.length > RESUME_IMPORT_MAX_CHARS) {
+        throw new DomainError(
+          'INVALID_INPUT',
+          `简历文本太长了（${String(text.length)} 字，上限 ${String(RESUME_IMPORT_MAX_CHARS)}）`,
+          { hint: '把无关的页眉页脚、隐私声明删掉再试 —— 太长的文本既烧额度也解析不准。' },
+        )
+      }
+
+      const direction = input.direction?.trim() ?? ''
+      const ai = deps.ai
+      /** 兜底：不解析，但**原文一字不丢**地保留下来（否则用户白粘一次）。 */
+      const rawOnly = (): ResumeContent => ({
+        ...emptyResumeContent(direction),
+        extras: [{ label: '导入的原始文本（待整理）', text: text.slice(0, 6000) }],
+      })
+
+      let content = rawOnly()
+      let via: 'llm' | 'rule' = 'rule'
+      const notes: string[] = []
+
+      if (ai === undefined || input.useLlm === false) {
+        notes.push(
+          '没有调用模型（用途「简历导入解析」默认关闭，或本次要求只用规则）—— ' +
+            '原始文本已原样保留在「补充信息」里，请手工整理成结构化内容。',
+        )
+      } else {
+        const result = await ai.call<{ content: ResumeContent }>(
+          {
+            purpose: 'resume_import',
+            instruction: [
+              '把下面这份简历文本**原样整理**成结构化 JSON。硬性约束：',
+              '1. 只提取文本里**真实存在**的信息；文本没有的字段留空字符串或空数组；',
+              '2. 不许补充、推断、美化任何经历、技能、学历或数字（年限、人数、百分比都不许改）；',
+              '3. 时间是文本里的日期，统一写成 YYYY-MM；只有一端（在职中）就只写 start；',
+              '4. 逐条成果保持原文措辞，只去掉多余空白与行号；',
+              '5. 联系方式（手机号/邮箱）**不要输出**——它们在本地就够了。',
+            ].join('\n'),
+            trusted: [{ label: 'resume-text', text }],
+            outputSpec:
+              '只输出 JSON：{"content": {"basics":{"name","title","city","years"},' +
+              '"summary","skills":[{"name","level","years","evidence"}],' +
+              '"experiences":[{"company","title","start","end","city","highlights":[],"stack":[]}],' +
+              '"projects":[{"name","role","period","highlights":[],"stack":[]}],' +
+              '"education":[{"school","major","degree","start","end"}],"extras":[{"label","text"}]}}。' +
+              '不要输出其它内容。',
+            maxTokens: 4096,
+            temperature: 0.2,
+            ref: { kind: 'resume', action: 'import' },
+          },
+          {
+            parse: (raw) => {
+              const parsed = extractJson(raw)
+              if (parsed === null || typeof parsed !== 'object') return undefined
+              const rawContent = (parsed as { content?: unknown }).content
+              if (rawContent === null || typeof rawContent !== 'object') return undefined
+              return { content: normalizeResumeContent(rawContent) }
+            },
+            fallback: () => ({ content: rawOnly() }),
+          },
+        )
+        content = result.via === 'llm' ? result.value.content : rawOnly()
+        via = result.via === 'llm' ? 'llm' : 'rule'
+        notes.push(...result.notes)
+        if (via === 'rule') {
+          notes.push('模型没能给出可用的解析结果 —— 原始文本已原样保留在「补充信息」里，请手工整理。')
+        } else {
+          notes.push(...ungroundedNotes(content, text))
+        }
+      }
+
+      let resume: ResumeDto | null = null
+      if (input.save !== false) {
+        const explicitName = input.name?.trim() ?? ''
+        const created = store.resume.create(
+          {
+            name: explicitName !== '' ? explicitName : (content.basics.title || '导入的简历'),
+            ...(direction === '' ? {} : { direction }),
+            ...(input.language === undefined ? {} : { language: input.language }),
+            content,
+            // 库里有默认版本时**不抢**默认位：换默认是用户的决定（§12.3）
+            ...(store.resume.defaultResume() === undefined ? { isDefault: true } : {}),
+          },
+          clock(),
+        )
+        resume = toDto(created)
+        deps.logger?.info(
+          `[resume] 从粘贴文本导入简历 #${String(created.id)}（${via}，${String(text.length)} 字）`,
+        )
+      }
+
+      return { resume, content, via, notes, issues: inspectOf(content) }
+    },
+
+    uploadFile(resumeId, input): ResumeFileDto {
+      const record = requireResume(resumeId)
+      const format = parseUploadFormat(input.fileName, input.format)
+      const bytes = decodeBase64(input.contentBase64)
+      if (bytes.byteLength > ATTACHMENT_MAX_BYTES) {
+        throw new DomainError(
+          'INVALID_INPUT',
+          `附件太大（${formatBytes(bytes.byteLength)}，上限 ${formatBytes(ATTACHMENT_MAX_BYTES)}）`,
+          { hint: '主流招聘站对简历附件普遍限 5–10MB；先压缩或另存为更小的 PDF。' },
+        )
+      }
+      assertAttachmentKind(format, bytes)
+
+      const dir = dirFor(record.id)
+      mkdirSync(dir, { recursive: true })
+      const base = sanitizeFileName(input.fileName.trim())
+      // 显示名保留用户给的原名（HR 那一侧看到的就是它）；落盘名走 ASCII，见 `storedNameOf`
+      const fileName = base.toLowerCase().endsWith(`.${format}`) ? base : `${base}.${format}`
+      const stored = `${clock().replace(/[:.]/g, '-')}-${storedNameOf(fileName, format)}`
+      writeFileSync(join(dir, stored), bytes)
+      deps.logger?.info(
+        `[resume] 收到上传附件：${join(dir, stored)}（${String(bytes.byteLength)} 字节，${format}）`,
+      )
+
+      const file = store.resume.addFile(
+        {
+          resumeId: record.id,
+          format,
+          // 上传件没有排版模板：写 `upload` 而不是默认的 `concise` ——
+          // 后者会让"这份是我导出的"与"这份是我传进来的"在库里分不出来
+          template: 'upload',
+          path: join(`resume-${String(record.id)}`, stored),
+          bytes: bytes.byteLength,
+          fileName,
+        },
+        clock(),
+      )
+      return toResumeFileDto(file)
     },
 
     removeFile(fileId): boolean {
@@ -568,6 +753,155 @@ export function ruleTailor(
 export function stripContacts(content: ResumeContent): ResumeContent {
   const { phone: _phone, email: _email, ...rest } = content.basics
   return { ...content, basics: rest }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 导入解析的核对（A3）与附件上传的校验（R9）
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * 解析结果的**核对提示**：模型写出来的技术词与数字，原文里找不到的列出来。
+ *
+ * ## 为什么是"提示"而不是"拒绝"
+ *
+ * `resume_tailor` 那边（模型**改**用户的简历）对不上就是编造，必须整份退回。
+ * 这里不同：原文就是用户自己的内容，"原文里没有"只可能是**解析错**
+ * （把"2023.06"写成"2023-06-01"、把"React.js"写成"React"这类也算），
+ * 而整份拒绝的代价是用户白粘一次、什么都拿不到 —— 那比让他核对一下更糟。
+ *
+ * 所以这里只做一件事：**把可疑处指出来**，让用户在保存前看一眼。
+ * 绝不因为这条提示改动解析结果本身。
+ *
+ * ## 为什么不能用 `JSON.stringify(content)` 当候选文本
+ *
+ * 技术词抽取认的是**任何拉丁词**（`collectTech` 的实现如此，因为技术词没有封闭词表）。
+ * 拿 JSON 字符串去抽，会把 `basics` / `name` / `title` / `skills` 这些**键名**
+ * 一起当成"原文里没找到的技术词" —— 于是每一条导入都拖着六七个假警报，
+ * 用户很快就会学会无视这个提示，那时它等于不存在。
+ * 所以这里只摊平**叶子值**（不含键名），并且把数字字段也带上
+ * （`flattenResumeText` 不含 `basics.years` 这类纯数值字段，而"年限被改大"正是最该被核对的一种）。
+ */
+function ungroundedNotes(content: ResumeContent, source: string): string[] {
+  const haystack = source.toLowerCase()
+  const candidate = leafValues(content).join('\n')
+  const unknown: string[] = []
+  for (const token of techTokensOf(candidate)) {
+    if (!haystack.includes(token.toLowerCase())) unknown.push(token)
+  }
+  const numbers = new Set(candidate.match(/\d+(?:\.\d+)?/g) ?? [])
+  const unknownNumbers = [...numbers].filter((value) => !source.includes(value))
+  const notes: string[] = []
+  if (unknown.length > 0) {
+    notes.push(`这些技术词在原文里没找到，请核对是不是解析错了：${unknown.slice(0, 8).join('、')}`)
+  }
+  if (unknownNumbers.length > 0) {
+    notes.push(`这些数字在原文里没找到，请核对：${unknownNumbers.slice(0, 8).join('、')}`)
+  }
+  return notes
+}
+
+/** 递归摊平一个结构里的**叶子值**（字符串与数字），刻意丢掉键名。 */
+function leafValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (typeof value === 'number') return [String(value)]
+  if (Array.isArray(value)) return value.flatMap((item) => leafValues(item))
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).flatMap((item) => leafValues(item))
+  }
+  return []
+}
+
+/** 上传允许的格式。刻意没有 `doc`（见 `parseUploadFormat` 的说明）。 */
+const UPLOAD_FORMATS = ['pdf', 'docx'] as const
+type UploadFormat = (typeof UPLOAD_FORMATS)[number]
+
+/**
+ * 落盘用的文件名：**只保留 ASCII**。显示名不受影响。
+ *
+ * ## 为什么必须这样（实测，不是洁癖）
+ *
+ * Windows + Node 24 下 `rmSync` 一个**含中文**的文件名会直接把进程打崩
+ * （`0xC0000409`，native crash —— JS 侧的 `try/catch` 根本进不去）。
+ * 而附件目录里的文件天然是"张三-前端-5年.pdf"这种名字，于是两条路径都会中招：
+ *   * `removeFile`（用户删附件）→ 宿主进程当场消失；
+ *   * 任何对数据目录的递归删除（含清理/临时目录）→ 同样中招。
+ *
+ * 中文名一个字都不会丢：**显示名存在 `resume_file.file_name`（数据库）里**，
+ * 下载与投递归因用的都是它（见 `readFile` 与 `ResumeFileDto`）。
+ * 磁盘上的名字只是内部寻址，没有任何人读它的语义。
+ *
+ * 太短的 ASCII 残片（"张三-前端-5年" → "5"）比没有还难认，所以短于 3 个字符时退回 `resume`；
+ * 目录里有 `resume-<id>`、名字里有时间戳，唯一性不靠它。
+ */
+function storedNameOf(displayName: string, format: string): string {
+  const withoutExt = sanitizeFileName(displayName).replace(/\.[A-Za-z0-9]+$/, '')
+  const ascii = withoutExt
+    .replace(/[^\x20-\x7e]/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+  return `${ascii.length >= 3 ? ascii : 'resume'}.${format}`
+}
+
+function parseUploadFormat(fileName: string, declared?: string): UploadFormat {
+  const fromName = fileName.trim().toLowerCase().split('.').pop() ?? ''
+  const explicit = (declared ?? '').trim().toLowerCase()
+  const candidate = explicit !== '' ? explicit : fromName
+  if ((UPLOAD_FORMATS as readonly string[]).includes(candidate)) return candidate as UploadFormat
+  // `.doc` 是 OLE 复合文档（与 docx 的 zip 完全不同的字节结构），要单独解析；
+  // 而招聘站都收 docx —— 与其猜，不如给出可执行的下一步
+  throw new DomainError('INVALID_INPUT', `不支持的附件格式：${candidate || '（没有扩展名）'}`, {
+    hint:
+      '只收 PDF 与 DOCX。老版 .doc 请先用 Word 另存为 .docx；' +
+      '扫描件（图片型 PDF）也请先转成可复制的文本 PDF —— 图片在这里读不出内容。',
+  })
+}
+
+/** 严格解 base64：`Buffer.from(x,'base64')` 会**静默跳过**非法字符，那会让坏数据变成空文件。 */
+function decodeBase64(raw: string): Uint8Array {
+  const cleaned = raw.replace(/\s+/g, '')
+  if (cleaned === '') {
+    throw new DomainError('INVALID_INPUT', 'contentBase64 是空的', {
+      hint: '把文件读成 base64 放在这个字段里（不需要 data: 前缀）。',
+    })
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(cleaned)) {
+    throw new DomainError('INVALID_INPUT', 'contentBase64 不是合法的 base64', {
+      hint: '常见原因：带上了 data:...;base64, 前缀，或用了 URL-safe 的 - _ 字符。请传纯 base64。',
+    })
+  }
+  const bytes = Buffer.from(cleaned, 'base64')
+  if (bytes.byteLength === 0) {
+    throw new DomainError('INVALID_INPUT', 'contentBase64 解出来是空文件')
+  }
+  return new Uint8Array(bytes)
+}
+
+/**
+ * 文件头校验：内容必须**真的是**它声明的那种文件。
+ *
+ * 为什么值得做：附件最终要发给 HR，而"改个扩展名"是最常见的误操作。
+ * 只靠扩展名会把这个错误一路带到投递那一刻才炸 —— 那时已经发出去了。
+ */
+function assertAttachmentKind(format: UploadFormat, bytes: Uint8Array): void {
+  const startsWith = (signature: readonly number[]): boolean =>
+    signature.every((byte, index) => bytes[index] === byte)
+  const ok = format === 'pdf' ? startsWith([0x25, 0x50, 0x44, 0x46]) : startsWith([0x50, 0x4b, 0x03, 0x04])
+  if (!ok) {
+    throw new DomainError('INVALID_INPUT', `文件内容不像 ${format.toUpperCase()}（文件头不对）`, {
+      hint:
+        format === 'pdf'
+          ? 'PDF 的文件头是 %PDF。这个文件可能是别的格式，或者上传时被改过扩展名。'
+          : 'DOCX 是 zip 容器（PK 开头）。老版 .doc 不是，请先另存为 .docx。',
+    })
+  }
+}
+
+/** 字节数的人话（错误提示里比 "5242880" 好读）。 */
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)}KB`
+  return `${String(bytes)} 字节`
 }
 
 export { emptyResumeContent, isoNow }

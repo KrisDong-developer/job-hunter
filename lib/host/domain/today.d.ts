@@ -6,6 +6,7 @@
  */
 import type { TodayDto } from '../../shared/dto.js';
 import type { Store } from '../store/store.js';
+import type { OfferService } from './offers.js';
 import type { AdapterRegistry } from '../platform/registry.js';
 import { type Clock } from '../util/time.js';
 export interface TodayDeps {
@@ -14,6 +15,13 @@ export interface TodayDeps {
     clock?: Clock;
     /** 未关闭待办最多返回多少条。 */
     todoLimit?: number;
+    /**
+     * Offer 服务（可选）。
+     *
+     * 为什么用 `Pick` 而不是整个 `OfferService`：首屏只要两个读数，
+     * 而"首屏依赖了哪些能力"应当一眼看得出来 —— 传整个服务会让这里慢慢长成第二个聚合层。
+     */
+    offers?: Pick<OfferService, 'openCount' | 'upcoming'>;
 }
 export declare function buildToday(deps: TodayDeps): TodayDto;
 /** 数据层没就绪时的 U0：如实说明原因，而不是给一片空白。 */

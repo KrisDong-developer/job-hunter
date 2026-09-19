@@ -50,6 +50,7 @@ import { json, type RouteContext, type RouteHandler } from './routes/kit.js'
 import * as jobs from './routes/jobs.js'
 import * as maintenance from './routes/maintenance.js'
 import * as messages from './routes/messages.js'
+import * as offers from './routes/offers.js'
 import * as ops from './routes/ops.js'
 import * as outreach from './routes/outreach.js'
 import * as overseas from './routes/overseas.js'
@@ -158,6 +159,8 @@ const ROUTES: RouteHandler[] = [
 
   // ── 简历与附件 ─────────────────────────────────────────────────
   resumes.list,
+  // `import` 是字面量段，排在同形状的参数路径之前（纪律；两者方法不同、当下不会互抢）
+  resumes.importResume,
   resumes.create,
   resumes.get,
   resumes.patch,
@@ -166,6 +169,7 @@ const ROUTES: RouteHandler[] = [
   resumes.setDefault,
   resumes.preview,
   resumes.exportResume,
+  resumes.uploadFile,
   resumes.files,
   resumes.tailor,
   resumes.tailoringsList,
@@ -195,6 +199,22 @@ const ROUTES: RouteHandler[] = [
   interviews.setState,
   interviews.review,
   interviews.prep,
+  // 错题本（G6）：`/questions` 家族与 `/interviews/:id/questions` 段数不同，无抢道风险
+  interviews.questionsList,
+  interviews.questionsAdd,
+  interviews.questionsPatch,
+  interviews.questionsRemove,
+
+  // ── Offer（§4.H H1/H2/H3/H4）────────────────────────────────────
+  // `compare` 是字面量段，必须排在 `get`（`/offers/:id`）之前 —— 否则它被当成 id
+  offers.list,
+  offers.create,
+  offers.compare,
+  offers.byJob,
+  offers.get,
+  offers.patch,
+  offers.remove,
+  offers.setState,
 
   // ── 看板分析、跟进建议、话术模板 ───────────────────────────────
   analytics.funnel,

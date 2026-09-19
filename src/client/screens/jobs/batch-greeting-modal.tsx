@@ -20,15 +20,10 @@
  * 用户会以为"关了就等于没发"。所以发送中禁用关闭，并如实写出来。
  */
 import { useEffect, useState } from 'react'
-import {
-  ApiError,
-  draftGreeting,
-  previewGreetingBatch,
-  sendGreetingBatch,
-  type GreetingBatchPlanDto,
-  type GreetingBatchReceiptDto,
-} from '../../api.js'
-import { Modal } from '../../modal.js'
+import { ApiError } from '../../net/client.js'
+import { draftGreeting, previewGreetingBatch, sendGreetingBatch } from '../../net/outreach.js'
+import type { GreetingBatchPlanDto, GreetingBatchReceiptDto } from '../../../shared/dto.js'
+import { Modal } from '../../ui/modal.js'
 
 function reasonOf(error: unknown): string {
   return error instanceof ApiError ? error.display : String(error)

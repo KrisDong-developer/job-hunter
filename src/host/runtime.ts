@@ -60,6 +60,7 @@ import type { JobService } from './domain/jobs.js'
 import { createJobService } from './domain/jobs.js'
 import type { PipelineService, FollowUpSuggestion } from './domain/pipeline.js'
 import { createPipelineService } from './domain/pipeline.js'
+import { createOfferService, type OfferService } from './domain/offers.js'
 import type { MessageService } from './domain/messages.js'
 import { createMessageService } from './domain/messages.js'
 import type { InterviewService } from './domain/interviews.js'
@@ -350,6 +351,8 @@ export interface HostRuntime {
   messages(): MessageService
   interviews(): InterviewService
   analytics(): AnalyticsService
+  /** Offer（§4.H）：逐项对比与截止倒计时（拿到 offer 之后的那一段决策）。 */
+  offers(): OfferService
   /** 跟进建议（未读超时 / 已读未回超时是**两条不同分支**，§12.2）。 */
   followUps(): FollowUpSuggestion[]
   /** 未读消息数（U0 与侧栏角标用）。 */
@@ -554,6 +557,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
   let messages: MessageService | undefined
   let interviews: InterviewService | undefined
   let analytics: AnalyticsService | undefined
+  let offers: OfferService | undefined
   let campus: CampusService | undefined
   let overseas: OverseasService | undefined
   const pdfRenderer: PdfRenderer = createPdfRenderer({
@@ -594,6 +598,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     messages = undefined
     interviews = undefined
     analytics = undefined
+    offers = undefined
     campus = undefined
     overseas = undefined
   }
@@ -1027,6 +1032,14 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       ...(logger === undefined ? {} : { logger }),
     })
     analytics = createAnalyticsService({ store: opened })
+    // Offer（§4.H）：要模型是为了 `offer_compare` 的建议；关掉用途/没有模型时
+    // 对比表照常可用（结论 `facts` 是规则算的）
+    offers = createOfferService({
+      store: opened,
+      clock,
+      ai: model,
+      ...(logger === undefined ? {} : { logger }),
+    })
 
     // ── P8：校招与海外支线 ──────────────────────────────────────────
     campus = createCampusService({
@@ -1198,7 +1211,13 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       if (opened === undefined) {
         return buildTodayUnavailable(failure?.message ?? '数据层尚未就绪', systemClock())
       }
-      return buildToday({ store: opened, registry, clock })
+      return buildToday({
+        store: opened,
+        registry,
+        clock,
+        // offer 截止倒计时（H3）：它是**有时间窗**的决策，必须进首屏
+        ...(offers === undefined ? {} : { offers }),
+      })
     },
 
     crawlStatus(): CrawlStatusDto {
@@ -1331,6 +1350,10 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
 
     analytics(): AnalyticsService {
       return need(analytics)
+    },
+
+    offers(): OfferService {
+      return need(offers)
     },
 
     followUps(): FollowUpSuggestion[] {

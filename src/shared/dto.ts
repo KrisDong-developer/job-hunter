@@ -23,10 +23,12 @@ import type {
   JobState,
   MaturityLevel,
   MessageDirection,
+  OfferState,
   StageSource,
   TripartiteState,
   VisaStance,
 } from './enums.js'
+import type { OfferComp, OfferCompKind } from './offer.js'
 
 /** 一条岗位（列表与详情共用；`jd_text` 只在详情里出现）。 */
 export interface JobDto {
@@ -260,6 +262,15 @@ export interface TodayDto {
   openTodoCount: number
   /** 被字段断言拦下、等着重放的记录数。 */
   pendingRepair: number
+  /**
+   * 还没决定的 offer 数（H1/H3）。
+   *
+   * 为什么要进首屏：offer 截止日期与"再等等别家"的博弈是真实的决策压力（§3.8），
+   * 而它**有时间窗**——错过就等于自动放弃。
+   */
+  offerOpenCount: number
+  /** 临近截止的 offer（按截止时间升序，只含还没决定的）。 */
+  offersDueSoon: OfferDeadlineDto[]
   adapters: AdapterHealthDto[]
   lastCrawl: CrawlRunDto | null
   /** P5：离线模式（见 `HealthDto.offline`）。 */
@@ -891,11 +902,108 @@ export interface InterviewPrepDto {
   missingSkills: string[]
   /** 公司画像里的风险标注（外包/诈骗/僵尸）。 */
   companyFlags: string[]
-  /** 之前记过的错题，按出现次数排。 */
-  questionNotes: Array<{ id: number; question: string; times: number; topic: string }>
+  /** 之前记过的错题，按出现次数排（含答案：面试前要能直接看到"上次怎么答的"）。 */
+  questionNotes: Array<{
+    id: number
+    question: string
+    times: number
+    topic: string
+    myAnswer: string
+    betterAnswer: string
+  }>
   /** 通勤提示（仅现场面试才有意义）。 */
   commute: { kind: InterviewKind; minutes: number | null; advice: string }
   checklist: string[]
+  notes: string[]
+}
+
+/**
+ * 面试错题本的一条（G6）。
+ *
+ * `times` 是**同一个问题被问过的次数**：写入口按「问题 + 主题」去重累加，
+ * 所以"这题被问过 3 次"是自动攒出来的，不需要用户自己数。
+ */
+export interface QuestionNoteDto {
+  id: number
+  question: string
+  /** 我当时怎么答的（越具体越有用：卡在哪一句）。 */
+  myAnswer: string
+  /** 复盘后认为更好的答法。 */
+  betterAnswer: string
+  /** 主题/技术点，用于按话题归档与筛选。 */
+  topic: string
+  companyId: number | null
+  interviewId: number | null
+  times: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 一条 Offer（§4.H H1/H3/H4）。 */
+export interface OfferDto {
+  id: number
+  companyId: number | null
+  /** 公司名（公司不在库里时用登记时手填的那个）。 */
+  companyName: string
+  jobId: number | null
+  jobTitle: string | null
+  applicationId: number | null
+  /** 关联投递的当前阶段（`null` = 没关联投递）。 */
+  applicationStage: ApplicationStage | null
+  /** offer 的岗位名（手填；有 jobId 时界面可以并排显示）。 */
+  role: string
+  comp: OfferComp
+  /** 年**现金**总包（元）；算不出来为 null（不假装知道）。 */
+  annualCash: number | null
+  /** Offer 截止时间（ISO）；不填为 null。 */
+  deadline: string | null
+  /** 距截止还有几天（负数 = 已过期）；没有 deadline 时为 null。 */
+  daysLeft: number | null
+  state: OfferState
+  note: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Offer 截止提醒的一条（U0 与提醒体系用，H3）。 */
+export interface OfferDeadlineDto {
+  id: number
+  companyName: string
+  role: string
+  deadline: string
+  /** 距截止还有几天（负数 = 已过期）。 */
+  daysLeft: number
+  state: OfferState
+}
+
+/** `POST /offers/compare` 的一行（H1 对比表）。 */
+export interface OfferCompareRowDto {
+  key: string
+  label: string
+  /** 显示口径（金额/比例/天/文本…），界面据此决定对齐方式。 */
+  kind: OfferCompKind
+  /** 每个 offer 的显示值；`null` = 未填写（**不是 0**）。 */
+  values: Array<string | null>
+  /** 数值型字段的原始值（文本与布尔为 null），用于算"差多少"。 */
+  numbers: Array<number | null>
+  /** 这一行是否存在差异（全部相同、或全部未填 = false）。 */
+  differs: boolean
+  /** 更好的是哪一个（下标）；`null` = 不判断（文本、或方向不唯一）。 */
+  bestIndex: number | null
+  /** 与最优值相差多少（金额 = 元，天数 = 天）；只有能给方向的行才有。 */
+  gaps: Array<number | null>
+}
+
+/** `POST /offers/compare`（H1 并排对比 + H2 谈薪支撑）。 */
+export interface OfferCompareDto {
+  offers: OfferDto[]
+  rows: OfferCompareRowDto[]
+  /** 规则结论（不依赖模型）：谁的总包最高、谁的截止最近、谁缺哪些关键项。 */
+  facts: string[]
+  /** 模型建议；用途 `offer_compare` 关闭或模型不可用时为 null。 */
+  advice: string | null
+  via: 'llm' | 'rule'
+  /** 降级说明与隐私说明（如实展示）。 */
   notes: string[]
 }
 

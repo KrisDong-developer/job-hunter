@@ -10,7 +10,7 @@
  * 这条链是**单向**的：改期要显式传 `allowReschedule`，否则就是把别人的日程当草稿。
  */
 import type { InterviewKind, InterviewState, StageSource } from '../../shared/enums.js';
-import type { InterviewConflictDto, InterviewDto, InterviewPrepDto } from '../../shared/dto.js';
+import type { InterviewConflictDto, InterviewDto, InterviewPrepDto, QuestionNoteDto } from '../../shared/dto.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';
 /** 撞车判定的时间窗：两场面试在这段时间内即算冲突（含前后缓冲）。 */
@@ -52,6 +52,31 @@ export interface InterviewService {
     prep(id: number): InterviewPrepDto;
     /** U0 今日要用：接下来 N 天内即将到来的面试。 */
     upcoming(withinHours?: number): InterviewDto[];
+    /**
+     * 记一道面试题。**同一个「问题 + 主题」再记一次是累加 `times`** ——
+     * "这题被问过 3 次"是自动攒出来的，所以要能重复调用同一个入口。
+     *
+     * 挂在一场面试下（`POST /interviews/:id/questions`）：这样公司维度能自动补上
+     * （从面试关联的岗位推），而"哪家问过什么"正是错题本的第二个用法。
+     */
+    addQuestion(interviewId: number, input: {
+        question: string;
+        myAnswer?: string;
+        betterAnswer?: string;
+        topic?: string;
+    }): QuestionNoteDto;
+    listQuestions(filter?: {
+        topic?: string;
+        companyId?: number;
+        limit?: number;
+    }): QuestionNoteDto[];
+    updateQuestion(id: number, patch: Partial<{
+        question: string;
+        myAnswer: string;
+        betterAnswer: string;
+        topic: string;
+    }>): QuestionNoteDto;
+    removeQuestion(id: number): boolean;
 }
 export interface InterviewDeps {
     store: Store;

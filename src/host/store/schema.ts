@@ -690,3 +690,53 @@ CREATE INDEX idx_tripartite_campus ON tripartite(campus_application_id);
 export const SCHEMA_V9 = `
 ALTER TABLE plan ADD COLUMN platform_overrides_json TEXT NOT NULL DEFAULT '{}';
 `
+
+/**
+ * v10 · Offer（§4.H H1/H3/H4）。
+ *
+ * ## 为什么现在才建这张表
+ *
+ * 在此之前，"拿到 offer"只以 `application.stage = 'offer'` 的形式存在 ——
+ * 那是一个**阶段**，不是一份**报价**。而 H1 要的是逐项对比（月 base × 月数、
+ * 公积金比例与基数、试用期比例、竞业补偿、违约金…），H3 要的是截止倒计时。
+ * 这些字段塞进 `application` 会把投递流水线变成一张什么都不是的表。
+ *
+ * ## 为什么明细是 `comp_json` + 少量标量列
+ *
+ * 明细有 20 项、且随时可能加项（谈薪的坑只会越踩越多），逐项建列意味着每加一项
+ * 都要一次迁移；而对比表**不靠 SQL 聚合**（它是在内存里逐项渲染的，见
+ * `shared/offer.ts` 的字段清单），所以 JSON 足够。
+ *
+ * 但有三样**必须能查**，所以留成真列：
+ *   * `annual_cash` —— 排序与"谁给得多"要靠它（也是 U0 与今日提醒的入口）；
+ *   * `deadline` —— 截止倒计时要按它排序、筛选"7 天内到期"；
+ *   * `state` —— "还没决定的"是唯一的提醒对象（`OFFER_OPEN_STATES`）。
+ *
+ * ## 三条外键都是 SET NULL，且都允许为空
+ *
+ * offer 经常来自**平台之外**（官网直投、内推、猎头），未必有对应的 `job` 行；
+ * 也未必经过本工具的投递动作。所以 `company_name` 单独留一列：
+ * 公司不在库里时，登记的公司名不能丢。
+ */
+export const SCHEMA_V10 = `
+CREATE TABLE offer (
+  id             INTEGER PRIMARY KEY,
+  company_id     INTEGER REFERENCES company(id) ON DELETE SET NULL,
+  company_name   TEXT NOT NULL DEFAULT '',
+  job_id         INTEGER REFERENCES job(id) ON DELETE SET NULL,
+  application_id INTEGER REFERENCES application(id) ON DELETE SET NULL,
+  role           TEXT NOT NULL DEFAULT '',
+  comp_json      TEXT NOT NULL DEFAULT '{}',
+  annual_cash    INTEGER,
+  deadline       TEXT,
+  state          TEXT NOT NULL DEFAULT 'pending',
+  note           TEXT,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
+CREATE INDEX idx_offer_state ON offer(state, deadline);
+CREATE INDEX idx_offer_company ON offer(company_id);
+
+-- 错题本按"公司"回溯（"这家问过什么"）此前没有索引，只能全表扫
+CREATE INDEX idx_question_company ON question_note(company_id);
+`

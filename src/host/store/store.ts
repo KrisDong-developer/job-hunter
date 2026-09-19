@@ -19,6 +19,7 @@ import { createFieldHealthRepo, type FieldHealthRepo } from './repo/field-health
 import { createFlagRepo, type FlagRepo } from './repo/flags.js'
 import { createJobRepo, type JobRepo } from './repo/jobs.js'
 import { createLlmCallRepo, type LlmCallRepo } from './repo/llm-calls.js'
+import { createOfferRepo, type OfferRepo } from './repo/offers.js'
 import { createPlanRepo, type PlanRepo } from './repo/plans.js'
 import { createPipelineRepo, type PipelineRepo } from './repo/pipeline.js'
 import { createPlatformRepo, type PlatformRepo } from './repo/platforms.js'
@@ -53,6 +54,8 @@ export interface Store {
   readonly resume: ResumeRepo
   readonly tailoring: TailoringRepo
   readonly pipeline: PipelineRepo
+  /** Offer（§4.H H1/H3）：拿到手之后的逐项对比与截止倒计时。 */
+  readonly offer: OfferRepo
   /** 校招与海外支线（P8）：两条支线的表放在一起，因为它们共享"不可逆节点"这个约束。 */
   readonly branch: BranchRepo
   close(): void
@@ -132,6 +135,7 @@ export function openStore(options: OpenStoreOptions = {}): Store {
     resume: createResumeRepo(db),
     tailoring: createTailoringRepo(db),
     pipeline: createPipelineRepo(db),
+    offer: createOfferRepo(db),
     branch: createBranchRepo(db),
     close(): void {
       closeDatabase(db)

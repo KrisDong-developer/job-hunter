@@ -282,4 +282,22 @@ export declare const REPLY_SCENARIOS: readonly [{
 }];
 export type ReplyScenario = (typeof REPLY_SCENARIOS)[number]['key'];
 export declare const REPLY_SCENARIO_LABEL: Record<ReplyScenario, string>;
+/**
+ * Offer 状态。
+ *
+ * 四个值都是**用户的事实**，不是我们能推断的东西 —— 所以没有任何自动流转：
+ * `pending`（还没决定）→ `accepted` / `declined` 只能由人写；`expired` 是
+ * "截止时间过了还没决定"的显式落库（由用户在界面上确认，不做自动改写 ——
+ * 自动把 pending 改成 expired 会在用户刚谈妥延期时把事实改错）。
+ */
+export declare const OFFER_STATES: readonly ["pending", "accepted", "declined", "expired"];
+export type OfferState = (typeof OFFER_STATES)[number];
+export declare const OFFER_STATE_LABEL: Record<OfferState, string>;
+/**
+ * 还没决定的状态 —— 只有这些才需要"截止倒计时"（H3）。
+ *
+ * 单独一个常量而不是各处写 `state === 'pending'`：倒计时出现在今日、offer 列表
+ * 与提醒三处，三处各写一遍必然漂移（漏掉一处就会对着已拒绝的 offer 催用户）。
+ */
+export declare const OFFER_OPEN_STATES: readonly OfferState[];
 //# sourceMappingURL=enums.d.ts.map

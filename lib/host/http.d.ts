@@ -38,8 +38,19 @@ export declare class HttpError extends Error {
  * 而这两者本来就都是**绊线**，真正的边界是回环 socket（见任务面板同款注释）。
  */
 export declare function isSameOrigin(req: IncomingMessage): boolean;
+/**
+ * 某条路径允许的请求体上限。
+ *
+ * 默认 64KB；**只有简历附件上传**那一条放宽 —— 一份真实的 PDF 简历（100KB–500KB）
+ * 装不进 64KB，而 base64 还要再膨胀 4/3。刻意不做成"全局放宽"：
+ * 体积闸门张开的范围越小，出事的面积就越小。
+ *
+ * 注意这只是**传输层**的兜底：业务上限（5MB、文件头是不是真 PDF）在领域层
+ * `resumes.uploadFile` 里判 —— 界面、模型工具与这条 HTTP 路径过的是同一套判断。
+ */
+export declare function bodyLimitFor(path: string): number;
 /** 读取并解析 JSON 请求体；超限 413，坏 JSON 400。 */
-export declare function readJsonBody(req: IncomingMessage): Promise<unknown>;
+export declare function readJsonBody(req: IncomingMessage, limit?: number): Promise<unknown>;
 /**
  * 建立一条 SSE 连接。
  *

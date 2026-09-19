@@ -3,7 +3,7 @@
 // 关键词文本的拆分清洗、时间解析、覆盖项收敛都集中在这里，是这些规则的单一事实源。
 
 import type { PlanDto, PlanSchedule } from '../../../shared/dto.js'
-import type { PlanWriteInput } from '../../api.js'
+import type { PlanWriteInput } from '../../net/types.js'
 import { clockValueOf, parseClockValue } from '../../../shared/time-format.js'
 
 /** 表单的本地形状：条件在这里是字符串，提交前才收敛。 */

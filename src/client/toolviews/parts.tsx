@@ -18,18 +18,6 @@ export function textOf(block: ToolCallBlockView): string {
     .join('\n')
 }
 
-/** 解析调用参数；坏 JSON 返回空对象（卡片退化成"只显示结果"）。 */
-export function argsOf(block: ToolCallBlockView): Record<string, unknown> {
-  const raw = (block.kind === undefined ? block.argsRaw : block.call?.argsRaw) ?? ''
-  if (raw.trim() === '') return {}
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
-
 /** 已结算？未结算的卡片只显示"正在跑"，不给按钮 —— 点了也没有结果可操作。 */
 export function isSettled(block: ToolCallBlockView): boolean {
   return block.kind !== undefined

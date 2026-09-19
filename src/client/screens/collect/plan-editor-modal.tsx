@@ -17,15 +17,13 @@ import {
   formatWindow,
   parseClockValue,
 } from '../../../shared/time-format.js'
-import { ApiError, fetchCriteriaDimensions } from '../../api.js'
-import type {
-  CriteriaDimensionDto,
-  PlanDuplicateDto,
-  PlatformOverviewDto,
-} from '../../api.js'
-import { useAsync } from '../../use-async.js'
-import { FieldHint } from '../../field-hint.js'
-import { Modal } from '../../modal.js'
+import { ApiError } from '../../net/client.js'
+import { fetchCriteriaDimensions } from '../../net/collect/plans.js'
+import type { CriteriaDimensionDto, PlanDuplicateDto } from '../../net/types.js'
+import type { PlatformOverviewDto } from '../../../shared/dto.js'
+import { useAsync } from '../../hooks/use-async.js'
+import { FieldHint } from '../../ui/field-hint.js'
+import { Modal } from '../../ui/modal.js'
 import type { PlanForm } from './plan-form.js'
 import { parseKeywordsText, writeOf } from './plan-form.js'
 

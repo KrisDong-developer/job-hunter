@@ -149,12 +149,21 @@ const ALL_TOOL_NAMES = [
   'message_reply',
   'interview_manage',
   'interview_prep',
+  // 2026-09-20 补：面试错题本（G6）。**写入口此前完全缺失** ——
+  // `prep` 一直在读它，而 `upsertQuestionNote` 零调用，于是那个区块永远是空的。
+  // add/update/remove 中危；list 只读。
+  'interview_questions',
   'job_report',
+  // 2026-09-20 补：Offer（H1/H2/H3/H4）。拿到报价之后的逐项对比与截止倒计时。
+  // list/get/compare 只读；create/update/state/remove 中危。
+  'offer_manage',
   // P8：校招与海外支线。写操作中危；查询与体检只读。
   'campus_manage',
   'campus_deadlines',
   'overseas_check',
   'cover_letter_draft',
+  // 2026-09-20 补：简历导入（A3）与自有附件上传（R9）。中危：前者会把正文发给模型。
+  'resume_import',
   // P20：数据搬家（导出 / 导入 / 占用 / 清理预览）。导入是写操作（幂等）；
   // **执行清理刻意不做成工具** —— 删除不可逆，只在界面上由用户亲手确认。
   'data_transfer',
