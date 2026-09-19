@@ -231,6 +231,7 @@ test('GET /today 聚合出 U0 需要的数字', async () => {
       jobCount: number
       newJobs24h: number
       todos: Array<{ title: string }>
+      openTodoCount: number
       dataReady: boolean
     }
     assert.equal(today.dataReady, true)
@@ -240,6 +241,9 @@ test('GET /today 聚合出 U0 需要的数字', async () => {
     // 所以这里只有我们手工插进去的那一条降级待办。
     assert.equal(today.todos.length, 1)
     assert.equal(today.todos[0]?.title, '降级了')
+    // 首屏那个数字是**总数**，不是列表长度：列表有上限（`todos` 只带前 20 条），
+    // 而"我还有几件事没处理"必须报真值。两者在超过上限时会分叉，所以分开算。
+    assert.equal(today.openTodoCount, 1)
   } finally {
     runtime.close()
     cleanup(dir)
@@ -380,6 +384,11 @@ test('P3：平台概览带出登录态；登录引导与待办关闭', async () 
     assert.ok(store)
     const todoId = store.todo.create({ kind: 'catch-up', level: 'warn', title: '补跑' }, T1)
     assert.equal(store.todo.countOpen(), 1)
+
+    // 读请求不该有副作用：这一段路由以前没有方法判断，于是 `GET /todos/:id/close`
+    // 也能关待办 —— 而传输层的同源校验只拦非 GET，一条跨站 `<img src>` 就够了。
+    assert.equal((await call(runtime, 'GET', `/todos/${String(todoId)}/close`)).status, 400)
+    assert.equal(store.todo.countOpen(), 1, '被拒绝的 GET 不能真的关掉待办')
 
     const closed = await call(runtime, 'POST', `/todos/${String(todoId)}/close`, { body: {} })
     assert.equal(closed.status, 200)

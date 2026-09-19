@@ -25,6 +25,7 @@ import {
 } from '../api.js'
 import { InlineMd } from '../inline-md.js'
 import { useAsync } from '../use-async.js'
+import { EnglishCheckPanel } from './campus.js'
 
 type Mode = 'edit' | 'split' | 'preview' | 'files'
 
@@ -451,6 +452,16 @@ function ResumeWork(props: {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* M1：英文体检（**只检查，不翻译**）。只有英文版本才有意义 ——
+          "用动词开头 / 别写年龄婚育"这几条对中文简历不成立。
+          接口和面板一直都在，只是从来没挂到界面上过（复核时发现的死代码）。 */}
+      {draft.language !== 'en' ? null : (
+        <div className="jh-card jh-card-tight">
+          <h3 className="jh-card-title">英文体检</h3>
+          <EnglishCheckPanel resumeId={props.id} />
         </div>
       )}
 

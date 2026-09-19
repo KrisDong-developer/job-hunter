@@ -234,8 +234,15 @@ export interface TodayDto {
   byState: Record<string, number>
   /** 最近 24 小时首次见到的岗位数。 */
   newJobs24h: number
-  /** 未关闭的待办。 */
+  /** 未关闭的待办（**只带最严重的前若干条**，见 `buildToday` 的 `todoLimit`）。 */
   todos: TodoDto[]
+  /**
+   * 未关闭待办的总数。
+   *
+   * 与 `todos.length` 分开：列表是有上限的，而首屏那个数字回答的是
+   * "我还有几件事没处理"—— 拿列表长度当总数会在超过上限时少报（20 条上限下报 20）。
+   */
+  openTodoCount: number
   /** 被字段断言拦下、等着重放的记录数。 */
   pendingRepair: number
   adapters: AdapterHealthDto[]

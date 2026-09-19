@@ -20,6 +20,8 @@ export declare const WARN_WITHIN_HOURS = 72;
 export interface CampusService {
     create(input: {
         companyId?: number | null;
+        /** 界面只给用户一个「公司名」输入框（他手里没有 company id），这里按归一化键幂等登记。 */
+        companyName?: string | null;
         jobId?: number | null;
         batch?: CampusBatch;
         applyOpenAt?: string | null;

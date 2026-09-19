@@ -461,7 +461,6 @@ function applyPage(options: {
 }): { page: PageLike; counter: { ups: number } } {
   const inner = new JsdomPage({ html: options.html, url: DETAIL_URL, layout: true })
   const counter = { ups: 0 }
-  const state = { landed: '' }
   const mouse: HumanMouse = {
     async move(): Promise<void> {
       /* no-op */
@@ -471,7 +470,8 @@ function applyPage(options: {
     },
     async up(): Promise<void> {
       counter.ups += 1
-      if (options.landAfterClick !== undefined) state.landed = options.landAfterClick
+      // 模拟"点完之后平台把页面重定向到登录页"：真的改一次 URL（DOM 不变，够用了）
+      if (options.landAfterClick !== undefined) await inner.goto(options.landAfterClick)
       if (options.onClick !== undefined) {
         await inner.evaluate(asSerialized(options.onClick as () => void), undefined as never)
       }
@@ -479,7 +479,7 @@ function applyPage(options: {
   }
   const page: PageLike = {
     goto: async (url) => {
-      await inner.goto(state.landed !== '' ? state.landed : (options.landOn ?? url))
+      await inner.goto(options.landOn ?? url)
     },
     url: () => inner.url(),
     waitForTimeout: (ms) => inner.waitForTimeout(ms),

@@ -10,3 +10,4 @@ node_modules/
 lib/**/*.map
 client/**/*.map
 .probe*
+client/client.js

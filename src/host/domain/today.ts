@@ -46,6 +46,7 @@ export function buildToday(deps: TodayDeps): TodayDto {
       detail: todo.detail,
       createdAt: todo.createdAt,
     })),
+    openTodoCount: store.todo.countOpen(),
     pendingRepair: store.repair.countPending(),
     adapters: deps.registry.list().map((adapter) => {
       const snapshot = readAdapterHealth(store, adapter.id)
@@ -73,6 +74,7 @@ export function buildTodayUnavailable(reason: string, now: string): TodayDto {
     byState: {},
     newJobs24h: 0,
     todos: [],
+    openTodoCount: 0,
     pendingRepair: 0,
     adapters: [],
     lastCrawl: null,

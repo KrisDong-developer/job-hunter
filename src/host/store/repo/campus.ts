@@ -274,7 +274,9 @@ function hoursBetween(fromIso: string, toIso: string): number {
   const from = Date.parse(fromIso)
   const to = Date.parse(toIso)
   if (!Number.isFinite(from) || !Number.isFinite(to)) return 0
-  return Math.round((to - from) / 3_600_000)
+  // 与 domain/campus.ts 同一口径：负数向下取整，别让"刚过期"落进 `-0`。
+  const raw = (to - from) / 3_600_000
+  return raw < 0 ? Math.floor(raw) : Math.round(raw)
 }
 
 export function createBranchRepo(db: DatabaseSync): BranchRepo {
@@ -302,6 +304,7 @@ export function createBranchRepo(db: DatabaseSync): BranchRepo {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const selectTalk = db.prepare('SELECT * FROM talk_session ORDER BY at LIMIT ?')
+  const selectTalkById = db.prepare('SELECT * FROM talk_session WHERE id = ?')
 
   const insertTripartite = db.prepare(
     `INSERT INTO tripartite (campus_application_id, issued_at, sign_deadline, state, penalty_summary, created_at, updated_at)
@@ -313,9 +316,10 @@ export function createBranchRepo(db: DatabaseSync): BranchRepo {
 
   const upsertVisa = db.prepare(
     `INSERT INTO visa_requirement (job_id, stance, identity_limit, evidence_json, source, uncertainty, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO NOTHING`,
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
+  // 同一个岗位只保留最新一条判断，所以下面先 `deleteVisaByJob` 再插 —— 插入不带 id，
+  // 不会有 id 冲突可言（原来那句 `ON CONFLICT(id) DO NOTHING` 是永远命不中的死子句）。
   const selectVisaByJob = db.prepare('SELECT * FROM visa_requirement WHERE job_id = ? ORDER BY id DESC LIMIT 1')
   const selectVisaAll = db.prepare('SELECT * FROM visa_requirement ORDER BY id DESC LIMIT ?')
   const selectVisaByStance = db.prepare('SELECT * FROM visa_requirement WHERE stance = ? ORDER BY id DESC LIMIT ?')
@@ -331,6 +335,17 @@ export function createBranchRepo(db: DatabaseSync): BranchRepo {
 
   const setJobBranch = db.prepare(
     'UPDATE job SET campus_batch = COALESCE(?, campus_batch), remote_kind = COALESCE(?, remote_kind), visa_stance = COALESCE(?, visa_stance) WHERE id = ?',
+  )
+
+  const updateCampusStmt = db.prepare(
+    `UPDATE campus_application SET stage = ?, stage_at = ?, batch = ?, apply_open_at = ?, apply_close_at = ?, note = ?, updated_at = ?
+     WHERE id = ?`,
+  )
+  const updateAssessmentStmt = db.prepare(
+    'UPDATE assessment SET state = ?, result = ?, due_at = ?, at = ?, updated_at = ? WHERE id = ?',
+  )
+  const updateTripartiteStmt = db.prepare(
+    'UPDATE tripartite SET state = ?, sign_deadline = ?, penalty_summary = ?, updated_at = ? WHERE id = ?',
   )
 
   return {
@@ -354,10 +369,7 @@ export function createBranchRepo(db: DatabaseSync): BranchRepo {
       if (current === undefined) return undefined
       const record = toCampus(current)
       const stage = patch.stage ?? record.stage
-      db.prepare(
-        `UPDATE campus_application SET stage = ?, stage_at = ?, batch = ?, apply_open_at = ?, apply_close_at = ?, note = ?, updated_at = ?
-         WHERE id = ?`,
-      ).run(
+      updateCampusStmt.run(
         stage,
         stage === record.stage ? record.stageAt : now,
         patch.batch ?? record.batch,
@@ -407,7 +419,7 @@ export function createBranchRepo(db: DatabaseSync): BranchRepo {
       const current = selectAssessment.get(id) as Row | undefined
       if (current === undefined) return undefined
       const record = toAssessment(current)
-      db.prepare('UPDATE assessment SET state = ?, result = ?, due_at = ?, at = ?, updated_at = ? WHERE id = ?').run(
+      updateAssessmentStmt.run(
         patch.state ?? record.state,
         patch.result === undefined ? record.result : patch.result,
         patch.dueAt === undefined ? record.dueAt : patch.dueAt,
@@ -446,7 +458,7 @@ export function createBranchRepo(db: DatabaseSync): BranchRepo {
         input.note ?? null,
         now,
       )
-      return toTalk(db.prepare('SELECT * FROM talk_session WHERE id = ?').get(asId(result.lastInsertRowid)) as Row)
+      return toTalk(selectTalkById.get(asId(result.lastInsertRowid)) as Row)
     },
 
     listTalkSessions(limit = 50): TalkSessionRecord[] {
@@ -469,7 +481,7 @@ export function createBranchRepo(db: DatabaseSync): BranchRepo {
       const current = selectTripartite.get(id) as Row | undefined
       if (current === undefined) return undefined
       const record = toTripartite(current)
-      db.prepare('UPDATE tripartite SET state = ?, sign_deadline = ?, penalty_summary = ?, updated_at = ? WHERE id = ?').run(
+      updateTripartiteStmt.run(
         patch.state ?? record.state,
         patch.signDeadline === undefined ? record.signDeadline : patch.signDeadline,
         patch.penaltySummary === undefined ? record.penaltySummary : patch.penaltySummary,

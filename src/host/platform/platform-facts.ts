@@ -125,6 +125,11 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
       verifiedAt: '2026-09-18',
       notes:
         '只有**未登录**夹具：单页 15 条、无分页区、薪资元素在但为空。详情页要带完整 securityId（登录后才有），登录夹具补齐后再升档。' +
+        '⚠️ **薪资数字是字体混淆的**（2026-09-18 定案）：登录态下 `.job-salary` 的文本是 ' +
+        '**私有区码点**（实测 10 个连续码点 U+E031–U+E03A 一码一数字），靠外部 CSS 的 @font-face ' +
+        '画成人眼看到的数字 ⇒ 适配器检测到就置空并记 `salary:obfuscated`，**绝不当薪资写库**；' +
+        '所以列表薪资目前**拿不到**（明文在 `wapi/zpgeek/search/joblist.json` 的 `salaryDesc`，' +
+        '连接键 encryptJobId ↔ 卡片 href id，但该接口的 method/请求参数还没探明，见 ADAPTERS §7.2）。' +
         '详情页选择器已由 `probe:zhipin-chat` 的**真实登录态快照**（2026-09-18，两次不同岗位）校准：' +
         '经验/学历用 `.text-experiece`/`.text-degree`，规模/行业用 `.sider-company p` + `i.icon-scale`/`i.icon-industry`/`i.icon-stage`，' +
         'JD 显式排除 `.job-detail-company`（页面上有两个 `.job-sec-text`，第二个是公司介绍）。' +

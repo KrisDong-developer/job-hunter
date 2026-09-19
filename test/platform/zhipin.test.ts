@@ -234,12 +234,12 @@ test('登录态夹具：薪资可见、滚动加载后一页装 100+ 条', async
   assert.ok(jobs.length >= 10, `第一屏应解析出 ≥10 条（实测 15），实际 ${String(jobs.length)}`)
 
   // 登录态与未登录态的分界就在这里：薪资**有文本**（未登录时元素在、文本空）。
-  // ⚠️ 它只能证明"登录了" —— **不能**证明薪资数值可用：平台的薪资数字不在 `textContent` 里
-  //    （实测卡片是 `-K·薪`），所以下面还会单独量一次"带数字的比率"。
-  const withSalary = jobs.filter((job) => job.salaryRaw !== '')
+  // ⚠️ 但"有文本"**不等于**"薪资可用"：登录态的文本是**私有区码点**（字体混淆，见下），
+  //    所以这一档只当"登录了"的信号用，真正的判据是下面那条**数据卫生**断言。
+  const withText = jobs.filter((job) => (job.notes ?? []).includes('salary:obfuscated'))
   assert.ok(
-    withSalary.length >= Math.ceil(jobs.length * 0.9),
-    `登录后薪资应基本可见（实测 15/15），实际 ${String(withSalary.length)}/${String(jobs.length)}`,
+    withText.length >= Math.ceil(jobs.length * 0.9),
+    `登录后薪资元素应有文本（实测 15/15，且都是混淆码点），实际 ${String(withText.length)}/${String(jobs.length)}`,
   )
   assert.ok(
     !(jobs[0]?.notes ?? []).some((note) => note.includes('薪资隐藏')),
@@ -254,19 +254,25 @@ test('登录态夹具：薪资可见、滚动加载后一页装 100+ 条', async
     const ids = new Set(many.map((job) => job.platformJobId))
     assert.equal(ids.size, many.length, '同一页内岗位 id 不该重复')
 
-    // ⚠️ 这里刻意分两层量，因为"非空"曾经被当成"薪资可见"写在断言里 —— 那是个**假的绿灯**：
-    //    薪资数字**不在 textContent 里**（实测卡片是 `-K·薪`，数字由站点自己的渲染层补上），
-    //    于是 `salaryRaw !== ''` 只说明"节点在"，完全不说明这份薪资能不能用。
-    //    带数字的比率才是能拿去用的那一档，所以两个都量、都打出来。
-    const textRatio = many.filter((job) => job.salaryRaw !== '').length / Math.max(1, many.length)
-    const numericRatio = many.filter((job) => /\d/.test(job.salaryRaw)).length / Math.max(1, many.length)
-    assert.ok(textRatio >= 0.95, `滚动加载的 100+ 条里薪资节点可见率应 ≥95%，实际 ${textRatio.toFixed(2)}`)
+    // ⚠️ BOSS 的薪资数字是**字体混淆**的：10 个私有区码点（U+E031–U+E03A）一码一数字，
+    //    靠外部 CSS 的 `@font-face` 画成人眼看到的数字。以前这里断言"薪资文本可见率 ≥95%"
+    //    —— 那是个**假绿灯**：私有区字符打到终端就是空白，`-K·薪` 也算"非空"，
+    //    于是乱码被当成了"薪资可见"。现在的口径是**数据卫生**：乱码一律不许进 salaryRaw。
+    const puaLeft = many.filter((job) => /[\uE000-\uF8FF]/.test(job.salaryRaw))
+    const obfuscated = many.filter((job) => (job.notes ?? []).includes('salary:obfuscated'))
+    assert.equal(puaLeft.length, 0, '私有区乱码绝不能留在 salaryRaw 里（下游会当成一份"读到的薪资"）')
+    assert.ok(
+      many.every((job) => job.salaryRaw === ''),
+      '混淆字体下拿不到薪资 ⇒ 一律留空（空值会被如实当成"没读到"，乱码不会）',
+    )
+    assert.ok(
+      obfuscated.length / Math.max(1, many.length) >= 0.95,
+      `登录态夹具里应几乎全是混淆字体（实测 15/15），实际 ${String(obfuscated.length)}/${String(many.length)}`,
+    )
     console.log(
       `[zhipin-logged-fixture] 第一屏 ${String(jobs.length)} 条 · 滚动后 ${String(many.length)} 条 · ` +
-        `薪资文本可见 ${(textRatio * 100).toFixed(0)}% · 其中带数字 ${(numericRatio * 100).toFixed(0)}%` +
-        (numericRatio < 0.95
-          ? '（⚠️ 数字不在 textContent 里 —— 薪资数值目前拿不到，属已知未解问题，不是本次回归失败）'
-          : ''),
+        `薪资：**拿不到**（${String(obfuscated.length)}/${String(many.length)} 是字体混淆，已置空并记 note）— ` +
+        '明文在 `wapi/zpgeek/search/joblist.json` 的 `salaryDesc`，但该接口的 method/参数还没探明（见适配器头注释）',
     )
   }
 })

@@ -26,6 +26,18 @@ export interface PlatformFacts {
      * `undefined` = 该平台没有这类副作用（实测如此，不是"没查"）。
      */
     applicationSideEffect?: string;
+    /**
+     * 打招呼时**平台自己还会做**的额外动作（平台事实，进审批文案）。
+     *
+     * BOSS 求职者端实测：点「立即沟通」会**先由平台替你发一句默认招呼语**，随后适配器才发
+     * 用户那段 text —— 一次 `greeting.send` 会在会话里留下**两条**消息。
+     *
+     * 这里如实写出来而不是"让适配器少发一条"：用户要的正是他那段话术，不能替他省掉；
+     * 但"对方会先看到一句不是你写的问候"必须在他按"确认"之前就知道。
+     *
+     * `undefined` = 该平台没有这类副作用（实测如此，不是"没查"）。
+     */
+    greetingSideEffect?: string;
 }
 /**
  * 已注册平台的认知表。键 = `SiteAdapter.id`。

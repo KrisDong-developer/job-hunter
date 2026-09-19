@@ -253,6 +253,22 @@ window.__ModuleLoader__.load({
 		  required: "\u9700\u8981\u767B\u5F55",
 		  unknown: "\u5C1A\u672A\u9A8C\u8BC1"
 		};
+		var TODO_LEVEL_LABEL = {
+		  info: "\u63D0\u793A",
+		  warn: "\u63D0\u9192",
+		  urgent: "\u7D27\u6025"
+		};
+		var TODO_KIND_LABEL = {
+		  "adapter-degraded": "\u9002\u914D\u5668\u964D\u7EA7",
+		  "adapter-broken": "\u9002\u914D\u5668\u5931\u6548",
+		  "yield-drop": "\u91CF\u7EA7\u9AA4\u964D",
+		  "login-required": "\u9700\u8981\u767B\u5F55",
+		  blocked: "\u98CE\u63A7\u6682\u505C",
+		  "new-jobs": "\u65B0\u5C97\u4F4D",
+		  "catch-up": "\u8865\u6293\u6B20\u8D26",
+		  "confirm-action": "\u5F85\u786E\u8BA4\u52A8\u4F5C",
+		  deadline: "\u786C\u622A\u6B62"
+		};
 		var JOB_FLAG_TYPES = [
 		  "outsourcing",
 		  "fraud",
@@ -332,6 +348,7 @@ window.__ModuleLoader__.load({
 		  phone: "\u7535\u8BDD",
 		  other: "\u5176\u5B83"
 		};
+		var CAMPUS_BATCHES = ["autumn", "spring", "other"];
 		var CAMPUS_BATCH_LABEL = {
 		  autumn: "\u79CB\u62DB",
 		  spring: "\u6625\u62DB",
@@ -602,6 +619,13 @@ window.__ModuleLoader__.load({
 		    method: "POST",
 		    body: JSON.stringify({})
 		  });
+		}
+		async function resumeConfirmAction(id) {
+		  const result = await request(
+		    `/todos/${String(id)}/confirm-actions/resume`,
+		    { method: "POST", body: JSON.stringify({}) }
+		  );
+		  return { intent: result.intent, note: result.note };
 		}
 		async function draftGreeting(jobId, input = {}) {
 		  const result = await request(
@@ -913,6 +937,9 @@ window.__ModuleLoader__.load({
 		  );
 		  return result.assessment;
 		}
+		async function fetchDeadlines(signal) {
+		  return await request("/deadlines", signal === void 0 ? {} : { signal });
+		}
 		async function fetchTripartite(signal) {
 		  return await request("/tripartite", signal === void 0 ? {} : { signal });
 		}
@@ -939,6 +966,9 @@ window.__ModuleLoader__.load({
 		async function fetchTimezone(at, tz, signal) {
 		  const query = new URLSearchParams({ at, tz });
 		  return await request(`/timezone?${query.toString()}`, signal === void 0 ? {} : { signal });
+		}
+		async function fetchEnglishCheck(resumeId, signal) {
+		  return await request(`/resumes/${String(resumeId)}/english-check`, signal === void 0 ? {} : { signal });
 		}
 		async function draftCoverLetter(input) {
 		  const result = await request("/cover-letters", {
@@ -1260,6 +1290,91 @@ window.__ModuleLoader__.load({
 		  return { state, reload };
 		}
 
+		// src/shared/time-format.ts
+		function pad(value) {
+		  return String(value).padStart(2, "0");
+		}
+		function formatClock(date) {
+		  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+		}
+		function formatDay(date) {
+		  return `${String(date.getMonth() + 1)}\u6708${String(date.getDate())}\u65E5`;
+		}
+		function isSameDay(a, b) {
+		  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+		}
+		function formatRelative(target, now) {
+		  const deltaMs = target.getTime() - now.getTime();
+		  const abs = Math.abs(deltaMs);
+		  const future = deltaMs >= 0;
+		  if (abs < 6e4) return future ? "\u9A6C\u4E0A" : "\u521A\u521A";
+		  const minutes = Math.round(abs / 6e4);
+		  const text = abs < 60 * 6e4 ? `${String(minutes)} \u5206\u949F` : abs < 24 * 60 * 6e4 ? `${String(Math.floor(abs / (60 * 6e4)))} \u5C0F\u65F6` : `${String(Math.floor(abs / (24 * 60 * 6e4)))} \u5929`;
+		  return future ? `\u8FD8\u6709 ${text}` : `${text}\u524D`;
+		}
+		function formatLocalMoment(iso, now, options = {}) {
+		  if (iso === null || iso === "") return null;
+		  const date = new Date(iso);
+		  if (Number.isNaN(date.getTime())) {
+		    return iso;
+		  }
+		  const day = isSameDay(date, now) ? "\u4ECA\u5929" : isSameDay(new Date(now.getTime() + 24 * 60 * 60 * 1e3), date) ? "\u660E\u5929" : isSameDay(new Date(now.getTime() - 24 * 60 * 60 * 1e3), date) ? "\u6628\u5929" : formatDay(date);
+		  const absolute = `${day} ${formatClock(date)}`;
+		  return options.withRelative === false ? absolute : `${absolute} \xB7 ${formatRelative(date, now)}`;
+		}
+		function formatDuration(ms) {
+		  if (!Number.isFinite(ms) || ms < 0) return null;
+		  const seconds = Math.round(ms / 1e3);
+		  if (seconds < 60) return `${String(seconds)} \u79D2`;
+		  const minutes = Math.floor(seconds / 60);
+		  if (minutes < 60) {
+		    const rest2 = seconds % 60;
+		    return rest2 === 0 ? `${String(minutes)} \u5206` : `${String(minutes)} \u5206 ${String(rest2)} \u79D2`;
+		  }
+		  const hours = Math.floor(minutes / 60);
+		  const rest = minutes % 60;
+		  return rest === 0 ? `${String(hours)} \u5C0F\u65F6` : `${String(hours)} \u5C0F\u65F6 ${String(rest)} \u5206`;
+		}
+		function formatJitter(jitterMs) {
+		  if (!Number.isFinite(jitterMs) || jitterMs <= 0) return null;
+		  const minutes = Math.round(jitterMs / 6e4);
+		  return minutes <= 0 ? "\u542B\u4E0D\u5230 1 \u5206\u949F\u6296\u52A8" : `\u542B ${String(minutes)} \u5206\u949F\u6296\u52A8`;
+		}
+		var WEEKDAY_LABEL = ["\u5468\u65E5", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D"];
+		function formatWeekdays(weekdays) {
+		  const days = [...new Set(weekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort();
+		  if (days.length === 0 || days.length === 7) return "\u6BCF\u5929";
+		  if (days.length === 5 && days.every((day, index) => day === index + 1)) return "\u5DE5\u4F5C\u65E5";
+		  return days.map((day) => WEEKDAY_LABEL[day] ?? String(day)).join("\u3001");
+		}
+		function formatHourMinute(hour, minute) {
+		  return `${pad(hour)}:${pad(minute)}`;
+		}
+		function formatWindow(startHour, startMinute, endHour, endMinute) {
+		  const start = formatHourMinute(startHour, startMinute);
+		  const end = formatHourMinute(endHour, endMinute);
+		  const overnight = endHour * 60 + endMinute <= startHour * 60 + startMinute;
+		  return overnight ? `${start}\u2013\u6B21\u65E5 ${end}` : `${start}\u2013${end}`;
+		}
+		function clockValueOf(hour, minute) {
+		  return formatHourMinute(hour, minute);
+		}
+		function parseClockValue(text) {
+		  const match = /^(\d{1,2}):(\d{1,2})$/.exec(text.trim());
+		  if (match === null) return null;
+		  const hour = Number.parseInt(match[1] ?? "", 10);
+		  const minute = Number.parseInt(match[2] ?? "", 10);
+		  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+		  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+		  return { hour, minute };
+		}
+		var WEEKDAY_PRESETS = [
+		  { key: "workdays", label: "\u5DE5\u4F5C\u65E5", days: [1, 2, 3, 4, 5] },
+		  { key: "weekend", label: "\u5468\u672B", days: [0, 6] },
+		  { key: "all", label: "\u6BCF\u5929", days: [0, 1, 2, 3, 4, 5, 6] },
+		  { key: "none", label: "\u6E05\u7A7A", days: [] }
+		];
+
 		// src/client/screens/campus.tsx
 		var import_jsx_runtime5 = require("react/jsx-runtime");
 		var TZ_PRESETS = [
@@ -1277,13 +1392,16 @@ window.__ModuleLoader__.load({
 		function CampusScreen(props) {
 		  const data = useAsync((signal) => fetchCampus(signal), [props.revision]);
 		  const tripartite = useAsync((signal) => fetchTripartite(signal), [props.revision]);
+		  const deadlines = useAsync((signal) => fetchDeadlines(signal), [props.revision]);
 		  const [busy, setBusy] = (0, import_react4.useState)(false);
 		  const [error, setError] = (0, import_react4.useState)(null);
 		  const [notice, setNotice] = (0, import_react4.useState)(null);
 		  const [name2, setName] = (0, import_react4.useState)("");
+		  const [batch, setBatch] = (0, import_react4.useState)("autumn");
 		  const [closeAt, setCloseAt] = (0, import_react4.useState)("");
 		  const [dueAt, setDueAt] = (0, import_react4.useState)("");
 		  const [dueFor, setDueFor] = (0, import_react4.useState)(null);
+		  const now = /* @__PURE__ */ new Date();
 		  const run = async (fn, done) => {
 		    setBusy(true);
 		    setError(null);
@@ -1292,30 +1410,24 @@ window.__ModuleLoader__.load({
 		      await fn();
 		      setNotice(done);
 		      props.onChanged();
+		      return true;
 		    } catch (caught) {
 		      setError(caught instanceof ApiError ? caught.display : caught instanceof Error ? caught.message : String(caught));
+		      return false;
 		    } finally {
 		      setBusy(false);
 		    }
 		  };
 		  const items = data.state.status === "ok" ? data.state.data.items : [];
 		  const windows = data.state.status === "ok" ? data.state.data.windows : [];
-		  const allAssessments = items.flatMap(
-		    (item) => item.assessments.map((assessment) => ({
+		  const hardDeadlines = deadlines.state.status === "ok" ? deadlines.state.data.items : [];
+		  const missed = items.flatMap(
+		    (item) => item.assessments.filter((assessment) => assessment.state === "missed").map((assessment) => ({
 		      item,
 		      assessment,
 		      label: `${item.companyName ?? item.note ?? `#${String(item.id)}`} \xB7 ${ASSESSMENT_KIND_LABEL[assessment.kind]}`
 		    }))
 		  );
-		  const deadlines = allAssessments.filter(
-		    (entry) => entry.assessment.state !== "done" && entry.assessment.state !== "missed" && entry.assessment.hoursLeft !== null
-		  ).map((entry) => ({
-		    label: entry.label,
-		    hoursLeft: entry.assessment.hoursLeft ?? 0,
-		    dueAt: entry.assessment.dueAt ?? "",
-		    id: entry.assessment.id
-		  })).sort((a, b) => a.dueAt.localeCompare(b.dueAt));
-		  const missed = allAssessments.filter((entry) => entry.assessment.state === "missed");
 		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-screen", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-row-head", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h2", { className: "jh-card-title", children: "\u6821\u62DB\u652F\u7EBF" }),
@@ -1325,39 +1437,42 @@ window.__ModuleLoader__.load({
 		    notice === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-ok", children: notice }),
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "\u786C\u622A\u6B62" }),
-		      deadlines.length === 0 && missed.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-ok", children: "\u6CA1\u6709\u5F85\u5904\u7406\u7684\u7B14\u8BD5/\u6D4B\u8BC4\u622A\u6B62\u3002" }) : null,
-		      deadlines.length === 0 && missed.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u5F85\u5904\u7406\u7684\u622A\u6B62\u3002" }) : null,
-		      deadlines.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-deadlines", children: deadlines.map((deadline) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+		      deadlines.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u786C\u622A\u6B62\u2026" }) : null,
+		      deadlines.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-error", children: [
+		        "\u786C\u622A\u6B62\u8BFB\u53D6\u5931\u8D25\uFF1A",
+		        deadlines.state.message
+		      ] }) : null,
+		      deadlines.state.status !== "ok" ? null : hardDeadlines.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-deadlines", children: hardDeadlines.map((deadline) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
 		        "li",
 		        {
-		          className: `jh-deadline${deadline.hoursLeft < 0 ? " jh-deadline-overdue" : deadline.hoursLeft <= 24 ? " jh-deadline-urgent" : ""}`,
+		          className: `jh-deadline${deadline.overdue ? " jh-deadline-overdue" : deadline.urgent ? " jh-deadline-urgent" : ""}`,
 		          children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { children: deadline.hoursLeft < 0 ? "\u26D4 \u5DF2\u8FC7\u671F" : deadline.hoursLeft <= 24 ? "\u26A0 \u7D27\u6025" : "\xB7" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { children: deadline.overdue ? "\u26D4 \u5DF2\u8FC7\u671F" : deadline.urgent ? "\u26A0 \u7D27\u6025" : "\xB7" }),
 		            " ",
 		            deadline.label,
 		            "\uFF5C",
-		            deadline.dueAt.slice(0, 16).replace("T", " "),
+		            formatLocalMoment(deadline.dueAt, now, { withRelative: false }) ?? deadline.dueAt,
 		            "\uFF5C",
-		            deadline.hoursLeft < 0 ? `\u5DF2\u8FC7 ${String(-deadline.hoursLeft)} \u5C0F\u65F6` : `\u8FD8\u5269 ${String(deadline.hoursLeft)} \u5C0F\u65F6`
+		            deadline.overdue ? `\u5DF2\u8FC7 ${String(Math.abs(deadline.hoursLeft))} \u5C0F\u65F6` : `\u8FD8\u5269 ${String(deadline.hoursLeft)} \u5C0F\u65F6`
 		          ]
 		        },
-		        deadline.id
-		      )) }),
+		        `${deadline.kind}:${String(deadline.refId)}`
+		      )) }) : missed.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u5F85\u5904\u7406\u7684\u622A\u6B62\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-ok", children: "\u6CA1\u6709\u5F85\u5904\u7406\u7684\u786C\u622A\u6B62\u3002" }),
 		      missed.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: "\u5DF2\u9519\u8FC7\uFF08\u7EC8\u6001\uFF0C\u4E0D\u53EF\u6539\u56DE\uFF09\uFF1A" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-deadlines", children: missed.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "jh-deadline jh-deadline-overdue", children: [
 		          "\u26D4 ",
 		          entry.label,
 		          "\uFF5C",
-		          entry.assessment.dueAt?.slice(0, 16).replace("T", " ") ?? ""
+		          entry.assessment.dueAt === null ? "\u672A\u586B" : formatLocalMoment(entry.assessment.dueAt, now, { withRelative: false }) ?? entry.assessment.dueAt
 		        ] }, entry.assessment.id)) })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u7B14\u8BD5/\u6D4B\u8BC4\u9519\u8FC7\u5C31\u662F\u7EC8\u6001\uFF08\xA712.7\uFF09\uFF0C\u6CA1\u6709\u7B2C\u4E8C\u6B21\u673A\u4F1A\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u7B14\u8BD5/\u7F51\u7533/\u4E09\u65B9\u9519\u8FC7\u90FD\u662F\u7EC8\u6001\uFF08\xA712.7\uFF09\uFF0C\u6CA1\u6709\u7B2C\u4E8C\u6B21\u673A\u4F1A\u3002" })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "\u6279\u6B21\u65F6\u95F4\u7A97" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: windows.map(
-		        (window2) => `${CAMPUS_BATCH_LABEL[window2.batch]} ${String(window2.count)} \u6761\uFF08${String(window2.openCount)} \u4E2A\u8FD8\u6CA1\u7F51\u7533\uFF09${window2.nextCloseAt === null ? "" : `\uFF0C\u6700\u8FD1\u622A\u6B62 ${window2.nextCloseAt.slice(0, 10)}`}`
+		        (window2) => `${CAMPUS_BATCH_LABEL[window2.batch]} ${String(window2.count)} \u6761\uFF08${String(window2.openCount)} \u4E2A\u8FD8\u6CA1\u7F51\u7533\uFF09${window2.nextCloseAt === null ? "" : `\uFF0C\u6700\u8FD1\u622A\u6B62 ${formatLocalMoment(window2.nextCloseAt, now, { withRelative: false }) ?? window2.nextCloseAt}`}`
 		      ).join("\u3000|\u3000") }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-inline", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -1371,12 +1486,23 @@ window.__ModuleLoader__.load({
 		          }
 		        ),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		          "select",
+		          {
+		            className: "jh-select jh-input-sm",
+		            "aria-label": "\u6279\u6B21",
+		            title: "\u6279\u6B21\uFF1A\u79CB\u62DB / \u6625\u62DB / \u5176\u4ED6",
+		            value: batch,
+		            onChange: (event) => setBatch(event.target.value),
+		            children: CAMPUS_BATCHES.map((value) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value, children: CAMPUS_BATCH_LABEL[value] }, value))
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
 		          "input",
 		          {
 		            className: "jh-input",
 		            type: "date",
 		            "aria-label": "\u7F51\u7533\u622A\u6B62\u65E5\u671F",
-		            title: "\u7F51\u7533\u622A\u6B62",
+		            title: "\u7F51\u7533\u622A\u6B62\uFF08\u6309\u5F53\u5929 23:59 \u7B97\uFF09",
 		            value: closeAt,
 		            onChange: (event) => setCloseAt(event.target.value)
 		          }
@@ -1389,11 +1515,16 @@ window.__ModuleLoader__.load({
 		            disabled: busy || name2.trim() === "",
 		            onClick: () => void run(
 		              async () => await createCampus({
-		                note: name2.trim(),
-		                ...closeAt === "" ? {} : { applyCloseAt: new Date(closeAt).toISOString() }
+		                companyName: name2.trim(),
+		                batch,
+		                // `type="date"` 给的是 `YYYY-MM-DD`，而 `new Date('2026-09-19')` 按 **UTC** 零点
+		                // 解析 —— 在东八区就是当天 08:00，于是"截止今天"的记录一早 8 点就被判成已过期。
+		                // 手工拼上当天的 23:59（不带时区 = 本地时间）才是"今天截止"的本意。
+		                ...closeAt === "" ? {} : { applyCloseAt: (/* @__PURE__ */ new Date(`${closeAt}T23:59:59`)).toISOString() }
 		              }),
 		              "\u5DF2\u65B0\u5EFA\u6821\u62DB\u8BB0\u5F55"
-		            ).then(() => {
+		            ).then((ok) => {
+		              if (!ok) return;
 		              setName("");
 		              setCloseAt("");
 		            }),
@@ -1402,23 +1533,39 @@ window.__ModuleLoader__.load({
 		        )
 		      ] })
 		    ] }),
-		    data.state.status !== "ok" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u6821\u62DB\u8BB0\u5F55\u2026" }) : items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6821\u62DB\u8BB0\u5F55\u3002\u4E0A\u9762\u586B\u4E00\u4E2A\u516C\u53F8\u540D\u5C31\u80FD\u5F00\u59CB\u8DDF\u8E2A\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-campus-list", children: items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "jh-campus-item", children: [
+		    data.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u6821\u62DB\u8BB0\u5F55\u2026" }) : data.state.status === "error" ? (
+		      // 读失败必须说读失败：原来这里一律显示"正在读取…"，接口挂掉就永远转圈，
+		      // 既没有错误也没有重试。
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-card", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: data.state.message }),
+		        data.state.hint === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: data.state.hint }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-btn", onClick: data.reload, children: "\u91CD\u8BD5" })
+		      ] })
+		    ) : items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u6821\u62DB\u8BB0\u5F55\u3002\u4E0A\u9762\u586B\u4E00\u4E2A\u516C\u53F8\u540D\u5C31\u80FD\u5F00\u59CB\u8DDF\u8E2A\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-campus-list", children: items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "jh-campus-item", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-message-head", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { children: item.companyName ?? item.note ?? `#${String(item.id)}` }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-badge", children: CAMPUS_BATCH_LABEL[item.batch] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "jh-muted", children: CAMPUS_STAGE_LABEL[item.stage] }),
 		        item.applyCloseAt === null ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "jh-muted", children: [
 		          "\u7F51\u7533\u622A\u6B62 ",
-		          item.applyCloseAt.slice(0, 10)
+		          formatLocalMoment(item.applyCloseAt, now, { withRelative: false }) ?? item.applyCloseAt
 		        ] })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-detail-actions", children: [
-		        ["applied", "assessment_pending", "interview_pending", "final", "closed"].map((stage) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		        [
+		          "applied",
+		          "assessment_pending",
+		          "interview_pending",
+		          "interviewing",
+		          "final",
+		          "closed",
+		          "rejected"
+		        ].map((stage) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
 		          "button",
 		          {
 		            type: "button",
 		            className: "jh-btn jh-btn-inline",
-		            disabled: busy,
+		            disabled: busy || item.stage === stage,
 		            onClick: () => void run(
 		              async () => await advanceCampus(item.id, stage),
 		              `\u5DF2\u6807\u8BB0\u4E3A\u300C${CAMPUS_STAGE_LABEL[stage]}\u300D`
@@ -1461,7 +1608,8 @@ window.__ModuleLoader__.load({
 		                kind: "written"
 		              }),
 		              "\u5DF2\u8BB0\u5F55\u7B14\u8BD5\uFF08\u4F1A\u51FA\u73B0\u5728\u4E0A\u9762\u7684\u786C\u622A\u6B62\u91CC\uFF09"
-		            ).then(() => {
+		            ).then((ok) => {
+		              if (!ok) return;
 		              setDueAt("");
 		              setDueFor(null);
 		            }),
@@ -1474,8 +1622,9 @@ window.__ModuleLoader__.load({
 		        ASSESSMENT_KIND_LABEL[assessment.kind],
 		        "\uFF5C",
 		        ASSESSMENT_STATE_LABEL[assessment.state],
-		        "\uFF5C \u622A\u6B62 ",
-		        assessment.dueAt?.slice(0, 16).replace("T", " ") ?? "\u672A\u586B",
+		        "\uFF5C \u622A\u6B62",
+		        " ",
+		        assessment.dueAt === null ? "\u672A\u586B" : formatLocalMoment(assessment.dueAt, now, { withRelative: false }) ?? assessment.dueAt,
 		        assessment.state === "pending" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
 		          " ",
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -1511,13 +1660,16 @@ window.__ModuleLoader__.load({
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { className: "jh-card-title", children: "\u4E09\u65B9\u534F\u8BAE" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(InlineMd, { text: "\u4E09\u65B9\u662F**\u4E0D\u53EF\u9006**\u8282\u70B9\uFF1A\u7B7E\u7F72\u524D\u540E\u5FC5\u987B\u663E\u8457\u533A\u5206\uFF0C\u8FDD\u7EA6\u6709\u771F\u5B9E\u4EE3\u4EF7\u3002\u771F\u7684\u8FDD\u7EA6\u8BF7\u6807\u300C\u8FDD\u7EA6\u300D\uFF0C\u4E0D\u8981\u6539\u56DE\u5F85\u7B7E\u3002" }) }),
-		      tripartite.state.status === "ok" && tripartite.state.data.items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-tailor-notes", children: tripartite.state.data.items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+		      tripartite.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u4E09\u65B9\u8BB0\u5F55\u2026" }) : tripartite.state.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-error", children: tripartite.state.message }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "jh-btn", onClick: tripartite.reload, children: "\u91CD\u8BD5" })
+		      ] }) : tripartite.state.data.items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-tailor-notes", children: tripartite.state.data.items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
 		        "\xB7 #",
 		        item.id,
 		        "\uFF5C",
 		        TRIPARTITE_STATE_LABEL[item.state],
 		        "\uFF5C",
-		        item.signDeadline === null ? "\u65E0\u622A\u6B62" : `\u7B7E\u7F72\u622A\u6B62 ${item.signDeadline.slice(0, 10)}`,
+		        item.signDeadline === null ? "\u65E0\u622A\u6B62" : `\u7B7E\u7F72\u622A\u6B62 ${formatLocalMoment(item.signDeadline, now, { withRelative: false }) ?? item.signDeadline}`,
 		        item.penaltySummary === null ? "" : `\uFF5C${item.penaltySummary}`,
 		        item.state === "pending" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
 		          " ",
@@ -1543,7 +1695,9 @@ window.__ModuleLoader__.load({
 		          disabled: busy,
 		          onClick: () => void run(
 		            async () => await createTripartite({
-		              ...items[0] === void 0 ? {} : { campusApplicationId: items[0].id },
+		              // **不自动挂到某条校招记录上**：原来绑的是 `items[0]`（列表按 stage_at 倒序，
+		              // 也就是最近动过的那条），而用户此刻根本没得选 —— 猜一个关联会顺带把那条记录
+		              // 推到"待发三方"。三方记录先独立存在，等界面上能选记录时再绑。
 		              signDeadline: new Date(Date.now() + 7 * 864e5).toISOString(),
 		              penaltySummary: "\u8FDD\u7EA6\u6761\u6B3E\uFF1A\u5F85\u586B\u5199"
 		            }),
@@ -1564,12 +1718,12 @@ window.__ModuleLoader__.load({
 		  const [tz, setTz] = (0, import_react4.useState)("America/New_York");
 		  const [interviewAt, setInterviewAt] = (0, import_react4.useState)("");
 		  const [display, setDisplay] = (0, import_react4.useState)(null);
-		  const run = async (fn, onDone) => {
+		  const run = async (fn, onDone, mutates = true) => {
 		    setBusy(true);
 		    setError(null);
 		    try {
 		      onDone(await fn());
-		      props.onChanged();
+		      if (mutates) props.onChanged();
 		    } catch (caught) {
 		      setError(caught instanceof ApiError ? caught.display : caught instanceof Error ? caught.message : String(caught));
 		    } finally {
@@ -1686,7 +1840,8 @@ window.__ModuleLoader__.load({
 		                  diffHours: result.diffHours,
 		                  warning: result.warning
 		                });
-		              }
+		              },
+		              false
 		            ),
 		            children: "\u6362\u7B97"
 		          }
@@ -1718,6 +1873,22 @@ window.__ModuleLoader__.load({
 		      ) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { className: "jh-tv-pre", children: letter })
 		    ] })
+		  ] });
+		}
+		function EnglishCheckPanel(props) {
+		  const check = useAsync((signal) => fetchEnglishCheck(props.resumeId, signal), [props.resumeId]);
+		  if (check.state.status === "loading") return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u4F53\u68C0\u2026" });
+		  if (check.state.status === "error") return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "jh-error", children: [
+		    "\u4F53\u68C0\u5931\u8D25\uFF1A",
+		    check.state.message
+		  ] });
+		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+		    check.state.data.items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-ok", children: "\u82F1\u6587\u7B80\u5386\u4F53\u68C0\u6CA1\u6709\u53D1\u73B0\u95EE\u9898\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "jh-issues", children: check.state.data.items.map((issue, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: issue.level === "error" ? "jh-error" : "jh-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { children: issue.level === "error" ? "\u5FC5\u6539" : "\u5EFA\u8BAE" }),
+		      " ",
+		      issue.message
+		    ] }, String(index))) }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "jh-muted", children: check.state.data.note })
 		  ] });
 		}
 
@@ -4425,91 +4596,6 @@ window.__ModuleLoader__.load({
 		  return items;
 		}
 
-		// src/shared/time-format.ts
-		function pad(value) {
-		  return String(value).padStart(2, "0");
-		}
-		function formatClock(date) {
-		  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-		}
-		function formatDay(date) {
-		  return `${String(date.getMonth() + 1)}\u6708${String(date.getDate())}\u65E5`;
-		}
-		function isSameDay(a, b) {
-		  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-		}
-		function formatRelative(target, now) {
-		  const deltaMs = target.getTime() - now.getTime();
-		  const abs = Math.abs(deltaMs);
-		  const future = deltaMs >= 0;
-		  if (abs < 6e4) return future ? "\u9A6C\u4E0A" : "\u521A\u521A";
-		  const minutes = Math.round(abs / 6e4);
-		  const text = abs < 60 * 6e4 ? `${String(minutes)} \u5206\u949F` : abs < 24 * 60 * 6e4 ? `${String(Math.floor(abs / (60 * 6e4)))} \u5C0F\u65F6` : `${String(Math.floor(abs / (24 * 60 * 6e4)))} \u5929`;
-		  return future ? `\u8FD8\u6709 ${text}` : `${text}\u524D`;
-		}
-		function formatLocalMoment(iso, now, options = {}) {
-		  if (iso === null || iso === "") return null;
-		  const date = new Date(iso);
-		  if (Number.isNaN(date.getTime())) {
-		    return iso;
-		  }
-		  const day = isSameDay(date, now) ? "\u4ECA\u5929" : isSameDay(new Date(now.getTime() + 24 * 60 * 60 * 1e3), date) ? "\u660E\u5929" : isSameDay(new Date(now.getTime() - 24 * 60 * 60 * 1e3), date) ? "\u6628\u5929" : formatDay(date);
-		  const absolute = `${day} ${formatClock(date)}`;
-		  return options.withRelative === false ? absolute : `${absolute} \xB7 ${formatRelative(date, now)}`;
-		}
-		function formatDuration(ms) {
-		  if (!Number.isFinite(ms) || ms < 0) return null;
-		  const seconds = Math.round(ms / 1e3);
-		  if (seconds < 60) return `${String(seconds)} \u79D2`;
-		  const minutes = Math.floor(seconds / 60);
-		  if (minutes < 60) {
-		    const rest2 = seconds % 60;
-		    return rest2 === 0 ? `${String(minutes)} \u5206` : `${String(minutes)} \u5206 ${String(rest2)} \u79D2`;
-		  }
-		  const hours = Math.floor(minutes / 60);
-		  const rest = minutes % 60;
-		  return rest === 0 ? `${String(hours)} \u5C0F\u65F6` : `${String(hours)} \u5C0F\u65F6 ${String(rest)} \u5206`;
-		}
-		function formatJitter(jitterMs) {
-		  if (!Number.isFinite(jitterMs) || jitterMs <= 0) return null;
-		  const minutes = Math.round(jitterMs / 6e4);
-		  return minutes <= 0 ? "\u542B\u4E0D\u5230 1 \u5206\u949F\u6296\u52A8" : `\u542B ${String(minutes)} \u5206\u949F\u6296\u52A8`;
-		}
-		var WEEKDAY_LABEL = ["\u5468\u65E5", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D"];
-		function formatWeekdays(weekdays) {
-		  const days = [...new Set(weekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort();
-		  if (days.length === 0 || days.length === 7) return "\u6BCF\u5929";
-		  if (days.length === 5 && days.every((day, index) => day === index + 1)) return "\u5DE5\u4F5C\u65E5";
-		  return days.map((day) => WEEKDAY_LABEL[day] ?? String(day)).join("\u3001");
-		}
-		function formatHourMinute(hour, minute) {
-		  return `${pad(hour)}:${pad(minute)}`;
-		}
-		function formatWindow(startHour, startMinute, endHour, endMinute) {
-		  const start = formatHourMinute(startHour, startMinute);
-		  const end = formatHourMinute(endHour, endMinute);
-		  const overnight = endHour * 60 + endMinute <= startHour * 60 + startMinute;
-		  return overnight ? `${start}\u2013\u6B21\u65E5 ${end}` : `${start}\u2013${end}`;
-		}
-		function clockValueOf(hour, minute) {
-		  return formatHourMinute(hour, minute);
-		}
-		function parseClockValue(text) {
-		  const match = /^(\d{1,2}):(\d{1,2})$/.exec(text.trim());
-		  if (match === null) return null;
-		  const hour = Number.parseInt(match[1] ?? "", 10);
-		  const minute = Number.parseInt(match[2] ?? "", 10);
-		  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
-		  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-		  return { hour, minute };
-		}
-		var WEEKDAY_PRESETS = [
-		  { key: "workdays", label: "\u5DE5\u4F5C\u65E5", days: [1, 2, 3, 4, 5] },
-		  { key: "weekend", label: "\u5468\u672B", days: [0, 6] },
-		  { key: "all", label: "\u6BCF\u5929", days: [0, 1, 2, 3, 4, 5, 6] },
-		  { key: "none", label: "\u6E05\u7A7A", days: [] }
-		];
-
 		// src/client/modal.tsx
 		var import_react10 = require("react");
 		var import_jsx_runtime11 = require("react/jsx-runtime");
@@ -4802,8 +4888,8 @@ window.__ModuleLoader__.load({
 		    });
 		  };
 		  const runBlockTitle = status?.readOnly === true ? `\u672C\u7A97\u53E3\u6CA1\u6709\u91C7\u96C6\u6743\u3002\u7528\u300C\u63A5\u7BA1\u8C03\u5EA6\u300D\uFF0C\u6216\u5230\u53E6\u4E00\u4E2A\u7A97\u53E3\uFF08\u8FDB\u7A0B ${String(status.lease.pid ?? "?")}\uFF09\u91CC\u64CD\u4F5C\u3002` : feedback.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u73B0\u5728\u6309\u8FD9\u4E2A\u65B9\u6848\u91C7\u96C6\u4E00\u6B21\uFF08\u4F1A\u6253\u5F00\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09\u3002";
-		  const enabledPlan = planList.find((plan) => plan.enabled) ?? planList[0];
-		  const focusedPlan = planList.find((plan) => plan.id === focusPlanId) ?? enabledPlan;
+		  const scheduledPlan = planList.find((plan) => plan.enabled && plan.schedule.enabled);
+		  const focusedPlan = planList.find((plan) => plan.id === focusPlanId) ?? scheduledPlan ?? planList[0];
 		  const runBlocked = feedback.running || (status?.readOnly ?? false);
 		  const toggleSchedule = () => {
 		    if (status === null) return;
@@ -4913,7 +4999,7 @@ window.__ModuleLoader__.load({
 		        StatusAlert,
 		        {
 		          status,
-		          planName: enabledPlan?.name ?? null,
+		          planName: scheduledPlan?.name ?? null,
 		          running: feedback.running,
 		          onResume: () => void act("\u6B63\u5728\u6062\u590D\u5B9A\u65F6\u2026", async () => {
 		            await setSchedulePaused(false);
@@ -4989,7 +5075,7 @@ window.__ModuleLoader__.load({
 		            )) }) : null,
 		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-head", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { className: "jh-plan-name", children: focusedPlan.name }),
-		              focusedPlan.id === enabledPlan?.id ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-ok", children: "\u751F\u6548\u4E2D" }) : null,
+		              focusedPlan.id === scheduledPlan?.id ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-ok", children: "\u751F\u6548\u4E2D" }) : null,
 		              focusedPlan.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u505C\u7528" })
 		            ] }),
 		            /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-plan-meta", children: [
@@ -5034,7 +5120,7 @@ window.__ModuleLoader__.load({
 		                  title: "\u6539\u8FD9\u4E2A\u65B9\u6848\u6293\u4EC0\u4E48\u3001\u6293\u591A\u6DF1\u3001\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
 		                  onClick: () => {
 		                    setDuplicates([]);
-		                    setEditing(focusedPlan.id);
+		                    setEditing({ id: focusedPlan.id, form: formOf(focusedPlan) });
 		                  },
 		                  children: "\u7F16\u8F91"
 		                }
@@ -5096,7 +5182,7 @@ window.__ModuleLoader__.load({
 		              title: "\u65B0\u5EFA\u4E00\u4E2A\u91C7\u96C6\u65B9\u6848\uFF1A\u51B3\u5B9A\u6293\u4EC0\u4E48\uFF08\u5E73\u53F0 + \u7B5B\u9009\u6761\u4EF6 + \u6293\u53D6\u6DF1\u5EA6\uFF09\u4E0E\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
 		              onClick: () => {
 		                setDuplicates([]);
-		                setEditing("new");
+		                setEditing({ id: "new", form: emptyForm() });
 		              },
 		              children: "\u65B0\u589E\u65B9\u6848"
 		            }
@@ -5194,7 +5280,7 @@ window.__ModuleLoader__.load({
 		                  title: "\u6539\u8FD9\u4E2A\u65B9\u6848\u6293\u4EC0\u4E48\u3001\u6293\u591A\u6DF1\u3001\u4EC0\u4E48\u65F6\u5019\u6293\u3002",
 		                  onClick: () => {
 		                    setDuplicates([]);
-		                    setEditing(plan.id);
+		                    setEditing({ id: plan.id, form: formOf(plan) });
 		                  },
 		                  children: "\u7F16\u8F91"
 		                }
@@ -5259,8 +5345,8 @@ window.__ModuleLoader__.load({
 		    editing === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		      PlanEditorModal,
 		      {
-		        planId: editing === "new" ? null : editing,
-		        initial: editing === "new" ? emptyForm() : formOf(planList.find((plan) => plan.id === editing)),
+		        planId: editing.id === "new" ? null : editing.id,
+		        initial: editing.form,
 		        available: platformList,
 		        duplicates,
 		        notices,
@@ -5270,10 +5356,10 @@ window.__ModuleLoader__.load({
 		          setFeedback({ running: true, tone: "ok", message: "\u6B63\u5728\u4FDD\u5B58\u2026" });
 		          try {
 		            const input = writeOf(form);
-		            const result = editing === "new" ? await createPlan(input) : await updatePlan(editing, input);
+		            const result = editing.id === "new" ? await createPlan(input) : await updatePlan(editing.id, input);
 		            setDuplicates(result.duplicates);
 		            setNotices(result.notices);
-		            const verb = editing === "new" ? "\u5DF2\u521B\u5EFA" : "\u5DF2\u4FDD\u5B58";
+		            const verb = editing.id === "new" ? "\u5DF2\u521B\u5EFA" : "\u5DF2\u4FDD\u5B58";
 		            const tail = [];
 		            if (result.duplicates.length > 0) {
 		              tail.push(
@@ -5295,11 +5381,11 @@ window.__ModuleLoader__.load({
 		        },
 		        onValidate: async (form) => {
 		          const input = writeOf(form);
-		          const result = editing === "new" ? await validatePlanDraft(input) : await validatePlan(editing, input);
+		          const result = editing.id === "new" ? await validatePlanDraft(input) : await validatePlan(editing.id, input);
 		          return { duplicates: result.duplicates, notices: result.notices };
 		        }
 		      },
-		      String(editing)
+		      String(editing.id)
 		    ),
 		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)(
 		      Modal,
@@ -5936,13 +6022,18 @@ window.__ModuleLoader__.load({
 		  const [submitError, setSubmitError] = (0, import_react11.useState)(null);
 		  const [receipt, setReceipt] = (0, import_react11.useState)(null);
 		  const patch = (next) => setForm((current) => ({ ...current, ...next }));
-		  const duplicates = [...props.duplicates, ...localDuplicates];
+		  const duplicates = [
+		    ...new Map(
+		      [...props.duplicates, ...localDuplicates].map((item) => [item.planId, item])
+		    ).values()
+		  ];
 		  const notices = [.../* @__PURE__ */ new Set([...props.notices, ...localNotices])];
 		  const startClock = parseClockValue(form.windowStart);
 		  const endClock = parseClockValue(form.windowEnd);
 		  const startMissing = startClock === null;
 		  const endMissing = endClock === null;
-		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.overrides)}\0${JSON.stringify(form.criteria)}`;
+		  const keywordsKey = JSON.stringify(parseKeywordsText(form.keywordsText));
+		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.overrides)}\0${JSON.stringify(form.criteria)}\0${keywordsKey}`;
 		  (0, import_react11.useEffect)(() => {
 		    const timer = window.setTimeout(() => {
 		      void props.onValidate(form).then((result) => {
@@ -6656,21 +6747,27 @@ window.__ModuleLoader__.load({
 		  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision]);
 		  const [busyId, setBusyId] = (0, import_react11.useState)(null);
 		  const [pendingDelete, setPendingDelete] = (0, import_react11.useState)(null);
+		  const [error, setError] = (0, import_react11.useState)(null);
 		  const act = async (id, fn) => {
 		    setBusyId(id);
+		    setError(null);
 		    try {
 		      await fn();
 		      groups.reload();
+		    } catch (thrown) {
+		      setError(thrown instanceof ApiError ? thrown.display : String(thrown));
 		    } finally {
 		      setBusyId(null);
 		    }
 		  };
 		  const items = groups.state.status === "ok" ? groups.state.data.items : [];
+		  const total = groups.state.status === "ok" ? groups.state.data.count : 0;
 		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("section", { className: "jh-card", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "jh-form-head", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h2", { className: "jh-card-title", children: "\u8DE8\u5E73\u53F0\u53BB\u91CD" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(FieldHint, { text: "\u540C\u4E00\u5C97\u4F4D\u88AB\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u5408\u5E76\u5230\u540C\u4E00\u7EC4\uFF0C\u4F9D\u636E\u662F\u8DE8\u5E73\u53F0 + \u540C\u516C\u53F8\u540C\u57CE + \u85AA\u8D44\u4E0D\u51B2\u7A81 + \u6807\u9898\u76F8\u4F3C\u3002\u5408\u5E76\u662F\u53EF\u9006\u7684\uFF1A\u8BEF\u5408\u5E76\u968F\u65F6\u53EF\u4EE5\u5728\u4E0B\u9762\u62C6\u5F00\u3002\u8865\u505A\u4E00\u6B21\u5168\u5E93\u590D\u6838\u7528\u9876\u90E8\u7684\u300C\u8FD0\u884C\u5168\u5E93\u53BB\u91CD\u300D\u3002" })
 		    ] }),
+		    error === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-error", role: "alert", children: error }),
 		    groups.state.status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", "aria-busy": "true", children: "\u6B63\u5728\u8BFB\u53D6\u53BB\u91CD\u5206\u7EC4\u2026" }) : items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "jh-muted", children: "\u76EE\u524D\u6CA1\u6709\u53BB\u91CD\u5206\u7EC4\u3002\u591A\u5E73\u53F0\u540C\u65F6\u5728\u6293\u540C\u4E00\u6279\u5C97\u4F4D\u65F6\uFF0C\u91CD\u590D\u7684\u90A3\u51E0\u6761\u624D\u4F1A\u88AB\u5408\u5E76\u5230\u8FD9\u91CC\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { className: "jh-tailor-notes", children: items.map((group) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("span", { className: "jh-muted", children: [
 		        "\u7EC4 #",
@@ -6713,6 +6810,13 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }, member.id)) })
 		    ] }, group.id)) }),
+		    total > items.length ? /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("p", { className: "jh-muted", children: [
+		      "\u5171 ",
+		      total,
+		      " \u7EC4\uFF0C\u8FD9\u91CC\u5217\u51FA\u6700\u65B0\u7684 ",
+		      items.length,
+		      " \u7EC4\u3002"
+		    ] }) : null,
 		    pendingDelete === null ? null : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
 		      Modal,
 		      {
@@ -7115,6 +7219,10 @@ window.__ModuleLoader__.load({
 		        " ",
 		        issue.message
 		      ] }, `${issue.at}-${String(index)}`)) })
+		    ] }),
+		    draft.language !== "en" ? null : /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-card jh-card-tight", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { className: "jh-card-title", children: "\u82F1\u6587\u4F53\u68C0" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(EnglishCheckPanel, { resumeId: props.id })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-work-modes", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-modes", role: "tablist", "aria-label": "\u89C6\u56FE\u6A21\u5F0F", children: [["edit", "\u7F16\u8F91"], ["split", "\u5206\u5C4F"], ["preview", "\u9884\u89C8"], ["files", "\u9644\u4EF6"]].map(([key, label]) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
@@ -9048,6 +9156,24 @@ window.__ModuleLoader__.load({
 		  const value = todo.detail.planId;
 		  return typeof value === "number" ? value : null;
 		}
+		function confirmTargetJobIdOf(todo) {
+		  if (todo.detail === null || typeof todo.detail !== "object") return null;
+		  const target = todo.detail.target;
+		  if (target === null || target === void 0 || typeof target !== "object") return null;
+		  const value = target.jobId;
+		  return typeof value === "number" ? value : null;
+		}
+		function todoLevelLabel(level) {
+		  return TODO_LEVEL_LABEL[level] ?? level;
+		}
+		function todoKindLabel(kind) {
+		  return TODO_KIND_LABEL[kind] ?? kind;
+		}
+		function useSticky(state) {
+		  const last = (0, import_react14.useRef)(null);
+		  if (state.status === "ok") last.current = state.data;
+		  return state.status === "ok" ? state.data : state.status === "loading" ? last.current : null;
+		}
 		function TodayScreen(props) {
 		  const today = useAsync((signal) => fetchToday(signal), [props.revision]);
 		  const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision]);
@@ -9077,7 +9203,7 @@ window.__ModuleLoader__.load({
 		    }
 		  };
 		  const startCrawl = () => act("\u6B63\u5728\u91C7\u96C6\u2026\uFF08\u4F1A\u6253\u5F00\u4E00\u4E2A\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09", async () => {
-		    const summary = await runDefaultPlan();
+		    const summary = nextTrigger === null ? await runDefaultPlan() : { ...await runPlan(nextTrigger.planId), planName: nextTrigger.planName };
 		    const run = summary.run;
 		    return `\u65B9\u6848\u300C${summary.planName}\u300D\u672C\u8F6E ${CRAWL_STATE_LABEL[run.state]}\uFF1A\u547D\u4E2D ${String(run.found)} \xB7 \u65B0\u589E ${String(run.inserted)} \xB7 \u66F4\u65B0 ${String(run.updated)} \xB7 \u9694\u79BB ${String(run.quarantined)}` + (run.errorCode === null ? "" : ` \xB7 ${run.errorCode}`);
 		  });
@@ -9089,16 +9215,34 @@ window.__ModuleLoader__.load({
 		    const status = await startLogin(platformId);
 		    return status.message ?? "\u767B\u5F55\u5F15\u5BFC\u5DF2\u542F\u52A8";
 		  });
-		  const data = today.state.status === "ok" ? today.state.data : null;
-		  const sched = scheduler.state.status === "ok" ? scheduler.state.data : null;
-		  const platformItems = platforms.state.status === "ok" ? platforms.state.data.items : [];
-		  const unhealthy = platformItems.filter((item) => item.health !== "healthy" || !item.account.loggedIn);
-		  const worst = sched === null || sched.planStatus.length === 0 ? null : sched.planStatus.reduce(
+		  const resumeConfirm = async (todoId, jobId) => {
+		    setFeedback({ running: true, tone: "ok", message: "\u6B63\u5728\u6253\u5F00\u8FD9\u6761\u52A8\u4F5C\u7684\u76EE\u6807\u5C97\u4F4D\u2026" });
+		    try {
+		      await resumeConfirmAction(todoId);
+		      setFeedback(IDLE2);
+		      props.onGoJob(jobId);
+		    } catch (error) {
+		      report(error);
+		    }
+		  };
+		  const data = useSticky(today.state);
+		  const sched = useSticky(scheduler.state);
+		  const platformItems = useSticky(platforms.state)?.items ?? [];
+		  const unhealthy = platformItems.filter(
+		    (item) => item.health !== "healthy" || // 「没检测过」不是「未登录」（与「采集」页同一条口径）：全新安装时
+		    // `account_state` 是空的，把空当未登录会让首屏对每个平台都报一次假警报，
+		    // 而调度侧恰恰把这种账号当"可以跑"（见 platformGate 的注释）。
+		    !item.account.loggedIn && item.account.lastCheckAt !== null
+		  );
+		  const measured = sched === null ? [] : sched.planStatus.filter((item) => item.enabled);
+		  const worst = measured.length === 0 ? null : measured.reduce(
 		    (acc, item) => (item.freshness.hoursSinceSuccess ?? Number.POSITIVE_INFINITY) > (acc.freshness.hoursSinceSuccess ?? Number.POSITIVE_INFINITY) ? item : acc
 		  );
-		  const nextTrigger = sched?.triggers[0] ?? null;
+		  const nextTrigger = sched === null || sched.triggers.length === 0 ? null : [...sched.triggers].sort(
+		    (left, right) => left.nextRunAt < right.nextRunAt ? -1 : left.nextRunAt > right.nextRunAt ? 1 : 0
+		  )[0] ?? null;
 		  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-screen", children: [
-		    today.state.status === "loading" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u4ECA\u65E5\u6982\u51B5\u2026" }),
+		    today.state.status === "loading" && data === null && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-muted", children: "\u6B63\u5728\u8BFB\u53D6\u4ECA\u65E5\u6982\u51B5\u2026" }),
 		    today.state.status === "error" && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { className: "jh-card-title", children: "\u8BFB\u4E0D\u5230\u4ECA\u65E5\u6982\u51B5" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-error", children: today.state.message }),
@@ -9118,10 +9262,10 @@ window.__ModuleLoader__.load({
 		        " \u91CD\u542F\u5373\u53EF\u89E3\u9664\u3002"
 		      ] })
 		    ] }),
-		    data !== null && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+		    data !== null && data.dataReady && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("section", { className: "jh-card", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-today-head", children: [
-		          worst === null ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u91C7\u96C6\u65B9\u6848\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(FreshnessBadge, { level: worst.freshness.level, hours: worst.freshness.hoursSinceSuccess }),
+		          worst === null ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-muted", children: sched !== null && sched.planStatus.length > 0 ? "\u6CA1\u6709\u542F\u7528\u5B9A\u65F6\u7684\u65B9\u6848 \u2014\u2014 \u6570\u636E\u4E0D\u4F1A\u81EA\u52A8\u66F4\u65B0\u3002" : "\u8FD8\u6CA1\u6709\u91C7\u96C6\u65B9\u6848\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(FreshnessBadge, { level: worst.freshness.level, hours: worst.freshness.hoursSinceSuccess }),
 		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-spacer" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
 		            "button",
@@ -9149,7 +9293,7 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("p", { className: "jh-muted jh-health-line", children: [
 		        "\u5E73\u53F0\u5065\u5EB7\uFF1A",
 		        platformItems.length === 0 ? "\u8FD8\u6CA1\u6709\u6CE8\u518C\u5E73\u53F0" : unhealthy.length === 0 ? "\u5168\u90E8\u6B63\u5E38" : unhealthy.map(
-		          (item) => `${item.id} ${item.health !== "healthy" ? item.health : "\u672A\u767B\u5F55"}`
+		          (item) => `${item.id} ${item.health !== "healthy" ? HEALTH_STATE_LABEL[item.health] : "\u672A\u767B\u5F55"}`
 		        ).join(" \xB7 "),
 		        " \xB7 ",
 		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { type: "button", className: "jh-link", onClick: props.onGoCollect, children: "\u770B\u7EC6\u8282" })
@@ -9168,7 +9312,7 @@ window.__ModuleLoader__.load({
 		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u5F85\u4FEE\u590D\u8BB0\u5F55" })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: `jh-stat${data.todos.some((todo) => todo.level === "urgent") ? " jh-stat-error" : ""}`, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: data.todos.length }),
+		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: data.openTodoCount }),
 		          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "\u5F85\u529E" })
 		        ] })
 		      ] }),
@@ -9176,12 +9320,13 @@ window.__ModuleLoader__.load({
 		        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { className: "jh-card-title", children: "\u5F85\u529E" }),
 		        data.todos.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "jh-muted", children: "\u6CA1\u6709\u5F85\u529E\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("ul", { className: "jh-todos", children: data.todos.map((todo) => {
 		          const planId = planIdOf(todo);
+		          const confirmJobId = confirmTargetJobIdOf(todo);
 		          return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { className: `jh-todo jh-todo-${todo.level}`, children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-todo-level", children: todo.level }),
+		            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "jh-todo-level", children: todoLevelLabel(todo.level) }),
 		            /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-todo-body", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "jh-todo-title", children: todo.title }),
 		              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-muted", children: [
-		                todo.kind,
+		                todoKindLabel(todo.kind),
 		                todo.ref === null ? "" : ` \xB7 ${todo.ref}`
 		              ] }),
 		              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "jh-todo-actions", children: [
@@ -9200,9 +9345,19 @@ window.__ModuleLoader__.load({
 		                  {
 		                    type: "button",
 		                    className: "jh-btn jh-btn-inline",
-		                    disabled: feedback.running,
+		                    disabled: feedback.running || (sched?.readOnly ?? false),
 		                    onClick: () => void login(todo.ref),
 		                    children: "\u53BB\u767B\u5F55"
+		                  }
+		                ),
+		                todo.kind === "confirm-action" && confirmJobId !== null && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+		                  "button",
+		                  {
+		                    type: "button",
+		                    className: "jh-btn jh-btn-inline",
+		                    disabled: feedback.running,
+		                    onClick: () => void resumeConfirm(todo.id, confirmJobId),
+		                    children: "\u53BB\u5904\u7406"
 		                  }
 		                ),
 		                todo.kind === "blocked" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGoCollect, children: "\u53BB\u786E\u8BA4\u6062\u590D" }),
@@ -9349,6 +9504,10 @@ window.__ModuleLoader__.load({
 		      {
 		        revision,
 		        onGoJobs: () => setScreen("jobs"),
+		        onGoJob: (jobId) => {
+		          setSelected(jobId);
+		          setScreen("jobs");
+		        },
 		        onGoCollect: () => setScreen("collect")
 		      }
 		    ) : screen === "collect" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(CollectScreen, { revision, onGoSettings: () => setScreen("settings") }) : screen === "settings" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(SettingsScreen, { revision }) : screen === "pipeline" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(

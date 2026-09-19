@@ -152,6 +152,11 @@ export function JobHunterPanel() {
           <TodayScreen
             revision={revision}
             onGoJobs={() => setScreen('jobs')}
+            // 「待确认动作」待办要把用户带回目标岗位（正文不入库，只能回去重新发起）
+            onGoJob={(jobId) => {
+              setSelected(jobId)
+              setScreen('jobs')
+            }}
             onGoCollect={() => setScreen('collect')}
           />
         ) : screen === 'collect' ? (

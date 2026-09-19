@@ -17,6 +17,7 @@ import type {
   JobDetailDto,
   JobPageDto,
   JobDto,
+  PlanDto,
   PlanPlatformOverrideDto,
   PlanSchedule,
 } from '../../shared/dto.js'
@@ -54,6 +55,7 @@ import { TONE_LABEL } from '../../shared/labels.js'
 import { normalizeResumeContent } from '../../shared/resume.js'
 import type { JobQuery } from '../store/repo/jobs.js'
 import type { DedupGroupRecord } from '../store/repo/dedup-groups.js'
+import { normalizePlatformOverrides } from '../store/repo/plans.js'
 import type { Store } from '../store/store.js'
 import { DICTIONARY_KINDS } from '../store/repo/dictionary.js'
 import type { PlanConfigInput, PlanService } from '../domain/plans.js'
@@ -104,6 +106,24 @@ function parsePositiveInt(raw: string | null, fallback: number, min: number, max
   const parsed = Number.parseInt(raw, 10)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, Math.trunc(parsed)))
+}
+
+/**
+ * 路径 / 查询串里的记录 id。
+ *
+ * 不能用裸 `Number.parseInt`：`parseInt('12abc')` 得到 12，且 `Number.isFinite` 为真 ——
+ * 于是 `/assessments/12abc/state` 会被当成 id=12 落到**一条真实记录**上。
+ * 打错的路径不该命中数据，所以这里只认纯数字。
+ */
+function parseRecordId(raw: string | null, what: string): number {
+  if (raw === null || !/^\d+$/.test(raw)) {
+    throw new DomainError('INVALID_INPUT', `非法${what} id：${raw ?? ''}`)
+  }
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new DomainError('INVALID_INPUT', `非法${what} id：${raw}`)
+  }
+  return value
 }
 
 function parseState(raw: string | null): JobState | undefined {
@@ -259,6 +279,40 @@ function planCreateOf(body: Record<string, unknown>): PlanConfigInput {
     ...(patch.schedule === undefined ? {} : { schedule: patch.schedule }),
     ...(patch.postProcess === undefined ? {} : { postProcess: patch.postProcess }),
     ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+  }
+}
+
+/**
+ * 「方案现值 + 补丁」→ **校验输入**。
+ *
+ * ## 为什么必须有这一份（而不是各处手拼）
+ *
+ * 界面上的"实时查重 / 点「检查」"（`POST /plans/:id/validate`）与真正保存
+ * （`PATCH /plans/:id`）报的必须是同一套结论 —— 否则会出现"检查说没重复、
+ * 保存后才发现重复"。
+ *
+ * ⚠️ 拼法必须与 `PlanService.update` 内部的 `merged` **逐字段一致**。
+ * 这里曾经漏掉 `keywords` 与 `platformOverrides`：`keywords` 一缺，查重口径里的
+ * 生效关键词恒为空串，多关键词方案之间**永远查不出重复**；`platformOverrides`
+ * 一缺，"所有平台都被停用""单平台页数超上限"这类硬判据在保存前根本不出现。
+ *
+ * `platformOverrides` 先按新的平台集合收敛一次，与 `update` 一致 —— 否则
+ * "把某个平台移出方案"会被校验的越界检查拦住，而那不是用户的错。
+ */
+function validationInputOf(current: PlanDto, patch: PlanConfigInput): PlanConfigInput {
+  const platforms = patch.platforms ?? current.platforms
+  return {
+    name: patch.name ?? current.name,
+    platforms,
+    keywords: patch.keywords ?? current.keywords,
+    platformOverrides: normalizePlatformOverrides(
+      patch.platformOverrides ?? current.platformOverrides,
+      platforms,
+    ),
+    criteria: patch.criteria ?? current.criteria,
+    schedule: { ...current.schedule, ...(patch.schedule ?? {}) },
+    enabled: patch.enabled ?? current.enabled,
+    postProcess: { ...current.postProcess, ...(patch.postProcess ?? {}) },
   }
 }
 
@@ -930,24 +984,15 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     }
 
     // SR-45："只校验、不写库"—— 界面保存前先问一句靠它。
-    // 它与下面的写入路径、与模型工具调的都是 `planService.validate`，所以三边报错完全一致。
+    // 它与下面的写入路径、与模型工具调的都是 `planService.validate`，
+    // 且输入由**同一个** `validationInputOf` 拼出来，所以三边报错完全一致。
     if (method === 'POST' && segments.length === 3 && segments[2] === 'validate') {
       const body = await readObject(req)
       const input = planCreateOf(body)
       const current = planService.get(planId)
       return json(200, {
         ok: true,
-        validation: planService.validate(
-          {
-            name: input.name,
-            platforms: input.platforms ?? current.platforms,
-            criteria: input.criteria ?? current.criteria,
-            schedule: { ...current.schedule, ...(input.schedule ?? {}) },
-            enabled: input.enabled ?? current.enabled,
-            postProcess: { ...current.postProcess, ...(input.postProcess ?? {}) },
-          },
-          planId,
-        ),
+        validation: planService.validate(validationInputOf(current, input), planId),
       })
     }
 
@@ -955,17 +1000,9 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       const body = await readObject(req)
       const patch = planPatchOf(body)
       const current = planService.get(planId)
-      const checked = planService.validate(
-        {
-          name: patch.name ?? current.name,
-          platforms: patch.platforms ?? current.platforms,
-          criteria: patch.criteria ?? current.criteria,
-          schedule: { ...current.schedule, ...(patch.schedule ?? {}) },
-          enabled: patch.enabled ?? current.enabled,
-          postProcess: { ...current.postProcess, ...(patch.postProcess ?? {}) },
-        },
-        planId,
-      )
+      // 回执里的"与谁重复 / 有哪些提示"必须与真正写进去的那份配置同一口径，
+      // 所以这里与写入路径共用 `validationInputOf`（见它的注释）。
+      const checked = planService.validate(validationInputOf(current, patch), planId)
       return json(200, {
         ok: true,
         plan: planService.update(planId, patch),
@@ -1264,7 +1301,17 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       })
     }
 
+    // ── POST /todos/:id/close ─────────────────────────────────────
+    // **必须显式判方法**：这一段没有 `method` 条件，而传输层的同源校验只拦非 GET
+    // 请求（见 http.ts 的 isSameOrigin 与上面的 `isMutation`）。少了这一判，
+    // 一条跨站的 `GET /job-hunter/todos/1/close`（`<img src>` 就够）就能关掉待办 ——
+    // 读操作不该有副作用。
     if (segments.length === 3 && segments[2] === 'close') {
+      if (method !== 'POST') {
+        throw new DomainError('INVALID_INPUT', '关闭待办只支持 POST', {
+          hint: '读请求（GET）不该改变任何状态。',
+        })
+      }
       const closed = store.todo.close(todoId, now())
       if (!closed) throw new DomainError('NOT_FOUND', `待办不存在或已关闭：${String(todoId)}`)
       return json(200, { ok: true })
@@ -1917,6 +1964,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
         ...(typeof body['companyId'] === 'number' ? { companyId: body['companyId'] } : {}),
         ...(typeof body['jobId'] === 'number' ? { jobId: body['jobId'] } : {}),
         ...(typeof body['batch'] === 'string' ? { batch: body['batch'] as CampusBatch } : {}),
+        ...(typeof body['companyName'] === 'string' ? { companyName: body['companyName'] } : {}),
         ...(typeof body['applyOpenAt'] === 'string' ? { applyOpenAt: body['applyOpenAt'] } : {}),
         ...(typeof body['applyCloseAt'] === 'string' ? { applyCloseAt: body['applyCloseAt'] } : {}),
         ...(typeof body['note'] === 'string' ? { note: body['note'] } : {}),
@@ -1925,10 +1973,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       return json(201, { ok: true, campus })
     }
 
-    const campusId = Number.parseInt(segments[1] ?? '', 10)
-    if (!Number.isFinite(campusId)) {
-      throw new DomainError('INVALID_INPUT', `非法校招记录 id：${segments[1] ?? ''}`)
-    }
+    const campusId = parseRecordId(segments[1] ?? null, '校招记录')
     if (method === 'GET' && segments.length === 2) return json(200, service.get(campusId))
     if (method === 'POST' && segments.length === 3 && segments[2] === 'advance') {
       const body = await readObject(req)
@@ -1966,8 +2011,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       return json(201, { ok: true, assessment })
     }
     if (method === 'POST' && segments.length === 3 && segments[2] === 'state') {
-      const id = Number.parseInt(segments[1] ?? '', 10)
-      if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法测评 id：${segments[1] ?? ''}`)
+      const id = parseRecordId(segments[1] ?? null, '测评')
       const body = await readObject(req)
       const state = body['state']
       if (typeof state !== 'string') throw new DomainError('INVALID_INPUT', 'state 必填')
@@ -1997,8 +2041,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
       return json(201, { ok: true, tripartite })
     }
     if (method === 'POST' && segments.length === 3 && segments[2] === 'state') {
-      const id = Number.parseInt(segments[1] ?? '', 10)
-      if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法三方 id：${segments[1] ?? ''}`)
+      const id = parseRecordId(segments[1] ?? null, '三方')
       const body = await readObject(req)
       if (typeof body['state'] !== 'string') throw new DomainError('INVALID_INPUT', 'state 必填')
       return json(200, {
@@ -2053,8 +2096,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     }
 
     if (method === 'GET' && segments.length === 2 && segments[1] === 'visa') {
-      const jobId = Number.parseInt(req.query.get('jobId') ?? '', 10)
-      if (!Number.isFinite(jobId)) throw new DomainError('INVALID_INPUT', 'jobId 必填')
+      const jobId = parseRecordId(req.query.get('jobId'), '岗位')
       return json(200, service.getVisa(jobId))
     }
 
@@ -2098,8 +2140,7 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
   // 英文简历体检（M1：**只检查，不翻译**）
   if (method === 'GET' && segments.length === 3 && segments[0] === 'resumes' && segments[2] === 'english-check') {
     requireData(runtime)
-    const id = Number.parseInt(segments[1] ?? '', 10)
-    if (!Number.isFinite(id)) throw new DomainError('INVALID_INPUT', `非法简历 id：${segments[1] ?? ''}`)
+    const id = parseRecordId(segments[1] ?? null, '简历')
     const issues = runtime.overseas().inspectEnglish(id)
     return json(200, {
       items: issues,
@@ -2111,8 +2152,12 @@ async function dispatch(runtime: HostRuntime, req: RouteRequest): Promise<RouteR
     requireData(runtime)
     const service = runtime.overseas()
     if (method === 'GET' && segments.length === 1) {
-      const jobId = Number.parseInt(req.query.get('jobId') ?? '', 10)
-      return json(200, { items: service.listCoverLetters(Number.isFinite(jobId) ? jobId : undefined) })
+      const jobIdRaw = req.query.get('jobId')
+      return json(200, {
+        items: service.listCoverLetters(
+          jobIdRaw === null || jobIdRaw === '' ? undefined : parseRecordId(jobIdRaw, '岗位'),
+        ),
+      })
     }
     if (method === 'POST' && segments.length === 1) {
       const body = await readObject(req)

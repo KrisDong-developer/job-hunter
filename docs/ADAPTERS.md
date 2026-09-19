@@ -253,9 +253,25 @@ npm test
     滚到底部自动追加，每滚一次 +15 条。列表接口 `wapi/zpgeek/search/joblist.json` 自报
     `totalCount = 300` → 平台对一个搜索条件封顶 300 条（= 20 轮），适配器 `scrollRounds`
     维度的上限即由此而来。证据：`test/fixtures/zhipin-pagination-report.json`；
-  - 登录后**薪资可见**（`.job-salary` 有文本；未登录时元素在、文本空）。适配器**不**把
-    `salary_raw` 列进必需字段：登录态会静默过期，列进去会让一次会话失效把整页记录
-    打成 `pending_repair`（宁可让逐字段健康计数去报警）；
+  - 登录后**薪资文本非空，但那是字体混淆的乱码**（2026-09-18 定案）：
+    `.job-salary` 的数字被替换成 **10 个连续私有区码点 `U+E031`–`U+E03A`（一码一数字）**，
+    靠**外部 CSS 的 `@font-face`** 画成人眼看到的数字。实测 15 张卡片共 70 处码点；
+    按位置对回真实值 `15-25K·13薪` 可逐位对上（E032=1、E033=5、E031=2、E034=3）。
+    ⚠️ 早先"数字不在 textContent 里、页面没有 @font-face"的结论**是错的** ——
+    `page.content()` 存的快照里确实没有 `@font-face`（那份 CSS 在 CDN 上），
+    而私有区字符打到终端就是空白，于是看起来像 `-K·薪`。
+    **适配器口径**：一旦检测到私有区码点 ⇒ `salaryRaw` 置空 + 记 `salary:obfuscated`，
+    绝不把乱码写库（下游会把它当"读到的薪资"去排序/展示）。**薪资数值目前拿不到**。
+    适配器**不**把 `salary_raw` 列进必需字段：登录态会静默过期，列进去会让一次会话失效
+    把整页记录打成 `pending_repair`（宁可让逐字段健康计数去报警）；
+  - **薪资明文在哪**：`wapi/zpgeek/search/joblist.json` 与 `wapi/zpgeek/job/detail.json` 的
+    `salaryDesc`（如 `"12-20K·13薪"`，无私有区字符）。连接键是接口 `encryptJobId`
+    ↔ 卡片 `href="/job_detail/<id>.html"` 的 id（实测 15/15 完全重合）；接口另有
+    `jobName`/`brandName`/`cityName`/`jobExperience`/`jobDegree`/`skills`/`welfareList` 等，比 DOM 全。
+    ⚠️ **暂时不能照抄**：`test/fixtures/zhipin-search-api.json` 早期只记了 `url/status/body`，
+    没有 method 与请求参数，而搜索条件不可能只靠 URL 里的 `_=时间戳` 表达。
+    探针现已补记 `method` + `postData` ⇒ **下次跑 `npm run probe:zhipin-login` 就能拿到调用形态**，
+    拿到后即可把列表薪资换成明文（DOM 定结构、接口取字段）。
   - **批量打开 >6 个 tab 要错开 1–2 秒**，同时开一批会触发风控；
   - 打招呼平台侧日上限约 150（get_jobs README 经验值）。
   - **求职者端的打招呼 / 收件箱 / 发简历（2026-09-18 落地，选择器来自 BossHunter 的
@@ -277,9 +293,15 @@ npm test
     - 收件箱会话行是 **`li[role=listitem]`**（求职者端；招聘者端才是 `.geek-item-wrap`）：
       HR 名 `.name-text`，公司名取 `.name-box` 的**第 2 个 span**，最后一条 `.last-msg-text`；
     - **附件简历只能在平台内选着发**（工具条「发简历」→ `.choose-resume-dialog` →
-       `.list-item` → `.btn-confirm`）。求职者网页端**没有会话内上传本地文件的入口** ——
-       BossHunter 的定制 PDF 也是"生成后人工发送"。所以适配器对非空 `filePath`
-       只在页面真存在 `input[type=file]` 时才上传，否则如实报 `missing`，**不假装发成功了**。
+      `.list-item` → `.btn-confirm`）。求职者网页端**没有会话内上传本地文件的入口** ——
+      BossHunter 的定制 PDF 也是"生成后人工发送"。所以适配器对非空 `filePath`
+      只在页面真存在 `input[type=file]` 时才上传，否则如实报 `missing`，**不假装发成功了**。
+    - ⚠️ **一次打招呼会留下两条消息**：点「立即沟通」时 BOSS 自己会先替你发一句**平台默认招呼语**，
+      随后适配器才发用户那段话术。适配器不替用户省掉自己那段（他要的就是那段），
+      但这件事必须让用户在按"确认"之前看到 —— 所以写进了平台事实表的 `greetingSideEffect`，
+      并由 `renderApproval` 渲染成审批文案里的「同时会发生：…」。
+      计数口径：**一次 `greeting.send` 动作 = 一条审计 = 占 1 个日额度**（`dailyCaps.greeting: 150`），
+      平台自己发的那条不是我们发起的动作，不额外计数。
      - 上面这些选择器的**本仓实测入口**是 `npm run probe:zhipin-chat`（会话页 + 详情页登录态探针，
        只读、不发消息、不投递；`ZHIPIN_PROBE_SKIP_CHAT=1` 可只采详情页）。产物落
        `.probe-zhipin-capture/`（`.probe*` 已 gitignore）：`chat-list-<日期>.html` /

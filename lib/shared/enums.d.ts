@@ -85,6 +85,15 @@ export type TodoKind = (typeof TODO_KINDS)[number];
 /** 待办级别。 */
 export declare const TODO_LEVELS: readonly ["info", "warn", "urgent"];
 export type TodoLevel = (typeof TODO_LEVELS)[number];
+/**
+ * 待办级别与类别的中文标签。
+ *
+ * 与其它枚举同一个理由：`urgent` / `catch-up` 是**机器**读的键，
+ * 界面上直接印出来等于没说（用户看到"urgent"还得猜这是多急）。
+ * 待办正文（`title`）本来就是中文，这两个标签补的是级别徽章与类别那一行。
+ */
+export declare const TODO_LEVEL_LABEL: Record<TodoLevel, string>;
+export declare const TODO_KIND_LABEL: Record<TodoKind, string>;
 /** 配置作用域（§4.3 `config`：全局 / 平台 / 方案）。 */
 export declare const SETTING_SCOPES: readonly ["global", "platform", "plan"];
 export type SettingScope = (typeof SETTING_SCOPES)[number];

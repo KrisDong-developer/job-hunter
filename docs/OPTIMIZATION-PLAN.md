@@ -279,6 +279,10 @@ for ($i=1; $i -le 3; $i++) { git push 2>&1 | Select-Object -Last 1; if ($LASTEXI
 | `sendResume` 对 zhaopin | **已实现（2026-09-18 复核更正）**：页面驱动（点「立即投递」→ 验证 `.deliver-greeting-modal`），走 `application.send` 两段式确认；接口路径**刻意不用**（`preparation` 要的 `rootOrgId`/`staffId` 在详情页载荷里出现 0 次，不可逆动作上不能编）。同一次点击会**顺带发一句平台生成的招呼语**，已写进审批文案（`applicationSideEffect`） |
 | zhaopin 会话列表 | **已支持翻页**（2026-09-18 复核更正）：实测页长 5 时第 2 页给出另外 5 条、重叠 0 ⇒ 翻页有效；按 `talkListPageSize`（20）× `talkListMaxPages`（3）翻，跨页去重 |
 | zhaopin 阶段判据 | 只用 `unreadCount` / `selfReply`（有真实样本）；`oppositeRead`/`oppositeReply` 实测**语义与命名不符**（有未读的会话里也是 0）⇒ 不用，**`read` 这一档判不出来**（返回 null） |
+| zhaopin `authRequirement`（E） | **已定谳**（2026-09-18 匿名探针 `probe:zhaopin-anon`，全新 profile）：列表未登录可用、详情**能开但载荷缺失 + 薪资掩码**、会话页 302 到登录页 ⇒ `none / required / required` 三格都对；文档里"未登录可拿 JD 全文"那句已订正 |
+| BOSS 一次打招呼两条消息（G） | **已明确口径**：平台会先替你发一句默认招呼语，随后发你的话术；写进平台事实 `greetingSideEffect` → 审批文案「同时会发生：…」；计数仍是 1 次动作 / 1 条审计 / 占 1 个日额度 |
+| BOSS 列表薪资（F1） | **已定案并修掉数据 bug**（2026-09-18）：数字是**字体混淆**的私有区码点（U+E031–U+E03A 一码一数字）⇒ 适配器置空 + 记 `salary:obfuscated`，不再把乱码写库；那条"薪资可见率 100%"的假绿灯断言已换成**数据卫生**断言。明文在 `wapi/zpgeek/search/joblist.json` 的 `salaryDesc`，**下一步**：跑一次 `probe:zhipin-login`（探针已补记 `method`/`postData`）拿到调用形态即可改用明文 |
+| BOSS `.choose-resume-dialog`（F2） | **阻塞在外部条件**，不是工具问题：平台要求「**双方回复后**」才开放「发简历」（未回复时按钮带 `unable` + aria-label 明写），而当前账号的会话都是我们单方面发出 ⇒ 等有 HR 回复的会话出现再实测 |
 | L2（LLM 语义精评） | 未实现；界面只给"粗筛分" |
 | U10 设置 / U11 日志与诊断 | **已实现大半**（2026-09-18 复核更正）：`src/client/screens/settings.tsx` 已有「设置与诊断 / 当前风控态势 / 模型用途 / 系统控制中心 / 诊断 / 模型调用留痕 / 操作审计」；**未逐项核对**原规划清单，若还要做请先重新基线 |
 | 薪资箱线图 / 本地基准 / A/B 对比 | 批次 F |

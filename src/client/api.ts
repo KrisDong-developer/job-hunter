@@ -529,6 +529,30 @@ export async function closeTodo(id: number): Promise<void> {
   })
 }
 
+/** `confirm-action` 待办交回的意图：宿主不重放正文，只给"该回哪个上下文重新发起"。 */
+export interface ConfirmActionIntentDto {
+  action: string
+  actor: string
+  target: Record<string, number | string>
+}
+
+/**
+ * 恢复一条「待确认动作」待办（guard 在审批超时/无界面时落下的那种）。
+ *
+ * ⚠️ 它**不重放**原动作：正文不入库（§4.1），所以宿主只做两件事 ——
+ * 关掉这条待办、把 `{action, actor, target}` 意图交回界面。
+ * "带用户回到目标岗位重新发起"那一步在界面这一侧。
+ */
+export async function resumeConfirmAction(
+  id: number,
+): Promise<{ intent: ConfirmActionIntentDto; note: string }> {
+  const result = await request<{ ok: boolean; intent: ConfirmActionIntentDto; note: string }>(
+    `/todos/${String(id)}/confirm-actions/resume`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+  return { intent: result.intent, note: result.note }
+}
+
 // ── P5：话术 / 审批 / 审计 / 配置 ────────────────────────────────────
 
 export interface AuditRecordDto {
@@ -1284,6 +1308,8 @@ export async function fetchCampus(signal?: AbortSignal): Promise<CampusWindowsDt
 
 export async function createCampus(input: {
   companyId?: number
+  /** 界面只给一个「公司名」输入框（用户手里没有 company id）；宿主按归一化键幂等登记公司。 */
+  companyName?: string
   jobId?: number
   batch?: CampusBatch
   applyCloseAt?: string

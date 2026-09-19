@@ -39,15 +39,31 @@
  *   实例**，而登录态会静默过期。把薪资列进必需字段，会在某次会话失效后把**整页**记录
  *   打成待修复（`pending_repair`），等于用一次登录过期换掉一整轮数据。
  *
- * ⚠️ **2026-09-18 新发现的开放问题：登录态下列表薪资数字也不在 DOM 文本里。**
- *   真实登录态夹具与本次实测都显示卡片是 `<span class="job-salary">-K·薪</span>` ——
- *   数字（如 `12-20`、`13`）**完全不在 textContent 里**；页面里没有 `@font-face`、
- *   没有 `content:"数字"`、也没有带数字的 `aria-label`/`title`。
- *   即 `salaryRaw` 现在会记成 `-K·薪`（`salaryMin/Max` 因此恒为 null）。
- *   相关副作用：`zhipin.test.ts` 里那句「薪资可见率 100%」的判据只是"元素文本非空"，
- *   而 `-K·薪` 也是非空 —— **那个断言目前是误导性的**，别拿它当"薪资可用"的证据。
- *   下一步要查的是数字到底由什么渲染（内联 SVG 的 `<path>`？运行时注入的 CSSOM 规则？
- *   独立的接口字段？）。查到之前，列表薪资一律按"**不可信**"对待。
+ * ⚠️ **薪资数字是字体混淆的（2026-09-18 定案，之前那段结论写错了）**。
+ *   早先这里写的是"数字完全不在 textContent 里，页面也没有 `@font-face`"—— **不准确**。
+ *   把登录态夹具的 `.job-salary` 逐字符打出来才看清：
+ *
+ *   * 卡片是 `<span class="job-salary">\uE032\uE033-\uE033\uE031K·\uE032\uE034薪</span>`，
+ *     即 **10 个连续私有区码点 `U+E031`–`U+E03A` 一码一数字**（实测 15 张卡片共 70 处）；
+ *     按位置对回真实值 `15-25K·13薪` 可以逐位对上（E032=1、E033=5、E031=2、E034=3）。
+ *   * 码点靠**外部 CSS 的 `@font-face`** 渲染成人眼看到的数字 —— 所以 `page.content()`
+ *     存的 HTML 里没有 `@font-face`（那份 CSS 在 CDN 上、没进快照），
+ *     而 print 到终端时私有区字符是**空白**，于是看起来像 `-K·薪`。
+ *   * 结论：`salaryRaw` 拿到的是乱码 ⇒ 适配器**一律置空 + 记 `salary:obfuscated`**，
+ *     绝不把乱码当薪资写库（下游会把它当"读到的薪资"去排序/展示）。
+ *
+ *   **明文在接口里**（同一份采样报告 `test/fixtures/zhipin-search-api.json` 里就有）：
+ *   `GET/POST wapi/zpgeek/search/joblist.json` 与 `wapi/zpgeek/job/detail.json` 的
+ *   `salaryDesc` 是 `"12-20K·13薪"` 这样的**明文、无私有区字符**，
+ *   连接键是接口的 `encryptJobId` ↔ 卡片 `href="/job_detail/<id>.html"` 的 id
+ *   （实测 15/15 完全重合）。接口里还带 `jobName`/`brandName`/`cityName`/`jobExperience`/
+ *   `jobDegree`/`skills`/`welfareList`/`brandStageName` 等，字段比 DOM 全。
+ *   **但暂时还不能照抄**：现有采样只记了 `url/status/body`，**没有 method 与请求参数**，
+ *   而 joblist 的查询条件不可能只靠 URL 里那个 `_=时间戳` 表达 —— 照抄就是猜。
+ *   下一步：给探针的接口记录补上 `method` + `postData`，跑一次就知道该怎么发；
+ *   在那之前列表薪资按"**拿不到**"对待。
+ *   相关副作用：`zhipin.test.ts` 里那句「薪资可见率」现在量的是**混淆率**，
+ *   别再把它当"薪资可用"的证据。
  *
  * ## 详情页：选择器与解析（2026-09-18 由**本仓真实登录态快照**校准）
  *

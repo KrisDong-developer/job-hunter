@@ -339,7 +339,15 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const dimensions = useAsync((signal) => fetchCriteriaDimensions([], signal), [props.revision])
 
   const [feedback, setFeedback] = useState<Feedback>(IDLE)
-  const [editing, setEditing] = useState<number | 'new' | null>(null)
+  /**
+   * 正在编辑的方案 = **打开那一刻的快照**（id + 表单初值）。
+   *
+   * 为什么不只存 id、渲染时现算 `formOf(planList.find(...))`：方案列表在
+   * `useAsync` 重新取数时会先回到 `loading`（SSE 事件、保存后 `reload()`、
+   * 取数失败），那一刻 `planList` 是**空数组** —— 现算就会 `formOf(undefined)`
+   * 直接抛错把整屏打崩。快照还顺带保证了后台刷新不会动用户正在填的内容。
+   */
+  const [editing, setEditing] = useState<{ id: number | 'new'; form: PlanForm } | null>(null)
   const [duplicates, setDuplicates] = useState<PlanDuplicateDto[]>([])
   /** 非致命提示（多平台：城市不支持 / 平台未校准 / 深度被截断）。 */
   const [notices, setNotices] = useState<string[]>([])
@@ -462,9 +470,16 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         ? '有另一个操作正在进行，请稍候。'
         : '现在按这个方案采集一次（会打开浏览器窗口）。'
 
-  const enabledPlan = planList.find((plan) => plan.enabled) ?? planList[0]
+  /**
+   * **真正会被自动调度**的方案：`enabled` 与「启用定时」都得是开着的。
+   *
+   * 只看 `plan.enabled` 会把一个"不定时"的方案算进来 —— 它永远不会到点跑，
+   * 却会在卡片上被标成「生效中」、还会被当成"恢复定时后会跑的那个方案"。
+   */
+  const scheduledPlan = planList.find((plan) => plan.enabled && plan.schedule.enabled)
   /** 「当前生效方案」以本屏的选择为准，默认落在真正会被调度的那个方案上。 */
-  const focusedPlan = planList.find((plan) => plan.id === focusPlanId) ?? enabledPlan
+  const focusedPlan =
+    planList.find((plan) => plan.id === focusPlanId) ?? scheduledPlan ?? planList[0]
   const runBlocked = feedback.running || (status?.readOnly ?? false)
 
   /* ── 顶部工具条上的三个全局动作 ────────────────────────────────────────
@@ -618,7 +633,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           {status !== null ? (
             <StatusAlert
               status={status}
-              planName={enabledPlan?.name ?? null}
+              planName={scheduledPlan?.name ?? null}
               running={feedback.running}
               onResume={() =>
                 void act('正在恢复定时…', async () => {
@@ -741,7 +756,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
 
                     <div className="jh-plan-head">
                       <b className="jh-plan-name">{focusedPlan.name}</b>
-                      {focusedPlan.id === enabledPlan?.id ? (
+                      {focusedPlan.id === scheduledPlan?.id ? (
                         <span className="jh-tag jh-tone-ok">生效中</span>
                       ) : null}
                       {focusedPlan.enabled ? null : <span className="jh-tag jh-tone-muted">已停用</span>}
@@ -784,7 +799,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                         title="改这个方案抓什么、抓多深、什么时候抓。"
                         onClick={() => {
                           setDuplicates([])
-                          setEditing(focusedPlan.id)
+                          setEditing({ id: focusedPlan.id, form: formOf(focusedPlan) })
                         }}
                       >
                         编辑
@@ -869,7 +884,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
             title="新建一个采集方案：决定抓什么（平台 + 筛选条件 + 抓取深度）与什么时候抓。"
             onClick={() => {
               setDuplicates([])
-              setEditing('new')
+              setEditing({ id: 'new', form: emptyForm() })
             }}
           >
             新增方案
@@ -1004,7 +1019,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
                       title="改这个方案抓什么、抓多深、什么时候抓。"
                       onClick={() => {
                         setDuplicates([])
-                        setEditing(plan.id)
+                        setEditing({ id: plan.id, form: formOf(plan) })
                       }}
                     >
                       编辑
@@ -1100,13 +1115,9 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
       {/* 方案表单：**弹窗**（原来是嵌在页面下方，导致页面过长、主次不分） */}
       {editing === null ? null : (
         <PlanEditorModal
-          key={String(editing)}
-          planId={editing === 'new' ? null : editing}
-          initial={
-            editing === 'new'
-              ? emptyForm()
-              : formOf(planList.find((plan) => plan.id === editing) as PlanDto)
-          }
+          key={String(editing.id)}
+          planId={editing.id === 'new' ? null : editing.id}
+          initial={editing.form}
           available={platformList}
           duplicates={duplicates}
           notices={notices}
@@ -1116,10 +1127,11 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
             setFeedback({ running: true, tone: 'ok', message: '正在保存…' })
             try {
               const input = writeOf(form)
-              const result = editing === 'new' ? await createPlan(input) : await updatePlan(editing, input)
+              const result =
+                editing.id === 'new' ? await createPlan(input) : await updatePlan(editing.id, input)
               setDuplicates(result.duplicates)
               setNotices(result.notices)
-              const verb = editing === 'new' ? '已创建' : '已保存'
+              const verb = editing.id === 'new' ? '已创建' : '已保存'
               const tail: string[] = []
               if (result.duplicates.length > 0) {
                 tail.push(
@@ -1153,7 +1165,7 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
             const input = writeOf(form)
             // 新建方案也要能查重/看提示 —— 那正是最需要提示的时刻
             const result =
-              editing === 'new' ? await validatePlanDraft(input) : await validatePlan(editing, input)
+              editing.id === 'new' ? await validatePlanDraft(input) : await validatePlan(editing.id, input)
             return { duplicates: result.duplicates, notices: result.notices }
           }}
         />
@@ -1195,7 +1207,10 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           <ul className="jh-note">
             <li>这个方案本身与其定时配置会被移除，不会再有自动采集。</li>
             <li>**已经抓到的岗位会保留** —— 删除方案不会删岗位库。</li>
-            <li>想保留配置只是暂时停用，请改用「编辑」里的「启用定时」或停用方案。</li>
+            <li>
+              想保留配置、只是暂时不想自动跑：改用「编辑 · 定时」里的「启用定时」—— 关掉它之后
+              仍然可以点「立即采集」手动跑。
+            </li>
           </ul>
         </Modal>
       )}
@@ -2274,8 +2289,17 @@ function PlanEditorModal(props: {
 
   const patch = (next: Partial<PlanForm>): void => setForm((current) => ({ ...current, ...next }))
 
-  // 总残留重复 = 保存接口返回的 + 本地实时校验得到的。
-  const duplicates = [...props.duplicates, ...localDuplicates]
+  /**
+   * 总残留重复 = 保存接口返回的 + 本地实时校验得到的，**按方案 id 收敛**。
+   *
+   * 不收敛的话：保存成功后父组件把接口返回的那一份塞进来，而防抖校验刚刚也
+   * 算出了同样的一条 —— 同一个重复项会渲染两遍，两遍还撞同一个 React key。
+   */
+  const duplicates = [
+    ...new Map(
+      [...props.duplicates, ...localDuplicates].map((item) => [item.planId, item]),
+    ).values(),
+  ]
   // 提示同理：保存后拿到一次，编辑过程中由防抖校验持续刷新 —— 这样"选了国聘 + 成都"
   // 在**保存之前**就看得见"它会返回空"，而不是等抓完 0 条才发现。
   const notices = [...new Set([...props.notices, ...localNotices])]
@@ -2286,11 +2310,13 @@ function PlanEditorModal(props: {
 
   /**
    * 实时查重（防抖）：平台/筛选条件一改就自动校验，不用再手动点「检查是否重复」。
-   * 只对**真正影响查重**的输入（平台 + 条件）做键，避免每次敲字都触发；
-   * 新建时没有旧方案可比，直接清空。
+   * 只对**真正影响查重**的输入做键，避免每次敲字都触发。
    */
-  // 覆盖项也进键：改"停用某个平台"或"它的页数"时，提示（如"深度被截断"）要跟着重算
-  const validationKey = `${form.platforms.join(',')}\u0000${JSON.stringify(form.overrides)}\u0000${JSON.stringify(form.criteria)}`
+  // 覆盖项也进键：改"停用某个平台"或"它的页数"时，提示（如"深度被截断"）要跟着重算。
+  // 关键词同理 —— 宿主的查重口径里关键词是**参与比较**的（多关键词方案之间
+  // "同样的平台 + 同样的条件 + 同样的关键词"才算重复），不进键就会拿着一份旧结论。
+  const keywordsKey = JSON.stringify(parseKeywordsText(form.keywordsText))
+  const validationKey = `${form.platforms.join(',')}\u0000${JSON.stringify(form.overrides)}\u0000${JSON.stringify(form.criteria)}\u0000${keywordsKey}`
   useEffect(() => {
     // 新建方案也走这条（`POST /plans/validate`）—— "选了国聘 + 成都"要能在保存前就看见。
     const timer = window.setTimeout(() => {
@@ -3177,18 +3203,25 @@ function DedupGroupsCard(props: { revision: number }) {
   const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision])
   const [busyId, setBusyId] = useState<number | null>(null)
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)
+  /** 拆组 / 拆出失败的原因。**必须说出来** —— 这两颗按钮失败时界面原本毫无变化。 */
+  const [error, setError] = useState<string | null>(null)
 
   const act = async (id: number, fn: () => Promise<void>): Promise<void> => {
     setBusyId(id)
+    setError(null)
     try {
       await fn()
       groups.reload()
+    } catch (thrown) {
+      setError(thrown instanceof ApiError ? thrown.display : String(thrown))
     } finally {
       setBusyId(null)
     }
   }
 
   const items = groups.state.status === 'ok' ? groups.state.data.items : []
+  /** 库里一共有多少组。接口只回前 50 组，差多少要说出来，不能看着像"就这些"。 */
+  const total = groups.state.status === 'ok' ? groups.state.data.count : 0
 
   return (
     <section className="jh-card">
@@ -3198,6 +3231,12 @@ function DedupGroupsCard(props: { revision: number }) {
             收进问号：需要时悬停/聚焦可读，不需要时不占版面。 */}
         <FieldHint text="同一岗位被多个平台各抓一条时合并到同一组，依据是跨平台 + 同公司同城 + 薪资不冲突 + 标题相似。合并是可逆的：误合并随时可以在下面拆开。补做一次全库复核用顶部的「运行全库去重」。" />
       </div>
+
+      {error === null ? null : (
+        <p className="jh-error" role="alert">
+          {error}
+        </p>
+      )}
 
       {groups.state.status === 'loading' ? (
         <p className="jh-muted" aria-busy="true">正在读取去重分组…</p>
@@ -3241,6 +3280,12 @@ function DedupGroupsCard(props: { revision: number }) {
           ))}
         </ul>
       )}
+
+      {total > items.length ? (
+        <p className="jh-muted">
+          共 {total} 组，这里列出最新的 {items.length} 组。
+        </p>
+      ) : null}
 
       {/* 拆组确认：不删岗位，只是整组解散（成员全部独立） */}
       {pendingDelete === null ? null : (

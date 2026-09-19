@@ -1160,9 +1160,18 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       if (plan.platforms.length === 0) {
         throw new DomainError('INVALID_INPUT', `方案「${plan.name}」没有配置平台`)
       }
-      if (!plan.enabled || !plan.schedule.enabled) {
+      // 只有**方案级**停用才拦手动：那才是"整条方案不跑"。
+      //
+      // `schedule.enabled === false`（界面上叫「启用定时」关掉）的语义是"不定时自动跑"，
+      // 不是"方案作废" —— 界面上的文案就是这么对用户承诺的
+      // （「定时未启用 —— 只在你点「立即采集」时跑」），而且 SR-30/T3 的口径是
+      // **人工触发永远保留**。以前两者一起拦，于是用户按提示关掉定时之后，
+      // 「立即采集」必然报"方案已停用"，而错误提示又让他回「采集」页去"启用它"。
+      if (!plan.enabled) {
         throw new DomainError('INVALID_INPUT', `方案「${plan.name}」已停用`, {
-          hint: '先在「采集」页启用它，或直接点某个启用方案的「立即采集」。',
+          hint:
+            '「停用」是**方案级**开关（enabled=false），与「启用定时」不是一回事 —— ' +
+            '启用它，或改用另一个启用中的方案。',
         })
       }
       // SR-21：风控暂停期间**人工确认前不跑**，手动也不行 ——

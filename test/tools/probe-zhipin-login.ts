@@ -62,6 +62,11 @@ interface PageScan {
   title: string
   cards: number
   salaryFilled: number
+  /**
+   * 其中**含私有区码点**（字体混淆）的张数 —— 2026-09-18 起这是判断"薪资能不能用"的依据：
+   * 登录态下 `salaryFilled` 会满，但那些文本是乱码（见 `adapters/zhipin.ts` 文件头「薪资混淆」）。
+   */
+  salaryObfuscated: number
   companyFilled: number
   tagsFilled: number
   securityIdLinks: number
@@ -106,6 +111,10 @@ async function scanPage(page: Page): Promise<PageScan> {
       title: document.title,
       cards: countOf(arg.card),
       salaryFilled: filled(arg.salary),
+      // 私有区码点 = 字体混淆的薪资数字（一码一数字，靠外部 @font-face 画成人眼看到的数字）
+      salaryObfuscated: Array.from(document.querySelectorAll(arg.salary)).filter((el) =>
+        /[\uE000-\uF8FF]/.test(el.textContent ?? ''),
+      ).length,
       companyFilled: filled(arg.company),
       tagsFilled: filled(arg.tagList),
       securityIdLinks: links.filter((a) => (a.getAttribute('href') ?? '').includes('securityId')).length,
@@ -266,18 +275,43 @@ async function main(): Promise<void> {
   const page: Page = await context.newPage()
 
   /** 接口采样：/wapi/ 全抓（翻页策略的证据在 URL 的 page 参数里）。 */
-  const apiCaptures: Array<{ url: string; status: number; body: string | null }> = []
+  const apiCaptures: Array<{
+    url: string
+    method: string
+    status: number
+    /** 请求体（POST 才有）—— 取"列表薪资明文"接口时必须靠它复现调用。 */
+    postData: string | null
+    body: string | null
+  }> = []
   page.on('response', (response: Response) => {
     try {
       if (!response.url().includes(API_URL_MARKER)) return
       const status = response.status()
+      const request = response.request()
+      // ⚠️ `method` 与 `postData` **必须记**：只记 url/status/body 时，一个
+      // `joblist.json?_=时间戳` 的 URL 根本看不出查询条件是怎么传的（BOSS 的搜索条件
+      // 走 POST 体），照抄就是猜。2026-09-18 就是因为缺这两项，导致
+      // "从接口取薪资明文"这一步卡住（见 `adapters/zhipin.ts` 文件头「薪资混淆」）。
+      const method = request.method()
+      let postData: string | null = null
+      try {
+        postData = request.postData() ?? null
+      } catch {
+        postData = null
+      }
       void response
         .text()
         .then((body: string) => {
-          apiCaptures.push({ url: response.url(), status, body: body === '' ? null : body.slice(0, 200_000) })
+          apiCaptures.push({
+            url: response.url(),
+            method,
+            status,
+            postData,
+            body: body === '' ? null : body.slice(0, 200_000),
+          })
         })
         .catch(() => {
-          apiCaptures.push({ url: response.url(), status, body: null })
+          apiCaptures.push({ url: response.url(), method, status, postData, body: null })
         })
     } catch {
       /* 监听本身不许炸 */
@@ -320,7 +354,8 @@ async function main(): Promise<void> {
         if (scan.salaryFilled > 0 || hasPagination) {
           loggedIn = true
           log(
-            `✔ 登录态就位：${String(scan.cards)} 张卡片 · 薪资可见 ${String(scan.salaryFilled)} 条 · ` +
+            `✔ 登录态就位：${String(scan.cards)} 张卡片 · 薪资文本 ${String(scan.salaryFilled)} 条` +
+              `（其中 ${String(scan.salaryObfuscated)} 条是**字体混淆的私有区码点**，即薪资数值拿不到）· ` +
               `分页区 ${hasPagination ? '有' : '无'}`,
           )
           break

@@ -642,3 +642,106 @@ test('校招记录的测评列表带 hoursLeft，并随固定时钟走', async (
     assert.equal(campus.listAssessments({ campusApplicationId: application.id })[0]?.hoursLeft, 4)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// 复核补的回归：自动推进的方向、刚过期的口径、公司名解析
+// ─────────────────────────────────────────────────────────────────────
+
+test('自动推进只能向前：意向记录不会被三方推成"待发三方"，终态也不会被拽回来', async () => {
+  await withStore((store) => {
+    const campus = createCampusService({ store, clock: () => T })
+
+    const intent = campus.create({})
+    campus.addTripartite({ campusApplicationId: intent.id, signDeadline: at(72) })
+    assert.equal(
+      campus.get(intent.id).stage,
+      'intent',
+      '还没网申就先建三方，不能凭空越过网申/笔试/面试跳到"待发三方"',
+    )
+    assert.equal(
+      store.pipeline.listStageEvents('campus', intent.id).length,
+      1,
+      '没有推进就不该多出事件',
+    )
+
+    const closed = campus.create({})
+    campus.advance(closed.id, 'closed')
+    campus.addTripartite({ campusApplicationId: closed.id, signDeadline: at(72) })
+    assert.equal(campus.get(closed.id).stage, 'closed', '已结束是终态：自动推进不得把它改回中间态')
+  })
+})
+
+test('终面之后的记录不会被"标记笔试完成"拽回"已笔试"', async () => {
+  await withStore((store) => {
+    const campus = createCampusService({ store, clock: () => T })
+    const application = campus.create({})
+    campus.advance(application.id, 'applied')
+    const assessment = campus.addAssessment({ campusApplicationId: application.id, dueAt: at(24) })
+    campus.advance(application.id, 'final')
+
+    campus.setAssessmentState(assessment.id, 'done')
+    assert.equal(campus.get(application.id).stage, 'final', '一次"标记完成"不该让走到终面的记录倒退')
+  })
+})
+
+test('刚过期的笔试不许写成"还剩 0 小时"：负数向下取整，且必须进 overdue', async () => {
+  await withStore((store) => {
+    const campus = createCampusService({ store, clock: () => T })
+    const application = campus.create({})
+    const overdue = campus.addAssessment({
+      campusApplicationId: application.id,
+      dueAt: at(-20 / 60),
+    })
+
+    assert.equal(
+      overdue.hoursLeft,
+      -1,
+      '过期 20 分钟要算"已过 1 小时" —— `Math.round(-0.33)` 会得到 -0，而 -0 < 0 是 false',
+    )
+    assert.deepEqual(
+      campus.overdue().map((deadline) => deadline.refId),
+      [overdue.id],
+      '刚过期也必须进 overdue，否则"错过即终态"这句话在界面上是假的',
+    )
+  })
+})
+
+test('create：公司名按归一化键幂等登记公司；认不出来的名字退回备注、不造公司', async () => {
+  await withStore((store) => {
+    const campus = createCampusService({ store, clock: () => T })
+
+    const first = campus.create({ companyName: '北京字节跳动科技有限公司' })
+    assert.equal(first.companyName, '北京字节跳动科技有限公司', '公司名要真的挂到公司维度上')
+    assert.equal(first.note, null, '挂上公司之后就不该再往备注里塞一遍')
+
+    const second = campus.create({ companyName: '字节跳动科技' })
+    assert.equal(second.companyId, first.companyId, '归一化后同名 → 复用同一家公司，不重复建')
+
+    const weird = campus.create({ companyName: '()' })
+    assert.equal(weird.companyId, null, '归一化不出键就不建公司（不确定宁可不合并）')
+    assert.equal(weird.note, '()', '但要在备注里留一行，界面上还看得到这条记录')
+
+    const companyId = first.companyId
+    assert.ok(typeof companyId === 'number', '公司名应当真的挂上公司实体')
+    const manual = campus.create({ companyId, companyName: '另一家' })
+    assert.equal(manual.companyId, companyId, '显式给了 companyId 就以它为准，不按名字另建')
+  })
+})
+
+test('硬截止的标签带上主体名（"哪一家的笔试"），网申与笔试都带', async () => {
+  await withStore((store) => {
+    const campus = createCampusService({ store, clock: () => T })
+    const application = campus.create({ companyName: '华为技术有限公司', applyCloseAt: at(24) })
+    campus.addAssessment({ campusApplicationId: application.id, dueAt: at(10), platform: '牛客' })
+
+    const labels = campus.deadlines().map((deadline) => deadline.label)
+    assert.ok(
+      labels.some((label) => label.includes('华为') && label.includes('笔试截止')),
+      `光写"笔试截止"回答不了"做哪一家"，实际：${labels.join(' / ')}`,
+    )
+    assert.ok(
+      labels.some((label) => label.includes('华为') && label.includes('网申截止')),
+      `网申截止也要认得出主体，实际：${labels.join(' / ')}`,
+    )
+  })
+})
