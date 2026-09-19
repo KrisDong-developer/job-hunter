@@ -154,6 +154,8 @@ const CSS = `
   color:var(--dsw-alias-label-primary)}
 .jh-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .jh-btn:disabled{opacity:.45;cursor:default}
+/* 用 a 当按钮（导出的下载链接）：去掉链接下划线，否则"按钮上带下划线"看着像没做完 */
+a.jh-btn{display:inline-block;text-decoration:none;text-align:center}
 .jh-btn-inline{margin-top:0}
 .jh-btn-active{border-color:var(--dsw-alias-brand-primary);font-weight:600;
   background:var(--dsw-alias-interactive-bg-active)}

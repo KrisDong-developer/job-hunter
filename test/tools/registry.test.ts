@@ -155,6 +155,9 @@ const ALL_TOOL_NAMES = [
   'campus_deadlines',
   'overseas_check',
   'cover_letter_draft',
+  // P20：数据搬家（导出 / 导入 / 占用 / 清理预览）。导入是写操作（幂等）；
+  // **执行清理刻意不做成工具** —— 删除不可逆，只在界面上由用户亲手确认。
+  'data_transfer',
 ] as const
 
 test('注册的工具与 §22.2 清单一致，每个都有 schema / render', async () => {

@@ -15,6 +15,8 @@ import type { SettingsWriteDeps } from './guard/actions/settings.js'
 import { writeGuardSettings } from './guard/actions/settings.js'
 import type { GuardToken } from './guard/token.js'
 import { DEFAULT_GUARD_CONFIG, readGuardConfig, type GuardConfig } from './guard/rules.js'
+import type { RetentionPolicy } from '../shared/dto.js'
+import { RETENTION_AUTO_CLEAN_DEFAULT, RETENTION_DEFAULTS } from '../shared/constants.js'
 import type { Store } from './store/store.js'
 import type { CrawlConfig } from './crawl-config.js'
 
@@ -25,6 +27,14 @@ export interface SettingsSnapshot {
   browser: BrowserConfig
   /** 采集运行期设置（单轮预算）。资源/节奏设置，**不是**闸门配置。 */
   crawl: CrawlConfig
+  /**
+   * 数据保留策略（§18 / §15 的「保留」一栏）。同样是资源设置，**不是**闸门。
+   *
+   * 放在这里而不是塞进 GuardConfig：额度/冷却/审批是"能不能发出去"，
+   * 保留期是"留多久"—— 混在一起会让"模型能不能改"这件事变得含糊
+   * （模型的禁止项清单里有额度，但没有保留期）。
+   */
+  retention: RetentionPolicy
   /** 供界面展示"这些开关现在是什么状态"的派生信息。 */
   derived: {
     /** 每个用途是否真的可用（总开关 + 用途开关）。 */
@@ -50,6 +60,8 @@ export interface SettingsSnapshot {
         sendWindow: string
         dayOffProbability: number
       }
+      /** 保留期的出厂默认（界面用它显示"恢复默认"该填什么）。 */
+      retention: RetentionPolicy
     }
   }
 }
@@ -59,6 +71,7 @@ export interface SettingsPatch {
   guard?: Partial<GuardConfig>
   browser?: Partial<BrowserConfig>
   crawl?: Partial<CrawlConfig>
+  retention?: Partial<RetentionPolicy>
 }
 
 export interface SettingsService {
@@ -87,10 +100,21 @@ export interface SettingsDeps extends SettingsWriteDeps {
     read(): CrawlConfig
     write(patch: Partial<CrawlConfig>): CrawlConfig
   }
+  /** 数据保留策略（§18）。改动即刻生效 —— 预览与清理每次都现读。 */
+  retention: {
+    read(): RetentionPolicy
+    write(patch: Partial<RetentionPolicy>): RetentionPolicy
+  }
   clock?: () => string
 }
 
-/** 模型**不能**改的键（与 `guard/rules.ts` 的 `FORBIDDEN_FOR_MODEL` 同源）。 */
+/** 模型**不能**改的键（与 `guard/rules.ts` 的 `FORBIDDEN_FOR_MODEL` 同源）。
+ *
+ * `retention` 是 2026-09-19 加进来的：它决定"多久之后删数据"，
+ * 与额度、冷却期是同一类**保护性配置** —— 让模型能把保留期调成 0 天，
+ * 等于给它一个"把用户数据清掉"的间接开关。实现上它本来就不在 `job_settings`
+ * 工具的参数里（模型传不进来），这里只是把这条事实**写进用户能看到的清单**里。
+ */
 export const MODEL_FORBIDDEN_KEYS = [
   'requireApproval',
   'auditEnabled',
@@ -99,6 +123,7 @@ export const MODEL_FORBIDDEN_KEYS = [
   'cooldownMinutes',
   'sendWindow',
   'dayOffProbability',
+  'retention',
 ] as const
 
 /** 模型能改的键：只影响"读什么、用什么"，不影响闸门本身。 */
@@ -113,6 +138,7 @@ export function createSettingsService(deps: SettingsDeps): SettingsService {
       guard,
       browser: deps.browser.read(),
       crawl: deps.crawl.read(),
+      retention: deps.retention.read(),
       derived: {
         purposes: (Object.keys(AI_PURPOSE_LABEL) as AiPurpose[]).map((purpose) => ({
           purpose,
@@ -130,6 +156,7 @@ export function createSettingsService(deps: SettingsDeps): SettingsService {
             sendWindow: DEFAULT_GUARD_CONFIG.sendWindow,
             dayOffProbability: DEFAULT_GUARD_CONFIG.dayOffProbability,
           },
+          retention: { ...RETENTION_DEFAULTS, autoCleanEnabled: RETENTION_AUTO_CLEAN_DEFAULT },
         },
       },
     }
@@ -154,6 +181,10 @@ export function createSettingsService(deps: SettingsDeps): SettingsService {
       if (patch.crawl !== undefined && Object.keys(patch.crawl).length > 0) {
         deps.crawl.write(patch.crawl)
       }
+      // 保留策略同理：资源设置，不是闸门。清理动作本身有预览 + 两段式确认把关。
+      if (patch.retention !== undefined && Object.keys(patch.retention).length > 0) {
+        deps.retention.write(patch.retention)
+      }
       return snapshot()
     },
   }
@@ -176,8 +207,11 @@ export function describeSettingsPatch(patch: SettingsPatch): string {
       if (levels.l4Application !== undefined) parts.push(`L4 投递 → ${levels.l4Application ? '开' : '关'}`)
       if (levels.l4Reply !== undefined) parts.push(`L4 回复 → ${levels.l4Reply ? '开' : '关'}`)
     }
+    // 注意：`MODEL_FORBIDDEN_KEYS` 里还有 `retention`（它不在 GuardConfig 上），
+    // 所以这里按字符串取键 —— 直接用它索引 `patch.guard` 会编译不过
+    const guardPatch = patch.guard as Record<string, unknown>
     for (const key of MODEL_FORBIDDEN_KEYS) {
-      if (patch.guard[key] !== undefined) parts.push(`${key} → ${JSON.stringify(patch.guard[key])}`)
+      if (guardPatch[key] !== undefined) parts.push(`${key} → ${JSON.stringify(guardPatch[key])}`)
     }
   }
   if (patch.browser?.idleCloseMinutes !== undefined) {
@@ -193,6 +227,18 @@ export function describeSettingsPatch(patch: SettingsPatch): string {
   }
   if (patch.crawl?.roundBudgetMinutes !== undefined) {
     parts.push(`单轮采集预算 → ${String(patch.crawl.roundBudgetMinutes)} 分钟`)
+  }
+  if (patch.retention !== undefined) {
+    const days = (value: number): string => (value <= 0 ? '永久保留' : `${String(value)} 天`)
+    if (patch.retention.crawlRunsDays !== undefined) parts.push(`抓取运行记录 → ${days(patch.retention.crawlRunsDays)}`)
+    if (patch.retention.auditLogDays !== undefined) parts.push(`操作审计 → ${days(patch.retention.auditLogDays)}`)
+    if (patch.retention.llmCallsDays !== undefined) parts.push(`模型调用留痕 → ${days(patch.retention.llmCallsDays)}`)
+    if (patch.retention.pendingRepairDays !== undefined) parts.push(`已处理待修复记录 → ${days(patch.retention.pendingRepairDays)}`)
+    if (patch.retention.jdTextDays !== undefined) parts.push(`JD 原文与摘要 → ${days(patch.retention.jdTextDays)}`)
+    if (patch.retention.jobsDays !== undefined) parts.push(`从没被碰过的老岗位 → ${days(patch.retention.jobsDays)}`)
+    if (patch.retention.autoCleanEnabled !== undefined) {
+      parts.push(`启动时自动清理 → ${patch.retention.autoCleanEnabled ? '开' : '关'}`)
+    }
   }
   return parts.length === 0 ? '（没有实际改动）' : parts.join('；')
 }

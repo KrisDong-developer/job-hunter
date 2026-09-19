@@ -187,5 +187,27 @@ function settingsPatchOf(body: Record<string, unknown>): SettingsPatch {
         : {}),
     }
   }
+  // 数据保留策略（§18）：数字（天）与一个布尔，取值由 normalizeRetentionPolicy 收敛。
+  // 与 browser / crawl 同级 —— 资源设置，不是闸门，所以不需要审批令牌。
+  const retention = body['retention']
+  if (typeof retention === 'object' && retention !== null) {
+    const source = retention as Record<string, unknown>
+    const days = (key: string): number | undefined =>
+      typeof source[key] === 'number' ? (source[key] as number) : undefined
+    const next: Record<string, number | boolean> = {}
+    for (const key of [
+      'crawlRunsDays',
+      'auditLogDays',
+      'llmCallsDays',
+      'pendingRepairDays',
+      'jdTextDays',
+      'jobsDays',
+    ]) {
+      const value = days(key)
+      if (value !== undefined) next[key] = value
+    }
+    if (typeof source['autoCleanEnabled'] === 'boolean') next['autoCleanEnabled'] = source['autoCleanEnabled']
+    patch.retention = next as never
+  }
   return patch
 }

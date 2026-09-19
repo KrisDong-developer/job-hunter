@@ -1025,7 +1025,11 @@ const sameOrigin = (req) => {
 | GET/PATCH | `/settings` | 配置 |
 | GET | `/health` | 插件自身与各平台健康 |
 | GET | `/events` | **SSE**（进度、任务、告警），15s 心跳 |
-| POST | `/maintenance/cleanup` | 清理预览 / 执行 |
+| GET | `/maintenance/storage` | 磁盘占用：真实文件大小 + 按表 dbstat 占用 + 按类型的行数（§18.3 P3） |
+| POST | `/maintenance/cleanup/preview` | **清理预览**（P0）：只读、无副作用，给出将删多少行 / 预计释放多少 |
+| POST | `/maintenance/cleanup` | 执行清理（需 `confirm: true`，且要求持有租约）；执行后 `VACUUM` |
+| GET | `/data/export` | 导出 `json`（全量备份）/ `csv`（分表 zip，带 BOM）/ `archive`（含附件） |
+| POST | `/data/import` | 导入岗位清单（CSV/JSON，幂等；`.xlsx` 二进制明确拒收） |
 | GET | `/diagnostics/export` | 诊断包 |
 
 ### 4.8 tools/ — 模型工具入口
@@ -1390,7 +1394,19 @@ llm_call(id PK, at, purpose, fields_json, tokens, ref)
 - **"当前接触态"= 该 job 最新一条 greeting 的 stage**，不冗余存储，避免两处不一致
 - 需求 §12.1 的岗位生命周期图跨越了这三套状态机，**实现时必须按上表拆分，不得合并成单一枚举**
 
-**保留策略落到表**（§18）：`snapshot_ref` 指向的文件、截图、日志按类型定期清理；结构化数据与投递记录长期保留；简历与附件**只由用户显式删除**。清理前必须预览确认（P2）。
+**保留策略落到表**（§18）：结构化数据与投递记录长期保留；简历与附件**只由用户显式删除**。清理前必须预览确认（P2）。
+
+> **✅ 2026-09-19 实现（`store/cleanup.ts` + `/maintenance/*`）**，与上面那段的三处偏差如实记录：
+> * **没有 `snapshot_ref` 指向的文件、也没有截图** —— 实现里不存原始 HTML/截图（§18.1 的体积估算因此不成立），
+>   所以清理类型里没有这两项，代之以**JD 纯文本**（真正的体积大头）；
+> * **清理粒度是"按类型"而不是"按文件"**：`crawl_run` / `audit_log` / `llm_call` / 已处理的 `pending_repair` 删行，
+>   `job.jd_text` 只**置空字段**（不删岗位行），"从没被碰过"的老岗位才删行（带整组 `NOT EXISTS`，
+>   因为 `application`/`greeting`/`message`/`interview`/`tailoring`/`campus` 的外键是 `SET NULL` ——
+>   删父行会把用户资产变成孤儿）；
+> * **不删** 投递 / 打招呼 / 消息 / 面试 / 简历与附件：它们**连保留期配置都没有**（不是"默认值很大"）。
+>   占用页把它们列为「长期保留」，用户能指着那一屏确认。
+> * **定时清理默认关闭**：删除不可逆，而当前实现不存原始页面（磁盘压力远小于文档假设），
+>   所以让用户先手动跑一次预览、看清要删什么再打开；开启后只在**启动时**跑一次（VACUUM 可能阻塞几百毫秒，不适合放心跳）。
 
 ---
 

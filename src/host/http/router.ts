@@ -41,12 +41,14 @@ import * as applications from './routes/applications.js'
 import * as campus from './routes/campus.js'
 import * as companies from './routes/companies.js'
 import * as crawl from './routes/crawl.js'
+import * as data from './routes/data.js'
 import * as dedup from './routes/dedup.js'
 import * as health from './routes/health.js'
 import * as intel from './routes/intel.js'
 import * as interviews from './routes/interviews.js'
 import { json, type RouteContext, type RouteHandler } from './routes/kit.js'
 import * as jobs from './routes/jobs.js'
+import * as maintenance from './routes/maintenance.js'
 import * as messages from './routes/messages.js'
 import * as ops from './routes/ops.js'
 import * as outreach from './routes/outreach.js'
@@ -140,6 +142,14 @@ const ROUTES: RouteHandler[] = [
   ops.guardUsage,
   ops.settingsGet,
   ops.settingsPatch,
+
+  // ── 数据维护与可携带性（§18 / J8）──────────────────────────────
+  // `cleanup/preview` 与 `cleanup` 段数不同、不会互抢；仍按"字面量在前"的纪律排。
+  maintenance.cleanupPreview,
+  maintenance.cleanup,
+  maintenance.storage,
+  data.exportData,
+  data.importData,
 
   // ── 简历与附件 ─────────────────────────────────────────────────
   resumes.list,

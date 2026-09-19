@@ -18,15 +18,21 @@
  *   * `actions.ts`  —— 七个编排：闸门 + 令牌 + 成功后才回写 + 事件广播
  *   * `lifecycle.ts`—— 租约（R20）与心跳
  */
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import {
+  EXPORTS_DIR_NAME,
   PLUGIN_ID,
 } from '../shared/constants.js'
 import type {
   AdapterConfigDto,
+  CleanupPlanDto,
+  CleanupResultDto,
   CrawlStatusDto,
   CrawlSummaryDto,
+  DataExportFormat,
+  DataExportEntryDto,
+  DataImportResultDto,
   DeadlineDto,
   GreetingDraftDto,
   GuardUsageDto,
@@ -34,6 +40,7 @@ import type {
   LoginStatusDto,
   PlatformOverviewDto,
   SchedulerStatusDto,
+  StorageUsageDto,
   TodayDto,
 } from '../shared/dto.js'
 import type { AiService } from './ai/client.js'
@@ -66,6 +73,15 @@ import { createResumeService } from './domain/resumes.js'
 import { createPdfRenderer, type PdfRenderer } from './render/pdf.js'
 import type { PlanService } from './domain/plans.js'
 import { createPlanService } from './domain/plans.js'
+import { exportData as exportDataOf, importJobs as importJobsOf } from './domain/portability.js'
+import {
+  cleanupPlanOf,
+  maybeAutoClean,
+  readRetentionPolicy,
+  runCleanupOf,
+  storageUsageOf,
+  writeRetentionPolicy,
+} from './store/cleanup.js'
 import type { IntelService, MatchProfile } from './domain/intel.js'
 import { createIntelService, resumeProfileOf } from './domain/intel.js'
 import { buildToday, buildTodayUnavailable } from './domain/today.js'
@@ -345,6 +361,46 @@ export interface HostRuntime {
    * `override === null` = 清除覆盖，回到代码默认。
    */
   updateAdapterConfig(platformId: string, override: unknown): AdapterConfigDto
+
+  // ── P20：数据保留、清理与可携带性（§18 / J8）──────────────────────
+  /** 磁盘占用（§18.3 P3）：真实文件大小 + 按表 dbstat 占用 + 按类型的行数。 */
+  storage(): StorageUsageDto
+  /**
+   * 清理**预览**（§18.3 P2，P0）：**只读、无副作用**，可反复调用。
+   *
+   * 它给出"将删多少行 / 预计释放多少"，并如实说明"只有 VACUUM 之后文件才会变小"。
+   */
+  cleanupPreview(): CleanupPlanDto
+  /**
+   * 执行清理。**调用方必须先确认**（路由层两段式）且**必须持有租约**。
+   *
+   * @param only 只清这几类；缺省 = 预览里所有 `willRun` 的项
+   */
+  runCleanup(only?: readonly string[]): CleanupResultDto
+  /** 导出到**内存**（HTTP 直接回给浏览器下载）。 */
+  exportData(format: DataExportFormat): {
+    fileName: string
+    bytes: Uint8Array
+    entries: DataExportEntryDto[]
+    note: string
+  }
+  /**
+   * 导出并**落盘**到 `<dataDir>/exports/`（模型工具用：对话里没法接二进制流）。
+   *
+   * 为什么限定这个目录：与 `system/reveal` 同一条纪律 —— 不接受任意路径，
+   * 于是"导出"永远不会写到你没预期的地方。
+   */
+  saveExport(format: DataExportFormat): {
+    fileName: string
+    path: string
+    bytes: number
+    entries: DataExportEntryDto[]
+    note: string
+  }
+  /** 读 `exports/` 下的一个文件（模型工具导入用）；只认文件名，不认路径。 */
+  readExportFile(fileName: string): string
+  /** 导入岗位（CSV / JSON）。幂等。 */
+  importJobs(input: { format: 'csv' | 'json'; content: string }): DataImportResultDto
 
   store(): Store | undefined
   jobs(): JobService | undefined
@@ -858,6 +914,11 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         read: () => readCrawlConfig(opened),
         write: (patch) => writeCrawlConfig(opened, patch, clock()),
       },
+      // 保留策略（§18）：预览与清理每次都现读，所以写库即生效
+      retention: {
+        read: () => readRetentionPolicy(opened),
+        write: (patch) => writeRetentionPolicy(opened, patch, clock()),
+      },
     })
 
     // 审批通道有没有，是"高危动作会不会被一律拒绝"的第一现场（模型接入与否见 ② 的日志）
@@ -1021,6 +1082,39 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     safetyPhase(opened, model)
     followUpPhase(opened, model)
     schedulingPhase(opened)
+    autoCleanPhase(opened)
+  }
+
+  /**
+   * ⑦ 启动时的**定时清理**（§18.3 P1，默认关闭）。
+   *
+   * 为什么放在最后、只跑一次：VACUUM 可能阻塞几百毫秒到几秒，而心跳是几十秒一次的轻活 ——
+   * 往心跳里塞写操作迟早出事。放在启动末尾，代价可预期；而且此时租约已拿到（
+   * `schedulingPhase` 在前面），不会出现"只读实例偷偷删数据"。
+   *
+   * 只在**真的删了东西**时才提示：默认关、且大多数启动没有到期数据，
+   * 每天弹一条"清理完成（0 行）"只会让人学会忽略通知。
+   */
+  const autoCleanPhase = (opened: Store): void => {
+    if (!lease.held()) return
+    try {
+      const result = maybeAutoClean(opened, clock)
+      if (result === null) return
+      logger?.info(
+        `[${PLUGIN_ID}] 启动时自动清理：${String(result.totalRows)} 行 · ` +
+          `文件 ${String(result.dbBytesBefore)} → ${String(result.dbBytesAfter)} 字节`,
+      )
+      bus.publish('storage.cleaned', {
+        totalRows: result.totalRows,
+        dbBytesBefore: result.dbBytesBefore,
+        dbBytesAfter: result.dbBytesAfter,
+        vacuumed: result.vacuumed,
+        automatic: true,
+      })
+    } catch (error) {
+      // 自动清理失败绝不能影响启动（它是后台的维护动作，不是启动的必要条件）
+      logger?.warn(`[${PLUGIN_ID}] 启动时自动清理失败（不影响其它功能）：${messageOf(error)}`)
+    }
   }
 
   const runtime: HostRuntime = {
@@ -1371,7 +1465,6 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     adapterConfig(platformId): AdapterConfigDto {
       return buildAdapterConfigOf(need(store), platformId)
     },
-
     updateAdapterConfig(platformId, override): AdapterConfigDto {
       const opened = need(store)
       const spec = adapterSpecOf(platformId)
@@ -1413,6 +1506,116 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         }；适配器 ${adapter.displayName}）`,
       )
       return next
+    },
+
+    // ── P20：数据保留、清理与可携带性（§18 / J8）──────────────────────
+    storage(): StorageUsageDto {
+      return storageUsageOf(need(store), dataDir, clock)
+    },
+
+    cleanupPreview(): CleanupPlanDto {
+      return cleanupPlanOf(need(store), clock)
+    },
+
+    runCleanup(only): CleanupResultDto {
+      const opened = need(store)
+      // 与 `crawl` / `startLogin` 同一条纪律：只读实例不许写库（两个实例抢同一个文件）
+      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边清理数据。')
+      const result = runCleanupOf(opened, only === undefined ? {} : { only }, clock)
+      if (result.totalRows > 0) {
+        bus.publish('storage.cleaned', {
+          totalRows: result.totalRows,
+          dbBytesBefore: result.dbBytesBefore,
+          dbBytesAfter: result.dbBytesAfter,
+          vacuumed: result.vacuumed,
+        })
+      }
+      logger?.info(
+        `[${PLUGIN_ID}] 数据清理：${String(result.totalRows)} 行 · ` +
+          `文件 ${String(result.dbBytesBefore)} → ${String(result.dbBytesAfter)} 字节` +
+          `${result.vacuumed ? '（已 VACUUM）' : '（未 VACUUM）'}`,
+      )
+      return result
+    },
+
+    exportData(format) {
+      const opened = need(store)
+      const result = exportDataOf({ store: opened, filesDir: join(dataDir, 'files'), format }, clock)
+      bus.publish('data.exported', { format, fileName: result.fileName, bytes: result.bytes.byteLength })
+      return result
+    },
+
+    saveExport(format) {
+      const opened = need(store)
+      const result = exportDataOf({ store: opened, filesDir: join(dataDir, 'files'), format }, clock)
+      const dir = join(dataDir, EXPORTS_DIR_NAME)
+      mkdirSync(dir, { recursive: true })
+      const path = join(dir, basename(result.fileName))
+      writeFileSync(path, result.bytes)
+      bus.publish('data.exported', { format, fileName: result.fileName, bytes: result.bytes.byteLength })
+      logger?.info(`[${PLUGIN_ID}] 已导出数据（${format}）→ ${path}（${String(result.bytes.byteLength)} 字节）`)
+      return {
+        fileName: result.fileName,
+        path,
+        bytes: result.bytes.byteLength,
+        entries: result.entries,
+        note: result.note,
+      }
+    },
+
+    readExportFile(fileName) {
+      // 只认文件名：`basename` 之外的一律拒绝 —— 与 `system/reveal` 同一条纪律
+      // （不接受任意路径，于是"导入"永远不会读到你没预期的文件）
+      const safe = basename(fileName)
+      if (safe !== fileName || safe === '' || safe.startsWith('.')) {
+        throw new DomainError('INVALID_INPUT', `只接受 exports/ 目录下的文件名：${fileName}`, {
+          hint: '用 data_transfer 的 export 动作先导出，再用返回的文件名导入。',
+        })
+      }
+      const path = join(dataDir, EXPORTS_DIR_NAME, safe)
+      try {
+        return readFileSync(path, 'utf8')
+      } catch (error) {
+        throw new DomainError('NOT_FOUND', `读不到导出文件：${safe}`, {
+          hint: `它应该在本机的 ${join(dataDir, EXPORTS_DIR_NAME)} 目录下。`,
+          cause: error,
+        })
+      }
+    },
+
+    importJobs(input): DataImportResultDto {
+      const opened = need(store)
+      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边导入数据。')
+      const companyService = companies
+      const intelService = intel
+      const result = importJobsOf(
+        {
+          store: opened,
+          ensureCompany: (companyInput) => {
+            if (companyService === undefined) {
+              throw new DomainError('DATA_UNAVAILABLE', '公司服务还没就绪')
+            }
+            return companyService.ensureByName(companyInput, clock())
+          },
+          // 导入的岗位立刻算一遍匹配分与标注，与抓取来的岗位长得一样 ——
+          // 否则用户在列表里看到一批"还没有分"的岗位，会以为导入没成功
+          ...(intelService === undefined ? {} : { evaluate: (jobId: number) => intelService.evaluateJob(jobId, clock()) }),
+        },
+        input,
+        clock,
+      )
+      if (result.inserted > 0 || result.updated > 0) {
+        bus.publish('data.imported', {
+          inserted: result.inserted,
+          updated: result.updated,
+          skipped: result.skipped,
+        })
+      }
+      logger?.info(
+        `[${PLUGIN_ID}] 导入岗位（${input.format}）：新增 ${String(result.inserted)} · ` +
+          `更新 ${String(result.updated)} · 跳过 ${String(result.skipped)}`,
+      )
+      return result
     },
 
     store(): Store | undefined {

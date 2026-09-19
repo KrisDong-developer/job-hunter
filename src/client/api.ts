@@ -24,7 +24,11 @@ import type {
   AttributionDto,
   BoardDto,
   CampusApplicationDto,
+  CleanupPlanDto,
+  CleanupResultDto,
   CoverLetterDto,
+  DataExportFormat,
+  DataImportResultDto,
   DeadlineDto,
   FollowUpDto,
   FunnelDto,
@@ -39,12 +43,14 @@ import type {
   RepairDto,
   RepairListDto,
   ReplyDraftDto,
+  RetentionPolicy,
   ResumeCompareDto,
   SalaryBandDto,
   SalaryBaselineDto,
   SalaryBasis,
   SalaryBoxChartDto,
   StageEventDto,
+  StorageUsageDto,
   TalkSessionDto,
   TimezoneDisplayDto,
   TripartiteDto,
@@ -616,6 +622,8 @@ export interface SettingsDto {
     /** 一轮采集（一个方案的一次运行，含多关键词与详情补抓）最多多少分钟。 */
     roundBudgetMinutes: number
   }
+  /** 数据保留策略（§18）。资源设置，模型不可改。 */
+  retention: RetentionPolicy
   derived: {
     purposes: Array<{ purpose: string; label: string; enabled: boolean }>
     modelEditable: string[]
@@ -633,6 +641,8 @@ export interface SettingsDto {
         sendWindow: string
         dayOffProbability: number
       }
+      /** 保留期的出厂默认（"恢复默认"按钮用它）。 */
+      retention: RetentionPolicy
     }
   }
 }
@@ -716,6 +726,8 @@ export async function updateSettings(patch: {
   guard?: Record<string, unknown>
   browser?: Record<string, unknown>
   crawl?: Record<string, unknown>
+  /** 数据保留策略（§18）。资源设置，不是闸门，所以不需要审批。 */
+  retention?: Record<string, unknown>
 }): Promise<SettingsDto> {
   const result = await request<{ ok: boolean; settings: SettingsDto }>('/settings', {
     method: 'PATCH',
@@ -1385,6 +1397,65 @@ export async function updateAdapterConfig(platformId: string, override: unknown)
 export async function fetchGuardUsage(platformId?: string, signal?: AbortSignal): Promise<GuardUsageDto> {
   const suffix = platformId === undefined || platformId === '' ? '' : `?platformId=${encodeURIComponent(platformId)}`
   return await request<GuardUsageDto>(`/guard/usage${suffix}`, signal === undefined ? {} : { signal })
+}
+
+// ── 数据保留、清理与可携带性（§18 / J8）────────────────────────
+
+export type {
+  CleanupPlanDto,
+  CleanupResultDto,
+  DataExportFormat,
+  DataImportResultDto,
+  RetentionPolicy,
+  StorageUsageDto,
+}
+
+/** 磁盘占用（§18.3 P3）：真实文件大小 + 按表占用 + 按类型的行数。 */
+export async function fetchStorage(signal?: AbortSignal): Promise<StorageUsageDto> {
+  return await request<StorageUsageDto>('/maintenance/storage', signal === undefined ? {} : { signal })
+}
+
+/**
+ * 清理预览（§18.3 P2，P0）：**只读、无副作用**，可以放心反复调。
+ *
+ * 界面必须先拉到它、把将删什么显示给用户，用户点过确认之后才发 `/maintenance/cleanup`。
+ */
+export async function previewCleanup(): Promise<CleanupPlanDto> {
+  return await request<CleanupPlanDto>('/maintenance/cleanup/preview', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+/** 执行清理（不可逆）。`only` 只清这几类；缺省 = 预览里所有会执行的项。 */
+export async function runCleanup(input: { only?: string[] } = {}): Promise<CleanupResultDto> {
+  const result = await request<{ ok: boolean; result: CleanupResultDto }>('/maintenance/cleanup', {
+    method: 'POST',
+    body: JSON.stringify({ confirm: true, ...input }),
+  })
+  return result.result
+}
+
+/**
+ * 导出的下载地址（直接给 `<a href>` 或 `window.open` 用）。
+ *
+ * 为什么不做成 `fetch` + Blob：导出的东西是文件，浏览器的原生下载更稳
+ * （大文件不进 JS 堆、断点与文件名都交给浏览器）。与简历附件的打开方式一致。
+ */
+export function dataExportUrl(format: 'json' | 'csv' | 'archive'): string {
+  return `${ROUTE_PREFIX}/data/export?format=${format}`
+}
+
+/** 导入岗位（CSV / JSON）。**幂等** —— 同一份表导两次只会更新。 */
+export async function importJobsPayload(input: {
+  format: 'csv' | 'json'
+  content: string
+}): Promise<DataImportResultDto> {
+  const result = await request<{ ok: boolean; result: DataImportResultDto }>('/data/import', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return result.result
 }
 
 // ── P8：校招与海外支线 ───────────────────────────────────────────────

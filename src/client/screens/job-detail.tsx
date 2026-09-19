@@ -10,6 +10,7 @@ import {
 import {
   ApiError,
   fetchCompanyDetail,
+  fetchGreetings,
   fetchJobDetail,
   fetchJobHistory,
   markJob,
@@ -240,6 +241,17 @@ export function JobDetailBody(props: {
 }) {
   const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision])
   const history = useAsync((signal) => fetchJobHistory(props.id, signal), [props.id, props.revision])
+  /**
+   * 打招呼记录（D6）。
+   *
+   * 与 `history`（状态变更事件）**不是一回事**，所以两个都要：
+   *   * 这一条给的是"我实际发出去的那段话 + 用了哪套模板"—— 改简历/改话术（§3.2）要看它；
+   *   * `history` 给的是"状态怎么变的、谁改的"。
+   */
+  const greetings = useAsync(
+    (signal) => fetchGreetings({ jobId: props.id, limit: 5 }, signal),
+    [props.id, props.revision],
+  )
   const [busy, setBusy] = useState<JobState | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   /** 平台侧接触阶段的探测结果（**只读**：不改本地状态、不发任何消息）。 */
@@ -275,6 +287,8 @@ export function JobDetailBody(props: {
     try {
       await updateContactStage(props.id, { to })
       history.reload()
+      // 那条打招呼记录的 stage 也变了，所以要一起重取（否则"发送记录"里显示的还是旧态）
+      greetings.reload()
       props.onChanged()
     } catch (error) {
       setProbeError(error instanceof ApiError ? error.display : String(error))
@@ -316,6 +330,7 @@ export function JobDetailBody(props: {
   /** 本地那条接触态（§12.2：最新一条打招呼记录即当前接触态）。 */
   const localStage: ContactStage = history.state.status === 'ok' ? history.state.data.contactStage : 'none'
   const contactEvents = history.state.status === 'ok' ? history.state.data.items.slice(0, 6) : []
+  const sentGreetings = greetings.state.status === 'ok' ? greetings.state.data.items : []
   /** 平台探测到的态与本地不一致时，才值得提"要不要采纳"。 */
   const adoptable = probe?.stage != null && probe.stage !== localStage ? probe.stage : null
   // 解析不出来就退回原始串：宁可显示 ISO，也不要留一格空白
@@ -433,6 +448,27 @@ export function JobDetailBody(props: {
             </p>
             <p className="jh-muted">{probe.note}</p>
           </>
+        )}
+
+        {sentGreetings.length === 0 ? null : (
+          <details className="jh-details">
+            <summary>发送记录（{sentGreetings.length} 条，最近在前）</summary>
+            <ul className="jh-tailor-notes">
+              {sentGreetings.map((greeting) => (
+                <li key={greeting.id}>
+                  <div className="jh-muted">
+                    {greeting.sentAt.slice(0, 16).replace('T', ' ')} · {CONTACT_STAGE_LABEL[greeting.stage]}
+                    {greeting.templateName === null ? '' : ` · 模板「${greeting.templateName}」`}
+                    {greeting.actor === 'model' ? ' · 模型发起' : ''}
+                  </div>
+                  <div>{greeting.content}</div>
+                </li>
+              ))}
+            </ul>
+            <p className="jh-muted">
+              这里是你实际发出去的那段话（要改简历还是改话术，看这个）；上面「变更记录」记的是状态怎么变的。
+            </p>
+          </details>
         )}
 
         {contactEvents.length === 0 ? null : (

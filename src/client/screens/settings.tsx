@@ -17,6 +17,7 @@ import { FieldHint } from '../field-hint.js'
 import { Switch } from '../switch.js'
 import { useAsync, type AsyncState } from '../use-async.js'
 import { useDialogA11y } from '../use-dialog-a11y.js'
+import { DataPanel } from './settings/data-panel.js'
 import {
   BROWSER_CLOSE_AFTER_RUN_MS,
   BROWSER_IDLE_DEFAULT_MIN,
@@ -89,11 +90,15 @@ const PURPOSE_GROUPS: Array<{ title: string; purposes: string[] }> = [
   },
 ]
 
-type SettingsTab = 'config' | 'logs'
+type SettingsTab = 'config' | 'logs' | 'data'
 
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
   ['config', '模型与安全配置'],
   ['logs', '诊断与调用日志'],
+  // 第三个分区（§18 / J8）：保留期、磁盘占用、清理、导出导入。
+  // 为什么不塞进「诊断」：那一屏回答"出问题时怎么自查"，这一屏回答"我的数据现在多大、
+  // 能不能搬走" —— 使用时机不同（前者出事才看，后者隔几个月看一次），放一起会互相干扰。
+  ['data', '数据与存储'],
 ]
 
 /**
@@ -282,7 +287,7 @@ export function SettingsScreen(props: { revision: number }) {
             write={write}
           />
         </div>
-      ) : (
+      ) : tab === 'logs' ? (
         <div role="tabpanel" id="jh-set-panel-logs" aria-labelledby="jh-set-tab-logs">
           <LogsPanel
             health={health.state}
@@ -291,6 +296,10 @@ export function SettingsScreen(props: { revision: number }) {
             labelOf={labelOf}
             notify={(tone, text) => setMessage({ tone, text })}
           />
+        </div>
+      ) : (
+        <div role="tabpanel" id="jh-set-panel-data" aria-labelledby="jh-set-tab-data">
+          <DataPanel current={current} busy={busy} write={write} notify={(tone, text) => setMessage({ tone, text })} />
         </div>
       )}
     </div>
