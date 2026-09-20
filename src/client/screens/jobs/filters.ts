@@ -1,4 +1,10 @@
-import { JOB_NEW_WINDOWS } from '../../../shared/contract/enums/job.js'
+import {
+  JOB_FLAG_LABEL,
+  JOB_NEW_WINDOWS,
+  JOB_STATE_LABEL,
+  type JobFlagType,
+  type JobState,
+} from '../../../shared/contract/enums/job.js'
 import type { ExpChip } from '../../../shared/domain/job-facets.js'
 import type { JobFilterState } from '../../../shared/contract/dto/job.js'
 
@@ -146,4 +152,56 @@ export function pageNumbers(page: number, pages: number): Array<number | '…'> 
     previous = value
   }
   return out
+}
+
+/** 「筛选中」chips 的一枚：`text` 是给人读的摘要，`next` 是移除它之后的完整条件。 */
+export type AppliedFilterChip = { id: string; text: string; next: Filters }
+
+/**
+ * 已生效条件 → 「筛选中」chips（2026-09-20 布局重排）。
+ *
+ * 高级筛选折叠之后，被折叠的条件在界面上没有任何痕迹；列表头栏那句统计也只说
+ * "有多少条"，不说"筛了什么"。这组 chips 是它的可操作版：每一枚 = 一条已生效条件，
+ * 点掉**立即生效**（`index.tsx` 里 draft 与 applied 一起换）—— 与表单"点筛选才提交"
+ * 的语义不冲突：表单里改的是**草稿**，chip 是一次完整的单条撤销
+ * （与列表头栏「显示被隐藏的 N 条」是同一类动作）。
+ *
+ * 只描述**偏离默认值**的条件：`excludeBlacklisted` 默认开着，开着不算"筛过"；
+ * 关掉它反而是个必须被看见的状态（列表里混着拉黑过的公司），出一枚「含已拉黑公司」。
+ * 排序不在此列 —— 它在列表头栏有自己的控件，一直看得见。
+ */
+export function describeAppliedFilters(applied: Filters, expChips: ExpChip[]): AppliedFilterChip[] {
+  const chips: AppliedFilterChip[] = []
+  const push = (id: string, text: string, patch: Partial<Filters>): void => {
+    chips.push({ id, text, next: { ...applied, ...patch } })
+  }
+  if (applied.q !== '') push('q', `关键词「${applied.q}」`, { q: '' })
+  for (const city of applied.cities) {
+    push(`city:${city}`, `城市 ${city}`, { cities: applied.cities.filter((item) => item !== city) })
+  }
+  for (const id of applied.expBuckets) {
+    // 梯队 id → 人话；对不上（例如套用了很久以前存的视图）就拿 id 本身当文案，不炸
+    const label = expChips.find((chip) => chip.id === id)?.label ?? id
+    push(`exp:${id}`, `经验 ${label}`, { expBuckets: applied.expBuckets.filter((item) => item !== id) })
+  }
+  for (const value of applied.eduReqs) {
+    push(`edu:${value}`, `学历 ${value}`, { eduReqs: applied.eduReqs.filter((item) => item !== value) })
+  }
+  if (applied.state !== '') {
+    push('state', `状态 ${JOB_STATE_LABEL[applied.state as JobState] ?? applied.state}`, { state: '' })
+  }
+  if (applied.minSalary !== '') push('minSalary', `最低月薪 ≥ ${applied.minSalary}`, { minSalary: '' })
+  if (applied.minScore !== '') push('minScore', `匹配分 ≥ ${applied.minScore}`, { minScore: '' })
+  if (applied.newWindow !== '') {
+    const label = JOB_NEW_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? applied.newWindow
+    push('newWindow', `新增：${label}`, { newWindow: '' })
+  }
+  for (const flag of applied.excludeFlags) {
+    push(`flag:${flag}`, `屏蔽 ${JOB_FLAG_LABEL[flag as JobFlagType] ?? flag}`, {
+      excludeFlags: applied.excludeFlags.filter((item) => item !== flag),
+    })
+  }
+  if (!applied.excludeBlacklisted) push('blacklisted', '含已拉黑公司', { excludeBlacklisted: true })
+  if (applied.groupDuplicates) push('dedup', '跨平台折叠', { groupDuplicates: false })
+  return chips
 }

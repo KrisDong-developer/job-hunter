@@ -1,7 +1,8 @@
 import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../shared/contract/enums/resume.js';
-import type { ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js';
+import type { GreetingTemplateDto, ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js';
 import type { ResumeContent, ResumeIssue } from '../../shared/domain/resume-content.js';
 import { emptyResumeContent } from '../../shared/domain/resume-content.js';
+import { type GreetingTone } from '../../shared/contract/enums/pipeline.js';
 import type { AiService } from '../ai/client.js';
 import type { Store } from '../store/store.js';
 import { isoNow, type Clock } from '../util/time.js';
@@ -78,6 +79,21 @@ export interface ResumeService {
         limit?: number;
     }): TailoringDto[];
     adopt(tailoringId: number, adopted: boolean): TailoringDto;
+    /** ── 简历赛道级话术模板（简历中心「话术」子页，v12 多赛道）────────── */
+    listGreetingTemplates(resumeId: number): GreetingTemplateDto[];
+    /** 从这份简历的事实生成一条开场模板：AI 优先（过校验），规则兜底。 */
+    generateGreetingTemplate(input: {
+        resumeId: number;
+        tone?: GreetingTone;
+    }): Promise<GreetingTemplateDto>;
+    /** 手动新建 / 编辑（`via` 记 `manual`；编辑不改归属）。 */
+    saveGreetingTemplate(input: {
+        resumeId: number;
+        id?: number;
+        name: string;
+        body: string;
+    }): GreetingTemplateDto;
+    removeGreetingTemplate(id: number): boolean;
     /** 当前启用版本的标识，写进 `job.score_rev`（§4.1）。 */
     scoreStamp(): {
         resumeId: number | null;
@@ -128,6 +144,23 @@ export declare function ruleTailor(content: ResumeContent, job: {
     content: ResumeContent;
     notes: string[];
 };
+/** 从正文里提取 `{占位符}` 名列表（去重保序）。 */
+export declare function templateVarsOf(body: string): string[];
+/**
+ * 模板正文校验：占位符、联系方式/长度（复用发送侧同一条 `validateGreetingText`）、
+ * 技术词白名单（简历没有的技术词 = 编造，R8 红线）。
+ */
+export declare function validateTemplateBody(allowed: Set<string>, body: string): string | undefined;
+export interface ResumeGreetingSeed {
+    name: string;
+    body: string;
+}
+/**
+ * 规则兜底模板：只用简历里**已抓到的事实**造句（方向 / 年限 / 前三技能 /
+ * 第一条成果），含 {岗位} {公司} 占位符 —— 它的正确性与 `ruleTailor` 同源：
+ * "什么都不加"在结构上就不可能编造。
+ */
+export declare function buildResumeGreetingTemplate(content: ResumeContent, tone: GreetingTone): ResumeGreetingSeed;
 /**
  * 摘掉联系方式。
  *

@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { PAGE_SIZE_DEFAULT } from '../../../shared/config/limits.js'
 import {
-  JOB_NEW_WINDOWS,
   JOB_ORDER_OPTIONS,
   JOB_STATE_LABEL,
   type JobFlagType,
@@ -33,6 +32,8 @@ import { FilterBar } from './filter-bar.js'
 import {
   EMPTY_FILTERS,
   clampScoreInput,
+  describeAppliedFilters,
+  digitsOf,
   expandExpBuckets,
   firstSeenSinceOf,
   salaryInput,
@@ -47,6 +48,9 @@ import { Pager } from './pager.js'
 function reasonOf(error: unknown): string {
   return error instanceof ApiError ? error.display : error instanceof Error ? error.message : String(error)
 }
+
+/** 页脚「每页条数」的档位（2026-09-20 布局重排）：上限对齐宿主的 `PAGE_SIZE_MAX`（100）。 */
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 /**
  * U1 岗位库 —— 核心工作界面（§5.4）。
@@ -66,6 +70,14 @@ export function JobsScreen(props: {
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS)
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS)
   const [page, setPage] = useState(1)
+  /**
+   * 每页条数（2026-09-20 页脚分页）：宿主早就接受 `pageSize` 参数（1–100，见 routes/jobs.ts），
+   * 界面此前一直写死 20 —— 数据攒多了只能一页页翻。改档时**夹住当前页**而不是跳回第 1 页：
+   * 用户在第 5 页把每页调大，想看的还是原来那批岗位附近，不是从头再来。
+   */
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
+  /** 页脚「跳至 N 页」的草稿（回车提交；非法输入原地不动，不值得为此弹错）。 */
+  const [jumpDraft, setJumpDraft] = useState('')
   /** 展开着的那一行的去重组 id（同时只开一个：列表本来就密，多开就没法比了）。 */
   const [openGroup, setOpenGroup] = useState<number | null>(null)
   /**
@@ -166,13 +178,13 @@ export function JobsScreen(props: {
           orderBy: applied.orderBy,
           descending: applied.descending,
           page,
-          pageSize: PAGE_SIZE_DEFAULT,
+          pageSize,
         },
         signal,
       ),
     // `appliedExpReqs` 是 facet 的函数，而 facet 比首屏查询晚到 ——
     // 不把展开结果算进依赖，梯队就会"选了没反应"（第一次查询根本没带上它）。
-    [props.revision, applied, page, appliedExpReqs.join(',')],
+    [props.revision, applied, page, pageSize, appliedExpReqs.join(',')],
     // keepPrevious（第四轮，审核 P2-6）：翻页 / 改筛选 / 外部刷新时列表不再整块消失 ——
     // 这一屏是"左列表 + 右详情"的对照阅读，整列闪一下正好打断它。
     // 重取期间沿用上一次结果，界面另用 refreshing 说明"这是旧数据，正在更新"。
@@ -190,9 +202,9 @@ export function JobsScreen(props: {
   useEffect(() => {
     if (state.status !== 'ok') return
     if (state.data.total === 0 || state.data.items.length > 0) return
-    const lastPage = Math.max(1, Math.ceil(state.data.total / PAGE_SIZE_DEFAULT))
+    const lastPage = Math.max(1, Math.ceil(state.data.total / pageSize))
     if (page > lastPage) setPage(lastPage)
-  }, [state, page])
+  }, [state, page, pageSize])
 
   /** 城市：工具条下拉（单选）。底层仍传数组（见 `Filters.cities` 的注释）。 */
   const setCity = (city: string): void => {
@@ -301,6 +313,24 @@ export function JobsScreen(props: {
     setDraft((current) => ({ ...current, orderBy }))
     setApplied((current) => ({ ...current, orderBy }))
     setPage(1)
+  }
+
+  /** 每页条数：夹住当前页（见 state 注释）—— total 还没到手（出错/加载中）就先回第 1 页。 */
+  const changePageSize = (size: number): void => {
+    setPageSize(size)
+    setPage((current) => {
+      if (state.status !== 'ok' || state.data.total === 0) return 1
+      return Math.max(1, Math.min(current, Math.ceil(state.data.total / size)))
+    })
+  }
+
+  /** 跳页：夹进 1..pages；空输入与非数字原地不动。 */
+  const submitJump = (event: FormEvent): void => {
+    event.preventDefault()
+    if (jumpDraft === '') return
+    const target = Math.trunc(Number(jumpDraft))
+    if (Number.isFinite(target)) setPage(Math.max(1, Math.min(target, pages)))
+    setJumpDraft('')
   }
 
   /** 行内入口：把这一条预置进既有弹窗（与批量入口同一套，只有"目标是谁"不同）。 */
@@ -494,7 +524,7 @@ export function JobsScreen(props: {
   }
 
   const total = state.status === 'ok' ? state.data.total : 0
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE_DEFAULT))
+  const pages = Math.max(1, Math.ceil(total / pageSize))
   /**
    * 草稿与已生效条件不一致（第四轮，审核 P2-12）。
    *
@@ -505,15 +535,28 @@ export function JobsScreen(props: {
   const pendingChanges = !sameFilters(draft, applied)
   /** 已生效的条件里有没有"筛过"的东西 —— 空结果时用它决定要不要给「清除筛选」。 */
   const hasFilters = !sameFilters(applied, EMPTY_FILTERS)
+  /** 已生效条件 → 「筛选中」chips（见 filters.ts 的 describeAppliedFilters）。 */
+  const appliedChips = describeAppliedFilters(applied, expChips)
+  /**
+   * 移除一枚已生效条件（2026-09-20 布局重排）：draft 与 applied 一起换、页码回第一页。
+   * 它是**单条明确动作**（与「显示被隐藏的 N 条」同类），不经"点筛选"这一步；
+   * 移除后条件不再等于所套用的视图 → 视图高亮复位（与 submit 同一条判据）。
+   */
+  const removeChip = (id: string): void => {
+    const chip = appliedChips.find((item) => item.id === id)
+    if (chip === undefined) return
+    setDraft(chip.next)
+    setApplied(chip.next)
+    setPage(1)
+    const using = views.find((item) => item.id === appliedViewId)
+    if (using !== undefined && !sameFilters(chip.next, using.filters)) setAppliedViewId('')
+  }
   /**
    * 页码已经越界（第四轮，审核 P2-8）：0 条 + 非零 total。
    * 这一帧先别印"没有符合条件的岗位"（那是假话）—— 上面的 effect 正在把页码夹回去。
    */
   const beyondLastPage =
     state.status === 'ok' && state.data.items.length === 0 && total > 0 && page > pages
-  /** 已生效的「只看新增」窗口名（用于列表头说明，避免用户困惑"怎么这么少"）。 */
-  const appliedWindowLabel =
-    JOB_NEW_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null
   /**
    * 高级筛选里选中的条件条数。
    *
@@ -576,6 +619,8 @@ export function JobsScreen(props: {
         onApplyView={applyView}
         onSaveView={saveCurrentView}
         onDeleteView={deleteView}
+        appliedChips={appliedChips}
+        onRemoveChip={removeChip}
       />
 
       <div className="jh-jobs-cols">
@@ -628,12 +673,33 @@ export function JobsScreen(props: {
           {state.status === 'ok' && state.data.items.length > 0 && (
             <>
               <div className="jh-listbar">
-                <span className="jh-muted">
-                  共 {state.data.total} 条
-                  {applied.groupDuplicates ? '（已按跨平台折叠，同一条岗位只算一行）' : ''}
-                  {appliedWindowLabel === null ? '' : `（只看${appliedWindowLabel}的新增）`} · 第{' '}
-                  {state.data.page} / {pages} 页
-                </span>
+                {/* 全选放在这一行**最左**（2026-09-20）：它作用于整个列表，是这一行的
+                    第一个主人；隐藏条数 / 更新中 / 过期分数这些"说出来"的话跟在它后面，
+                    排序被 margin-left:auto 推到行尾。全选只覆盖**本页**：跨页"全选"
+                    在分页列表里是歧义动作（用户以为选了 20 条，实际选了 200 条）——
+                    所以文案里写明"本页"。 */}
+                {state.data.items.length === 0 ? null : (
+                  <label className="jh-check">
+                    <input
+                      type="checkbox"
+                      checked={
+                        state.data.items.every((job) => picked.includes(job.id)) &&
+                        state.data.items.length > 0
+                      }
+                      onChange={(event) =>
+                        setPicked((current) => {
+                          const ids = state.data.items.map((job) => job.id)
+                          if (!event.target.checked) return current.filter((id) => !ids.includes(id))
+                          return [...current, ...ids.filter((id) => !current.includes(id))]
+                        })
+                      }
+                    />
+                    <span>选中本页</span>
+                  </label>
+                )}
+                {/* 「共 N 条」与折叠/时间窗说明已移除（2026-09-20 精简）：折叠与时间窗
+                    由「筛选中」chips 承载（跨平台折叠 / 新增：近 7 天），不再另说一遍；
+                    这一行只留"必须说出来"的事 —— 被隐藏的条数、更新中、过期分数。 */}
                 {/* 「排除已拉黑公司」隐藏了几条（批次 B）：**必须说出来**。
                     这条筛选默认开着，不说的话用户会以为某些岗位凭空消失了 ——
                     "可以隐藏，但绝不静默隐藏"。点它当场把这一条关掉并重查。 */}
@@ -667,49 +733,27 @@ export function JobsScreen(props: {
                     </button>
                   </span>
                 )}
-                {/* 排序在列表头栏（2026-09-18）：它决定"结果**怎么排**"，不是"结果有哪些"。
-                    留在筛选条里，用户改完还得再点一次「筛选」才生效 —— 那是把它放在了错误的语义位置上。
-                    这里改完当场重排（跨平台折叠不在这儿：它改的是"结果有哪些"，属于筛选条件，
+                {/* 列表头栏右侧（2026-09-20 布局重排）：只剩排序，margin-left:auto 推到行尾。
+                    它决定"结果**怎么排**"，是列表自己的事，改完当场重排
+                    （跨平台折叠不在这儿：它改的是"结果有哪些"，属于筛选条件，
                     已经放回上面的折叠面板）。 */}
                 <span className="jh-listbar-right">
-                  {/* 全选只覆盖**本页**：跨页"全选"在分页列表里是歧义动作
-                      （用户以为选了 20 条，实际选了 200 条）——所以文案里写明"本页" */}
-                  {state.data.items.length === 0 ? null : (
-                    <label className="jh-check">
-                      <input
-                        type="checkbox"
-                        checked={
-                          state.data.items.every((job) => picked.includes(job.id)) &&
-                          state.data.items.length > 0
-                        }
-                        onChange={(event) =>
-                          setPicked((current) => {
-                            const ids = state.data.items.map((job) => job.id)
-                            if (!event.target.checked) return current.filter((id) => !ids.includes(id))
-                            return [...current, ...ids.filter((id) => !current.includes(id))]
-                          })
-                        }
-                      />
-                      <span>选中本页</span>
-                    </label>
-                  )}
-                  <label className="jh-sort">
-                    <span className="jh-sort-label">排序</span>
-                    {/* select 的值只能从元素上拿到 string；取值域由 JOB_ORDER_OPTIONS 锁住，
-                        这里按项目既有写法（如面试形式那个 select）在边界上收窄一次。 */}
-                    <select
-                      className="jh-select jh-sort-select"
-                      value={applied.orderBy}
-                      onChange={(event) => changeOrder(event.target.value as JobOrderValue)}
-                    >
-                      {JOB_ORDER_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Pager page={state.data.page} pages={pages} hasMore={state.data.hasMore} onGo={setPage} />
+                  {/* 排序（2026-09-20 精简：去掉「排序」二字 —— 选项文案自带
+                      「按抓取时间 / 按匹配分」语义，重复标签是噪音；aria-label 留给读屏）。
+                      select 的值只能从元素上拿到 string；取值域由 JOB_ORDER_OPTIONS 锁住，
+                      这里按项目既有写法（如面试形式那个 select）在边界上收窄一次。 */}
+                  <select
+                    className="jh-select jh-sort-select"
+                    aria-label="排序"
+                    value={applied.orderBy}
+                    onChange={(event) => changeOrder(event.target.value as JobOrderValue)}
+                  >
+                    {JOB_ORDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </span>
               </div>
 
@@ -776,6 +820,45 @@ export function JobsScreen(props: {
                   />
                 ))}
               </ul>
+
+              {/* 列表页脚（2026-09-20 布局重排）：分页从列表头栏搬到这里 ——
+                  翻页是"读完这一屏之后"的动作，入口应该长在列表末尾。三件套对标
+                  企业级列表页（Ant Design / SAP Fiori 的 list report）：每页条数 · 页码 · 跳页。 */}
+              <div className="jh-jobs-foot">
+                <label className="jh-jobs-foot-size">
+                  每页
+                  <select
+                    className="jh-select"
+                    aria-label="每页条数"
+                    value={String(pageSize)}
+                    onChange={(event) => changePageSize(Number(event.target.value))}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={String(size)}>
+                        {String(size)} 条
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="jh-jobs-foot-right">
+                  <Pager page={state.data.page} pages={pages} hasMore={state.data.hasMore} onGo={setPage} />
+                  {/* 跳页只在页数多到翻不动时出现（≤4 页时它是纯噪音） */}
+                  {pages < 5 ? null : (
+                    <form className="jh-jump" onSubmit={submitJump}>
+                      <input
+                        className="jh-input jh-jump-input"
+                        inputMode="numeric"
+                        value={jumpDraft}
+                        maxLength={5}
+                        aria-label="跳到第几页"
+                        onChange={(event) => setJumpDraft(digitsOf(event.target.value))}
+                      />
+                      <span>页</span>
+                      <button type="submit" className="jh-btn jh-btn-inline jh-btn-quiet">跳</button>
+                    </form>
+                  )}
+                </div>
+              </div>
             </>
           )}
         </div>

@@ -53,6 +53,27 @@
  *   .probe-zhipin-capture/chat-conversation-<日期>.html  会话详情快照（输入区/消息列表）
  *   .probe-zhipin-capture/detail-<日期>.html             岗位详情页快照
  *   .probe-zhipin-capture/chat-report-<日期>.json        逐选择器命中报告（校准依据）
+ *   .probe-zhipin-capture/resume-dialog-<日期>.html      简历弹窗**原文**（仅 `ZHIPIN_PROBE_RESUME=1`）
+ *
+ * ## 2026-09-20 的两次修正（都是被真实页面打脸打出来的）
+ *
+ * 1. **候选表以前指向招聘者端**：`RESUME_SELECTOR_CANDIDATES.resumeButton` 头两条是
+ *    `.operate-btn` / `.operate-icon-item`（BossHunter 的取证对象是**招聘者端**），
+ *    在求职者端命中 0 —— 求职者端实测是 `.toolbar-btn`。这次把它排到最前，
+ *    并给 `centerOfInPage` 加了 `textIncludes`：工具条上「发简历 / 换电话 / 换微信」
+ *    都是 `.toolbar-btn`，不按文案筛会点到「换微信」。
+ * 2. **不再靠"猜类名"描述弹窗**：加了 `scanOpenDialogInPage` —— 打开弹窗后把它的
+ *    **DOM 结构（tag.class + 文本 + 是否可见）与原文**一起采下来。此前
+ *    `.list-item` / `.btn-confirm` 之类都是抄来的，真实结构（`.resume-choose-container`、
+ *    `button.btn-sure-v2.btn-confirm`、空态 `.resume-top-tip`）一采就露馅了。
+ *    ⚠️ 同一条教训的第三次复现：**点它必须用真鼠标**（`page.mouse.click`），
+ *    DOM `el.click()` 触发不了 Vue 处理器（09-18 点会话行、09-20 点「发简历」各踩一次）。
+ * 3. 报告里新增两项证据：会话行的 `statusText`（`[送达]` / `[已读]`）与
+ *    `unreadSelector`（**是哪条候选命中的**）—— 后者让"未读徽章到底叫什么"从布尔变成事实。
+ *
+ * 📌 「发简历」的前置条件是**对方回过话**：没回过时按钮带 `unable`，弹窗根本不会打开。
+ *    所以 `ZHIPIN_PROBE_RESUME=1` 在没有 HR 回复的账号上会空跑（报告里记
+ *    `resumeButton.found` 为 false），这是账号状态、不是选择器腐烂。
  *
  * ⚠️ **刻意不写 `test/fixtures/`**：那里是被用例钉住的夹具（标题/条数/源地址写死在断言里），
  *    静默替换只会让测试红在与本次校准无关的地方。要固化成夹具，人工复制过去并同步改用例期望值。
@@ -206,9 +227,16 @@ const CHAT_SELECTOR_CANDIDATES: Record<string, readonly string[]> = {
   messageStatus: ['.message-status', '[class*="message-status"]'],
 }
 
-/** 「发简历 / 更多」工具条候选（按文案识别，类名只是旁证）。 */
+/**
+ * 「发简历 / 更多」工具条候选（按文案识别，类名只是旁证）。
+ *
+ * ⚠️ 2026-09-20 修正：候选以前是 **招聘者端** 的 `.operate-btn` / `.operate-icon-item`
+ * （BossHunter 的取证对象），在求职者端**全线命中 0**；求职者端实测是 **`.toolbar-btn`**
+ * （`<div class="toolbar-btn tooltip tooltip-top [unable]">`，里面一层 `.toolbar-btn-content`）。
+ * 顺序按"实测有效在前"排。
+ */
 const RESUME_SELECTOR_CANDIDATES: Record<string, readonly string[]> = {
-  resumeButton: ['.operate-btn', '.operate-icon-item', '.toolbar-box .operate-btn', '[class*="toolbar"] [class*="btn"]'],
+  resumeButton: ['.toolbar-btn', '.toolbar-btn-content', '.operate-btn', '.operate-icon-item', '[class*="toolbar"] [class*="btn"]'],
   resumeDialog: ['.choose-resume-dialog', '.choose-resume', '[class*="resume-dialog"]'],
   fileInput: ['input[type=file]'],
 }
@@ -329,6 +357,18 @@ function scanInboxRowsInPage(arg: { row: string; limit: number }): Array<Record<
     } catch {
       /* ignore */
     }
+    // 未读徽章是哪条候选命中的（`.notice-badge` 是 2026-09-20 实测值）
+    let unreadSelector = ''
+    for (const selector of ['.unread-count', '.badge-count', '.notice-badge', '.red-dot', '[class*="unread"]']) {
+      try {
+        if (row.querySelector(selector) !== null) {
+          unreadSelector = selector
+          break
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     return {
       index: String(index),
       id: row.getAttribute('id') ?? '',
@@ -338,7 +378,12 @@ function scanInboxRowsInPage(arg: { row: string; limit: number }): Array<Record<
       lastMsg: norm(row.querySelector('.last-msg-text')?.textContent),
       time: norm(row.querySelector('.time')?.textContent),
       statusClass: (row.querySelector('.message-status')?.getAttribute('class') ?? '').toLowerCase(),
-      unreadHit: String(row.querySelector('.unread-count, .badge-count, .notice-badge, .red-dot') !== null),
+      // ⚠️ 2026-09-20 补：`[送达]` / `[已读]` 的**文案**是判 `delivered` 与 `read` 两档的直接证据
+      //（此前只记 class，`status-read` 这一档一直没有真实样本）。
+      statusText: norm(row.querySelector('.message-status')?.textContent),
+      unreadHit: String(unreadSelector !== ''),
+      // ⚠️ 2026-09-20 补：记**是哪条候选命中的**。只记布尔看不出"未读徽章到底叫什么"。
+      unreadSelector,
       classCounts: Object.entries(classCounts)
         .map(([cls, n]) => `${cls}×${String(n)}`)
         .join(' | ')
@@ -412,27 +457,6 @@ function scanDetailInPage(arg: {
     if (detail[fieldName] === undefined) detail[fieldName] = { selector: '', count: 0, sample: '' }
   }
   return { url: location.href, detail, chatEntry: arg.chatEntry.map((selector) => scanOne(selector)) }
-}
-
-/** 在页面上下文里点第一个命中元素（仅探针用；DOM 点击，不改平台状态）。⚠️ 必须完全自包含。 */
-function clickFirstInPage(arg: { selector: string; textIncludes?: string }): boolean {
-  const norm = (value: string | null | undefined): string => (value ?? '').replace(/\s+/g, ' ').trim()
-  let nodes: Element[] = []
-  try {
-    nodes = Array.from(document.querySelectorAll(arg.selector))
-  } catch {
-    return false
-  }
-  const wanted = norm(arg.textIncludes)
-  const target = nodes.find((el) => wanted === '' || norm(el.textContent).includes(wanted))
-  if (target === undefined) return false
-  try {
-    target.scrollIntoView({ block: 'center', inline: 'center' })
-  } catch {
-    /* ignore */
-  }
-  ;(target as HTMLElement).click()
-  return true
 }
 
 /**
@@ -521,7 +545,7 @@ function scanConversationToolbarInPage(arg: { editorSelector: string }): {
 }
 
 /** 取元素中心坐标（给"真鼠标点击"用）。⚠️ 必须完全自包含。 */
-function centerOfInPage(arg: { selector: string }): { found: boolean; x: number; y: number } {
+function centerOfInPage(arg: { selector: string; textIncludes?: string }): { found: boolean; x: number; y: number } {
   const empty = { found: false, x: 0, y: 0 }
   let nodes: Element[] = []
   try {
@@ -538,7 +562,12 @@ function centerOfInPage(arg: { selector: string }): { found: boolean; x: number;
       return false
     }
   }
-  const chosen = nodes.find(visible)
+  // ⚠️ 2026-09-20 补 `textIncludes`：工具条上 `.toolbar-btn` 有「发简历 / 换电话 / 换微信」
+  // 好几个（还有**父容器**与**子内容**两层同名文案），不按文案筛就会点到「换微信」。
+  const wanted = (arg.textIncludes ?? '').replace(/\s+/g, ' ').trim()
+  const chosen = nodes.find(
+    (el) => visible(el) && (wanted === '' || (el.textContent ?? '').replace(/\s+/g, ' ').trim().includes(wanted)),
+  )
   if (chosen === undefined) return empty
   try {
     chosen.scrollIntoView({ block: 'center', inline: 'center' })
@@ -553,6 +582,83 @@ function centerOfInPage(arg: { selector: string }): { found: boolean; x: number;
     x: Math.min(Math.max(rect.x + rect.width / 2, 0), Math.max(0, width - 1)),
     y: Math.min(Math.max(rect.y + rect.height / 2, 0), Math.max(0, height - 1)),
   }
+}
+
+/**
+ * 把**当前可见的弹窗**的 DOM 结构倒出来（tag.class + 文本 + 是否可见）。
+ *
+ * 为什么要有它：`.choose-resume-dialog` 这类弹窗此前一直靠"抄 BossHunter 的类名"猜，
+ * 而**猜类名这件事本身就是错的工具** —— 打开一次、把真实结构打出来，选择器就有了依据。
+ * 只做**展示**（深度 ≤ 4、节点 ≤ 120），避免把整页 HTML 塞进报告。
+ * ⚠️ 必须完全自包含。
+ */
+function scanOpenDialogInPage(arg: { scope: readonly string[] }): {
+  found: boolean
+  scopeSelector: string
+  outline: string[]
+  html: string
+  confirmCandidates: Array<{ selector: string; count: number; text: string; visible: number }>
+} {
+  const norm = (value: string | null | undefined): string => (value ?? '').replace(/\s+/g, ' ').trim()
+  const visible = (el: Element): boolean => {
+    try {
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'
+    } catch {
+      return false
+    }
+  }
+  let root: Element | null = null
+  let scopeSelector = ''
+  for (const selector of arg.scope) {
+    try {
+      const nodes = Array.from(document.querySelectorAll(selector))
+      const hit = nodes.find(visible)
+      if (hit !== undefined) {
+        root = hit
+        scopeSelector = selector
+        break
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (root === null) return { found: false, scopeSelector: '', outline: [], html: '', confirmCandidates: [] }
+
+  const outline: string[] = []
+  const walk = (node: Element, depth: number): void => {
+    // 深度 6 / 200 节点：`.choose-resume-dialog` 的按钮在**第 5 层**（wrapper > content >
+    // body > 内层容器 > footer > button），深度 4 会刚好把它切掉（2026-09-20 第一次跑踩到）。
+    if (depth > 6 || outline.length >= 200) return
+    const cls = (node.getAttribute('class') ?? '').split(/\s+/).filter((c) => c !== '').join('.')
+    const text = norm(node.textContent)
+    outline.push(
+      `${'  '.repeat(depth)}${node.tagName.toLowerCase()}${cls === '' ? '' : `.${cls}`}` +
+        ` | vis=${String(visible(node))} | "${text.slice(0, 60)}"`,
+    )
+    for (const child of Array.from(node.children)) walk(child, depth + 1)
+  }
+  walk(root, 0)
+
+  // 弹窗里"可点的东西"：按钮/条目候选，附文本与可见性 —— 用来定 resumeDialogItem / Confirm
+  const confirmCandidates: Array<{ selector: string; count: number; text: string; visible: number }> = []
+  for (const selector of ['button', 'a', 'li', '[class*="btn"]', '[class*="item"]', '[class*="confirm"]']) {
+    try {
+      const nodes = Array.from(root.querySelectorAll(selector))
+      if (nodes.length === 0) continue
+      confirmCandidates.push({
+        selector,
+        count: nodes.length,
+        text: norm(nodes[0]?.textContent).slice(0, 60),
+        visible: nodes.filter(visible).length,
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+  // 原始 HTML 也带出去（截断）：outline 只到 tag+class，**按钮的确切类名**要原文才认得准
+  return { found: true, scopeSelector, outline, html: (root.outerHTML ?? '').slice(0, 40_000), confirmCandidates }
 }
 
 /** 统计某选择器的节点数（登录就绪判定用）。⚠️ 必须完全自包含。 */
@@ -749,15 +855,40 @@ async function captureChat(page: Page, report: Record<string, unknown>): Promise
 
   // ── 4. 简历弹窗探测（默认关闭；开了也绝不点确认）────────────────────
   if (PROBE_RESUME) {
-    const clicked = await page.evaluate(clickFirstInPage, {
+    // ⚠️ 必须用**真鼠标点击**：这是 Vue 组件，DOM `el.click()` 触发不了它的处理器
+    // （2026-09-18 开会话行时踩过同一个坑，那次白以为"选择器全不对"）。
+    const buttonCenter = await page.evaluate(centerOfInPage, {
       selector: RESUME_SELECTOR_CANDIDATES.resumeButton?.[0] ?? '',
       textIncludes: '简历',
     })
-    log(clicked ? '已点「发简历」入口，等弹窗…（不会点确认）' : '⚠️ 没找到「发简历」入口')
+    report['resumeButton'] = { found: buttonCenter.found }
+    if (buttonCenter.found) {
+      await page.mouse.click(buttonCenter.x, buttonCenter.y)
+      log('已用真鼠标点「发简历」入口，等弹窗…（不会点确认）')
+    } else {
+      log('⚠️ 没找到可见的「发简历」入口（可能仍是 unable，或选择器已变）')
+    }
     await page.waitForTimeout(3_000)
-    report['resumeDialog'] = await page.evaluate(scanSelectorsInPage, {
-      groups: { resume: RESUME_SELECTOR_CANDIDATES },
+    const dialog = await page.evaluate(scanOpenDialogInPage, {
+      scope: [
+        '.choose-resume-dialog',
+        '[class*="resume-dialog"]',
+        '[class*="choose-resume"]',
+        '.dialog-wrap',
+      ],
     })
+    // 弹窗原文单独落盘（报告里只留结构摘要）—— 选择器就是照这份原文写的
+    const { html: dialogHtml, ...dialogOutline } = dialog
+    if (dialogHtml !== '') {
+      const dialogHtmlPath = join(CAPTURE_DIR, `resume-dialog-${TODAY}.html`)
+      writeFileSync(dialogHtmlPath, dialogHtml, 'utf8')
+      log(`简历弹窗原文已保存：${dialogHtmlPath}（${String(dialogHtml.length)} 字符）`)
+    }
+    report['resumeDialog'] = {
+      scan: await page.evaluate(scanSelectorsInPage, { groups: { resume: RESUME_SELECTOR_CANDIDATES } }),
+      // 弹窗的**真实结构**（不再靠抄类名猜 `.choose-resume-dialog` 里面长什么样）
+      openDialog: dialogOutline,
+    }
     // 关掉弹窗：Esc；**不点确认**
     await page.keyboard.press('Escape').catch(() => undefined)
     await page.waitForTimeout(1_000)

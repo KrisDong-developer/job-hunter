@@ -4,7 +4,7 @@ import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone
 import { createGuopinAdapter } from '../../src/host/platform/adapters/guopin/index.js'
 import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina/index.js'
 import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed/index.js'
-import { createLagouAdapter } from '../../src/host/platform/adapters/lagou/index.js'
+import { createLinkedInAdapter } from '../../src/host/platform/adapters/linkedin/index.js'
 import { createLiepinAdapter } from '../../src/host/platform/adapters/liepin/index.js'
 import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job/index.js'
 import { createZhaopinAdapter } from '../../src/host/platform/adapters/zhaopin/index.js'
@@ -23,7 +23,7 @@ import type { SiteAdapter } from '../../src/host/platform/types.js'
  * 三条要守住的东西：
  *   1. **规范名与归一化只此一份** —— 与去重共用 `normalizeCityForDedupe`；
  *   2. **闭不闭必须显式声明** —— 从 `values` 空不空推理会在两个方向上都错
- *      （空表 + 拒绝 = guopin/hiredchina；非空表 + 自由文本 = lagou）；
+ *      （空表 + 拒绝 = guopin/hiredchina；非空表 + 自由文本 = linkedin）；
  *   3. **目录不许与平台码表脱节** —— 城市级码表里的城市必须都在目录里。
  */
 
@@ -61,7 +61,7 @@ test('城市支持度：闭不闭是**声明**出来的，不是从 values 空�
   const fiftyone = createFiftyOneAdapter()
   const guopin = createGuopinAdapter()
   const hiredchina = createHiredChinaAdapter()
-  const lagou = createLagouAdapter()
+  const linkedin = createLinkedInAdapter()
   const indeed = createIndeedAdapter()
 
   // 有码表：表里就是能用、表外一定不能
@@ -73,18 +73,18 @@ test('城市支持度：闭不闭是**声明**出来的，不是从 values 空�
   assert.equal(citySupportOf(guopin, '深圳'), 'unsupported', 'guopin 城市表为空 = 一律拒绝')
   assert.equal(citySupportOf(hiredchina, '深圳'), 'unsupported', 'hiredchina 同上')
 
-  // **非空表 + 自由文本**：表里的 20 个只是建议，填别的城市照样能跑
-  assert.equal(citySupportOf(lagou, '深圳'), 'free-text')
+  // **非空表 + 自由文本**：表里的建议值只是建议，填别的城市照样能跑
+  assert.equal(citySupportOf(linkedin, '深圳'), 'free-text')
   assert.equal(
-    citySupportOf(lagou, '珠海'),
+    citySupportOf(linkedin, '珠海'),
     'free-text',
-    '不在建议列表里也不该被当成"它不认识" —— 拉勾原样收中文城市名',
+    '不在建议列表里也不该被当成"它不认识" —— LinkedIn 原样收地名',
   )
   assert.equal(citySupportOf(indeed, '珠海'), 'free-text')
 })
 
 test('城市目录：城市级码表里的城市必须都在目录里（脱节了要在这里失败）', () => {
-  // 只挑**城市级**码表：sinojobs 是省级码、lagou/indeed 是自由文本，
+  // 只挑**城市级**码表：sinojobs 是省级码、linkedin/indeed 是自由文本，
   // 它们都不该被当成"城市集合"。伪城市（全国 = 不带城市参数）单独排除。
   // ⚠️ `liepin` 2026-09-19 起**进这一组**了 —— 它过去只有「全国」，所以被排除在外；
   //    现在它的 cityCodes 是逐省实测出来的 370 个市，这条检查正是它的守卫。

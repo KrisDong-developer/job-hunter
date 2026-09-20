@@ -20,14 +20,14 @@ const REAL_EXP_VALUES = [
   '在校生', // guopin / liepin
   '1年以内', // guopin / liepin
   '1年以下', // liepin / 51job
-  '1-3年', // waiqi / lagou / 51job
+  '1-3年', // waiqi / 51job
   '1年～3年', // sinojobs
   '2-3年',
   '1-5年',
   '2年及以上',
-  '3-5年', // waiqi / lagou / zhaopin
+  '3-5年', // waiqi / zhaopin
   '3年～5年', // sinojobs
-  '5-10年', // waiqi / lagou
+  '5-10年', // waiqi
   '5年以上', // sinojobs
   '10年以上', // 51job
   '10-15年', // guopin

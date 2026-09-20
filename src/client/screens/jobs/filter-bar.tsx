@@ -11,7 +11,7 @@ import type { ExpChip } from '../../../shared/domain/job-facets.js'
 import type { SavedJobViewDto } from '../../../shared/contract/dto/job.js'
 import { MAX_SAVED_JOB_VIEWS, MAX_SAVED_JOB_VIEW_NAME } from '../../../shared/config/limits.js'
 import { FieldHint } from '../../ui/field-hint.js'
-import type { Filters } from './filters.js'
+import type { AppliedFilterChip, Filters } from './filters.js'
 
 /**
  * 城市下拉里的**合成值**：表示"当前是多选，具体哪些在面板里看"。
@@ -41,6 +41,15 @@ const MULTI_CITY = '__multi_city__'
  *   * `排除已拉黑公司`：默认开着（见 `filters.ts` 的 EMPTY_FILTERS），
  *     隐藏了几条由列表头栏如实写明 —— 可以隐藏，但绝不静默隐藏；
  *   * 视图（B2）：保存/套用/删除常用条件组合（存在宿主 `setting` 表里，跨标签一致）。
+ *
+ * ── 2026-09-20 布局重排（UICraft arrange 工作流）
+ *   * 筛选区拆成**四层**，每层只装自己的语义：
+ *     ① 视图行（导航）② 常规工具条（表单）③ 「筛选中」chips（已生效状态）④ 高级折叠；
+ *   * 视图从工具条尾部的一组表单控件提升为第一行的导航 chips（对标 Jira / GitHub
+ *     的 saved searches）—— 它切换的是一整套条件，不是某个字段；上一版 11 个控件
+ *     挤在一条 flex-wrap 线里，窄面板折成三行错落的块，按钮落点不可预期；
+ *   * 新增「筛选中」chips（`describeAppliedFilters`）：已生效条件逐条可见、可一键移除
+ *     —— 折叠面板收起时被藏住的条件，从此永远有痕迹。
  *
  * 筛选草稿（`Filters`）与"展开 / 收起"都留在 `JobsScreen` ——
  * 这里只负责画，条件本身怎么算不归它管（视图的读写也在那边，这里只发意图）。
@@ -78,6 +87,10 @@ export function FilterBar(props: {
   onApplyView: (id: string) => void
   onSaveView: (name: string) => void
   onDeleteView: (id: string) => void
+  /** 「筛选中」chips：已生效条件（由 `describeAppliedFilters` 算好传入）。 */
+  appliedChips: AppliedFilterChip[]
+  /** 移除一枚已生效条件 —— 单条明确动作，draft 与 applied 在 `JobsScreen` 一起换。 */
+  onRemoveChip: (id: string) => void
 }) {
   const draft = props.draft
   const advancedOpen = props.advancedOpen
@@ -112,6 +125,85 @@ export function FilterBar(props: {
 
   return (
     <form className="jh-jobs-filters" onSubmit={props.onSubmit}>
+      {/* 行 1 · 视图（导航层）：视图切换的是**一整套条件**，是导航不是表单字段。
+          上一版它是工具条尾部的一组下拉 + 按钮，与关键词输入框混在一行里。
+          「全部」= 不套用任何视图（列表条件保持不动，与旧下拉「不套用」同一语义）；
+          每个视图 chip 旁的 ✕ 是删除（title 写明不影响列表条件）。 */}
+      <div className="jh-jobs-viewrow" role="group" aria-label="筛选视图">
+        <span className="jh-jobs-viewrow-label">视图</span>
+        <button
+          type="button"
+          className={`jh-chip${props.appliedViewId === '' ? ' jh-chip-on' : ''}`}
+          aria-pressed={props.appliedViewId === ''}
+          title="不套用任何视图（列表条件保持不动）"
+          onClick={() => props.onApplyView('')}
+        >
+          全部
+        </button>
+        {props.views.map((view) => (
+          <span className="jh-jobs-view-item" key={view.id}>
+            <button
+              type="button"
+              className={`jh-chip${props.appliedViewId === view.id ? ' jh-chip-on' : ''}`}
+              aria-pressed={props.appliedViewId === view.id}
+              title="套用这组条件"
+              onClick={() => props.onApplyView(view.id)}
+            >
+              {view.name}
+            </button>
+            <button
+              type="button"
+              className="jh-jobs-view-del"
+              aria-label={`删除视图 ${view.name}`}
+              title={`删除视图「${view.name}」（不影响列表里的条件）`}
+              onClick={() => props.onDeleteView(view.id)}
+            >✕</button>
+          </span>
+        ))}
+        {naming ? (
+          <>
+            <input
+              className="jh-input jh-jobs-view-name"
+              value={nameDraft}
+              maxLength={MAX_SAVED_JOB_VIEW_NAME}
+              aria-label="视图名字"
+              placeholder="给这组条件起个名字"
+              autoFocus
+              onChange={(event) => setNameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  // 回车即保存，但不提交外层表单（那会顺带触发一次筛选）
+                  event.preventDefault()
+                  submitName()
+                }
+                if (event.key === 'Escape') setNaming(false)
+              }}
+            />
+            <button type="button" className="jh-btn jh-btn-inline jh-btn-primary" onClick={submitName}>
+              保存
+            </button>
+            <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={() => setNaming(false)}>
+              取消
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="jh-btn jh-btn-inline jh-btn-quiet"
+            disabled={props.views.length >= MAX_SAVED_JOB_VIEWS}
+            title={
+              props.views.length >= MAX_SAVED_JOB_VIEWS
+                ? `最多保存 ${String(MAX_SAVED_JOB_VIEWS)} 个视图，先删掉几个`
+                : '把当前列表正在用的这套条件存下来，下次一键套用'
+            }
+            onClick={() => setNaming(true)}
+          >
+            ＋ 保存当前条件
+          </button>
+        )}
+      </div>
+
+      {/* 行 2 · 常规工具条（表单层）：一条线，按钮紧跟最后一个字段 */}
       <div className="jh-jobs-filter-line">
         {/* 关键词 / 最低月薪 / 最低分：**带可见标签**（第四轮修复，审核 P1-4）。
             它们原先只有 placeholder 当标签 —— 一是对比度只有 2.6:1（caption 档），
@@ -192,76 +284,30 @@ export function FilterBar(props: {
         {props.pending ? (
           <span className="jh-jobs-filter-pending">条件已改动，点「筛选」生效</span>
         ) : null}
-        {/* 视图（批次 B2）：套用/保存常用条件组合。放在工具条尾部 ——
-            它管的正是"这一整行条件"，而不是某一个字段。 */}
-        <label className="jh-jobs-filter-text jh-jobs-filter-text-narrow">
-          <span>视图</span>
-          <select
-            className="jh-select"
-            aria-label="套用保存的视图"
-            value={props.appliedViewId}
-            onChange={(event) => props.onApplyView(event.target.value)}
-          >
-            <option value="">不套用</option>
-            {props.views.map((view) => (
-              <option key={view.id} value={view.id}>
-                {view.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {naming ? (
-          <>
-            <input
-              className="jh-input jh-jobs-view-name"
-              value={nameDraft}
-              maxLength={MAX_SAVED_JOB_VIEW_NAME}
-              aria-label="视图名字"
-              placeholder="给这组条件起个名字"
-              autoFocus
-              onChange={(event) => setNameDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  // 回车即保存，但不提交外层表单（那会顺带触发一次筛选）
-                  event.preventDefault()
-                  submitName()
-                }
-                if (event.key === 'Escape') setNaming(false)
-              }}
-            />
-            <button type="button" className="jh-btn jh-btn-inline jh-btn-primary" onClick={submitName}>
-              保存
-            </button>
-            <button type="button" className="jh-btn jh-btn-inline jh-btn-quiet" onClick={() => setNaming(false)}>
-              取消
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="jh-btn jh-btn-inline jh-btn-quiet"
-            disabled={props.views.length >= MAX_SAVED_JOB_VIEWS}
-            title={
-              props.views.length >= MAX_SAVED_JOB_VIEWS
-                ? `最多保存 ${String(MAX_SAVED_JOB_VIEWS)} 个视图，先删掉几个`
-                : '把当前这套条件存下来，下次一键套用'
-            }
-            onClick={() => setNaming(true)}
-          >
-            保存为视图
-          </button>
-        )}
-        {props.appliedViewId === '' ? null : (
-          <button
-            type="button"
-            className="jh-btn jh-btn-inline jh-btn-quiet"
-            title="删掉当前套用的这个视图（不影响列表里的条件）"
-            onClick={() => props.onDeleteView(props.appliedViewId)}
-          >
-            删除视图
-          </button>
-        )}
       </div>
+
+      {/* 行 3 · 「筛选中」（状态层）：已生效条件一枚 chip，点掉立即生效。
+          它与工具条表单（改草稿、点「筛选」提交）不是两套机制 —— chips 只呈现
+          **已生效**的那套条件，移除是单条明确动作（draft 与 applied 一起换）。
+          折叠面板收起时被藏住的条件，在这里永远有痕迹。 */}
+      {props.appliedChips.length === 0 ? null : (
+        <div className="jh-jobs-applied">
+          <span className="jh-jobs-applied-label">筛选中</span>
+          {props.appliedChips.map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              className="jh-chip jh-chip-on"
+              title="移除这一条条件（立即生效）"
+              onClick={() => props.onRemoveChip(chip.id)}
+            >
+              {chip.text}
+              <span className="jh-jobs-chip-x" aria-hidden="true">✕</span>
+            </button>
+          ))}
+          <button type="button" className="jh-link" onClick={props.onReset}>清空全部</button>
+        </div>
+      )}
 
       {/* 折叠开关：一整行只有一行小字，不抢视线 */}
       <button

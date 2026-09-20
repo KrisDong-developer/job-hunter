@@ -21,16 +21,19 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path'
 import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../shared/contract/enums/resume.js'
 import { RESUME_FORMATS, RESUME_TEMPLATES } from '../../shared/contract/enums/resume.js'
-import type { ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js'
+import type { GreetingTemplateDto, ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js'
 import type { ResumeContent, ResumeIssue } from '../../shared/domain/resume-content.js'
-import { checkNoFabrication, emptyResumeContent, isResumeContentUsable, normalizeResumeContent, resumeFileName, sanitizeFileName, techTokensOf } from '../../shared/domain/resume-content.js'
-import { ATTACHMENT_MAX_BYTES, RESUME_IMPORT_MAX_CHARS } from '../../shared/config/limits.js'
+import { checkNoFabrication, emptyResumeContent, flattenResumeText, isResumeContentUsable, normalizeResumeContent, resumeFileName, sanitizeFileName, techTokensOf } from '../../shared/domain/resume-content.js'
+import { GREETING_TONE_LABEL, type GreetingTone } from '../../shared/contract/enums/pipeline.js'
+import { ATTACHMENT_MAX_BYTES, MAX_GREETING_TEMPLATE_NAME, MAX_RESUME_GREETING_TEMPLATES, RESUME_IMPORT_MAX_CHARS } from '../../shared/config/limits.js'
 import type { AiService } from '../ai/client.js'
 import { extractJson } from '../ai/prompts.js'
 import { renderResumeDocx } from '../render/docx.js'
 import { renderResumeHtml } from '../render/resume-html.js'
 import type { Store } from '../store/store.js'
 import { toResumeDto, toResumeFileDto, type ResumeRecord } from '../store/repo/resumes.js'
+import type { GreetingTemplateRecord } from '../store/repo/pipeline.js'
+import { GREETING_MAX_CHARS, validateGreetingText } from './outreach.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import { isoNow, systemClock, type Clock } from '../util/time.js'
 
@@ -89,6 +92,15 @@ export interface ResumeService {
   tailor(input: { jobId: number; resumeId?: number; useLlm?: boolean }): Promise<TailoringDto>
   listTailorings(options: { resumeId?: number; jobId?: number; limit?: number }): TailoringDto[]
   adopt(tailoringId: number, adopted: boolean): TailoringDto
+
+  /** ── 简历赛道级话术模板（简历中心「话术」子页，v12 多赛道）────────── */
+  listGreetingTemplates(resumeId: number): GreetingTemplateDto[]
+  /** 从这份简历的事实生成一条开场模板：AI 优先（过校验），规则兜底。 */
+  generateGreetingTemplate(input: { resumeId: number; tone?: GreetingTone }): Promise<GreetingTemplateDto>
+  /** 手动新建 / 编辑（`via` 记 `manual`；编辑不改归属）。 */
+  saveGreetingTemplate(input: { resumeId: number; id?: number; name: string; body: string }): GreetingTemplateDto
+  removeGreetingTemplate(id: number): boolean
+
   /** 当前启用版本的标识，写进 `job.score_rev`（§4.1）。 */
   scoreStamp(): { resumeId: number | null; rev: number }
 }
@@ -235,6 +247,9 @@ export function createResumeService(deps: ResumeServiceDeps): ResumeService {
       if (record === undefined) return false
       // 定制记录随简历一起走（外键 CASCADE 也会删，这里显式删是为了计数准确）
       store.tailoring.removeByResume(id)
+      // 话术模板也连带清理（v12）：模板挂在简历上，简历没了就是孤儿数据 ——
+      // 通用模板（resume_id 为 NULL）不在此列，不受影响
+      store.pipeline.removeTemplatesByResume(id)
       const removed = store.resume.remove(id)
       if (removed) {
         // 磁盘文件：删不掉不算失败（可能被用户打开着），但要如实报告
@@ -641,6 +656,116 @@ export function createResumeService(deps: ResumeServiceDeps): ResumeService {
       return tailoringDto(updated)
     },
 
+    // ── 话术模板（v12 多赛道）：一份简历 = 一条赛道，开场套路跟着简历走 ──
+    listGreetingTemplates(resumeId): GreetingTemplateDto[] {
+      return store.pipeline.listTemplates({ resumeId }).map(toGreetingTemplateDto)
+    },
+
+    async generateGreetingTemplate({ resumeId, tone = 'formal' }): Promise<GreetingTemplateDto> {
+      const record = requireResumeRecord(store, resumeId)
+      assertTemplateQuota(store, record.id)
+
+      const fallback = buildResumeGreetingTemplate(record.content, tone)
+      const ai = deps.ai
+      if (ai === undefined) {
+        return upsertGreetingTemplate(store, record.id, fallback, 'rule', clock())
+      }
+
+      // 技术词白名单 = 这份简历里出现过的词（+ 极少数通用缩写）。
+      // 模板提到简历之外的任何技术词都按编造处理 —— 与定制同一红线（R8）。
+      const allowed = new Set([...techTokensOf(flattenResumeText(record.content)), 'hr', 'jd'])
+      const result = await ai.call<{ name: string; body: string }>(
+        {
+          purpose: 'greeting_template',
+          instruction: [
+            '为这份简历写一条**打招呼开场模板**（发给 HR 的第一句话）。',
+            `语气：${GREETING_TONE_LABEL[tone]}。`,
+            '背景：平台（如 BOSS 直聘）点「立即沟通」时会先自动发一句默认招呼语，这段话术实际是**第二句** —— 要短、直给，不要完整自我介绍。',
+            '硬性约束（违反整条结果作废）：',
+            '1. 只许使用简历里的事实，不许新增任何经历、技能、年限、数字；',
+            '2. 必须包含 {岗位} 与 {公司} 两个占位符（发送时替换成具体岗位），不要写具体公司名；',
+            '3. 不许出现联系方式、链接、到岗时间承诺；',
+            '4. 正文 30–200 字，一段话，不分点。',
+          ].join('\n'),
+          payload: {
+            resumeName: record.name,
+            resumeDirection: record.direction,
+            tone: GREETING_TONE_LABEL[tone],
+          },
+          allowFields: ['resumeName', 'resumeDirection', 'tone'],
+          // 简历正文走 trusted（任务的一部分），但先摘掉联系方式，且计入外发字段清单
+          trusted: [{ label: 'resume', text: JSON.stringify(stripContacts(record.content)) }],
+          outputSpec: '只输出 JSON：{"name":"模板名","body":"模板正文"}。不要输出其它内容。',
+          maxTokens: 512,
+          temperature: 0.6,
+          ref: { kind: 'resume', id: record.id },
+        },
+        {
+          parse: (raw) => {
+            const parsed = extractJson(raw)
+            if (parsed === null || typeof parsed !== 'object') return undefined
+            const name = (parsed as { name?: unknown }).name
+            const body = (parsed as { body?: unknown }).body
+            if (typeof name !== 'string' || typeof body !== 'string') return undefined
+            return { name: name.trim(), body: body.trim() }
+          },
+          validate: (value) => {
+            if (value.name === '') return '模板名为空'
+            return validateTemplateBody(allowed, value.body)
+          },
+          fallback: () => ({ name: fallback.name, body: fallback.body }),
+        },
+      )
+
+      const via = result.via === 'llm' ? 'llm' : 'rule'
+      if (via === 'rule') {
+        deps.logger?.warn(`[resume] 简历 #${String(record.id)} 的话术模板退回规则兜底：${result.notes.join('；')}`)
+      }
+      return upsertGreetingTemplate(store, record.id, result.value, via, clock())
+    },
+
+    saveGreetingTemplate({ resumeId, id, name, body }): GreetingTemplateDto {
+      const record = requireResumeRecord(store, resumeId)
+      const trimmedName = name.trim().slice(0, MAX_GREETING_TEMPLATE_NAME)
+      const trimmedBody = body.trim()
+      if (trimmedName === '') {
+        throw new DomainError('INVALID_INPUT', '模板名不能为空')
+      }
+      if (id === undefined) {
+        assertTemplateQuota(store, record.id)
+      } else {
+        // 只能编辑属于这份简历的模板 —— 防止借这个接口改别家赛道的
+        const existing = store.pipeline.listTemplates().find((item) => item.id === id)
+        if (existing === undefined || existing.resumeId !== record.id) {
+          throw new DomainError('NOT_FOUND', `模板不存在或不属于这版简历：${String(id)}`)
+        }
+      }
+      const allowed = new Set([...techTokensOf(flattenResumeText(record.content)), 'hr', 'jd'])
+      const issue = validateTemplateBody(allowed, trimmedBody)
+      if (issue !== undefined) {
+        throw new DomainError('INVALID_INPUT', `话术不合规：${issue}`, {
+          hint: '开场话术不该带联系方式或链接；技术词只能来自这份简历 —— 这也是发送侧的同一条校验。',
+        })
+      }
+      const saved = store.pipeline.upsertTemplate(
+        {
+          ...(id === undefined ? {} : { id }),
+          name: trimmedName,
+          body: trimmedBody,
+          vars: templateVarsOf(trimmedBody),
+          scene: 'resume-greeting',
+          resumeId: record.id,
+          via: 'manual',
+        },
+        clock(),
+      )
+      return toGreetingTemplateDto(saved)
+    },
+
+    removeGreetingTemplate(id): boolean {
+      return store.pipeline.removeTemplate(id)
+    },
+
     scoreStamp(): { resumeId: number | null; rev: number } {
       return store.resume.revision()
     },
@@ -727,6 +852,117 @@ export function ruleTailor(
       projects,
     },
     notes,
+  }
+}
+
+// ── 话术模板（v12）：纯函数与共用校验 ────────────────────────────────
+
+function toGreetingTemplateDto(record: GreetingTemplateRecord): GreetingTemplateDto {
+  return {
+    id: record.id,
+    resumeId: record.resumeId,
+    name: record.name,
+    body: record.body,
+    vars: record.vars,
+    via: record.via,
+    uses: record.uses,
+    replies: record.replies,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function requireResumeRecord(store: Store, resumeId: number): ResumeRecord {
+  if (!Number.isInteger(resumeId) || resumeId <= 0) {
+    throw new DomainError('INVALID_INPUT', `简历 id 不合法：${String(resumeId)}`)
+  }
+  const record = store.resume.get(resumeId)
+  if (record === undefined) {
+    throw new DomainError('NOT_FOUND', `简历不存在：${String(resumeId)}`, { hint: '它可能已被删除。' })
+  }
+  return record
+}
+
+function assertTemplateQuota(store: Store, resumeId: number): void {
+  const count = store.pipeline.listTemplates({ resumeId }).length
+  if (count >= MAX_RESUME_GREETING_TEMPLATES) {
+    throw new DomainError(
+      'INVALID_INPUT',
+      `这版简历的话术模板已有 ${String(count)} 条（上限 ${String(MAX_RESUME_GREETING_TEMPLATES)} 条）`,
+      { hint: '每个方向留几条不同语气的开场就够 —— 先删掉不用的，或编辑现有的。' },
+    )
+  }
+}
+
+function upsertGreetingTemplate(
+  store: Store,
+  resumeId: number,
+  seed: { name: string; body: string },
+  via: 'llm' | 'rule',
+  now: string,
+): GreetingTemplateDto {
+  const body = seed.body.trim().slice(0, GREETING_MAX_CHARS)
+  const created = store.pipeline.upsertTemplate(
+    {
+      name: seed.name.trim().slice(0, MAX_GREETING_TEMPLATE_NAME) || '未命名开场',
+      body,
+      vars: templateVarsOf(body),
+      scene: 'resume-greeting',
+      resumeId,
+      via,
+    },
+    now,
+  )
+  return toGreetingTemplateDto(created)
+}
+
+/** 从正文里提取 `{占位符}` 名列表（去重保序）。 */
+export function templateVarsOf(body: string): string[] {
+  return [...new Set([...body.matchAll(/\{([^{}\s]{1,12})\}/g)].map((match) => match[1] as string))]
+}
+
+/**
+ * 模板正文校验：占位符、联系方式/长度（复用发送侧同一条 `validateGreetingText`）、
+ * 技术词白名单（简历没有的技术词 = 编造，R8 红线）。
+ */
+export function validateTemplateBody(allowed: Set<string>, body: string): string | undefined {
+  if (!body.includes('{岗位}')) {
+    return '模板里必须有 {岗位} 占位符（发送时替换成具体岗位名）'
+  }
+  // 占位符替换掉再校验 —— {岗位}/{公司} 本身不该被当成待判断的正文
+  const issue = validateGreetingText(body.replace(/\{[^{}]+\}/g, '岗位'))
+  if (issue !== undefined) return issue
+  for (const token of techTokensOf(body)) {
+    if (!allowed.has(token)) return `模板里出现了简历里没有的技术词「${token}」`
+  }
+  return undefined
+}
+
+export interface ResumeGreetingSeed {
+  name: string
+  body: string
+}
+
+/**
+ * 规则兜底模板：只用简历里**已抓到的事实**造句（方向 / 年限 / 前三技能 /
+ * 第一条成果），含 {岗位} {公司} 占位符 —— 它的正确性与 `ruleTailor` 同源：
+ * "什么都不加"在结构上就不可能编造。
+ */
+export function buildResumeGreetingTemplate(content: ResumeContent, tone: GreetingTone): ResumeGreetingSeed {
+  const title = content.basics.title === '' ? '这个方向' : content.basics.title
+  const years =
+    typeof content.basics.years === 'number' && content.basics.years > 0 ? `（${String(content.basics.years)} 年经验）` : ''
+  const skills = content.skills.slice(0, 3).map((skill) => skill.name.trim()).filter((name) => name !== '')
+  const proof = (content.experiences[0]?.highlights[0] ?? content.projects[0]?.highlights[0] ?? '').trim()
+  const skillText = skills.length > 0 ? `，主要做 ${skills.join('、')}` : ''
+  const proofText = proof === '' || tone === 'concise' ? '' : `（${proof}）`
+  const opener = tone === 'warm' ? '您好！' : '您好，'
+  const intent = tone === 'concise' ? '期待和您交流，谢谢。' : '方便的话想和您聊聊这个岗位的细节，谢谢！'
+
+  const body = `${opener}看到{公司}在招{岗位}，很感兴趣。我是${title}${years}${skillText}${proofText}。${intent}`
+  return {
+    name: `${GREETING_TONE_LABEL[tone]}开场 · ${title}`.slice(0, MAX_GREETING_TEMPLATE_NAME),
+    body: body.length > GREETING_MAX_CHARS ? body.slice(0, GREETING_MAX_CHARS) : body,
   }
 }
 

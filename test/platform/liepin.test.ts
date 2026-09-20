@@ -16,7 +16,7 @@ import {
   parseSearchApiResponse,
   refreshTimeToIso,
 } from '../../src/host/platform/adapters/liepin/api.js'
-import { isLoggedInInPage } from '../../src/host/platform/adapters/liepin/page.js'
+import { isLoggedInInPage } from '../../src/host/platform/adapters/liepin/page/list.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
 
@@ -38,8 +38,12 @@ function asSerialized<F extends (...args: never[]) => unknown>(fn: F): F {
   return new Function(`return (${String(fn)})`)() as F
 }
 
-function browserLikePage(html: string, url = SEARCH_URL): PageLike {
-  const inner = new JsdomPage({ html, url })
+function browserLikePage(html: string, url = SEARCH_URL, fetchStub?: PageFetchStub): PageLike {
+  const inner = new JsdomPage({
+    html,
+    url,
+    ...(fetchStub === undefined ? {} : { fetchStub }),
+  })
   return {
     goto: (target) => inner.goto(target),
     url: () => inner.url(),
@@ -200,14 +204,27 @@ test('适配器声明符合平台事实：antiBot=high、免登录可搜、打�
   assert.equal(adapter.capabilities.searchWithoutLogin, true)
   assert.equal(adapter.capabilities.antiBot, 'high', '猎聘是风控最强的平台，界面要如实展示')
   assert.equal(adapter.capabilities.fieldCompleteness, 'medium', '锚点待校准，不夸大')
-  assert.equal(adapter.capabilities.supportsGreeting, false)
-  assert.equal(adapter.actions, undefined)
+  // ⚠️ 2026-09-20 发送实验后这些断言变了：`readInbox`（接口）与 `sayHello`/`reply`
+  // （页面输入面 + CDP 真键盘，三重证据闭环：上屏 → DOM 回读 → get-contact-list 交叉验证）
+  // 都已落地 —— `facts.test.ts` 钉住"实现了就必须承认平台支持"的自洽性。
+  assert.equal(typeof adapter.actions?.readInbox, 'function', '收件箱已实现（2026-09-20）')
+  assert.equal(typeof adapter.actions?.sayHello, 'function', '打招呼已实现（2026-09-20 发送实验）')
+  assert.equal(typeof adapter.actions?.reply, 'function', '回复已实现（同上）')
+  assert.equal(adapter.capabilities.supportsInbox, true)
+  assert.equal(adapter.capabilities.supportsGreeting, true)
+  // 发送类之外的仍刻意缺席（见 index.ts 尾注）
+  assert.equal(adapter.actions?.sendResume, undefined)
+  assert.equal(adapter.actions?.detectStage, undefined)
   assert.equal(adapter.maxPages, 8)
   // auth 已实现（2026-09-19）：此前不声明会让 `platforms.loginStatus` 直接抛
   // 「没有声明登录入口」、`account.loggedIn` 恒 false —— 界面入口永远不亮。
   // 注意"搜索不需要登录"由 searchWithoutLogin 表达，与"有没有登录检测"是两件事。
   assert.equal(typeof adapter.auth?.isLoggedIn, 'function')
   assert.equal(adapter.auth?.loginUrl, 'https://www.liepin.com/')
+  // 检测页（`checkUrl`）必须指向**搜索页**：两个登录标记是在搜索页上定案的
+  // （匿名夹具 `liepin-search.html` 就是搜索页），而 `loginUrl` 是首页 —— 从未验证过
+  // 页头结构一致。删掉 checkUrl 会静默退回"在首页上判"，等于换一套没验过的判据。
+  assert.equal(adapter.auth?.checkUrl, 'https://www.liepin.com/zhaopin/?currentPage=0')
 })
 
 // ── 真实夹具（由 npm run probe:liepin 保存；没有就跳过） ────────────────
@@ -457,3 +474,278 @@ test('翻页回归（p2 夹具存在时）：URL 翻页换数据 —— 两页 j
     `URL 翻页失效：第 2 页有 ${String(overlap.length)} 个岗位与第 1 页重复 —— 站点可能忽略了 currentPage 参数，需回退到"读分页区"方案`,
   )
 })
+
+// ── platformJobId 的规范形态（2026-09-20 定案：修掉双通道 id 不一致）─────
+//
+// 背景：适配器是双通道（接口优先、失败回退 DOM）。原先两条通道各拿一套 id
+// （接口 `job.jobId` = 8 位数字；DOM = URL 路径里的 10 位 id），同一批岗位在两轮之间
+// 换了通道就会被当成两批新岗位各写一遍。下面两条用例把"两通道同 id"钉住。
+
+test('platformJobId：DOM 侧取 href 埋点 pgRef 里的数字 id（/job/ 与 /a/ 两种形态都认）', async () => {
+  const html = `<html><body>
+    <div class="job-card-pc-container">
+      <a data-nick="job-detail-job-info" href="/job/1984775119.shtml?pgRef=c_pc_search_page%3Ac_pc_search_job_listcard%402_84775119%3A1">
+        <div title="招聘Java工程师">Java工程师</div><span>15-30k</span>
+      </a>
+    </div>
+    <div class="job-card-pc-container">
+      <a data-nick="job-detail-job-info" href="https://www.liepin.com/a/79162695.shtml?pgRef=c_pc_search_page%3Ac_pc_search_job_listcard%401_79162695%3A1">
+        <div title="测试工程师">测试工程师</div><span>10-20k</span>
+      </a>
+    </div>
+  </body></html>`
+  const jobs = await createLiepinAdapter().crawl.readListPage(browserLikePage(html))
+  const ids = jobs.map((job) => job.platformJobId)
+  assert.deepEqual(ids, ['84775119', '79162695'], '取埋点里的数字 id（接口通道的 job.jobId 就是它）')
+  // 记录里不该再出现"回退 URL id"的 note
+  assert.ok(
+    !(jobs[0]?.notes ?? []).some((note) => note.includes('pgRef')),
+    `/job/ 形态命中 pgRef 时不该记回退 note：${JSON.stringify(jobs[0]?.notes ?? [])}`,
+  )
+})
+
+test('platformJobId：pgRef 抠不到时回退 URL 路径 id，并如实记 note（那种 id 与接口通道可能不同）', async () => {
+  const html = `<html><body>
+    <div class="job-card-pc-container">
+      <a data-nick="job-detail-job-info" href="/job/1984775119.shtml">
+        <div title="招聘Java工程师">Java工程师</div><span>15-30k</span>
+      </a>
+    </div>
+  </body></html>`
+  const jobs = await createLiepinAdapter().crawl.readListPage(browserLikePage(html))
+  assert.equal(jobs[0]?.platformJobId, '1984775119')
+  assert.ok(
+    (jobs[0]?.notes ?? []).some((note) => note.includes('pgRef')),
+    '回退必须留痕：这种记录的 id 与接口通道的 job.jobId 可能不是同一个',
+  )
+})
+
+test('两通道 id 一致（真实夹具）：DOM 的 pgRef 集合 === 接口采样的 jobId 集合', async (t) => {
+  const apiPath = join(import.meta.dirname, '..', 'fixtures', 'liepin-search-api.json')
+  if (!existsSync(FIXTURE_PATH) || !existsSync(apiPath)) {
+    t.skip('需要 DOM 夹具与接口采样（npm run probe:liepin）')
+    return
+  }
+  const domIds = new Set(await readFixtureJobs(FIXTURE_PATH))
+  const captures = JSON.parse(readFileSync(apiPath, 'utf8')) as Array<{ responseBody: string | null }>
+  const apiJobs = parseSearchApiResponse(JSON.parse(captures[0]?.responseBody ?? '{}'))
+  const apiIds = new Set(apiJobs.map((job) => job.platformJobId))
+  const missing = [...domIds].filter((id) => !apiIds.has(id))
+  assert.equal(
+    missing.length,
+    0,
+    `两通道对同一批岗位给出了不同的 platformJobId（DOM 有而接口没有：${missing.slice(0, 5).join(',')}）` +
+      '—— 幂等键不一致会让同一岗位被写两遍',
+  )
+  assert.ok(domIds.size > 0 && apiIds.size > 0, '两边都要有岗位才算验过')
+})
+
+// ── 收件箱（readInbox）：接口通道（2026-09-20 探针实测后落地）────────────
+
+/** 按**实测形状**造一行会话（只留用得着的字段；`lastPayload` 是 JSON 字符串）。 */
+function contactRow(arg: {
+  id: string
+  name: string
+  company: string
+  unReadCnt: number
+  direction: string
+  ms: string
+  extType: number
+  msg: string
+  jobId?: string
+}): Record<string, unknown> {
+  return {
+    id: arg.id,
+    name: arg.name,
+    company: arg.company,
+    unReadCnt: arg.unReadCnt,
+    direction: arg.direction,
+    oppositeRead: '1',
+    latestMsgId: '1',
+    latestMsgType: 'txt',
+    latestMsgIsRevoke: false,
+    latestMsgTime: arg.ms,
+    contact: false,
+    lastPayload: JSON.stringify({
+      bodies: [{ msg: arg.msg, type: 'txt' }],
+      ext: {
+        extType: arg.extType,
+        ...(arg.jobId === undefined ? {} : { extBody: { bizData: { jobId: arg.jobId } } }),
+      },
+      push: arg.unReadCnt > 0 ? '1' : '0',
+    }),
+  }
+}
+
+function contactListStub(
+  pages: Array<Record<string, unknown>>,
+  captured: Array<Record<string, unknown>> = [],
+): PageFetchStub {
+  let call = 0
+  return async (url, init) => {
+    captured.push({ url, init: init ?? {} })
+    const page = pages[call] ?? { flag: 1, data: { list: [] } }
+    call += 1
+    return { ok: true, json: async () => page }
+  }
+}
+
+test('readInbox：接口行 → RawInboxMessage（未读⇒hr / 平台建议⇒me / 岗位卡带数字 jobId / ms→ISO）', async () => {
+  const payload = {
+    flag: 1,
+    data: {
+      pageSize: 0,
+      totalCount: 0,
+      hasNext: false,
+      hasMore: false,
+      list: [
+        // ① HR 主动发来的真实文案 + 未读（实测 7/8 行都是这一形态）
+        contactRow({
+          id: 'row-hr',
+          name: '何女士',
+          company: '某某人力资源服务有限公司',
+          unReadCnt: 1,
+          direction: '1',
+          ms: '1789886694000',
+          extType: 1,
+          msg: '你好，看了你的简历，方便聊聊吗？',
+        }),
+        // ② HR 主动发来的**带岗位卡**消息（extType 202，岗位信息在 extBody.bizData 里）
+        contactRow({
+          id: 'row-card',
+          name: '郭先生',
+          company: '某某科技有限公司',
+          unReadCnt: 1,
+          direction: '1',
+          ms: '1789808162000',
+          extType: 202,
+          msg: '你好，请问考虑新的工作机会吗？',
+          jobId: '80096799',
+        }),
+        // ③ 我点过「聊一聊」但对方一个字没说：最后一条是**平台替我生成的招呼语建议**
+        contactRow({
+          id: 'row-mine',
+          name: '诸女士',
+          company: '某某制药有限公司',
+          unReadCnt: 0,
+          direction: '0',
+          ms: '1789806390000',
+          extType: 200,
+          msg: '我们为您生成了合适的打招呼语，去使用＞',
+        }),
+      ],
+    },
+  }
+  const adapter = createLiepinAdapter()
+  const page = browserLikePage(SYNTHETIC_LIST, SEARCH_URL, contactListStub([payload]))
+  const inbox = (await adapter.actions?.readInbox?.(page)) ?? []
+
+  assert.equal(inbox.length, 3)
+  const [hr, card, mine] = inbox
+  assert.equal(hr?.conversationId, 'row-hr')
+  assert.equal(hr?.hrName, '何女士')
+  assert.equal(hr?.company, '某某人力资源服务有限公司')
+  assert.equal(hr?.lastMessage, '你好，看了你的简历，方便聊聊吗？', 'lastPayload 是 JSON 字符串，必须解一层')
+  assert.equal(hr?.direction, 'hr', '未读 ⇒ 最后一条是对方发的（最硬的一条判据）')
+  assert.equal(hr?.unread, true)
+  assert.equal(hr?.at, new Date(1789886694000).toISOString(), 'latestMsgTime 是毫秒时间戳 → ISO')
+  assert.equal(hr?.platformJobId, undefined, '不带岗位卡的会话没有岗位 id（不编）')
+
+  assert.equal(card?.platformJobId, '80096799', 'extType 202 的岗位卡里带数字 jobId（与列表规范 id 同源）')
+  assert.equal(card?.direction, 'hr')
+
+  assert.equal(mine?.direction, 'me', '平台替我生成的招呼语建议是我这一侧的产物，对方一个字没说')
+  assert.equal(mine?.unread, false)
+})
+
+test('readInbox：接口拒绝（flag≠1）→ **抛错**，绝不返回空数组', async () => {
+  const adapter = createLiepinAdapter()
+  const page = browserLikePage(
+    SYNTHETIC_LIST,
+    SEARCH_URL,
+    contactListStub([{ flag: 0, code: '-1400', msg: '出错了（400）！' }]),
+  )
+  await assert.rejects(
+    async () => await adapter.actions?.readInbox?.(page),
+    /flag=0/,
+    '"读不到"必须让上层看见 —— 谎报 0 条会让界面显示"今天没人回我"',
+  )
+})
+
+test('readInbox：fetch 失败 → 抛错；结构不认识 → 抛错；真的空 list → **可信的 0 条**', async () => {
+  const adapter = createLiepinAdapter()
+
+  const failing = browserLikePage(SYNTHETIC_LIST, SEARCH_URL, async () => {
+    throw new Error('网络断了')
+  })
+  await assert.rejects(async () => await adapter.actions?.readInbox?.(failing), /没调通/)
+
+  const shapeless = browserLikePage(
+    SYNTHETIC_LIST,
+    SEARCH_URL,
+    contactListStub([{ flag: 1, data: { sessions: [] } }]),
+  )
+  await assert.rejects(async () => await adapter.actions?.readInbox?.(shapeless), /结构不认识/)
+
+  const empty = browserLikePage(SYNTHETIC_LIST, SEARCH_URL, contactListStub([{ flag: 1, data: { list: [] } }]))
+  assert.deepEqual(await adapter.actions?.readInbox?.(empty), [], '服务端给的空 list 才是可信的 0 条')
+})
+
+test('readInbox：翻页只认"本页不满一页即停" + 跨页按会话 id 去重', async () => {
+  const rowOf = (id: string): Record<string, unknown> =>
+    contactRow({
+      id,
+      name: '某女士',
+      company: '某公司',
+      unReadCnt: 1,
+      direction: '1',
+      ms: '1789886694000',
+      extType: 1,
+      msg: '在吗',
+    })
+  // 第 1 页刚好满页（30 条，其中 1 条在第二页重复出现），第 2 页只有 1 条 → 到底
+  const pageNo1 = { flag: 1, data: { list: Array.from({ length: 30 }, (_, i) => rowOf(`row-${String(i)}`)) } }
+  const pageNo2 = { flag: 1, data: { list: [rowOf('row-29'), rowOf('row-99')] } }
+  const captured: Array<Record<string, unknown>> = []
+  const adapter = createLiepinAdapter()
+  const page = browserLikePage(SYNTHETIC_LIST, SEARCH_URL, contactListStub([pageNo1, pageNo2], captured))
+
+  const inbox = (await adapter.actions?.readInbox?.(page)) ?? []
+  assert.equal(captured.length, 2, '第 1 页满页 ⇒ 必须再翻一页（不能看 hasNext/hasMore，实测那四个汇总量都是坏的）')
+  assert.equal(inbox.length, 31, '跨页去重后 30 + 1 = 31（row-29 在两页都出现）')
+  assert.equal(inbox.filter((item) => item.conversationId === 'row-29').length, 1)
+  assert.equal(inbox[inbox.length - 1]?.conversationId, 'row-99')
+})
+
+test('readInbox：请求形态 —— 表单体 + x-fscp 一族俱全（少一项就 -1400，静默变成"读不到"）', async () => {
+  const captured: Array<Record<string, unknown>> = []
+  const adapter = createLiepinAdapter()
+  const page = browserLikePage(
+    SYNTHETIC_LIST,
+    SEARCH_URL,
+    contactListStub([{ flag: 1, data: { list: [] } }], captured),
+  )
+  await adapter.actions?.readInbox?.(page)
+
+  assert.equal(captured.length, 1)
+  const request = captured[0] ?? {}
+  assert.ok(String(request['url']).endsWith('/api/com.liepin.im.c.contact.get-contact-list'), '打的是会话列表接口')
+  const init = (request['init'] ?? {}) as { headers?: Record<string, string>; body?: string; credentials?: string }
+  const headers = init.headers ?? {}
+  // 静态头的六项（来自 LIEPIN_API_HEADERS）：少一项服务端就回 -1400
+  for (const name of ['accept', 'x-client-type', 'x-fscp-version', 'x-fscp-std-info', 'x-requested-with']) {
+    assert.ok(headers[name] !== undefined && headers[name] !== '', `缺静态头 ${name} ⇒ 接口会 -1400`)
+  }
+  // 遥测三项：必须存在（实测 fe-version 就是空串，所以用 `in` 判）
+  for (const name of ['x-fscp-trace-id', 'x-fscp-bi-stat', 'x-fscp-fe-version']) {
+    assert.ok(name in headers, `缺 ${name} ⇒ 接口会 -1400（这一族少一项就全废，2026-09-20 探针反向对照实测）`)
+  }
+  assert.equal(
+    headers['content-type'],
+    'application/x-www-form-urlencoded',
+    '这个接口的体是表单 —— 照抄搜索接口的 application/json 会头体错配',
+  )
+  assert.equal(init.body, 'imUserType=0&imId=&imApp=1&pageSize=30&curPage=0', 'imId 留空即可（服务端靠 cookie 认人）')
+  assert.equal(init.credentials, 'include')
+})
+

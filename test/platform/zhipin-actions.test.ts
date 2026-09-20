@@ -177,6 +177,56 @@ const JOB_PAGE_HTML = `
   <a class="btn-startchat" href="/web/geek/chat?jobId=abc123">立即沟通</a>
 </body></html>`
 
+/**
+ * 合成版简历选择弹窗（旧夹具形态：一条可选简历 + 可点确认）。
+ *
+ * ⚠️ 它与**真实**弹窗的差别是已知的（真实结构见下面 `measuredResumeDialogHtml`）——
+ * 留着它是为了继续覆盖"有条目且能发"这条成功路径。
+ */
+const SYNTHETIC_RESUME_DIALOG_HTML = `  <div class="choose-resume-dialog">
+    <div class="list-item">我的在线简历</div>
+    <div class="btn-confirm">确定</div>
+  </div>`
+
+/**
+ * 简历选择弹窗 —— **2026-09-20 真实原文**的等价物。
+ *
+ * 原文出处：`.probe-zhipin-capture/resume-dialog-2026-09-20.html`
+ * （账号收到 HR 回复、「发简历」的 `unable` 消失后，探针用真鼠标点开采集）。
+ * 两处与合成版不同、且**都被适配器依赖**：
+ *   * `items = 0` 时渲染的是空态 `.resume-top-tip`（「未上传简历 / 去上传」）——
+ *     弹窗照样会打开，所以"弹窗开了"**不等于**能发；
+ *   * 确认按钮未选中简历时带 `class="… disabled" disabled`。
+ */
+function measuredResumeDialogHtml(options: { items: number }): string {
+  const items = Array.from(
+    { length: options.items },
+    (_, index) => `<div class="list-item">我的简历 ${String(index + 1)}</div>`,
+  ).join('')
+  const container =
+    options.items === 0
+      ? '<div class="resume-top-tip"><i class="icon-xinxi-tip"></i><span>未上传简历</span>' +
+        '<span class="btn-upload">去上传</span></div>'
+      : items
+  return `
+  <div class="boss-popup__wrapper boss-dialog boss-dialog__wrapper dialog-default choose-resume-dialog">
+    <div class="boss-popup__content">
+      <div class="boss-dialog__header"><div class="boss-dialog_title"><h3>请选择要发送的简历</h3></div></div>
+      <div class="boss-dialog__body">
+        <div class="choose-resume-dialog">
+          <div class="resume-choose-container">${container}</div>
+          <div class="tips"></div>
+          <div class="footer">
+            <div class="manage-btn">管理附件</div>
+            <button type="button" disabled="disabled" class="btn-v2 btn-sure-v2 btn-confirm disabled">发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="boss-popup__close"><i class="icon-close"></i></div>
+  </div>`
+}
+
 /** 会话页：输入框 + 空消息列表 + 工具条「发简历」。 */
 const CHAT_PAGE_HTML = `
 <html><body>
@@ -184,17 +234,14 @@ const CHAT_PAGE_HTML = `
     <div class="name-box"><span>张女士</span><span>某某科技</span><span>HR</span></div>
     <div class="name-text">张女士</div>
     <div class="last-msg-text">你好，方便发一份简历吗？</div>
-    <span class="unread-count">2</span>
+    <span class="notice-badge">2</span>
   </li>
   <div class="toolbar-controls">
     <div class="toolbar-btn-content"><div aria-label="表情" class="icon btn-emotion"></div></div>
     <div class="toolbar-btn-content"><div aria-label="发送图片" class="icon btn-sendimg"><input type="file" accept="image/gif,image/jpeg,image/png"></div></div>
     <div class="toolbar-btn-content"><div aria-label="求简历" class="toolbar-btn tooltip"> 发简历 </div></div>
   </div>
-  <div class="choose-resume-dialog">
-    <div class="list-item">我的在线简历</div>
-    <div class="btn-confirm">确定</div>
-  </div>
+${SYNTHETIC_RESUME_DIALOG_HTML}
   <div class="resume-card">在线简历</div>
   <div class="editor-container">
     <div id="chat-input" contenteditable="true" class="chat-input"></div>
@@ -449,6 +496,53 @@ test('sendResume：会话列表里没有这家公司 → 不投递', async () =>
   assert.ok((result?.message ?? '').includes('查无此司'))
 })
 
+// ── sendResume：**2026-09-20 实测打开的弹窗**（此前这段选择器只有 BossHunter 的猜测）──
+//
+// 这两条用例钉住的是同一件事：**"弹窗开了"不等于"发出去了"**。真实弹窗在没有可选简历时
+// 照样打开（空态「未上传简历」），而确认按钮此时带 `disabled` —— 点它毫无反应。
+// 夹具里刻意放着一个 `.resume-card`：只要适配器把这种状态讲成 delivered/pending，
+// 断言就会红（这正是修改前会撒的谎）。
+
+test('sendResume：弹窗是实测的**空态**（「未上传简历」）→ 如实说 missing 并给下一步，不假装在发', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const html = CHAT_PAGE_HTML.replace(
+    SYNTHETIC_RESUME_DIALOG_HTML,
+    measuredResumeDialogHtml({ items: 0 }),
+  )
+  const { page } = actionPage({ html, url: JOB_URL })
+
+  const result = await adapter.actions?.sendResume?.(
+    page,
+    { title: 'Java工程师', company: '某某科技', sourceUrl: JOB_URL },
+    null,
+  )
+
+  assert.equal(result?.ok, false, JSON.stringify(result))
+  assert.equal(result?.delivery, 'missing', '没有可选简历时绝不能报 delivered/pending')
+  assert.ok((result?.message ?? '').includes('没有可选的简历'), result?.message)
+  assert.ok((result?.message ?? '').includes('未上传简历'), '要把平台的空态文案原样带出来')
+  assert.ok((result?.message ?? '').includes('我的简历'), '要告诉用户下一步去哪儿传简历')
+})
+
+test('sendResume：弹窗有条目但确认按钮带 disabled → missing，不点那个点不动的按钮', async () => {
+  const adapter = createZhipinAdapter({ config: FAST_CONFIG })
+  const html = CHAT_PAGE_HTML.replace(
+    SYNTHETIC_RESUME_DIALOG_HTML,
+    measuredResumeDialogHtml({ items: 1 }),
+  )
+  const { page } = actionPage({ html, url: JOB_URL })
+
+  const result = await adapter.actions?.sendResume?.(
+    page,
+    { title: 'Java工程师', company: '某某科技', sourceUrl: JOB_URL },
+    null,
+  )
+
+  assert.equal(result?.ok, false, JSON.stringify(result))
+  assert.equal(result?.delivery, 'missing', '按钮 disabled 时点它什么都不会发生，不能说成 pending')
+  assert.ok((result?.message ?? '').includes('不可用'), result?.message)
+})
+
 // ── reply：在已有会话里真回消息（2026-09-18 补的 actions.reply）──────────
 
 const CHAT_URL = 'https://www.zhipin.com/web/geek/chat'
@@ -533,7 +627,12 @@ test('reply：会话列表里找不到这个岗位的会话 → missing，不猜
 
 // ── detectStage：接触阶段探测（2026-09-18 用实测选择器实现）──────────────
 
-/** 会话列表夹具：一行会话，可按需带未读徽章 / `.message-status` 状态类名。 */
+/**
+ * 会话列表夹具：一行会话，可按需带未读徽章 / `.message-status` 状态类名。
+ *
+ * 未读徽章的类名用 **2026-09-20 实测值 `.notice-badge`**（HR 主动发来的那行实测带它，
+ * 文本就是未读数）；`.unread-count` 那条兜底候选由 TABBED_INBOX_HTML 覆盖。
+ */
 function inboxHtml(options: { company: string; status?: string; unread?: boolean }): string {
   const status =
     options.status === undefined
@@ -550,7 +649,7 @@ function inboxHtml(options: { company: string; status?: string; unread?: boolean
             <div class="gray last-msg">
               ${status}
               <span class="last-msg-text">你好，方便发一份简历吗？</span>
-              ${options.unread === true ? '<span class="unread-count">2</span>' : ''}
+              ${options.unread === true ? '<span class="notice-badge">1</span>' : ''}
             </div>
           </div>
         </li>
@@ -566,7 +665,7 @@ async function stageOf(html: string, job: { title: string; company: string }): P
   return stage ?? null
 }
 
-test('detectStage：会话里有未读 → replied', async () => {
+test('detectStage：会话里有未读（实测 `.notice-badge`）→ replied', async () => {
   const stage = await stageOf(inboxHtml({ company: '某某科技', unread: true }), {
     title: 'Java工程师',
     company: '某某科技',
@@ -582,7 +681,9 @@ test('detectStage：最后一条是我发的且 status-delivery → delivered', 
   assert.equal(stage, 'delivered')
 })
 
-test('detectStage：status-read → read（这一档代码支持；⚠️ 真实站点尚未见到样本）', async () => {
+// ✅ 2026-09-20：真实站点上拿到了 `status-read` 的样本（文案 `[已读]`），这条从
+// "代码支持但没见过" 变成**有真机证据**的回归。
+test('detectStage：status-read（实测文案 `[已读]`）→ read', async () => {
   const stage = await stageOf(inboxHtml({ company: '某某科技', status: 'status-read' }), {
     title: 'Java工程师',
     company: '某某科技',

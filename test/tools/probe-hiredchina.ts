@@ -4,15 +4,13 @@
  *
  * ## 为什么需要它
  *
- * 适配器 `hiredchina.ts` 里有三处写着「待 probe:hiredchina 校准」：
- *   * 卡片 UUID 锚点（`notes: 卡片未锚定岗位 UUID，待 probe:hiredchina 校准`）；
- *   * 详情页选择器（`h1` / 渐变卡片薪资 / `div.prose.prose-sm`，只注明、未校准）；
- *   * `platform-facts.ts` 的 notes：现有测试用的是**按探针结构还原的内联合成 HTML**，
- *     "不是保存的真实页面" —— 选择器是否真的长在真页面上，没有任何证据。
+ * 适配器里有几处写着「待 probe:hiredchina 校准」（详情选择器、RSC 流锚点漂移等）。
+ * 2026-09-20 那轮校准证明了它的价值：真实页面推翻了"列表卡片在 DOM 里"的旧假设
+ * （数据实际在 `self.__next_f.push` 的 RSC 流里），列表解析整体改成了 payload 通道。
  *
  * 关键事实（适配器文件头实测）：`www.hiredchina.com` 的 raw HTTP 会被 Cloudflare
  * managed challenge 拦下，而**同一套应用的子域 `hcweb.gicexpat.com` 不被拦**
- * （实测 200 + 430KB SSR 页面）—— 所以本探针默认走它，把这些"待校准"变成实测读数。
+ * （实测 200 + 430KB SSR 页面）—— 所以本探针默认走它，把"待校准"变成实测读数。
  *
  * ## 用法
  *
@@ -27,9 +25,9 @@
  *   .probe-hiredchina-capture/list-p2-<日期>.html         列表页（第 2 页，翻页证据）
  *   .probe-hiredchina-capture/detail-<uuid>-<日期>.html   第一条岗位的详情页
  *
- * ⚠️ 本平台**没有**被测试钉住的真实夹具（用例用的是内联 HTML），所以这里不存在
- *    "覆盖夹具"的风险；校准完成后人工把 capture 里的真实页面复制进 `test/fixtures/`
- *    并改用例即可。
+ * ⚠️ 2026-09-20 起本平台测试钉的是 `test/fixtures/hiredchina-*.html` 真实夹具
+ *    （不是内联合成 HTML）—— 探针**刻意不覆盖**它们；要重新钉住，人工把 capture
+ *    复制进 `test/fixtures/` 并同步改用例里的期望值。
  *
  * ⚠️ 这是**手动跑一次**的校准工具，不是自动化的一部分（§14）：它访问真实站点。
  *    平台有 Cloudflare 层，**别连打**（§P5 保守优先）；请求之间带少量延时。
@@ -43,10 +41,7 @@ import {
   DEFAULT_HIREDCHINA_CONFIG,
   type HiredChinaConfig,
 } from '../../src/host/platform/adapters/hiredchina/config.js'
-import {
-  extractDetailInPage,
-  hasNextPageInPage,
-} from '../../src/host/platform/adapters/hiredchina/page.js'
+import { extractDetailInPage } from '../../src/host/platform/adapters/hiredchina/page/detail.js'
 import type { RawJob, SearchCriteria } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 
@@ -141,11 +136,11 @@ async function probeOnline(): Promise<{
 
   const page1 = await readList(listHtml, listUrl, config)
   check('列表页存活：判墙未命中（Cloudflare / 登录墙 / 空白都没有）', page1.block === null, `detectBlock=${page1.block ?? '无'}`)
-  check('卡片锚点命中（a[href^="/<lang>/job/"]）', page1.jobs.length > 0, `解析出 ${String(page1.jobs.length)} 条`)
-  check('岗位 UUID 全部锚定（卡片身份锚）', page1.jobs.length > 0 && page1.jobs.every((job) => job.platformJobId !== ''), hitRate(page1.jobs, (job) => job.platformJobId))
-  check('薪资徽章锚定（平台绝大多数卡片有薪资）', page1.jobs.some((job) => job.salaryRaw !== ''), hitRate(page1.jobs, (job) => job.salaryRaw))
-  check('公司锚定（building 图标所在行）', page1.jobs.some((job) => job.company !== ''), hitRate(page1.jobs, (job) => job.company))
-  check('分页容器里存在「页码 > 当前页」的链接', page1.hasNext, `hasNextPage=${String(page1.hasNext)}`)
+  check('payload 通道解析出岗位（RSC 流 initialData.list）', page1.jobs.length > 0, `解析出 ${String(page1.jobs.length)} 条`)
+  check('岗位 UUID 全部锚定（payload 的 line）', page1.jobs.length > 0 && page1.jobs.every((job) => job.platformJobId !== ''), hitRate(page1.jobs, (job) => job.platformJobId))
+  check('薪资 key 还原（keep.secret → Negotiable 也是合法值）', page1.jobs.some((job) => job.salaryRaw !== ''), hitRate(page1.jobs, (job) => job.salaryRaw))
+  check('公司锚定（payload company.name）', page1.jobs.some((job) => job.company !== ''), hitRate(page1.jobs, (job) => job.company))
+  check('满页判据：本页条数 = pageSize → 有下一页', page1.hasNext, `hasNextPage=${String(page1.hasNext)}（payload 无分页元信息，满 10 条即翻）`)
   INFO.push(`第 1 页字段命中：id ${hitRate(page1.jobs, (job) => job.platformJobId)} · 薪资 ${hitRate(page1.jobs, (job) => job.salaryRaw)} · 公司 ${hitRate(page1.jobs, (job) => job.company)} · 城市 ${hitRate(page1.jobs, (job) => job.city ?? '')} · 经验 ${hitRate(page1.jobs, (job) => job.expReq ?? '')}`)
   const sample = page1.jobs[0]
   if (sample !== undefined) {
@@ -211,17 +206,14 @@ async function analyzeCapture(files: {
     const detailPage = new JsdomPage({ html: files.detailHtml, url: files.detailUrl })
     const detail = await detailPage.evaluate(extractDetailInPage, { selectors: config.detailSelectors })
     check('详情页：标题锚到（h1）', detail.title !== '', `title=${detail.title === '' ? '(空)' : detail.title}`)
-    check('详情页：JD 正文锚到（div.prose.prose-sm）', (detail.jdText ?? '') !== '', `jd=${String((detail.jdText ?? '').length)} 字`)
-    check('详情页：薪资锚到（渐变卡片内的金额）', detail.salaryRaw !== '', `salary=${detail.salaryRaw === '' ? '(空)' : detail.salaryRaw}`)
-    INFO.push(`详情样本：${detail.title} | ${detail.salaryRaw} | tags=${(detail.tags ?? []).join('/')} | exp=${detail.expReq ?? '-'}${detail.company === '' ? '（公司名按设计留空：详情页无稳定锚点，调用方用列表兜底）' : ''}`)
+    check('详情页：JD 正文锚到（Job Description + Requirements 按标题拼接）', (detail.jdText ?? '') !== '', `jd=${String((detail.jdText ?? '').length)} 字`)
+    check('详情页：薪资锚到（items-start/shrink-0 金额元素）', detail.salaryRaw !== '', `salary=${detail.salaryRaw === '' ? '(空)' : detail.salaryRaw}`)
+    check('详情页：公司名锚到（渐变卡 p.font-medium）', detail.company !== '', `company=${detail.company === '' ? '(空)' : detail.company}`)
+    check('详情页：行业锚到（渐变卡 p.text-sm）', (detail.industry ?? '') !== '', `industry=${detail.industry ?? '(空)'}`)
+    INFO.push(`详情样本：${detail.title} | ${detail.salaryRaw} | ${detail.company} | ${detail.industry ?? '-'} | tags=${(detail.tags ?? []).join('/')} | exp=${detail.expReq ?? '-'}`)
   }
 
-  // hasNextPageInPage 单独复核一次（适配器拿它当翻页闸门）
-  const hasNext = await new JsdomPage({ html: files.listHtml, url: files.listUrl }).evaluate(hasNextPageInPage, {
-    selector: config.selectors.pagination,
-    currentPage: 1,
-  })
-  INFO.push(`离线复核 hasNextPageInPage(currentPage=1)=${String(hasNext)}`)
+  INFO.push(`离线复核 hasNextPage（满页判据）=${String(page1.hasNext)}（由 readList 内部记录条数，不再有独立页面函数）`)
 }
 
 /** 离线复跑：挑最新的一份抓取（文件名带日期，排序即最新）。 */

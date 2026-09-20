@@ -74,6 +74,70 @@ export function detectGreetPopupInPage(arg: {
 }
 
 /**
+ * **在页面上下文里**读简历选择弹窗的状态（有没有可选简历、发送按钮能不能点）。
+ *
+ * 为什么需要它（2026-09-20 实测弹窗原文 `resume-dialog-2026-09-20.html`）：
+ *   * 弹窗在**一条可选简历都没有**时照样会打开，渲染的是空态 `.resume-top-tip`
+ *     （「未上传简历」＋一个 `.btn-upload`「去上传」）；
+ *   * 确认按钮是 `<button class="btn-v2 btn-sure-v2 btn-confirm disabled" disabled>发送</button>`
+ *     —— 未选中简历时它**带 `disabled` 类且带 `disabled` 属性**，点了什么都不会发生。
+ * 不读这两件事，`sendResume` 就会把"弹窗还开着、其实什么都没发"讲成
+ * 「已确认发送但没有出现简历卡片（pending）」—— 那是在说一件没发生的事。
+ * ⚠️ 必须完全自包含。
+ */
+export function resumeDialogStateInPage(arg: {
+  selectors: ZhipinChatSelectors
+}): {
+  found: boolean
+  itemCount: number
+  confirmFound: boolean
+  confirmDisabled: boolean
+  emptyTip: string
+} {
+  const norm = (value: string | null | undefined): string => (value ?? '').replace(/\s+/g, ' ').trim()
+  const missing = { found: false, itemCount: 0, confirmFound: false, confirmDisabled: false, emptyTip: '' }
+  let dialog: Element | null = null
+  try {
+    dialog = document.querySelector(arg.selectors.resumeDialog)
+  } catch {
+    dialog = null
+  }
+  if (dialog === null) return missing
+  const box: Element = dialog
+
+  const count = (selector: string): number => {
+    if (selector === '') return 0
+    try {
+      return box.querySelectorAll(selector).length
+    } catch {
+      return 0
+    }
+  }
+  let confirm: Element | null = null
+  try {
+    confirm = box.querySelector(arg.selectors.resumeDialogConfirm)
+  } catch {
+    confirm = null
+  }
+  let emptyTip = ''
+  try {
+    emptyTip = norm(box.querySelector(arg.selectors.resumeDialogEmptyTip)?.textContent)
+  } catch {
+    emptyTip = ''
+  }
+  const className = (confirm?.getAttribute('class') ?? '').toLowerCase()
+  return {
+    found: true,
+    itemCount: count(arg.selectors.resumeDialogItem),
+    confirmFound: confirm !== null,
+    // 两种写法都要认：类名里的 `disabled`（实测）与元素属性 `disabled`（更根本）
+    confirmDisabled:
+      confirm !== null && (className.split(/\s+/).includes('disabled') || confirm.hasAttribute('disabled')),
+    emptyTip,
+  }
+}
+
+/**
  * **在页面上下文里**读会话消息，判断"我们发的那条"到了哪一步。
  *
  * 判据取自 BossHunter `_message_delivery_state`：

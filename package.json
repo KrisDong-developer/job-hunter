@@ -63,13 +63,15 @@
     "test": "node scripts/test.mjs",
     "crawl:fixture": "node scripts/run-ts.mjs test/tools/crawl-fixture.ts",
     "probe:liepin": "node scripts/run-ts.mjs test/tools/probe-liepin-v8.ts",
-    "probe:lagou": "node scripts/run-ts.mjs test/tools/probe-lagou.ts",
-    "probe:lagou-login": "node scripts/run-ts.mjs test/tools/probe-lagou-login.ts",
     "probe:zhipin": "node scripts/run-ts.mjs test/tools/probe-zhipin.ts",
     "probe:zhipin-login": "node scripts/run-ts.mjs test/tools/probe-zhipin-login.ts",
+    "probe:zhipin-check": "node scripts/run-ts.mjs test/tools/probe-zhipin-check.ts",
+    "probe:zhipin-fields": "node scripts/run-ts.mjs test/tools/probe-zhipin-fields.ts",
     "probe:zhipin-chat": "node scripts/run-ts.mjs test/tools/probe-zhipin-chat.ts",
     "zhipin:send-one": "node scripts/run-ts.mjs test/tools/zhipin-send-one-greeting.ts",
     "probe:guopin": "node scripts/run-ts.mjs test/tools/probe-guopin.ts",
+    "probe:guopin-login": "node scripts/run-ts.mjs test/tools/probe-guopin-login.ts",
+    "probe:guopin-pagination": "node scripts/run-ts.mjs test/tools/probe-guopin-pagination.ts",
     "probe:waiqi": "node scripts/run-ts.mjs test/tools/probe-waiqi.ts",
     "probe:zhaopin-login": "node scripts/run-ts.mjs test/tools/probe-zhaopin-login.ts",
     "probe:zhaopin-anon": "node scripts/run-ts.mjs test/tools/probe-zhaopin-anon.ts",
@@ -77,7 +79,10 @@
     "probe:51job": "node scripts/run-ts.mjs test/tools/probe-51job.ts",
     "probe:sinojobs": "node scripts/run-ts.mjs test/tools/probe-sinojobs.ts",
     "probe:hiredchina": "node scripts/run-ts.mjs test/tools/probe-hiredchina.ts",
-    "probe:indeed": "node scripts/run-ts.mjs test/tools/probe-indeed.ts"
+    "probe:indeed": "node scripts/run-ts.mjs test/tools/probe-indeed.ts",
+    "probe:linkedin": "node scripts/run-ts.mjs test/tools/probe-linkedin.ts",
+    "probe:linkedin-login": "node scripts/run-ts.mjs test/tools/probe-linkedin-login.ts",
+    "probe:linkedin-v2": "node scripts/run-ts.mjs test/tools/probe-linkedin-v2.ts"
   },
   "peerDependencies": {
     "react": "^18.2.0"

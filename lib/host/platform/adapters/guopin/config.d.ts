@@ -1,17 +1,20 @@
 /**
  * 国聘网的配置面：结构锚点集、字段 → URL 参数映射、默认值与合并函数、城市码表、
- * 各字段的正则常量、页数上限、平台判墙信号 —— 只有数据与纯函数，不碰 `document`、不发请求。
+ * 各字段的正则常量、页数上限、登录锚点、平台判墙信号 —— 只有数据与纯函数，不碰 `document`、不发请求。
  *
- * `GUOPIN_CARD` / `GUOPIN_COMPANY_LINK` / `GUOPIN_DETAIL_COMPANY_LINK` 只被本文件的
+ * `GUOPIN_CARD` / `GUOPIN_COMPANY_LINK` / `GUOPIN_SALARY` / `GUOPIN_DETAIL_COMPANY` 只被本文件的
  * `DEFAULT_GUOPIN_CONFIG` 用到，所以保持模块私有（不导出）。
  *
- * 完整实测记录（列表卡片真实 DOM、无薪资/无平台 id 的后果、分页与城市码为何留空）见 `./index.ts` 文件头。
+ * 完整实测记录（列表卡片真实 DOM、薪资 18/20、无平台 id 的后果、翻页点击契约、
+ * 登录锚点、详情页真实结构）见 `./index.ts` 文件头 —— 2026-09-20 登录态探针全面校准过一轮。
  */
 /** 详情 URL 里抠出岗位 id：`/job/detail?id=<数字>`。 */
 export declare const GUOPIN_JOB_ID_PATTERN = "/job/detail\\?id=(\\d+)";
 /** 详情页 URL 模板。`{jobId}` 会被替换成岗位 id。 */
 export declare const GUOPIN_DETAIL_URL_TEMPLATE = "https://www.iguopin.com/job/detail?id={jobId}";
-/** 薪资文本模式（组合行 `10~13K校招应届生硕士` 的薪资格，或独立「面议」）。 */
+/** 登录页（未登录列表页头 `a.login` 的 href 实测为 `/login?redirect=…`）。 */
+export declare const GUOPIN_LOGIN_URL = "https://www.iguopin.com/login";
+/** 薪资文本模式：列表 `.job-salary` / 详情薪资的合法性校验（面议、`10~13K`、`8~9K·16薪`、`1.5K`…实测形态）。 */
 export declare const GUOPIN_SALARY_PATTERN = "\u9762\u8BAE|\\d+(?:\\.\\d+)?\\s*~\\s*\\d+(?:\\.\\d+)?\\s*[kK\u4E07](?:\\s*[\u00B7x\u00D7]\\s*\\d+\\s*\u85AA)?|\\d+(?:\\.\\d+)?\\s*[kK\u4E07](?:\\s*[\u00B7x\u00D7]\\s*\\d+\\s*\u85AA)?|\\d+(?:\\.\\d+)?\\s*\u5143/\u5929";
 /** 城市模式：国聘用全角书名号 `「<城市-区域>」` 包裹（实测多种形态，缺省按 城市/区域 拆）。 */
 export declare const GUOPIN_CITY_PATTERN = "\u300C([^\u300C\u300D]*)\u300D";
@@ -28,10 +31,16 @@ export declare const GUOPIN_SIZE_PATTERN = "(\\d+\\s*-\\s*\\d+\u4EBA|\\d+\u4EBA(
 /** 详情页报名截止模式（详情页正文「报名截止：2026-12-12 23:50:05」，为硬截止铺路）。 */
 export declare const GUOPIN_DEADLINE_PATTERN = "\u62A5\u540D\u622A\u6B62[:\uFF1A]\\s*([\\d\\-\\s:]+)";
 /**
- * 单次抓取的页数上限。分页参数未确证（见文件头）→ v1 单页采集是平台事实，不是保守取舍。
- * 等 probe:guopin 夹具确认分页参数后放开。
+ * 单次抓取的页数上限。**20 来自 ant 分页自报**（2026-09-20 登录态实测：
+ * `ul.ant-pagination` 文本「12345•••20跳至页」），不是拍的保守值。
+ *
+ * ⚠️ 翻页方式（同日 `npm run probe:guopin-pagination` 实测定案）：
+ *   * URL `?page=2` **无效**（SPA 忽略，active 仍为 1）—— 不能像智联那样靠 URL 寻址；
+ *   * 真鼠标点 `.ant-pagination-item-2` **有效**（active=2、数据换 9/20）——
+ *     但翻页在页面内完成，URL 不变。⇒ `gotoSearch` 收到 `page>1` 时靠**连点 next** 到位
+ *     （见 `page/list.ts` 的 `turnToPageInPage`），`hasNextPage` 读 next 的 disabled 状态。
  */
-export declare const GUOPIN_MAX_PAGES = 1;
+export declare const GUOPIN_MAX_PAGES = 20;
 /** 结构锚点集。每一项都可以在 DB 里覆盖着改（ADR-19）。 */
 export interface GuopinSelectors {
     /** 列表卡片容器（probe 实证：`div.job-card`）。 */
@@ -44,18 +53,46 @@ export interface GuopinSelectors {
     jobInfoItems: string;
     /** 公司链接（`.company-name`）。 */
     companyLink: string;
+    /** 列表薪资（`.job-info .job-salary`；实测 18/20 卡片有，读不到留空）。 */
+    salary: string;
     /** 公司「性质/规模/行业」三项（`.company-info .company-info-item`，顺序固定）。 */
     companyInfoItems: string;
     /** 职能标签（`.job-tag .ant-tag`，进 tags）。 */
     jobTags: string;
-    /** 详情页选择器。 */
+    /** 标题（`.title-box .title-section .title`；页面无 h1）。 */
     detailTitle: string;
+    /**
+     * 薪资。⚠️ 快照样本（引才计划岗）**没有**薪资节点 —— 薪资不是每个详情页都有，
+     * 保留语义候选兜底，读到就过 `salaryPattern` 校验。
+     */
     detailSalary: string;
+    /** 公司名（`.job-company-desc .company-title`；logo 链接里没有文本，别用 `a[href*="/company"]`）。 */
     detailCompany: string;
-    /** JD 全文（职位介绍）。 */
+    /** JD 全文（`.job-intro-section .job-duty`）。 */
     detailJdText: string;
-    /** 分页容器（未确证，占位）。 */
+    /** 「职位性质/最低学历/报名截止/工作经验…」键值对（`.overview-item`：overview-title + overview-desc，按 title 文本归类）。 */
+    detailOverviewItems: string;
+    /** 详情页职能标签（`.intro-tag-wrap .intro-tag`，进 tags）。 */
+    detailIntroTags: string;
+    /** 公司标签（`.job-company-tag .company-tag` ×4：服务类型/性质/行业/规模，**顺序不固定**，按词表归类性质与规模）。 */
+    detailCompanyTags: string;
+    /** 更新时间（`.update-time`「更新于 2026-09-12」→ publishedAt）。 */
+    detailUpdateTime: string;
+    /** 分页容器（`ul.ant-pagination`）。 */
     pagination: string;
+    /** 「下一页」按钮（`li.ant-pagination-next`）。 */
+    paginationNext: string;
+    /** 「下一页」不可用的标记（`li.ant-pagination-next.ant-pagination-disabled` —— ant 库级稳定类名）。 */
+    paginationNextDisabled: string;
+    /** 当前页（`.ant-pagination-item-active`，`title` 属性是页码）。 */
+    paginationActive: string;
+}
+/** 登录态锚点（两端实测：未登录夹具 vs 2026-09-20 登录态快照，命中数 1/0 与 0/1）。 */
+export interface GuopinLoginSelectors {
+    /** 已登录：页头用户区（`.avatar-box .user-name`，文本是脱敏手机号；未登录 0）。 */
+    loggedIn: string;
+    /** 未登录：页头「登录/注册」（`a.login`，href 是 `/login?redirect=…`；登录态 0）。 */
+    notLoggedIn: string;
 }
 export interface GuopinUrlParams {
     base: string;
@@ -63,6 +100,8 @@ export interface GuopinUrlParams {
 }
 export interface GuopinConfig {
     selectors: GuopinSelectors;
+    /** 登录态锚点（`auth.isLoggedIn` 用）。 */
+    loginSelectors: GuopinLoginSelectors;
     urlParams: GuopinUrlParams;
     /**
      * 城市码。**只放实测确认过的**；调研期筛选栏有城市名但 URL 城市参数未实证，故 v1 置空。
@@ -84,6 +123,14 @@ export interface GuopinConfig {
     companySizePattern: string;
     /** 详情页报名截止模式（为接入 campus 硬截止铺路；解析不到则省略）。 */
     deadlinePattern: string;
+    /**
+     * 点击翻页后，**每一步**等「当前页码变化」的上限（ms）。
+     *
+     * 为什么进配置：离线夹具是静态 DOM，点了 next 页码不会变（没有 React），
+     * 只能靠超时收手 —— 测试要把它调到几十毫秒，否则每个用例白等十几秒
+     * （与 zhipin 的 `scrollStepTimeoutMs` 同一个理由）。
+     */
+    pageTurnTimeoutMs: number;
 }
 export declare const DEFAULT_GUOPIN_CONFIG: GuopinConfig;
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */

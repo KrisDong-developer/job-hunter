@@ -4,7 +4,7 @@
  * 「按用途开关」是隐私设计的一部分：用户可以只开话术、关掉简历定制 ——
  * 而不是只能选择"全开或全关"。
  */
-export declare const AI_PURPOSES: readonly ["match_score", "explain", "jd_summary", "greeting_draft", "resume_tailor", "resume_tone_check", "resume_import", "interview_prep", "mock_interview", "company_intel", "stage_extract", "offer_compare", "cover_letter", "message_extract", "reply_draft"];
+export declare const AI_PURPOSES: readonly ["match_score", "explain", "jd_summary", "greeting_draft", "resume_tailor", "resume_tone_check", "resume_import", "interview_prep", "mock_interview", "company_intel", "stage_extract", "offer_compare", "cover_letter", "message_extract", "reply_draft", "greeting_template"];
 export type AiPurpose = (typeof AI_PURPOSES)[number];
 export declare const AI_PURPOSE_LABEL: Record<AiPurpose, string>;
 /**

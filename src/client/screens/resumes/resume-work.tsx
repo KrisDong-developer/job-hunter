@@ -10,13 +10,14 @@ import { ErrorLine, LoadingLine } from '../../ui/async-view.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { EnglishCheckPanel } from './english-check-panel.js'
+import { GreetingTemplatesPanel } from './greeting-templates-panel.js'
 import { BasicsSection } from './sections/basics.js'
 import { EducationSection } from './sections/education.js'
 import { ExperienceSection } from './sections/experience.js'
 import { OtherSection } from './sections/other.js'
 import { ProjectsSection } from './sections/projects.js'
 
-type Mode = 'edit' | 'split' | 'preview' | 'files'
+type Mode = 'edit' | 'split' | 'preview' | 'files' | 'greeting'
 
 /** 一版的完整编辑与附件操作。 */
 export function ResumeWork(props: {
@@ -251,7 +252,7 @@ export function ResumeWork(props: {
       <div className="jh-work-modes">
         <div className="jh-modes" role="tablist" aria-label="视图模式">
           {(
-            [['edit', '编辑'], ['split', '分屏'], ['preview', '预览'], ['files', '附件']] as Array<[Mode, string]>
+            [['edit', '编辑'], ['split', '分屏'], ['preview', '预览'], ['files', '附件'], ['greeting', '话术']] as Array<[Mode, string]>
           ).map(([key, label]) => (
             <button
               key={key}
@@ -270,6 +271,7 @@ export function ResumeWork(props: {
           {mode === 'split' ? '拖动中间那条灰条可以调整上下比例。' : null}
           {mode === 'preview' ? '导出正在看的这一版。' : null}
           {mode === 'files' ? '这一版生成过的附件都在这儿 —— 只有你显式删除才会消失。' : null}
+          {mode === 'greeting' ? '这版简历的打招呼开场 —— 发送时 {岗位}/{公司} 自动替换成具体岗位。' : null}
         </span>
       </div>
 
@@ -332,22 +334,68 @@ export function ResumeWork(props: {
 
         </div>
 
-        {/* 附件从预览区里抽出来，单独一个子 tab（反馈：它挤在预览下面，与渲染无关） */}
+        {/* 附件从预览区里抽出来，单独一个子 tab（反馈：它挤在预览下面，与渲染无关）。
+            2026-09-20（UICraft）：这个 tab 的主题就是附件 —— 生成的入口长在这里，
+            不再让人去右上角工具栏找；空态同样就地给动作（跨区域指路是最差的引导）。 */}
         <div className="jh-work-files">
           <div className="jh-form-head">
             <h3>附件（{draft.files.length}）</h3>
             <span className="jh-spacer" />
-            <span className="jh-muted">导出在右上角工具栏；这里负责打开与删除</span>
+            {/* 与右上角工具栏同一套动作与限制（有未保存改动时导出的是旧内容，先保存） */}
+            <button
+              type="button"
+              className="jh-btn jh-btn-inline"
+              disabled={busy !== null || dirty}
+              title={dirty ? '导出渲染的是已保存的内容 —— 先点「保存」' : '按当前模板导出 A4 PDF'}
+              onClick={() => void run('导出 PDF', async () => await exportResume(props.id, { format: 'pdf', template }), () => 'PDF 已生成')}
+            >
+              导出 PDF
+            </button>
+            <button
+              type="button"
+              className="jh-btn jh-btn-inline"
+              disabled={busy !== null || dirty}
+              title={dirty ? '导出渲染的是已保存的内容 —— 先点「保存」' : '按当前模板导出 Word'}
+              onClick={() => void run('导出 Word', async () => await exportResume(props.id, { format: 'docx', template }), () => 'Word 已生成')}
+            >
+              导出 Word
+            </button>
           </div>
           {draft.files.length === 0 ? (
-            <p className="jh-muted">还没有生成附件。用右上角的「导出 PDF / 导出 Word」生成。</p>
+            <div className="jh-card jh-card-tight jh-files-empty">
+              <p className="jh-muted">
+                还没有附件。PDF 投递用；Word 留给指定 .docx 的 HR —— 就地点一下生成：
+              </p>
+              <div className="jh-files-empty-actions">
+                <button
+                  type="button"
+                  className="jh-btn jh-btn-inline jh-btn-primary"
+                  disabled={busy !== null || dirty}
+                  title={dirty ? '导出渲染的是已保存的内容 —— 先点「保存」' : '按当前模板导出 A4 PDF'}
+                  onClick={() => void run('导出 PDF', async () => await exportResume(props.id, { format: 'pdf', template }), () => 'PDF 已生成')}
+                >
+                  导出 PDF
+                </button>
+                <button
+                  type="button"
+                  className="jh-btn jh-btn-inline"
+                  disabled={busy !== null || dirty}
+                  title={dirty ? '导出渲染的是已保存的内容 —— 先点「保存」' : '按当前模板导出 Word'}
+                  onClick={() => void run('导出 Word', async () => await exportResume(props.id, { format: 'docx', template }), () => 'Word 已生成')}
+                >
+                  导出 Word
+                </button>
+              </div>
+            </div>
           ) : (
             <ul className="jh-files">
               {draft.files.map((file) => (
                 <li key={file.id} className="jh-file-row">
                   <span className={`jh-file-badge jh-file-${file.format}`}>{file.format.toUpperCase()}</span>
                   <span className="jh-file-main">
-                    <a className="jh-link jh-file-name" href={fileUrl(file.id)} target="_blank" rel="noreferrer">
+                    {/* 文件名即打开入口（新标签）—— 不再并列一枚「打开」按钮：
+                        同一动作两个入口是噪音，行尾只留删除（quiet + 确认）。 */}
+                    <a className="jh-link jh-file-name" href={fileUrl(file.id)} target="_blank" rel="noreferrer" title="点击在新标签打开">
                       {file.fileName}
                     </a>
                     <span className="jh-muted jh-file-meta">
@@ -356,15 +404,9 @@ export function ResumeWork(props: {
                   </span>
                   <button
                     type="button"
-                    className="jh-btn jh-btn-inline"
-                    onClick={() => window.open(fileUrl(file.id), '_blank', 'noopener')}
-                  >
-                    打开
-                  </button>
-                  <button
-                    type="button"
                     className="jh-btn jh-btn-inline jh-btn-quiet"
                     disabled={busy !== null}
+                    title="删除这个附件（不能撤销）"
                     onClick={() => {
                       if (!window.confirm(`删除附件「${file.fileName}」？不能撤销。`)) return
                       void run('删除附件', async () => await deleteFile(file.id), () => '附件已删除').then(() =>
@@ -382,6 +424,11 @@ export function ResumeWork(props: {
             <span className="jh-info-icon" aria-hidden="true">ⓘ</span>
             <span>删除这一版简历时，它的附件会一起删掉；除此之外没有任何自动清理会碰它们。</span>
           </p>
+        </div>
+        {/* 话术（v12 多赛道）：一份简历一条赛道，开场模板跟着简历走 ——
+            与附件同款：从编辑/预览里抽出来，单独一个子 tab。 */}
+        <div className="jh-work-greeting">
+          <GreetingTemplatesPanel resumeId={props.id} />
         </div>
       </div>
     </>

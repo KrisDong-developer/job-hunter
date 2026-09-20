@@ -66,6 +66,8 @@ const PLATFORM_KEYS = new Set([
   'workMode',
   // BOSS 直聘：scrollRounds（滚动加载轮数 —— 该站点没有可寻址的页码翻页）
   'scrollRounds',
+  // 注：LinkedIn 的 experienceLevel / easyApply 曾在此登记，2026-09-20 v2 真机实测
+  // guest 端点对这些参数全部忽略（f_E=4 与对照 id 差异 0）→ 维度已删，键一并移除。
 ])
 
 export interface PlanConfigInput {
@@ -268,7 +270,7 @@ export function validatePlanConfig(
     hasKnownPlatform = true
     for (const dimension of adapter.criteriaDimensions) {
       // `closed` 缺省 = values 非空（历史行为）。空表 + `closed: true` 是"一个都别给"
-      // （guopin/hiredchina），与"自由文本"（indeed/lagou）在数据上一样，语义相反。
+      // （guopin/hiredchina），与"自由文本"（indeed/linkedin）在数据上一样，语义相反。
       const closed = dimension.closed ?? dimension.values.length > 0
       const existing = declared.get(dimension.key)
       if (existing === undefined) {
@@ -469,7 +471,7 @@ export function validatePlanConfig(
     // 判据是 `citySupportOf`，不是"values 空不空"（批次 3 修正）：
     //   * 空表 + `closed: true`（guopin / hiredchina）→ **要提示**。以前被当成"自由文本"
     //     跳过，于是用户在这里看不到任何警告，只在抓取那一步看到那个平台整轮失败；
-    //   * 非空表 + `closed: false`（lagou）→ **不提示**。它原样收中文城市名，
+    //   * 非空表 + `closed: false`（linkedin）→ **不提示**。它原样收地名，
     //     以前会因为"不在建议列表里"报一条**假的**警告。
     const support = citySupport.get(platformId)
     if (support === 'unsupported' && city !== undefined) {

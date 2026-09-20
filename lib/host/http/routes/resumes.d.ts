@@ -40,4 +40,8 @@ export declare function files(ctx: RouteContext): Promise<RouteResult | undefine
 export declare function tailor(ctx: RouteContext): Promise<RouteResult | undefined>;
 export declare function tailoringsList(ctx: RouteContext): Promise<RouteResult | undefined>;
 export declare function tailoringsAdopt(ctx: RouteContext): Promise<RouteResult | undefined>;
+export declare function greetingTemplatesList(ctx: RouteContext): Promise<RouteResult | undefined>;
+export declare function greetingTemplateGenerate(ctx: RouteContext): Promise<RouteResult | undefined>;
+export declare function greetingTemplateSave(ctx: RouteContext): Promise<RouteResult | undefined>;
+export declare function greetingTemplateRemove(ctx: RouteContext): Promise<RouteResult | undefined>;
 //# sourceMappingURL=resumes.d.ts.map

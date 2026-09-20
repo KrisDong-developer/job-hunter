@@ -761,3 +761,20 @@ export const SCHEMA_V11 = `
 CREATE INDEX idx_job_match_score ON job(match_score);
 CREATE INDEX idx_job_first_seen_at ON job(first_seen_at);
 `
+
+/**
+ * v12 · 话术模板归属简历（多赛道求职）。
+ *
+ * `greeting_template` 建表（v5）时是**全局**的；多方向求职定型后，
+ * 模板的正确粒度是"每份简历（= 一条求职赛道）自己的开场套路"（§3.2 role versions）。
+ *
+ * * `resume_id`：NULL = 通用模板（老数据全部落到这一档，行为不变）；
+ *   简历中心的「话术」子页只列 `resume_id = 这版` 的模板。
+ * * `via`：生成来源（llm / rule / manual）—— 如实标注，与定制记录同一约定。
+ * * 老库的既有模板不带归属，`ALTER TABLE ... ADD COLUMN ... DEFAULT` 保持兼容。
+ */
+export const SCHEMA_V12 = `
+ALTER TABLE greeting_template ADD COLUMN resume_id INTEGER;
+ALTER TABLE greeting_template ADD COLUMN via TEXT NOT NULL DEFAULT 'manual';
+CREATE INDEX idx_greeting_template_resume ON greeting_template(resume_id, updated_at DESC);
+`

@@ -34,8 +34,8 @@ import {
 } from '../platform/adapters/hiredchina/config.js'
 import { createIndeedAdapter } from '../platform/adapters/indeed/index.js'
 import { DEFAULT_INDEED_CONFIG, mergeIndeedConfig } from '../platform/adapters/indeed/config.js'
-import { createLagouAdapter } from '../platform/adapters/lagou/index.js'
-import { DEFAULT_LAGOU_CONFIG, mergeLagouConfig } from '../platform/adapters/lagou/config.js'
+import { createLinkedInAdapter } from '../platform/adapters/linkedin/index.js'
+import { DEFAULT_LINKEDIN_CONFIG, mergeLinkedInConfig } from '../platform/adapters/linkedin/config.js'
 import { createLiepinAdapter } from '../platform/adapters/liepin/index.js'
 import { DEFAULT_LIEPIN_CONFIG, mergeLiepinConfig } from '../platform/adapters/liepin/config.js'
 import { createSinoJobsAdapter } from '../platform/adapters/sinojobs/index.js'
@@ -92,20 +92,6 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     build: (override, delayRangeMs) =>
       createFiftyOneAdapter({ config: mergeFiftyOneConfig(override), delayRangeMs }),
     config: { defaults: DEFAULT_FIFTYONE_CONFIG, merge: (override) => mergeFiftyOneConfig(override) },
-  },
-
-  // 拉勾（lagou.com）：列表公开可爬，但被 WAF 滑块挡门（antiBot=high）——
-  // 关键词进路径段、城市用中文名；翻页读「下一页」真实 href，不自己拼拼音 slug。
-  // 详见适配器文件头。
-  {
-    id: 'lagou',
-    build: (override, delayRangeMs, logger) =>
-      createLagouAdapter({
-        config: mergeLagouConfig(override),
-        delayRangeMs,
-        ...(logger === undefined ? {} : { logger }),
-      }),
-    config: { defaults: DEFAULT_LAGOU_CONFIG, merge: (override) => mergeLagouConfig(override) },
   },
 
   // 神仙外企（waiqi.com）：列表走接口、DOM 不承载岗位数据 —— 详见适配器文件头。
@@ -195,6 +181,21 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
     build: (override, delayRangeMs) =>
       createSinoJobsAdapter({ config: mergeSinoJobsConfig(override), delayRangeMs }),
     config: { defaults: DEFAULT_SINOJOBS_CONFIG, merge: (override) => mergeSinoJobsConfig(override) },
+  },
+
+  // LinkedIn 领英（www.linkedin.com）：外企/海外岗主阵地。主通道是 guest 匿名端点
+  // （/jobs-guest/…/seeMoreJobPostings/search，返回卡片 HTML 片段），搜索页 SSR 直出
+  // 做 DOM 兜底；风控业内最强一档（999 / authwall / checkpoint）→ 默认 2 页、上限 5 页。
+  // 中国版 InCareer 已停运，默认走全球站。锚点待 probe:linkedin 真机校准（experimental）。
+  {
+    id: 'linkedin',
+    build: (override, delayRangeMs, logger) =>
+      createLinkedInAdapter({
+        config: mergeLinkedInConfig(override),
+        delayRangeMs,
+        ...(logger === undefined ? {} : { logger }),
+      }),
+    config: { defaults: DEFAULT_LINKEDIN_CONFIG, merge: (override) => mergeLinkedInConfig(override) },
   },
 ]
 

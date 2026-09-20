@@ -579,6 +579,39 @@ test('只读实例（另一个进程持有租约）不许清理、不许导入�
   }
 })
 
+test('持有者心跳过期后：只读实例的下一次操作自动接管（不再需要手动「重新检测」）', async () => {
+  const dir = tempDataDir()
+  mkdirSync(dir, { recursive: true })
+  // 阶段一：对方**活着**（心跳新鲜）→ 本实例只读（复现 2026-09-20 的双宿主竞速）。
+  const now = new Date().toISOString()
+  const leasePath = join(dir, 'lease.json')
+  writeFileSync(
+    leasePath,
+    JSON.stringify({ pid: 999_999, label: '另一个窗口', startedAt: now, heartbeatAt: now }),
+  )
+  const reader = createHostRuntime({ dataDir: dir })
+  await reader.ready()
+  try {
+    assert.equal(reader.schedulerStatus().lease.held, false, '阶段一：本实例应当只读')
+    const blocked = await call(reader, 'POST', '/maintenance/cleanup', { body: { confirm: true } })
+    assert.equal(blocked.status, 409, '对方活着时必须仍被 CONFLICT 挡住（不许抢活人的锁）')
+
+    // 阶段二：对方**死了**（心跳停在 5 分钟前）。此时用户的下一次操作应内联接管，
+    // 而不是抛 CONFLICT 等用户去点「重新检测」—— 这正是 ensureLease 补的那一环。
+    const dead = new Date(Date.now() - 5 * 60_000).toISOString()
+    writeFileSync(
+      leasePath,
+      JSON.stringify({ pid: 999_999, label: '另一个窗口', startedAt: now, heartbeatAt: dead }),
+    )
+    const takenOver = await call(reader, 'POST', '/maintenance/cleanup', { body: { confirm: true } })
+    assert.equal(takenOver.status, 200, '持有者已死：同一次操作里接管并继续执行')
+    assert.equal(reader.schedulerStatus().lease.held, true, '接管后本实例持有租约')
+  } finally {
+    reader.close()
+    cleanup(dir)
+  }
+})
+
 test('导出的 JSON 能被原样读回（自洽性：搬走再搬回来不丢字段）', async () => {
   const { runtime, dir } = await openRuntime()
   try {

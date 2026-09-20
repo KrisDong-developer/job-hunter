@@ -10,7 +10,7 @@
  *     ② 薪资是否真的可见（决定 `requiredFields` / `fieldCompleteness` 能不能升级）；
  *     ③ 岗位链接是否带 securityId（详情抓取的前提）。
  *
- * 流程（复用 probe-zhipin / probe-lagou-login 的登录等待套路 + D-17a 三件套）：
+ * 流程（复用 probe-zhipin 的登录等待套路 + D-17a 三件套）：
  *   1. patchright **启动式** + 系统 Chrome + stealth 注入，打开 Java + 深圳 的搜索页；
  *   2. 若未登录 → 在**弹出的窗口里手动登录**（profile 记住登录态，与 probe:zhipin 共用一份）；
  *   3. 等到登录信号（薪资非空 或 分页区出现）后落盘：

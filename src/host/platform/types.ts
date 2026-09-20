@@ -106,7 +106,7 @@ export interface CriteriaDimension {
    * 必须显式声明，因为**从 `values` 空不空推不出来**：
    *   * `guopin` / `hiredchina` 的城市表是**空**的，但空表在这里的含义是
    *     "一个城市都别给"（带城市一律拒绝）→ `closed: true`；
-   *   * `indeed` / `lagou` 是**自由文本**（地名原样进 URL，表里的值只是建议）
+   *   * `indeed` / `linkedin` 是**自由文本**（地名原样进 URL，表里的值只是建议）
    *     → `closed: false`，即使 `values` 非空。
    *
    * 缺省 = `values.length > 0`（历史行为）。判据与后果见 `platform/cities.ts`
@@ -282,7 +282,7 @@ export interface SiteAdapter {
    * `criteria.maxPages ?? options.maxPages ?? defaultMaxPages`）。
    *
    * 为什么必须是适配器声明而不是全局一个数：风控强度是**平台事实** ——
-   * 猎聘/拉勾（antiBot=high）默认 3 页、智联默认 5 页，都有站点侧依据；
+   *   * 猎聘（antiBot=high）默认 3 页、智联默认 5 页，都有站点侧依据；
    * 没有依据的平台就老老实实 1 页。曾经这里只有 hint 文案里的"默认 N 页"
    * 而执行链永远是 1 页 —— 文案说了三年假话，本字段让它们变成事实。
    */
@@ -441,7 +441,7 @@ export interface RawInboxMessage {
 
 /* ── 风控证据的上报与翻译 ──────────────────────────────────────────────
    以前"命中风控"这件事只有**一条**上报路径：`guard.detectBlock(page)` 在判墙时
-   读 DOM 文案。而接口型平台（waiqi / sinojobs / zhipin / zhaopin / liepin / lagou）
+   读 DOM 文案。而接口型平台（waiqi / sinojobs / zhipin / zhaopin / liepin）
    的风控证据**在接口返回值里** —— 判墙那一刻请求还没发出去，所以那类证据
    只能表达成一句普通 Error，最后被归类成 `PARSE_FAILED`：
    既拿不到"限流该退避"的语义，也不会触发平台级暂停。

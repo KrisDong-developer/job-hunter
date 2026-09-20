@@ -8,6 +8,7 @@
  */
 import { RESUME_FORMATS, RESUME_LANGUAGES, RESUME_STATES, RESUME_TEMPLATES } from '../../../shared/contract/enums/resume.js'
 import type { ResumeFormat, ResumeLanguage, ResumeState, ResumeTemplate } from '../../../shared/contract/enums/resume.js'
+import { GREETING_TONES, type GreetingTone } from '../../../shared/contract/enums/pipeline.js'
 import { normalizeResumeContent } from '../../../shared/domain/resume-content.js'
 import type { ResumeWriteInput } from '../../domain/resumes.js'
 import { DomainError } from '../../util/errors.js'
@@ -420,4 +421,88 @@ export async function tailoringsAdopt(ctx: RouteContext): Promise<RouteResult | 
   const body = await readObject(req)
   const adopted = body['adopted'] !== false
   return json(200, { ok: true, tailoring: service.adopt(tailoringId, adopted) })
+}
+
+// ── 话术模板（v12 多赛道）：一份简历一条赛道，开场模板跟着简历走 ──────
+
+function resumeIdOfSegment(segments: string[]): number {
+  return parseRecordId(segments[1] ?? null, '简历')
+}
+
+export async function greetingTemplatesList(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, segments, method } = ctx
+  if (!(method === 'GET' && segments.length === 3 && segments[0] === 'resumes' && segments[2] === 'greeting-templates')) {
+    return undefined
+  }
+  requireData(runtime)
+  return json(200, { items: runtime.resumes().listGreetingTemplates(resumeIdOfSegment(segments)) })
+}
+
+export async function greetingTemplateGenerate(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (
+    !(method === 'POST' &&
+      segments.length === 4 &&
+      segments[0] === 'resumes' &&
+      segments[2] === 'greeting-templates' &&
+      segments[3] === 'generate')
+  ) {
+    return undefined
+  }
+  requireData(runtime)
+  const body = await readObject(req)
+  const toneRaw = body['tone']
+  if (toneRaw !== undefined && !(GREETING_TONES as readonly string[]).includes(toneRaw as string)) {
+    throw new DomainError('INVALID_INPUT', `非法语气：${String(toneRaw)}`, {
+      hint: `合法取值：${GREETING_TONES.join(' / ')}`,
+    })
+  }
+  const template = await runtime.resumes().generateGreetingTemplate({
+    resumeId: resumeIdOfSegment(segments),
+    ...(toneRaw === undefined ? {} : { tone: toneRaw as GreetingTone }),
+  })
+  return json(201, { ok: true, template })
+}
+
+export async function greetingTemplateSave(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(method === 'POST' && segments.length === 3 && segments[0] === 'resumes' && segments[2] === 'greeting-templates')) {
+    return undefined
+  }
+  requireData(runtime)
+  const body = await readObject(req)
+  if (typeof body['name'] !== 'string' || typeof body['body'] !== 'string') {
+    throw new DomainError('INVALID_INPUT', 'name 与 body 都必填')
+  }
+  const template = runtime.resumes().saveGreetingTemplate({
+    resumeId: resumeIdOfSegment(segments),
+    ...(typeof body['id'] === 'number' ? { id: body['id'] } : {}),
+    name: body['name'],
+    body: body['body'],
+  })
+  return json(201, { ok: true, template })
+}
+
+export async function greetingTemplateRemove(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, segments, method } = ctx
+  if (
+    !(method === 'DELETE' &&
+      segments.length === 4 &&
+      segments[0] === 'resumes' &&
+      segments[2] === 'greeting-templates')
+  ) {
+    return undefined
+  }
+  requireData(runtime)
+  const templateId = parseRecordId(segments[3] ?? null, '话术模板')
+  // 删除前校验归属：模板必须属于路径里这份简历 —— 防止删到别家赛道的
+  const owned = runtime
+    .resumes()
+    .listGreetingTemplates(resumeIdOfSegment(segments))
+    .some((item) => item.id === templateId)
+  if (!owned) {
+    throw new DomainError('NOT_FOUND', `话术模板 ${String(templateId)} 不存在或不属于这版简历`)
+  }
+  const removed = runtime.resumes().removeGreetingTemplate(templateId)
+  return json(200, { ok: true, removed })
 }

@@ -15,7 +15,7 @@ const PURPOSE_GROUPS: Array<{ title: string; purposes: string[] }> = [
   { title: '匹配与解析', purposes: ['match_score', 'explain', 'jd_summary', 'resume_tailor'] },
   {
     title: '沟通与互动',
-    purposes: ['greeting_draft', 'resume_tone_check', 'message_extract', 'reply_draft'],
+    purposes: ['greeting_draft', 'greeting_template', 'resume_tone_check', 'message_extract', 'reply_draft'],
   },
   {
     title: '辅助与决策',

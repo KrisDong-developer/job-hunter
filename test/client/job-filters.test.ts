@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   EMPTY_FILTERS,
   clampScoreInput,
+  describeAppliedFilters,
   digitsOf,
   firstSeenSinceOf,
   sameFilters,
@@ -10,6 +11,7 @@ import {
   toggleValue,
   type Filters,
 } from '../../src/client/screens/jobs/filters.js'
+import type { ExpChip } from '../../src/shared/domain/job-facets.js'
 
 /**
  * 岗位库的筛选状态工具（第五轮补测）。
@@ -75,4 +77,49 @@ test('firstSeenSinceOf：时间窗算成 ISO 时刻，口径与首屏「今日�
   assert.equal(firstSeenSinceOf('1d', now), '2026-09-19T12:00:00.000Z')
   assert.equal(firstSeenSinceOf('7d', now), '2026-09-13T12:00:00.000Z')
   assert.equal(firstSeenSinceOf('不认识的窗', now), undefined)
+})
+
+test('describeAppliedFilters：默认条件不产 chips；每一枚只撤销自己那一条', () => {
+  const expChips: ExpChip[] = [{ id: '3-5', label: '3-5年', values: ['3-5年', '3年～5年'] }]
+  // excludeBlacklisted 开着是**默认态**，不算"筛过"
+  assert.deepEqual(describeAppliedFilters(EMPTY_FILTERS, expChips), [])
+
+  const applied: Filters = {
+    ...EMPTY_FILTERS,
+    q: 'java',
+    cities: ['深圳', '杭州'],
+    expBuckets: ['3-5'],
+    minSalary: '15',
+    newWindow: '7d',
+    excludeBlacklisted: false,
+    groupDuplicates: true,
+  }
+  const chips = describeAppliedFilters(applied, expChips)
+  assert.deepEqual(
+    chips.map((chip) => chip.text),
+    [
+      '关键词「java」',
+      '城市 深圳',
+      '城市 杭州',
+      '经验 3-5年',
+      '最低月薪 ≥ 15',
+      '新增：近 7 天',
+      '含已拉黑公司',
+      '跨平台折叠',
+    ],
+    '顺序稳定（关键词 → 城市 → 经验 → … → 折叠），界面渲染依赖它不抖',
+  )
+
+  // 移除一枚城市：另一枚还在，其余条件一律不动（chip 是单条撤销，不是重置）
+  const withoutShenzhen = chips.find((chip) => chip.id === 'city:深圳')?.next
+  assert.deepEqual(withoutShenzhen?.cities, ['杭州'])
+  assert.equal(withoutShenzhen?.q, 'java')
+  assert.equal(withoutShenzhen?.minSalary, '15')
+
+  // 关掉默认排除（excludeBlacklisted:false）必须被看见；移除后回到默认开
+  assert.equal(chips.find((chip) => chip.id === 'blacklisted')?.next.excludeBlacklisted, true)
+
+  // 梯队 id 对不上 facet（例如套用了很久以前存的视图）：拿 id 本身当文案，不炸
+  const odd = describeAppliedFilters({ ...EMPTY_FILTERS, expBuckets: ['raw:1年～3年'] }, [])
+  assert.equal(odd[0]?.text, '经验 raw:1年～3年')
 })

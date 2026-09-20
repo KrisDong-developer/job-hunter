@@ -128,3 +128,28 @@ export interface TailoringDto {
 export interface ResumeDetailDto extends ResumeDto {
   issues: ResumeIssue[]
 }
+
+/**
+ * 简历的打招呼话术模板（简历中心「话术」子页）。
+ *
+ * 与 outreach 的**岗位话术草稿**是两层东西：模板是**简历赛道级**的开场套路
+ * （从这份简历的事实生成、可人工编辑、跨岗位复用），发送那一刻再按岗位
+ * 替换占位符（`{岗位}` / `{公司}`）。`uses` / `replies` 是回复率闭环的原始数据。
+ */
+export interface GreetingTemplateDto {
+  id: number
+  /** 归属的简历；`null` = 通用模板（不属于任何一版简历）。 */
+  resumeId: number | null
+  name: string
+  /** 正文，可含 `{岗位}` `{公司}` 占位符。 */
+  body: string
+  /** 占位符名列表（从 body 提取，发送时替换）。 */
+  vars: string[]
+  /** `llm` = AI 生成（已过校验）；`rule` = 规则兜底；`manual` = 手写。 */
+  via: 'llm' | 'rule' | 'manual'
+  /** 发送次数 / 收到回复次数（回复率 = replies / uses）。 */
+  uses: number
+  replies: number
+  createdAt: string
+  updatedAt: string
+}

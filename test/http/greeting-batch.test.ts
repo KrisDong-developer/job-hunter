@@ -58,8 +58,9 @@ async function openRuntime(): Promise<{ runtime: HostRuntime; dir: string }> {
  *
  * ⚠️ `loggedIn` 刻意**保持 false**：这批用例要钉的正是"未登录"与"平台不支持"这两种
  * **过了闸门之后**才暴露的原因（`greetingReadinessOf`）。闸门本身必须先过 ——
- * 顺序反了的话，用户看到的会是"未确认对当前雇主隐藏（liepin）"，
- * 而真正的事实是"猎聘压根没有打招呼入口"。
+ * 顺序反了的话，用户看到的会是"未确认对当前雇主隐藏（51job）"，
+ * 而真正的事实是"51job 压根没有打招呼入口"（猎聘 2026-09-20 起已实现打招呼，
+ * 不能再当"平台不支持"的示例）。
  */
 async function openGate(runtime: HostRuntime, platformIds: string[]): Promise<void> {
   const result = await routeRequest(runtime, {
@@ -117,11 +118,11 @@ test('POST /greeting/send-batch/preview：逐条给出"能不能发 + 为什么"
   try {
     const store = runtime.store()
     assert.ok(store !== undefined)
-    // BOSS 实现了 sayHello 但**未登录**；猎聘是刻意不实现打招呼的
+    // BOSS 实现了 sayHello 但**未登录**；51job 刻意不实现打招呼（猎聘 2026-09-20 起已实现，换它当示例）
     const zhipin = store.job.upsert(jobInput({ platformId: 'zhipin', platformJobId: 'p-1' }), T).id
-    const liepin = store.job.upsert(jobInput({ platformId: 'liepin', platformJobId: 'p-2' }), T).id
+    const fiftyone = store.job.upsert(jobInput({ platformId: '51job', platformJobId: 'p-2' }), T).id
 
-    const result = await call(runtime, '/greeting/send-batch/preview', { jobIds: [zhipin, liepin, 999_999] })
+    const result = await call(runtime, '/greeting/send-batch/preview', { jobIds: [zhipin, fiftyone, 999_999] })
     assert.equal(result.status, 200)
     const plan = (result.body as {
       plan: {
@@ -141,11 +142,11 @@ test('POST /greeting/send-batch/preview：逐条给出"能不能发 + 为什么"
     const byId = new Map(plan.items.map((item) => [item.jobId, item]))
     assert.equal(byId.get(999_999)?.blocker?.code, 'missing')
     assert.equal(
-      byId.get(liepin)?.blocker?.code,
+      byId.get(fiftyone)?.blocker?.code,
       'platform_unsupported',
-      '猎聘适配器刻意没实现打招呼 —— 要说"平台不支持"，而不是含糊的失败',
+      '51job 适配器刻意没实现打招呼 —— 要说"平台不支持"，而不是含糊的失败',
     )
-    assert.ok((byId.get(liepin)?.blocker?.hint ?? '').length > 0, '要给出下一步，而不是一句"发不了"')
+    assert.ok((byId.get(fiftyone)?.blocker?.hint ?? '').length > 0, '要给出下一步，而不是一句"发不了"')
     assert.equal(byId.get(zhipin)?.blocker?.code, 'not_logged_in')
     assert.ok(plan.note.includes('预测'), plan.note)
   } finally {
@@ -209,13 +210,13 @@ test('★ 逐条回执而不是整批失败：两种"发不了"各自成条，�
     const store = runtime.store()
     assert.ok(store !== undefined)
     // 闸门先过（隐身/窗口/休息日），剩下的两种"发不了"才有机会各自成条
-    await openGate(runtime, ['zhipin', 'liepin'])
+    await openGate(runtime, ['zhipin', '51job'])
     const zhipin = store.job.upsert(jobInput({ platformId: 'zhipin', platformJobId: 's-1' }), T).id
-    const liepin = store.job.upsert(jobInput({ platformId: 'liepin', platformJobId: 's-2' }), T).id
+    const fiftyone = store.job.upsert(jobInput({ platformId: '51job', platformJobId: 's-2' }), T).id
 
     const result = await call(runtime, '/greeting/send-batch', {
       confirm: true,
-      items: [{ jobId: zhipin, text: '您好' }, { jobId: liepin, text: '您好' }],
+      items: [{ jobId: zhipin, text: '您好' }, { jobId: fiftyone, text: '您好' }],
     })
     assert.equal(result.status, 200, '个别条发不出去不该让整个请求失败')
     const batch = (result.body as {
@@ -231,10 +232,10 @@ test('★ 逐条回执而不是整批失败：两种"发不了"各自成条，�
     assert.equal(batch.failed, 2, '两条各自失败，而不是抛一个异常就此中断')
     assert.deepEqual(
       batch.receipts.map((receipt) => receipt.jobId),
-      [zhipin, liepin],
+      [zhipin, fiftyone],
     )
     assert.equal(batch.receipts[0]?.code, 'NOT_LOGGED_IN', 'BOSS：未登录')
-    assert.equal(batch.receipts[1]?.code, 'ADAPTER_BROKEN', '猎聘：适配器没实现打招呼')
+    assert.equal(batch.receipts[1]?.code, 'ADAPTER_BROKEN', '51job：适配器没实现打招呼')
     assert.ok(batch.receipts.every((receipt) => receipt.ok === false))
     assert.ok(batch.note.includes('逐条'), batch.note)
   } finally {

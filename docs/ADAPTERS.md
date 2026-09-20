@@ -19,12 +19,12 @@
 | 智联招聘 | `zhaopin` | `adapters/zhaopin/` |
 | 猎聘 | `liepin` | `adapters/liepin/` |
 | BOSS 直聘 | `zhipin` | `adapters/zhipin/` |
-| 拉勾 | `lagou` | `adapters/lagou/` |
 | 神仙外企 | `waiqi` | `adapters/waiqi-job/` |
 | 国聘网 | `guopin` | `adapters/guopin/` |
 | SinoJobs 中欧招聘 | `sinojobs` | `adapters/sinojobs/` |
 | Indeed | `indeed` | `adapters/indeed/` |
 | HiredChina | `hiredchina` | `adapters/hiredchina/` |
+| LinkedIn 领英 | `linkedin` | `adapters/linkedin/` |
 
 每个平台目录内是**同一套固定词汇**（哪个文件装什么，按"这段代码在哪里运行"分）：
 
@@ -41,8 +41,8 @@
 ⚠️ 两条读代码时的硬约束：**`page*` 里的函数脱离模块作用域执行**（不得引用模块级的常量或工具），
 **`DEFAULT_*` / `merge*` 只从 `config.ts` 引**（`index.ts` 不做二次转出）。
 
-**唯一"没有代码"的是**：牛客 / 实习僧（校招，需求 §4.L 标"⚠️ 待预研"）与 LinkedIn（海外）。
-其余 10 个都有代码 —— 但"有代码"≠"能用"，能用程度看 `platform-facts.ts`。
+**唯一"没有代码"的是**：牛客 / 实习僧（校招，需求 §4.L 标"⚠️ 待预研"）。
+其余 11 个都有代码 —— 但"有代码"≠"能用"，能用程度看 `platform-facts.ts`。
 
 各平台的**已知陷阱**（选择器命名、风控特征、翻页形态）记在 §7；这里不重复。
 
@@ -167,10 +167,13 @@ npm test
 ```
 
 > **探针覆盖**：10 个适配器现在都有至少一个在线探针（`package.json` 里的 `probe:*`）——
-> 浏览器型：`probe:51job` · `probe:liepin` · `probe:zhipin` · `probe:lagou` · `probe:guopin`
+> 浏览器型：`probe:51job` · `probe:liepin` · `probe:zhipin` · `probe:guopin`
+> · `probe:guopin-login`（国聘**登录态**：窗口留给人登录，登好后采列表/详情快照与登录锚点证据）
+> · `probe:guopin-pagination`（国聘**分页契约**：自动实测 URL 翻页与点击翻页谁有效）
 > · `probe:zhaopin-login` · `probe:liepin-chat`（猎聘**登录态**走查：hover 沟通入口 / 点侧边栏
 > 「我的沟通」抽屉 / 采 IM 接口；全程只读，沟通与投递入口按语义护栏默认不点）
-> · `probe:zhipin-chat` · `probe:zhaopin-anon`；纯 HTTP 型：`probe:sinojobs` · `probe:hiredchina` · `probe:indeed` · `probe:waiqi`。
+> · `probe:zhipin-chat` · `probe:zhaopin-anon`；纯 HTTP 型：`probe:sinojobs` · `probe:hiredchina` · `probe:indeed` · `probe:waiqi`
+> · `probe:linkedin` / `probe:linkedin-login` / `probe:linkedin-v2`（LinkedIn 轻量 / 登录侧 / 深度探针）。
 > 它们都是**手动跑一次**的校准工具（§14），产物落到仓库根的 `.probe-<平台>-capture/`
 > （已被 `.gitignore` 的 `.probe*` 忽略），**刻意不覆盖 `test/fixtures/` 里被用例钉住的夹具** ——
 > 那些文件的首条记录标题/条数/源地址被硬编码断言，静默替换只会让测试红在与本次校准无关的地方。
@@ -218,7 +221,7 @@ npm test
    ⚠️ **声明 `city` 维度时，`closed` 要按真实行为给**（`platform/cities.ts` 的 `citySupportOf` 读它）：
    表里的值就是全部取值域 → 省略或 `true`；**表是空的但你会拒绝**（`guopin` / `hiredchina`
    带城市一律返回 `null`）→ **必须显式 `closed: true`**；表里只是**建议**、原样收自由文本
-   （`lagou` / `indeed`）→ `closed: false`。
+   （`linkedin` / `indeed`）→ `closed: false`。
    缺了它用户收到的不是"少一条提示"就是"一条假警告" —— 而这个 flag **推不出来**，
    因为空表在这两种平台上的含义刚好相反；
 7. 若该平台有「打招呼 / 投递 / 收件箱 / 阶段探测」动作，必须在 `guard/actions/` 里实现并配测试。
@@ -292,7 +295,10 @@ npm test
     把整页记录打成 `pending_repair`（宁可让逐字段健康计数去报警）；
   - **薪资明文在哪（2026-09-19 已接上）**：`wapi/zpgeek/search/joblist.json` 的
     `zpData.jobList[].salaryDesc`（如 `"12-20K·13薪"`，无私有区字符）。连接键是接口 `encryptJobId`
-    ↔ 卡片 `href="/job_detail/<id>.html"` 的 id（实测 **15/15** 命中）；接口另有
+    ↔ 卡片 `href="/job_detail/<id>.html"` 的 id（2026-09-19 未滚动时实测 **15/15** 命中；
+    ⚠️ **2026-09-20 复测收窄**：DOM 滚了 6 轮之后，接口第 1 页 15 条里**只有 13 条**的 id
+    能与 DOM 对上 —— 两边集合会随滚动小幅漂移，所以"按 id 回填"只能覆盖一部分，
+    对不上的一律留空，**绝不猜**）；接口另有
     `jobName`/`brandName`/`cityName`/`jobExperience`/`jobDegree`/`skills`/`welfareList` 等，比 DOM 全。
     调用形态：**POST + 表单体**（不是 JSON），体形如
     `page=1&pageSize=15&city=101280600&query=Java&…&scene=1`；而且**只要 cookie + `content-type` 就调得通**
@@ -304,6 +310,14 @@ npm test
     ⚠️ 纠正一条旧结论：**接口的 `page` 参数是有效的**（站点滚动时自己依次发 page=1,2,3…）；
     旧结论"只能滚动加载、`&page=2` 无效"说的是**搜索页 URL 的 `page` 参数被 SPA 忽略**，
     两者不是一回事。适配器的翻页模型没变（`hasNextPage` 仍恒 false、深度仍走 `scrollRounds`）。
+  - **详情页 JD 有水印注入（2026-09-20 实测，做详情解析前必读）**：BOSS 把品牌字串做成
+    **随机类名**的 `<span>` 塞进 `.job-sec-text` 正文的**任意位置**（实测原文
+    `<span class="TkBBeZbHdGjN">BOSS直聘</span>岗位职责<br>1. 参与后<span class="pyKakWzEQwNK">来自BOSS直聘</span>端业务系统…`）。
+    直接取 `textContent` 会得到「…参与后**来自BOSS直聘**端业务系统…」——
+    **词被从中间劈开**，而 `jdText` 是要写库并喂给打分/技能差距分析的。
+    ⇒ 必须**逐节点走、跳过"整个元素恰好等于水印串"的节点**（类名随机 ⇒ 只能按文本判，
+    且**不要用 `includes`**：句中正常提到平台名的不该删）。名单在
+    `ZhipinDetailSelectors.jdWatermarkTexts`（可 DB 覆盖）。**列表页没有**这种注入。
   - **登录态检测（2026-09-19 补）**：只认**结构性属性**，锚点由两份真实快照对比定案 ——
     已登录 `a[ka="header-username"]`（页头「求职者」下拉）/ 未登录 `a[ka="header-login"]`
     （命中数分别 0→1 与 1→0）。补它的直接动机：`auth === undefined` 会让
@@ -333,9 +347,12 @@ npm test
     - 收件箱会话行是 **`li[role=listitem]`**（求职者端；招聘者端才是 `.geek-item-wrap`）：
       HR 名 `.name-text`，公司名取 `.name-box` 的**第 2 个 span**，最后一条 `.last-msg-text`；
     - **附件简历只能在平台内选着发**（工具条「发简历」→ `.choose-resume-dialog` →
-      `.list-item` → `.btn-confirm`）。求职者网页端**没有会话内上传本地文件的入口** ——
+      条目 → `.btn-confirm`）。求职者网页端**没有会话内上传本地文件的入口** ——
       BossHunter 的定制 PDF 也是"生成后人工发送"。所以适配器对非空 `filePath`
       只在页面真存在 `input[type=file]` 时才上传，否则如实报 `missing`，**不假装发成功了**。
+      ⚠️ **2026-09-20 实测修正**：这条链路的**真实结构**与原先抄来的不一样（见下面第五次实测）——
+      条目容器是 `.resume-choose-container`、确认按钮是 `button.btn-v2.btn-sure-v2.btn-confirm`，
+      而且**弹窗开了不等于能发**（详见第五次实测那一节）。
     - ⚠️ **一次打招呼会留下两条消息**：点「立即沟通」时 BOSS 自己会先替你发一句**平台默认招呼语**，
       随后适配器才发用户那段话术。适配器不替用户省掉自己那段（他要的就是那段），
       但这件事必须让用户在按"确认"之前看到 —— 所以写进了平台事实表的 `greetingSideEffect`，
@@ -401,7 +418,8 @@ npm test
             **平台要求双方回复后才能发简历**，适配器现在先读这个状态再决定，不点那个点不动的按钮；
           - 会话页上的 `input[type=file]` 只有两个：「上传附件简历」到**自己的简历库**
             （`.upload-resume-dialog`）与「发送图片」（`.btn-sendimg`）—— **都不是**把本地文件发给 HR。
-            故 `sendResume(filePath≠null)` 直接 fail-closed 并说明；仍**未实测** `.choose-resume-dialog`；
+            故 `sendResume(filePath≠null)` 直接 fail-closed 并说明；`.choose-resume-dialog` 当时**未实测**
+            （两天后即 09-20 补上了，见下面第五次实测）；
           - 另一个文档顺序陷阱：`.last-msg` 是**容器**，逗号选择器里带上它会被先选中（拿到"消息+未读数"），
             和 `.btn-startchat-wrap` 同一类 —— 候选里只放叶子节点。
        - **2026-09-18 第四次：把"回复"从假动作改成真动作 + 阶段探测落地**（都用上面已实测的选择器，
@@ -431,6 +449,48 @@ npm test
            `-K·薪`（没有 `@font-face`、没有 `content:"digits"`、没有数值型 `aria-label`/`title`）。
            因此 `test/platform/zhipin.test.ts` 里那条"薪资可见率"断言**只能证明登录态**，不能证明
            薪资可用；现在它同时量"文本可见率"与"带数字率"并把后者打印出来，不再给假的绿灯。
+       - **2026-09-20 第五次：会话级三处缺口一次补齐（`npm run probe:zhipin-chat`）**。
+         这次账号里已经有 **2 条真实会话** —— 一条是 **HR 主动发来的未读会话**、另一条是
+         **我发出去且已被读**的，正好把 09-18 缺的三类样本一次凑齐
+         （产物 `chat-report-2026-09-20.json` / `resume-dialog-2026-09-20.html`）：
+         - ✅ **未读徽章的类名是 `.notice-badge`**（此前候选列表里有它、但从未在真实页面命中过）：
+           HR 主动发来的那行带它、文本就是未读数 `1`；同一行**没有** `.message-status` —— 与
+           "节点在 ⇒ 最后一条是我发的"这条方向判据互相印证。⇒ 候选顺序改为 `.notice-badge` 打头；
+         - ✅ **`status-read`（文案 `[已读]`）拿到了真实样本** ⇒ `actions.detectStage` 的 `read`
+           这一档不再是"代码支持但没见过"（上面第四次实测里那句 ⚠️ 到此作废）；
+         - ✅ **`.choose-resume-dialog` 打开过并采下原文**（HR 回复后「发简历」的 `unable` 消失）。
+           真实结构：外壳 `.boss-popup__wrapper…choose-resume-dialog`（**同类名命中 2 个节点**）→
+           `.boss-dialog__body` → 内层 `.choose-resume-dialog` → `.resume-choose-container`（条目容器）
+           ＋ `.footer > button.btn-v2.btn-sure-v2.btn-confirm`「发送」。两条**影响行为**的事实：
+           ① **一条可选简历都没有时弹窗照样打开**（渲染空态 `.resume-top-tip`
+           「未上传简历」＋ `.btn-upload`「去上传」）；② **未选中简历时确认按钮带
+           `class="… disabled" disabled`**，点它什么都不会发生。
+           ⇒ `sendResume` 改为**先读弹窗状态再决定**（新增页面函数 `resumeDialogStateInPage`：
+           条目数 / 按钮是否 disabled / 空态文案），条目为空或按钮 disabled 时如实报 `missing`
+           并把"要去我的简历上传附件简历"讲清楚 —— 修掉的是**一条会撒谎的路径**：
+           旧代码会点那个点不动的按钮，然后因为 `.resume-card` 早就在页面上而报 `delivered`。
+           ⚠️ 本轮**仍**未实测：简历**条目本身**的类名（账号无附件简历，容器里只有空态）、
+           发送成功后的 `.resume-card`（没东西可发）。条目候选里那条结构式写法（容器下非空态的
+           直接子元素）是由实测容器推导的，不是凭空编的类名。
+         - 🔁 顺带复测**列表侧**（`npm run probe:zhipin-login`，产物落
+            `.probe-zhipin-capture/list-run/`）：滚动加载契约不变（15→30→…→105 条 / 6 轮），
+            薪资接口通道仍然通。但要把 09-19 那句"**15/15 完全重合**"收窄一下：
+            **滚了 6 轮之后，接口第 1 页 15 条里只有 13 条的 id 能与 DOM 对上** ——
+            两边集合会随滚动小幅漂移，按 id 回填因此只覆盖一部分（对不上就留空 + 保留原 note，
+            **绝不猜一个薪资写进去**）。想提高覆盖率调 `joblistMaxPages`。
+          - 🔴 **同批挖出一个更严重的：详情页 JD 被注入水印，而适配器直接把脏文本写库**。
+            真实快照（`detail-2026-09-20.html`）里 `.job-sec-text` 原文是
+            `<span class="TkBBeZbHdGjN">BOSS直聘</span>岗位职责<br>1. 参与后<span class="pyKakWzEQwNK">来自BOSS直聘</span>端业务系统…`
+            —— 取 `textContent` 得到「…参与后**来自BOSS直聘**端业务系统…」：
+            开头多一段品牌串，且**「后端业务系统」被从中间劈开**。因为 `crawl.ts` 会把
+            `jdText` 原样写库（`store.job.setJdText`）并喂给打分 / 面试技能差距分析
+            （`interviews.ts` 的 `techTokens`），脏文本会一路带下去。
+            修复：`extractDetailInPage` 改为**逐节点走、跳过水印元素**，名单进
+            `ZhipinDetailSelectors.jdWatermarkTexts`（可 DB 覆盖；**类名每次随机，只能按文本判**）。
+            ⚠️ 判据是"**元素全文恰好等于水印串**"，不是 `includes` —— 句中正常提到平台名的不动。
+            在线复验（同一份真实快照）：修复前 `jdText` **297** 字含两处水印，修复后 **283** 字、
+            `直聘` 0 处、`后端业务系统` 复原（差的 14 字 = 6+8 两个水印串）。
+            📌 **列表页查过没有**这种注入（105 张卡片 0 个随机类名 span、标题/公司名 0 处水印）。
 - **猎聘**（2026-09-18 深度调研，夹具 + 接口采样交叉验证）：
   - 搜索接口 `POST api-c.liepin.com/api/com.liepin.searchfront4c.pc-search-job`，请求体
     `mainSearchPcConditionForm` 含全部筛选参数（city/dq/pubTime/salaryCode/workYearCode/eduLevel/industry…），
@@ -560,7 +620,7 @@ npm test
       ⚠️ `direction` 的语义**仍然没定**：两个取值（`0`/`1`）与"最后一条消息方向"和
       "会话由谁发起"两种解释**都吻合**，而且类型还不一致（一个是字符串一个是数字）。
       两个样本分不清 —— 不许当判据用。
-    - ⚠️ **`readInbox` / `detectStage` 仍然刻意不实现**，卡点是**两条**（都属"没样本/结构不符"，不是技术难）：
+    - ⚠️ **`readInbox` / `detectStage` 2026-09-19 时都刻意不实现**，卡点是**两条**（都属"没样本/结构不符"，不是技术难）：
       1. **`direction` 的语义没有定论**（上面那张表）—— 而 `RawInboxMessage.direction`
          （`'hr' | 'me'`）**只能**由它推出来。虽然"有未读 ⇒ 对方发的"这条可以覆盖一部分，
          但已读会话的最后一条是谁发的仍判不出来；
@@ -573,6 +633,19 @@ npm test
          但"我发起"的会话得看会话内消息体 —— 那份数据还没采。
 
       硬写就是编 —— 与 BOSS 的 `.choose-resume-dialog`（要先有 HR 回复）同类：**卡在账号状态，不卡在技术**。
+      **2026-09-20 更新**：第 1 条被绕开、`readInbox` 已落地（第 2 条仍然拦着 `detectStage`）——
+      * **`direction` 不当判据用**：改用两条**有正向/反向样本**的规则 ——
+        `unReadCnt > 0 ⇒ hr`（未读的定义就是"对方发来我没看"，8/8 样本一致）、
+        `extType === 200（平台替我生成的招呼语建议）⇒ me`（1/1 样本：对方一个字都没说）、
+        其余按 `hr` 记（口径与 zhipin 相同：收件箱的用途是"有没有人回我"，**漏报比误报贵**）。
+        原字段 `direction` 仍留在解析结果里（`directionRaw`）**只作对比用**，不参与判定 ——
+        八行样本下它仍与"最后一条的方向""会话由谁发起"两种解释都吻合，**依旧不许当判据**；
+      * **`platformJobId` 只在"HR 主动发来的带岗位卡消息"上给**（`extType:202` 的
+        `extBody.bizData.jobId`，数字 id）—— 给不出就不给（`optional` 字段），不猜；
+      * `at` 用真实时间戳：`latestMsgTime` 是**毫秒**，直接转 ISO（比 zhipin 只能给"昨天"这类相对文本好）；
+      * **判空的唯一合法来源**是 `data.list` 真的是空数组；`flag ≠ 1` / 结构不认识 / 请求失败**一律抛错**
+        （`totalCount`/`pageSize`/`hasNext`/`hasMore` 四个汇总量实测全坏：`list` 有 8 条时它们全是 0/false，
+        所以**连翻页都只能靠"本页不满一页即停"**）。
     - **打招呼（`sayHello`）的接口契约与门坎**（2026-09-19 实测两次点击，简历完善前后各一次）：
       - 点详情页 `.btn-main`「聊一聊」触发
         `POST api-c.liepin.com/api/com.liepin.im.c.chat.open-chat`，表单体
@@ -593,6 +666,63 @@ npm test
     - 投递相关的输入（`sendResume` 仍未实现）：`cresume.get-resume-ids` 给 `defaultResId`
       （平台内简历 id）、`cbusi.applyprior.get-info-for-jobdetail` 是「投递优先」付费位
       （实测 `status:false`）；猎聘投递**有没有二级确认未实测**。
+  - **2026-09-20 适配器结构对齐（参照 `zhipin/`）** —— 四条，都是"把纪律落到代码形状上"：
+    1. `page.ts` 拆成 **`page/list.ts`**（卡片解析 / 分页可用性 / 登录态锚点）+
+       **`page/detail.ts`**（JD / 薪资 / 关键信息行 / 公司名），对齐 `zhipin/page/` 的功能分区。
+       拆的理由与那边一样：**"这段函数在哪个页面上下文里跑"是读这份代码时最要紧的一件事**，
+       而登录态锚点这种"列表页与详情页都不属于"的函数，塞在单文件里只能随便挂一处；
+    2. 判墙收敛成**唯一实现** `detectBlockOf`（`guard.detectBlock` 直接用）。现在只有一个消费者，
+       但动作链一旦落地 `assertActionPage` 就是第二个 —— 各写一遍意味着改信号时漏一处，
+       就会出现"采集认得这道墙、动作不认得"，而动作那边恰恰是**会真发东西**的一侧；
+    3. `auth.checkUrl` **指向搜索页**（原来是缺省 = `loginUrl` = 首页）：两个登录标记是在**搜索页**上
+       定案的（匿名夹具就是搜索页），而首页从未验证过页头结构一致 ⇒ 拿首页当检测页等于换一套没验过的判据。
+       这正是 `types.ts` 里 `checkUrl` 那条纪律（51job / 智联两个反例）的落地；
+    4. `crawl.gotoSearch` **吞掉** `waitForSelector` 的异常（`zhipin` 同款）：等待超时本来只返回 `false`，
+       但页面**被销毁/崩溃**时 Playwright 会抛 —— 抛的后果很具体：`crawl.ts` 记成 `NAVIGATION_FAILED`
+       并**直接结束本轮**，于是**跳过了紧随其后的 `detectBlock`**，把猎聘最典型的风控形态
+       （`security.min.js` 把页面 `location.replace('about:blank')`）报成"导航失败"，
+       既拿不到"该停手"的语义、也不触发平台级暂停。吞掉之后由 `detectBlock` 如实判 `blank`。
+    > `requiredFields` **保持四个核心字段**（与 `zhipin` 的取舍相反）：猎聘薪资是**明文**，
+    > 夹具 `42/42`、接口采样 `42/42` —— 这份清单是**按各平台实测覆盖率**定的，不是统一套模板。
+    > 真出现锚不到的那天，该改的是选择器/模式，而不是把字段从必需清单里删掉把问题藏起来。
+  - **2026-09-20 第二轮登录态探针**（`npm run probe:liepin-chat`，会话数 2→8；本轮探针加了
+    "会话行摘要 / IM 选择器量测 / 适配器请求头对照"三块产出）新增四条事实，其中两条改了代码：
+    1. **IM 接口的门坎与搜索接口同款**：`get-contact-list` 用**页面那套头**、**适配器六项静态头 + 现造遥测**、
+    甚至**只给六项静态头**三种变体对照 —— 前两种 `flag=1`，最后一种 `{"flag":0,"code":"-1400"}`。
+    ⇒ 与搜索接口同一条结论（门在 `x-fscp-*` 一族的完整性），**且体的 content-type 必须改成
+    `application/x-www-form-urlencoded`**（表单体；照抄搜索接口那份 `application/json` 会头体错配）；
+    2. **`platformJobId` 的双通道不一致（真 bug，已修）**：接口通道给 `job.jobId`（8 位数字，如 `84775119`），
+    DOM 通道按 URL 路径抠给的是 10 位 id（如 `1984775119`）—— 同一批 42 条里二者只有 **19/42** 相等
+    （那 19 条是 `/a/` 形态，两种 id 恰好同值）。**同一批岗位在"接口优先"与"回退 DOM"两轮之间会拿到两套 id**，
+    被幂等 upsert 当成两批新岗位各写一遍。修法：统一到**卡片 href 埋点 `pgRef` 里的数字 id**
+    （`job_listcard%40<kind>_<8 位>%3A<n>`），实测该集合与接口 `job.jobId` 集合**完全相等（42/42，零差异）**；
+    DOM 抠不到时回退 URL 路径 id 并**记 note**（那种记录与接口通道可能对不上）。用例钉住两件事：
+    两通道 id 相等 + 回退必留痕；
+    3. **`readInbox` 落地**（`get-contact-list` + "本页不满即停"翻页），判定规则与"为什么不用 `direction`"
+    见上面那条；`supportsInbox` 随之改为 `true`（`facts.test.ts` 会钉住这条自洽性）；
+    4. **会话面板选择器首次量到**（点开一条会话，只读）：
+    `textarea.ant-im-input.im-ui-textarea`（placeholder「请输入文字，按Enter键发送」）、
+    `.im-ui-message-item-send` / `.im-ui-txt.send`（我方消息）、
+    `.im-ui-message-item-loadingicon-send`（发送中图标）、`.im-ui-message-item-receive`（对方消息）。
+    ⇒ `sayHello`/`reply` 的**输入面**有了，但**仍然不实现**：缺的是"点了 ≠ 发出去了"那条桥 ——
+    `open-chat` 的应答（`30011` / `flag:1`）是页面自己发的请求，而 `PageLike` 没有响应钩子；
+    唯一可读的按钮文案**被拒也会翻成「继续聊」**。要落地得先让平台把结果暴露成页面可读的东西。
+    ↩ **同日推翻上一段（发送实验后落地）**：上面那句"要平台暴露"是把桥想窄了 ——
+    **桥在页面输入面自己身上**，与 zhipin `#chat-input` 同构。`LIEPIN_ALLOW_SEND=1 npm run probe:liepin-chat`
+    在一条真实会话里真键盘打「测试，请忽略。」+ 回车，**三重证据闭环**：
+    ① `textarea.value === 话术`（回车前校验）；② `.im-ui-message-item-send` 出现同文本、
+    loading 图标归 `hide`；③ `get-contact-list` 第一行 `lastPayload` 就是这句话。
+    ⇒ `sayHello`（详情页 → 「聊一聊」→ 面板 → 输入 → 送达）与 `reply`（搜索页 → 抽屉 →
+    按公司点会话行 → 面板 → 输入 → 送达）落地，`supportsGreeting` 随之置 true。
+    发送实验还钉死两个坑（都写进了实现）：
+    - **焦点陷阱**：第一次实验里点击落在**动画中的弹窗**上、焦点没进输入框 ⇒ `insertText` 全部落空
+      （value 恒空、Enter 落空、什么都没发出；第二次焦点落定后 insertText 即正常 —— 根因是焦点不是输入法）。
+      ⇒ 实现里输入前必校验 `value`，失败再聚焦并回退真键盘 `keyboard.type`，两路都不上屏**绝不按回车**；
+    - **入口懒加载**：详情页上 `#im-c-entry` 的内层 `.im-ui-basic-entry` 不保证渲染
+      （快照实测：详情页 0 / 搜索页 1）⇒ `reply` 固定从搜索页进抽屉，`waitFor` 等的也是内层选择器。
+    受理/被拒判据（DOM 后果，代替看不到的 HTTP 应答）：被拒弹 `.complete-resume-modal`（code 30011）、
+    受理则会话输入框出现（chat modal 在当前页打开）。仍不实现：`sendResume`（二级确认未实测）、
+    `detectStage`（人/岗维度对不上）；`supportsReadReceipt` 保持 false（`oppositeRead` 实测恒 "1"，无反向样本）。
   - 详情补抓的边界（`crawl.ts` 的 `fetchNewJobDetails`）：**只补本轮新增**（老岗位 JD 已取过）、
     每轮上限 `DETAIL_FETCH_MAX_PER_ROUND=20`、与列表同一个单轮预算（到点即停）、
     命中风控**即整轮停手**（记 `failed` + 平台级信号，绝不硬闯）。
@@ -607,5 +737,43 @@ npm test
   **「立即投递」没有二级确认**（点一下 = 投简历 + 平台自动发一句招呼语）→ 探针里它按语义护栏默认不点，
   `actions.sendResume` 在严格两段式确认落地前保持不实现。
   该平台的登录态走查入口是 `npm run probe:zhaopin-login`（产物落 `.probe-zhaopin-capture/`）。
+- **LinkedIn**（2026-09-21 实现；**两轮真机校准**：`probe:linkedin-login`（登录侧）+
+  `probe:linkedin-v2`（深度探针，产物 `v2-report-<日期>.json`））：
+  - **中国版已死**：InCareer 2023-08 下线，`cn.linkedin.com` 只剩落地页 —— 一律走
+    `www.linkedin.com`（中文界面/中国岗位照常可搜）；
+  - ⚠️ **CSP 启用 Trusted Types（v2 两次真机实测，离线 jsdom 测不出）**：页面上下文里
+    `innerHTML = 字符串` 与 `DOMParser.parseFromString` **都**抛「requires TrustedHTML」
+    ⇒ 「页面内 fetch 回字符串再注入解析」这条路在真实页面上是**死路**（适配器 v1 的
+    guest 通道就是这么静默失败的）—— 唯一可行形态是**顶层导航**到 guest 端点，
+    浏览器自己渲染片段成文档，解析活 DOM（`gotoSearch` 的导航目标就是端点 URL）；
+  - **主通道 = guest 匿名端点（导航式）** `/jobs-guest/jobs/api/seeMoreJobPostings/search`：
+    匿名可读（v2：匿名侧 200、10 条）；**搜索页不是采集通道**（登录态初始 DOM 0 卡片、
+    客户端渲染；游客态虽 SSR 直出 60 卡但只用于 `auth.checkUrl` —— 登录标记 global-nav
+    只在完整页面里有）；
+  - **URL 参数真伪（v2 实测）**：guest 端点只认 `keywords` / `location` / `start` /
+    `f_TPR`（r86400 → 全部 datetime 落在当天，真生效）；**f_E / f_WT / f_AL / sortBy
+    全被忽略**（f_E=4 与对照 id 集合差异 0、sortBy=DD 不降序）→ 这四个维度**不声明**
+    （拼一个不生效的参数 = 骗配置界面）；
+  - **翻页定案（v2 实测）**：start=0/10/20 三页各 **10 条**、零重叠、匿名侧同页大小 ——
+    不是社区文档说的 25；满页判据成立；
+  - **详情页对游客 SSR 直出（v2 实测）→ `detail.extract` 已落地**：`/jobs/view/{id}` 匿名
+    打开无 authwall；锚点：标题 `h1.topcard__title`、公司 `a.topcard__org-name-link`、
+    JD 全文 `.description__text--rich .show-more-less-html__markup`（clamp 折叠是 CSS 层，
+    textContent 是全文）、criteria `li.description__job-criteria-item`（h3+span：
+    职位级别→expReq，其余进 tags）；
+  - **薪资无源（v2 实测）**：卡片 0/10、详情页薪资正则 0 命中 —— 藏给登录会员视图，
+    `salary_raw` 不进必需字段；
+  - **登录标记两侧定案**（login 探针）：`.global-nav__me-photo` / `.global-nav__me` 登录 1 /
+    未登录 0 → `auth.isLoggedIn` 已落地；`checkUrl` 用搜索页（登录页上没有 global-nav）；
+  - **登录墙只信地址**（`/authwall`、`/login`），词表 `skipLoginWall`：游客页页头本来就
+    长着 Sign in / Join now 按钮，文案判据会把正常页误判成登录墙；
+  - **风控业内最强一档**：专属 **HTTP 999** 状态码、429、`/checkpoint/challenge/` 挑战页 →
+    antiBot=high、默认 2 页 / 上限 5 页（每页 10 条）；
+  - ⚠️ 判墙词表条目必须**无空白**：`detectBlockWithSignals` 判文案前会把整页文本去掉全部
+    空白再 `includes` —— 英文多词短语（如 `'quick security check'`）**永远匹配不上**
+    （写成 `quicksecuritycheck` 才有效；indeed 词表里的 `'Ray ID'` 就是这么变成死信号的）；
+  - 登录态动作链路（消息 / 投递 / InMail / 封号规则）**未调研** → `actions` 仍 fail-closed；
+    探针入口：`probe:linkedin`（轻量/可离线）、`probe:linkedin-login`（登录侧）、
+    `probe:linkedin-v2`（深度：翻页/筛选真伪/详情/匿名侧）。
 - **通用**：服务器 IP 会被招聘站直接拒绝返回数据（get_jobs 实测，本项目本机运行天然规避）；
   开着代理（墙外节点）访问国内平台既慢又异常，README 明确要求关闭。

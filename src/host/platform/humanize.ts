@@ -51,6 +51,17 @@ export interface HumanKeyboard {
   /** 以输入法提交的方式插入文本（一次一个字符）。 */
   insertText(text: string): Promise<void>
   /**
+   * 可选：逐字符**真键盘**输入（keydown/keypress/input/keyup 全套事件，
+   * Playwright `keyboard.type(text, { delay })`）。
+   *
+   * 为什么需要它：`insertText` 只发 input 事件，且**前提是焦点真的落在目标输入框上** ——
+   * 猎聘 IM 的 textarea（2026-09-20 两次实验：第一次点击落在动画中的弹窗上、焦点没进
+   * 输入框，`insertText` 全部落空；第二次焦点落定后 `insertText` 即正常上屏）。
+   * 它是"输入路径校验失败时"的回退手段之一；缺省时调用方只能用 `insertText`，
+   * 失败就如实报告（fail-closed），绝不退回 DOM 改写。
+   */
+  type?(text: string, options?: { delay?: number }): Promise<void>
+  /**
    * 可选：按住修饰键（Playwright `keyboard.down`）。
    *
    * 只为一件事存在：清空一个可能已有内容的输入框（`Ctrl/Cmd+A` → `Backspace`）。

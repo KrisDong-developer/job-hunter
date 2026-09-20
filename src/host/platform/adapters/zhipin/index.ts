@@ -73,7 +73,34 @@
  *   接口里另有 `jobName`/`brandName`/`cityName`/`jobExperience`/`jobDegree`/`skills`/
  *   `welfareList`/`brandStageName`，字段比 DOM 全 —— 后续想升级可以先从这些下手。
  *
+ *   📌 **2026-09-20 复测（`npm run probe:zhipin-login`）**：通道仍然通 —— 对照组与适配器
+ *   自建请求形态都取到薪资。但有一处**要把话收窄**：DOM 滚了 6 轮（105 条）之后，
+ *   接口**第 1 页 15 条薪资里只有 13 条的 id 能与 DOM 对得上**（不是 09-19 那次"未滚动"时
+ *   测到的 15/15）。也就是说 DOM 与接口的集合会随滚动小幅漂移，`fillSalariesFromApi`
+ *   按 id 回填因此只能覆盖其中一部分 —— 这是**设计上接受的**：对不上就留空 + 保留原 note，
+ *   绝不猜一个薪资写进去。想提高覆盖率就调 `joblistMaxPages`（每页 15 条、多翻一页多一轮请求）。
+ *
  * ## 详情页：选择器与解析（2026-09-18 由**本仓真实登录态快照**校准）
+ *
+ * ⚠️ **2026-09-20 追加实测（本次最值钱的一条）**：JD 正文里**被注入了水印**，
+ *   而适配器以前是直接取 `textContent` —— 于是**写库的 JD 是脏的**。
+ *   真实快照里 `.job-sec-text` 的原文是：
+ *
+ *   ```
+ *   <span class="TkBBeZbHdGjN">BOSS直聘</span>岗位职责<br>1. 参与后<span class="pyKakWzEQwNK">来自BOSS直聘</span>端业务系统的需求分析、…
+ *   ```
+ *
+ *   取 `textContent` 得到「BOSS直聘岗位职责1. 参与后**来自BOSS直聘**端业务系统…」——
+ *   开头多一段品牌串，而且**「后端业务系统」被从中间劈开**。
+ *   这不是显示问题：`crawl.ts` 会把 `jdText` 原样写库（`store.job.setJdText`），
+ *   而它下游喂给打分与面试技能差距分析（`interviews.ts` 的 `techTokens`）。
+ *   水印 span 的**类名每次随机**（实测两种），只能**按文本**判；名单进
+ *   `ZhipinDetailSelectors.jdWatermarkTexts`（可 DB 覆盖）。
+ *   在线复验：同一份真实快照，修复前 `jdText` 297 字（含两处水印），修复后 **283 字、
+ *   `直聘` 0 处、`后端业务系统` 复原**（差的 14 字正好是 6+8 两个水印串）。
+ *   ⚠️ 只剔"**整个元素恰好等于水印串**"的节点 —— 句中正常提到「BOSS直聘」的不动（有用例钉住）。
+ *   📌 顺带查过**列表页没有**这种注入（105 张卡片里 0 个随机类名 span、标题/公司名 0 处水印），
+ *   所以只有详情页 JD 需要清洗。
  *
  * 先说结论：BossHunter（`shengjidaguai-china/BossHunter` 的 `collection/platforms/boss.py`）
  * 给的那套详情选择器**已经有两处腐烂**，第一次真机实测（`npm run probe:zhipin-chat`，
@@ -119,8 +146,8 @@
  *   * **收件箱**：⚠️ 2026-09-18 空列表实测推翻了"照抄招聘者端"的做法 ——
  *     BossHunter 的 `li[role=listitem]` / `.chat-message-filter-left` 是**招聘者端**类名，
  *     求职者端实测是 `.chat-content .user-list`（容器）+ `.label-list`（筛选 tab）+
- *     `.user-list .no-data`（空态）。容器与空态已实测；**行元素与行内字段仍待一条真实会话确认**
- *     （当时账号一条会话都没有），所以行选择器先用"容器下直接子元素（排除空态）"这种结构式写法。
+ *     `.user-list .no-data`（空态）；**行元素与行内字段已由 09-18 / 09-20 两次真实会话确认**
+ *     （`li[role=listitem]` / `.name-text` / `.name-box` / `.last-msg-text` / `.message-status` / `.time`）。
  *     `readInbox` 现在**先等容器**：容器在而列表空 = 可信的 0 条；**容器都找不到就抛错**，
  *     绝不把"选择器腐烂"混成"今天没人回我"。
  *   * **附件简历**（2026-09-18 真实会话实测**修正**了先前基于 BossHunter 的判断）：
@@ -130,11 +157,32 @@
  *     `.operate-btn` 是招聘者端的），**未回复时带 `unable` + `aria-label` 写着"双方回复后可用"** ——
  *     即 BOSS 要求**双方回复之后**才能发简历。所以 `sendResume`：本地文件一律 fail-closed（如实说明），
  *     `filePath=null` 时先读按钮状态，`unable` 就如实告诉用户"等对方回复"，**绝不点一个点不动的按钮**。
- *     尚未实测：平台简历选择弹窗 `.choose-resume-dialog`（本次按钮不可用，弹窗没机会打开）。
+ *
+ * ## 2026-09-20 第二次登录态实测（会话级，补齐 09-18 的三处缺口）
+ *
+ * 这次账号里已经有 **2 条会话**，其中一条是 **HR 主动发来的未读会话**、另一条是**我发的且已被读**
+ * —— 09-18 缺的样本一次性到齐（入口：`npm run probe:zhipin-chat`，产物 `chat-report-2026-09-20.json`）：
+ *
+ *   * **未读徽章的类名是 `.notice-badge`**（此前只有候选列表，从没命中过真实页面）：
+ *     HR 主动发来的那行带它、文本就是未读数 `1`；同一行**没有** `.message-status`
+ *     —— 与"节点在 ⇒ 最后一条是我发的"这条方向判据吻合。⇒ 候选中把它排到第一位；
+ *   * **`.message-status status-read`（文案 `[已读]`）拿到真实样本** ——
+ *     `actions.detectStage` 的 `read` 这一档从此**不再**是"代码支持但没见过"；
+ *   * **「发简历」的 `unable` 消失**（HR 回复了）⇒ 探针用**真鼠标**点开 `.choose-resume-dialog`
+ *     并采下原文（`resume-dialog-2026-09-20.html`）。结构见 `config.ts` 的
+ *     `ZhipinChatSelectors.resumeDialog`；关键两条：
+ *     ① 一条可选简历都没有时弹窗**照样打开**（空态 `.resume-top-tip`「未上传简历」）；
+ *     ② 确认按钮是 `button.btn-v2.btn-sure-v2.btn-confirm`，未选中简历时带
+ *     `class="… disabled" disabled`。⇒ `sendResume` 现在**先读弹窗状态再决定**
+ *     （`resumeDialogStateInPage`：条目数 / 按钮是否 disabled / 空态文案），
+ *     把"点了那个点不动的按钮"如实报成 `missing`，而不是讲成
+ *     「已确认发送但没看到简历卡片（pending）」—— 那是这条链路上最容易撒的谎。
  *
  * ⚠️ 按 §7 的站点规则：打招呼**必须**走 `platform/humanize.ts` 的 CDP Input 级点击与逐字符输入，
  *   绝不用 DOM `el.click()` / `fill`（`isTrusted=false` 是最廉价的自动化特征）。
  *   因此 `sayHello` / `sendResume` 在没有 `page.mouse` / `page.keyboard` 时 **fail-closed**。
+ *   探针侧同款教训：点会话行、点「发简历」都必须用 `page.mouse.click` —— DOM `el.click()`
+ *   触发不了 Vue 处理器（09-18 点会话行、09-20 点「发简历」各踩一次）。
  *
  * ## 本仓实测入口（用于日后校准选择器）
  *
@@ -143,6 +191,8 @@
  * `chat-list-<日期>.html` / `chat-conversation-<日期>.html` / `detail-<日期>.html` /
  * `chat-report-<日期>.json`（逐选择器命中数 + 会话行子节点样本 + 工具条文案）。
  * 报告里 `count: 0` 的字段就是已经腐烂的那条选择器。`ZHIPIN_PROBE_SKIP_CHAT=1` 只采详情页。
+ * `ZHIPIN_PROBE_RESUME=1` 额外点开「发简历」弹窗并采它的**原文**
+ * （`resume-dialog-<日期>.html`）—— 仍然**只按 Esc 关闭、绝不点确认**。
  *
  * ⚠️ 已知的站点门槛（2026-09-18 实测）：**资料未完善**的账号访问 `/web/geek/*` 会被
  * **强制重定向**到简历完善引导页 `/web/geek/guide`，会话页因此打不开。
@@ -150,15 +200,19 @@
  * （用 `ZHIPIN_WAIT_MIN=25` 给它足够时间），只有等待窗口耗尽才放弃并记 `chatBlocked`。
  *
  * 仍**只有 BossHunter 证据、本仓未实测**的点（别假装是实测的）：
- *   * 平台简历选择弹窗 `.choose-resume-dialog`（本次「发简历」不可用，弹窗没机会打开）；
- *   * 会话行的**未读徽章**（本次那条会话是我们刚发的，没有未读可看）；
  *   * 首次沟通弹窗 `.dialog-wrap.startchat-dialog` 与预设招呼语弹窗 `.greet-boss-pop`
- *     （本次点「立即沟通」走的是"直接进会话"路径，两种弹窗都没出现）。
+ *     （09-18 与 09-20 两次点「立即沟通」走的都是"直接进会话"路径，两种弹窗都没出现）；
+ *   * 简历弹窗里**条目本身**的类名（账号没有附件简历，弹窗只渲染空态 —— 容器
+ *     `.resume-choose-container` 已实测，条目选择器里那条结构式候选是由它推导的）；
+ *   * 发送成功后会话里的 `.resume-card`（没有可发的简历，走不到那一步）。
  *
  * ✅ 已于 2026-09-18 实测确认（会话级）：`#chat-input`（`div.chat-input[contenteditable]`）、
  *   `.btn-send`、`.chat-record`、`li.message-item.item-myself`、`div.message-content`、
  *   `i.message-status.status-delivery`、会话行 `li[role=listitem]` 及其 `.time` / `.name-text` /
  *   `.name-box` / `.last-msg-text` —— 这些**不必再怀疑**。
+ * ✅ 2026-09-20 追加确认：`.notice-badge`（未读）、`status-read`（`[已读]`）、
+ *   工具条 `.toolbar-btn`（有/无 `unable` 两种状态都见到过）、`.choose-resume-dialog`
+ *   整棵弹窗树（含 `.resume-choose-container` / `.resume-top-tip` / `.btn-confirm`）。
  *
  * ## 本目录分工
  *
@@ -188,10 +242,11 @@ import type {
   SiteAdapter,
 } from '../../types.js'
 import { createZhipinActions } from './actions.js'
-import { fetchJoblistInPage, salaryMapOf } from './api.js'
+import { extrasMapOf, fetchJoblistInPage, type ZhipinApiExtras } from './api.js'
 import type { ZhipinConfig } from './config.js'
 import {
   DEFAULT_ZHIPIN_CONFIG,
+  ZHIPIN_DEFAULT_SCROLL_ROUNDS,
   ZHIPIN_MAX_PAGES,
   ZHIPIN_MAX_SCROLL_ROUNDS,
   ZHIPIN_PAGE_SIZE,
@@ -216,12 +271,13 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
 
   /**
    * 记住每个页面最近一次 `gotoSearch` 的搜索条件 —— 供 `readListPage` 构造
-   * joblist 请求体（那条通道要靠 `query` + `city` 才能问出同一批岗位的薪资）。
+   * joblist 请求体（那条通道要靠 `query` + `city` 才能问出同一批岗位的补充字段）。
+   * `rounds` 一起记：回填要翻几页接口由它联动（滚了 N 屏就最多补 N 页）。
    *
    * 主链顺序 `gotoSearch → detectBlock → readListPage` 保证了它总是新鲜的
    * （与 liepin 的 `lastSearch` 同一模式）。
    */
-  const lastSearch = new WeakMap<object, { query: string; cityCode: string }>()
+  const lastSearch = new WeakMap<object, { query: string; cityCode: string; rounds: number }>()
 
   /**
    * 判墙的**唯一实现**（采集与动作链共用）。
@@ -254,27 +310,33 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
   /**
    * 本次要滚动加载几轮（`scrollRounds` 维度，方案里配）。
    *
-   * 缺省 1 = 只读当前这一屏 15 条（**与改动前行为一致**：保守是默认，加深度要显式配）。
-   * 上限取平台自报的 `totalCount / 15`，不是我们拍的保守值 —— 再多滚平台也不给。
+   * 缺省 `ZHIPIN_DEFAULT_SCROLL_ROUNDS = 3`（≈45 条/轮采集）；显式配 1 仍表示
+   * "只读第一屏"。上限取平台自报的 `totalCount / 15`，不是我们拍的保守值 ——
+   * 再多滚平台也不给。
    */
   const scrollRoundsOf = (criteria: SearchCriteria): number => {
     const parsed = Number.parseInt(platformCriterion(criteria, 'scrollRounds'), 10)
-    if (!Number.isFinite(parsed) || parsed <= 1) return 1
-    return Math.min(parsed, ZHIPIN_MAX_SCROLL_ROUNDS)
+    const base = Number.isFinite(parsed) && parsed >= 1 ? parsed : ZHIPIN_DEFAULT_SCROLL_ROUNDS
+    return Math.max(1, Math.min(base, ZHIPIN_MAX_SCROLL_ROUNDS))
   }
 
   /**
-   * 用 joblist 接口把 DOM 里拿不到的薪资补上（见 `ZhipinConfig.salaryApiEnabled` 的说明）。
+   * 用 joblist 接口把 DOM 里拿不到的字段补上（见 `ZhipinConfig.salaryApiEnabled` 的说明；
+   * 2026-09-20 起从"只补薪资"升级为**字段级回填**，来源清单见 `ZhipinApiExtras`）。
    *
-   * 三条纪律：
-   *   1. **列表仍以 DOM 为准** —— 接口只按 `encryptJobId` 回填薪资，**不引入新岗位**
-   *      （`sourceUrl` 必须来自搜索页返回的原始 href，绝不重构 URL）；
-   *   2. **失败就保持原样** —— 接口挂了 / 结构变了，返回 DOM 的结果与原有 note，
+   * 四条纪律：
+   *   1. **岗位集合仍以 DOM 为准** —— 接口只按 `encryptJobId` 补字段，**不引入新岗位**；
+   *   2. `sourceUrl` 的路径与 id 仍来自 DOM 的原始 href，**只追加**同一接口给的
+   *      `securityId` 查询参数（BossHunter 站点规则：详情抓取必须带它；这不是重构 URL）；
+   *   3. **失败就保持原样** —— 接口挂了 / 结构变了，返回 DOM 的结果与原有 note，
    *      **不抛错**（这条通道是"锦上添花"，不该让整轮抓取失败）；
-   *   3. **填上之后要撤掉 DOM 通道留下的那两条 note**（`salary:obfuscated` /
+   *   4. **填上之后要撤掉 DOM 通道留下的那两条 note**（`salary:obfuscated` /
    *      "未登录视图薪资隐藏"）—— 否则数据是新的、说明是旧的，自相矛盾。
+   *
+   * 接口要翻几页与滚动轮数联动：滚了 N 屏（≈15N 条）就最多补 N 页（`joblistMaxPages`
+   * 是老配置的下限兜底）。固定 5 页的老上限在滚 20 轮时只覆盖 75 条，后段岗位全部裸奔。
    */
-  const fillSalariesFromApi = async (page: PageLike, jobs: RawJob[]): Promise<RawJob[]> => {
+  const enrichFromApi = async (page: PageLike, jobs: RawJob[]): Promise<RawJob[]> => {
     if (!config.salaryApiEnabled) return jobs
     const remembered = lastSearch.get(page as object)
     if (remembered === undefined || remembered.query === '') return jobs
@@ -282,14 +344,14 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     if (missing.length === 0) return jobs
 
     const pages = Math.min(
-      config.joblistMaxPages,
+      Math.max(config.joblistMaxPages, remembered.rounds),
       Math.max(1, Math.ceil(missing.length / config.joblistPageSize)),
     )
-    const salaries = new Map<string, string>()
+    const extrasById = new Map<string, ZhipinApiExtras>()
     for (let index = 1; index <= pages; index += 1) {
       // 页与页之间要有**间隔**：这是同一个站点上的连续请求，而 SPA 刚刚自己发过
       // 同一批（page=1..N）。零间隔连发正是 `pacing.ts` 突发规则要拦的形态 ——
-      // 只是那条规则只挂在采集主链上，补薪资这条支线以前完全不受它管。
+      // 只是那条规则只挂在采集主链上，回填这条支线以前完全不受它管。
       if (index > 1 && delayMax > 0) await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
       const payload = await page
         .evaluate(fetchJoblistInPage, {
@@ -302,32 +364,50 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
           }),
         })
         .catch(() => null)
-      const got = salaryMapOf(payload)
+      const got = extrasMapOf(payload)
       // 一页都没解析出东西 ⇒ 视为通道不可用，保持 DOM 结果（不抛错）
       if (got.size === 0) {
         // **必须留痕**：这条通道是"锦上添花"，失败不抛错是对的；但它长期失效的表现
-        // 只是"薪资永远是空"—— 而四个核心字段照常命中，字段健康度、量级基线
+        // 是"薪资/补充字段永远是空"—— 而核心字段照常命中，字段健康度、量级基线
         // 一个都不会报警。日志是这种静默降级唯一的出口。
         const code = (payload as { code?: unknown } | null)?.code
         logger?.warn(
-          `[zhipin] 薪资接口没能取到数据（第 ${String(index)} 页，` +
+          `[zhipin] 列表接口没能取到数据（第 ${String(index)} 页，` +
             (payload === null ? '请求失败 / 未登录' : `code=${String(code)}`) +
-            '）—— 保持 DOM 结果，这一批薪资留空',
+            '）—— 保持 DOM 结果，这一批补充字段留空',
         )
         break
       }
-      for (const [id, salary] of got) salaries.set(id, salary)
-      if (missing.every((job) => salaries.has(job.platformJobId))) break
+      for (const [id, extras] of got) extrasById.set(id, extras)
+      if (missing.every((job) => extrasById.has(job.platformJobId))) break
     }
-    if (salaries.size === 0) return jobs
+    if (extrasById.size === 0) return jobs
 
     return jobs.map((job) => {
-      const salary = salaries.get(job.platformJobId)
-      if (salary === undefined || salary === '') return job
+      const extras = extrasById.get(job.platformJobId)
+      if (extras === undefined) return job
+      const filled: RawJob = { ...job }
+      if (extras.salaryDesc !== '') filled.salaryRaw = extras.salaryDesc
+      // 技能 + 福利进 tags（与既有 DOM tags 合并去重；技能在前，它们对匹配更有用）
+      const tags = [...new Set([...(job.tags ?? []), ...extras.skills, ...extras.welfareList])]
+      if (tags.length > 0) filled.tags = tags
+      // 单值补充字段：DOM 没给（zhipin 的列表卡片本来就没有）才写，已有值不覆盖
+      if ((filled.industry ?? '') === '' && extras.brandIndustry !== '') filled.industry = extras.brandIndustry
+      if ((filled.companySize ?? '') === '' && extras.brandScaleName !== '') filled.companySize = extras.brandScaleName
+      // 融资阶段 → companyNature：与列表接口的 brandStageName、本适配器详情页 `.icon-stage` 同一去处
+      if ((filled.companyNature ?? '') === '' && extras.brandStageName !== '') filled.companyNature = extras.brandStageName
+      // 区 + 商圈（接口两段比 DOM 的第二段多一段商圈；DOM 值保留为兜底）
+      if (extras.areaDistrict !== '') {
+        filled.district =
+          extras.businessDistrict !== '' ? `${extras.areaDistrict}·${extras.businessDistrict}` : extras.areaDistrict
+      }
+      // 详情页令牌：只追加参数，不动路径
+      if (extras.securityId !== '' && !filled.sourceUrl.includes('securityId=')) {
+        filled.sourceUrl = `${filled.sourceUrl}${filled.sourceUrl.includes('?') ? '&' : '?'}securityId=${extras.securityId}`
+      }
       const notes = (job.notes ?? []).filter(
         (note) => note !== 'salary:obfuscated' && note !== '未登录视图薪资隐藏（登录后可升级）',
       )
-      const filled: RawJob = { ...job, salaryRaw: salary }
       if (notes.length === 0) delete filled.notes
       else filled.notes = notes
       return filled
@@ -356,6 +436,7 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
       max: ZHIPIN_MAX_SCROLL_ROUNDS,
       hint:
         `BOSS 没有页码翻页，只能滚动加载：每滚一次 +${String(ZHIPIN_PAGE_SIZE)} 条。` +
+        `不填默认 ${String(ZHIPIN_DEFAULT_SCROLL_ROUNDS)} 轮（≈${String(ZHIPIN_PAGE_SIZE * ZHIPIN_DEFAULT_SCROLL_ROUNDS)} 条）；` +
         '填 1 = 只读第一屏 15 条；填 4 ≈ 60 条。平台自报 totalCount 封顶 300 条（= 20 轮），' +
         '再滚也没有新数据。轮数越大请求越密、风控风险越高 —— 保守起见先配 2–4 试。',
     },
@@ -407,7 +488,22 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     auth: {
       // 登录 URL 有据：未登录夹具里 `ka="header-login"` 那个链接的 href 就是它。
       loginUrl: 'https://www.zhipin.com/web/user/',
+      // 检测判**搜索页**：`loginSelectors` 的两个锚点是在搜索页夹具上校准的（见
+      // config.ts 的注释），而登录页 `/web/user/` 没有那套页头 —— 在登录页上判，
+      // 两个锚点都不命中，null 被兜底成 false，于是**已登录也恒判未登录**。
+      // 见 `auth.checkUrl` 的说明（猎聘/智联/51job 的同款坑）。传空 criteria：
+      // 检测页只要"页头在"就够，不需要关键词与城市。
+      checkUrl: buildZhipinSearchUrl(config, {}),
       async isLoggedIn(page): Promise<boolean> {
+        // BOSS 页头是 SPA 异步挂载的：goto 一返回就判，锚点可能还没渲染（探针
+        // 脚本 goto 后要等，gotoSearch 也等卡片）。先等两个锚点**任一**出现再判；
+        // 等不到（超时 / 离线夹具没有 waitForSelector）就按原样 evaluate。
+        if (page.waitForSelector !== undefined) {
+          await page.waitForSelector(
+            `${config.loginSelectors.loggedIn}, ${config.loginSelectors.notLoggedIn}`,
+            options.waitForListMs ?? 15_000,
+          )
+        }
         const verdict = await page.evaluate(isLoggedInByMarkersInPage, {
           loggedIn: config.loginSelectors.loggedIn,
           notLoggedIn: config.loginSelectors.notLoggedIn,
@@ -423,9 +519,12 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
         if (url === null) {
           throw new Error(`zhipin: 城市码未配置（${criteria.city ?? ''}）—— 拒绝猜测`)
         }
+        // 轮数在这里一次算好：滚动用它，回填的接口页数也用它（联动，见 enrichFromApi）
+        const rounds = scrollRoundsOf(criteria)
         lastSearch.set(page as object, {
           query: criteria.keyword ?? '',
           cityCode: criteria.city === undefined || criteria.city === '' ? '' : config.cityCodes[criteria.city] ?? '',
+          rounds,
         })
         await page.goto(url)
         if (page.waitForSelector !== undefined) {
@@ -441,7 +540,6 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
         await humanBrowse(page)
         // 滚动加载（`scrollRounds`，方案里配）：BOSS 的"翻页"只发生在页面内 ——
         // 第一屏已经在上面等到了，这里再滚 (rounds - 1) 次把它读厚。
-        const rounds = scrollRoundsOf(criteria)
         if (rounds > 1) {
           await page.evaluate(scrollToLoadInPage, {
             card: config.selectors.card,
@@ -459,7 +557,7 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
           selectors: config.selectors,
           jobIdPattern: config.jobIdPattern,
         })
-        return await fillSalariesFromApi(page, jobs)
+        return await enrichFromApi(page, jobs)
       },
 
       async hasNextPage(): Promise<boolean> {

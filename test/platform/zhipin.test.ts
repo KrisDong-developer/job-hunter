@@ -3,12 +3,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin/index.js'
-import { DEFAULT_ZHIPIN_CONFIG } from '../../src/host/platform/adapters/zhipin/config.js'
+import { DEFAULT_ZHIPIN_CONFIG, mergeZhipinConfig } from '../../src/host/platform/adapters/zhipin/config.js'
 import {
   buildJoblistBody,
   buildZhipinSearchUrl,
 } from '../../src/host/platform/adapters/zhipin/urls.js'
-import { salaryMapOf } from '../../src/host/platform/adapters/zhipin/api.js'
+import { extrasMapOf, salaryMapOf } from '../../src/host/platform/adapters/zhipin/api.js'
 import { isLoggedInByMarkersInPage } from '../../src/host/platform/adapters/zhipin/page/list.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
@@ -83,6 +83,13 @@ test('适配器声明符合平台事实：未登录可搜、薪资隐藏（mediu
   // account.loggedIn 恒 false ⇒ 已实现的打招呼/收件箱入口在界面上永远不亮）
   assert.equal(typeof adapter.auth?.isLoggedIn, 'function')
   assert.equal(adapter.auth?.loginUrl, 'https://www.zhipin.com/web/user/')
+  // 2026-09-20：检测必须在搜索页上判 —— 判据锚点是按搜索页校准的，缺 checkUrl 会回退
+  // 登录页，在那儿两个锚点都不命中 ⇒ 已登录也恒判未登录（就是这次修的 bug）。
+  assert.equal(
+    adapter.auth?.checkUrl,
+    'https://www.zhipin.com/web/geek/job',
+    '检测页必须是搜索页（判据校准页），不能回退到登录页',
+  )
 })
 
 // ── 登录态检测（2026-09-19：未登录夹具 vs 真实登录态快照，两份快照对比定案）────
@@ -244,6 +251,171 @@ test('列表薪资：接口失败时保持 DOM 结果（不抛错、不改 note�
   )
 })
 
+// ── 字段回填（2026-09-20：接口有、DOM 没有的字段顺着薪资通道带回）──────────────
+//
+// 探针实测（probe-zhipin-fields）：skills / welfareList / brandIndustry /
+// brandScaleName / brandStageName / businessDistrict / securityId 全部 15/15 覆盖，
+// 而 RawJob 的 tags/industry/companySize/companyNature 此前恒空。
+test('extrasMapOf：补充字段逐项解析，数组过滤空串，结构不符不抛错', () => {
+  const map = extrasMapOf({
+    zpData: {
+      jobList: [
+        {
+          encryptJobId: 'a',
+          salaryDesc: '15-25K·13薪',
+          skills: ['Java', 'Spring', '', 42],
+          welfareList: ['五险一金'],
+          brandIndustry: '互联网金融',
+          brandScaleName: '1000-9999人',
+          brandStageName: '已上市',
+          areaDistrict: '福田区',
+          businessDistrict: '购物公园',
+          securityId: 'sid-a',
+        },
+        { encryptJobId: 'b' },
+        {},
+      ],
+    },
+  })
+  assert.equal(map.size, 2, '缺字段条目也要进表（回填按字段各自判空）')
+  const a = map.get('a')
+  assert.ok(a !== undefined)
+  assert.deepEqual(a.skills, ['Java', 'Spring'], '数组里的空串与非字符串要滤掉')
+  assert.equal(a.brandIndustry, '互联网金融')
+  assert.equal(a.securityId, 'sid-a')
+  const b = map.get('b')
+  assert.ok(b !== undefined && b.salaryDesc === '' && b.skills.length === 0)
+  assert.equal(extrasMapOf(null).size, 0)
+  assert.equal(extrasMapOf({ zpData: { jobList: 'x' } }).size, 0, '结构变了就返回空表')
+  // salaryMapOf 是 extrasMapOf 的窄视图（老契约不破）
+  const salaries = salaryMapOf({
+    zpData: { jobList: [{ encryptJobId: 'a', salaryDesc: '12-18K' }, { encryptJobId: 'b' }] },
+  })
+  assert.equal(salaries.size, 1)
+})
+
+test('字段回填：技能/福利进 tags，行业/规模/阶段/商圈/securityId 各归其位', async (t) => {
+  if (!existsSync(LOGGED_FIXTURE_PATH) || !existsSync(API_FIXTURE_PATH)) {
+    t.skip('需要 zhipin-search-logged-in.html 与 zhipin-search-api.json')
+    return
+  }
+  const apiSamples = JSON.parse(readFileSync(API_FIXTURE_PATH, 'utf8')) as Array<{ url: string; body: string | null }>
+  const joblistPayloads = apiSamples
+    .filter((item) => item.url.includes('joblist.json') && item.body !== null)
+    .map((item) => JSON.parse(item.body ?? '{}') as unknown)
+  assert.ok(joblistPayloads.length > 0, '前置：夹具里要有 joblist 响应')
+
+  // 与薪资测试同一选法：挑对 DOM id 覆盖最多的那份响应（采样里可能有多组查询）
+  const domHtml = readFileSync(LOGGED_FIXTURE_PATH, 'utf8')
+  const domIds = [
+    ...new Set(
+      [...domHtml.matchAll(/\/job_detail\/([A-Za-z0-9_-]+)\.html/g)].map((match) => match[1] ?? ''),
+    ),
+  ]
+  const bestEntry = joblistPayloads
+    .map((item, index) => ({ index, map: extrasMapOf(item) }))
+    .sort(
+      (left, right) =>
+        domIds.filter((id) => right.map.has(id)).length - domIds.filter((id) => left.map.has(id)).length,
+    )[0]
+  assert.ok(bestEntry !== undefined && bestEntry.map.size > 0, '前置：要有一份能对上的接口响应')
+  const bestPayload = joblistPayloads[bestEntry.index]
+
+  const stub: PageFetchStub = async () => ({ ok: true, json: async () => bestPayload })
+  const page = new JsdomPage({ html: domHtml, url: SEARCH_URL, fetchStub: stub })
+  const adapter = createZhipinAdapter({ config: { ...DEFAULT_ZHIPIN_CONFIG, scrollStepTimeoutMs: 50 } })
+  await adapter.crawl.gotoSearch(page, { keyword: 'Java', city: '深圳' })
+  const jobs = await adapter.crawl.readListPage(page)
+
+  const extras = bestEntry.map
+  const joined = jobs.filter((job) => extras.has(job.platformJobId))
+  assert.ok(joined.length > 0, '前置：DOM 与接口要能对上（同一次会话采的夹具）')
+  let withSkills = 0
+  let withStage = 0
+  let withDistrict = 0
+  let withSecurity = 0
+  for (const job of joined) {
+    const x = extras.get(job.platformJobId)
+    assert.ok(x !== undefined)
+    if (x.skills.length > 0) {
+      withSkills += 1
+      for (const skill of x.skills) assert.ok((job.tags ?? []).includes(skill), `技能 ${skill} 应进 tags`)
+      assert.equal(new Set(job.tags ?? []).size, (job.tags ?? []).length, 'tags 不重复')
+    }
+    if (x.welfareList.length > 0) assert.ok((job.tags ?? []).includes(x.welfareList[0] ?? ''), '福利也应进 tags')
+    if (x.brandIndustry !== '') assert.equal(job.industry, x.brandIndustry, '行业')
+    if (x.brandScaleName !== '') assert.equal(job.companySize, x.brandScaleName, '规模')
+    if (x.brandStageName !== '') {
+      withStage += 1
+      assert.equal(job.companyNature, x.brandStageName, '融资阶段 → companyNature（与详情页 .icon-stage 同款去处）')
+    }
+    if (x.areaDistrict !== '' && x.businessDistrict !== '') {
+      withDistrict += 1
+      assert.equal(job.district, `${x.areaDistrict}·${x.businessDistrict}`, '区·商圈（第三段不再丢）')
+    }
+    if (x.securityId !== '') {
+      withSecurity += 1
+      assert.ok(
+        job.sourceUrl.includes(`securityId=${x.securityId}`),
+        '详情页令牌要拼进 sourceUrl（BossHunter 站点规则）',
+      )
+    }
+  }
+  assert.ok(withSkills > 0 && withDistrict > 0 && withSecurity > 0, '前置：夹具要真的带这些字段')
+  assert.ok(withStage > 0, '前置：夹具要有融资阶段样本（实测 11/15）')
+})
+
+test('回填页数与滚动轮数联动：滚 N 轮最多补 N 页（缺省 3；显式 1/6/20）', async (t) => {
+  if (!existsSync(SCROLL_FIXTURE_PATH) || !existsSync(API_FIXTURE_PATH)) {
+    t.skip('需要 zhipin-search-logged-in-scroll.html 与 zhipin-search-api.json')
+    return
+  }
+  const apiSamples = JSON.parse(readFileSync(API_FIXTURE_PATH, 'utf8')) as Array<{ url: string; body: string | null }>
+  const payload = apiSamples
+    .filter((item) => item.url.includes('joblist.json') && item.body !== null)
+    .map((item) => JSON.parse(item.body ?? '{}') as unknown)[0]
+  assert.ok(payload !== undefined, '前置：夹具里要有 joblist 响应')
+
+  const domHtml = readFileSync(SCROLL_FIXTURE_PATH, 'utf8')
+  // joblistMaxPages=1：把老上限压到最低，让"轮数联动"成为唯一变量
+  const adapter = createZhipinAdapter({
+    config: { ...DEFAULT_ZHIPIN_CONFIG, scrollStepTimeoutMs: 50, joblistMaxPages: 1 },
+  })
+  let lastJobs = 0
+  const countCalls = async (criteria: {
+    keyword?: string
+    city?: string
+    platform?: Record<string, string>
+  }): Promise<number> => {
+    let calls = 0
+    const stub: PageFetchStub = async () => {
+      calls += 1
+      return { ok: true, json: async () => payload }
+    }
+    const page = new JsdomPage({ html: domHtml, url: SEARCH_URL, fetchStub: stub })
+    await adapter.crawl.gotoSearch(page, criteria)
+    const jobs = await adapter.crawl.readListPage(page)
+    page.close()
+    lastJobs = jobs.length
+    return calls
+  }
+  const pagesFor = (rounds: number): number =>
+    Math.min(rounds, Math.max(1, Math.ceil(lastJobs / DEFAULT_ZHIPIN_CONFIG.joblistPageSize)))
+
+  const def = await countCalls({ keyword: 'Java', city: '深圳' })
+  assert.equal(def, pagesFor(3), '缺省 3 轮 → 最多补 3 页（2026-09-20 起的缺省深度）')
+
+  const one = await countCalls({ keyword: 'Java', city: '深圳', platform: { scrollRounds: '1' } })
+  assert.equal(one, 1, '显式 1 轮 = 只读第一屏，回填也只翻 1 页')
+
+  const six = await countCalls({ keyword: 'Java', city: '深圳', platform: { scrollRounds: '6' } })
+  assert.equal(six, pagesFor(6))
+
+  const twenty = await countCalls({ keyword: 'Java', city: '深圳', platform: { scrollRounds: '20' } })
+  assert.equal(twenty, pagesFor(20), '滚 20 轮时被"缺薪条数/15"兜住（每页只有 15 条）')
+  assert.ok(lastJobs > 15, '前置：滚动夹具要多于一屏（采集时是 105 条）')
+})
+
 test('滚动加载：静态夹具上不挂死，返回当前卡片数即收手', async (t) => {
   if (!existsSync(SCROLL_FIXTURE_PATH)) {
     t.skip(`夹具不存在（${SCROLL_FIXTURE_PATH}）—— 先跑一次 npm run probe:zhipin-login`)
@@ -324,6 +496,97 @@ test('详情页解析：真实结构 2026-09-18（标题/薪资/经验学历/技
   assert.equal(detail?.companySize, '1000-9999人', '规模走 .icon-scale 那一行')
   assert.equal(detail?.industry, '计算机软件', '行业走 .icon-industry 那一行')
   assert.equal(detail?.companyNature, '不需要融资', '融资阶段走 .icon-stage 那一行')
+})
+
+/**
+ * 详情页 JD 的**水印注入**（2026-09-20 实测，见 `page/detail.ts` 文件头）。
+ *
+ * 下面这段 HTML 是真实快照 `.probe-zhipin-capture/detail-2026-09-20.html` 里
+ * `.job-sec-text` 的**逐字还原**（只截短了正文）：两个随机类名的 `<span>`
+ * 把品牌串塞进正文 —— 第二个正好插在「后端业务系统」中间。
+ */
+test('详情页 JD：剔掉平台注入的水印 span（否则「后端业务系统」会被劈成两半）', async () => {
+  const adapter = createZhipinAdapter()
+  const html = `
+  <html><head><title>Java岗位_长河驶科技招聘</title></head><body>
+    <div class="job-detail-section job-detail-info">
+      <div class="detail-content-header"><h3>职位描述</h3></div>
+      <div class="job-sec-text"><span class="TkBBeZbHdGjN">BOSS直聘</span>岗位职责<br>1. 参与后<span class="pyKakWzEQwNK">来自BOSS直聘</span>端业务系统的需求分析、接口开发与编码实现。<br>2. 使用 Java 技术栈完成业务功能开发。</div>
+    </div>
+  </body></html>`
+  const page = browserLikePage(html, 'https://www.zhipin.com/job_detail/d99895a28f78c26a0nN-2NW9EVRW.html')
+
+  const detail = await adapter.detail?.extract(page)
+
+  assert.equal(
+    detail?.jdText,
+    '岗位职责1. 参与后端业务系统的需求分析、接口开发与编码实现。2. 使用 Java 技术栈完成业务功能开发。',
+    `水印必须剔干净且不能动别的字符，实际：${detail?.jdText ?? ''}`,
+  )
+  assert.ok(
+    (detail?.jdText ?? '').includes('后端业务系统'),
+    '被水印劈开的词必须还原（「后端业务系统」而不是「后来自BOSS直聘端业务系统」）',
+  )
+  assert.ok(!(detail?.jdText ?? '').includes('直聘'), 'JD 里不该残留任何水印字串')
+})
+
+test('详情页 JD：正文里**正常提到**「BOSS直聘」时不能误删（只剔"整段就是水印"的节点）', async () => {
+  const adapter = createZhipinAdapter()
+  const html = `
+  <html><head><title>运营岗_某公司招聘</title></head><body>
+    <div class="job-detail-section job-detail-info">
+      <div class="job-sec-text">岗位职责<br>1. 负责 BOSS直聘 等招聘渠道的日常运营与数据分析。</div>
+    </div>
+  </body></html>`
+  const page = browserLikePage(html, 'https://www.zhipin.com/job_detail/abc.html')
+
+  const detail = await adapter.detail?.extract(page)
+
+  assert.equal(
+    detail?.jdText,
+    '岗位职责1. 负责 BOSS直聘 等招聘渠道的日常运营与数据分析。',
+    '水印判据是"元素全文**恰好等于**水印串"——句中提到的平台名必须留着',
+  )
+})
+
+/**
+ * 合并边界要**校验新加的数组字段**：`detailSelectors` 是浅合并（不逐键校验），
+ * 一份写错的 DB 覆盖会让页面上下文里的 `for…of` 抛错、**整页详情解析全挂**。
+ * 这类"配置写错 → 全页静默失败"的路径必须有断言钉住。
+ */
+test('配置合并：jdWatermarkTexts 的形状校验（写错不能把详情解析弄挂）', () => {
+  const defaults = DEFAULT_ZHIPIN_CONFIG.detailSelectors.jdWatermarkTexts
+  // 正常覆盖：数组生效
+  assert.deepEqual(
+    mergeZhipinConfig({ detailSelectors: { jdWatermarkTexts: ['来自BOSS直聘'] } }).detailSelectors
+      .jdWatermarkTexts,
+    ['来自BOSS直聘'],
+  )
+  // 写错类型（给了字符串 / null）→ 回落到默认名单，而不是让页面函数崩掉
+  assert.deepEqual(
+    mergeZhipinConfig({ detailSelectors: { jdWatermarkTexts: 'BOSS直聘' } }).detailSelectors
+      .jdWatermarkTexts,
+    defaults,
+  )
+  assert.deepEqual(
+    mergeZhipinConfig({ detailSelectors: { jdWatermarkTexts: null } }).detailSelectors.jdWatermarkTexts,
+    defaults,
+  )
+  // 显式空数组 = 关掉剔除（这是有意义的开关，不该被 fallback 吃掉）
+  assert.deepEqual(
+    mergeZhipinConfig({ detailSelectors: { jdWatermarkTexts: [] } }).detailSelectors.jdWatermarkTexts,
+    [],
+  )
+  // 其它键照旧透传（别把浅合并写坏了）
+  assert.equal(
+    mergeZhipinConfig({ detailSelectors: { jdText: '.custom-jd' } }).detailSelectors.jdText,
+    '.custom-jd',
+  )
+  assert.equal(
+    mergeZhipinConfig({ detailSelectors: { jdText: '.custom-jd' } }).detailSelectors.companyLink,
+    DEFAULT_ZHIPIN_CONFIG.detailSelectors.companyLink,
+    '没覆盖的键必须保持默认',
+  )
 })
 
 test('判墙：BOSS 滑块页 URL → captcha；频控/配额文案', async () => {

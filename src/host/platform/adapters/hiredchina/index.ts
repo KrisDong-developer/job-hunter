@@ -1,5 +1,5 @@
 /**
- * HiredChina（hiredchina.com）适配器 —— 2026-09-18 基于真实线上调研。
+ * HiredChina（hiredchina.com）适配器 —— 2026-09-18 首次调研，2026-09-20 真实夹具校准。
  *
  * ## 平台是什么
  *
@@ -7,7 +7,7 @@
  * 全球人才（英语外教 / 市场营销 / 销售 / IT…），覆盖 120+ 国家、月访问约 300 万。
  * 招聘侧大量岗位天然支持签证担保 / 远程，与项目「海外支线 §4.M」高度相关。
  *
- * ## 调研来源（2026-09-18 一手，非二手资料）
+ * ## 调研来源（一手实测）
  *
  * * **两个同源域名**（Next.js App Router 同一套应用）：
  *   - 主站 `www.hiredchina.com` —— 对外「人看的入口」，但 **raw HTTP 直接访问会被
@@ -15,55 +15,46 @@
  *     脚本）；真实浏览器里带着用户登录态/会话能正常通过 —— 这正是本插件走真浏览器的意义。
  *   - 子域 `hcweb.gicexpat.com` —— 同一应用，raw HTTP **不被 Cloudflare 拦截**
  *     （实测 200 + 430KB SSR 页面），是探针 / 夹具 / DB 覆盖时的可验证入口。
- * * **列表页**：`/<lang>/jobs`（`lang ∈ {en, zh}`），Next.js **RSC 服务端渲染**
- *   （HTML 内嵌 `self.__next_f.push(...)`，**没有** `__NEXT_DATA__`、也**没有**单独的
- *   jobs JSON 接口 —— 翻页与筛选都是整页 SSR 导航）。所以列表可直接抓 DOM，不需要
- *   像神仙外企那样在页面里调接口。
- * * **详情页**：`/en/job/<uuid>?returnTo=...`；`jobId` 是 **UUID**（8-4-4-4-12 十六进制）。
+ * * **列表页**：`/<lang>/jobs`（`lang ∈ {en, zh}`）。
+ * * **详情页**：`/<lang>/job/<uuid>`（单数 job，与列表的 /jobs 不同）；
+ *   `jobId` 是 **UUID**（8-4-4-4-12 十六进制）。
  *
- * ## 真实夹具校准的卡片 DOM（2026-09-18 浏览器探针逐字段验证）
+ * ## 2026-09-20 真实夹具校准（本轮最重要的一次实测，推翻了两条旧假设）
  *
- * 每张卡片是一个 `<a>`（href 指向详情），内部包 `div[data-slot="card"]`：
+ * 探针（`npm run probe:hiredchina`，走 hcweb 子域）抓到了完整真实页面，钉进
+ * `test/fixtures/hiredchina-search{-p2}.html` 与 `hiredchina-detail.html`。三条结论：
  *
- * ```
- * a[href^="/(en|zh)/job/"]  .block.w-full.h-full     ← 卡片外层锚点（卡片身份）
- * └─ div[data-slot="card"]
- *    ├─ h3                                          ← 标题（含 text-emerald-600 font-bold）
- *    ├─ [行，含 lucide-building-2 svg] > span.truncate   ← 公司名
- *    └─ 五个徽章徽章 div（各带不同 Tailwind 底色，即字段判别锚点）：
- *       ├─ bg-emerald-50 text-emerald-700 > span.truncate  ← 薪资（如 "20K - 25K…" / "Negotiable"）
- *       ├─ bg-gray-50       text-gray-600   > span.truncate  ← 地点（如 "China · Guangzhou"）
- *       ├─ bg-blue-50       text-blue-600   > span.truncate  ← 雇佣类型（Full-time / Part-time）
- *       ├─ bg-orange-50     text-orange-600 > span.truncate  ← 工作模式（On-site / Remote）
- *       └─ bg-slate-50      text-slate-500   > span.truncate  ← 经验（"Unlimited experience" / "3～5 years"）
- *   最后一行 border-t（底部）：相对发布时间（"2d ago" / "7h ago"，首个有时是绝对日期）
- * ```
+ * * **列表卡片不在 DOM 里**（旧假设"RSC 服务端渲染、可直接抓 DOM"**错误**）：
+ *   raw HTML 里没有任何 `/job/` 链接、没有 `data-slot="card"`、没有分页容器。
+ *   岗位数据整包躺在 `self.__next_f.push([1,"f:…"])` 的 RSC 流里（`JobsClientWrapper`
+ *   的 `initialData.list`，每页 10 条），卡片本身是**客户端组件**渲染的。
+ *   ⇒ 列表解析改走 **payload 通道**（`page/list.ts` 的 `extractJobsFromPayloadInPage`），
+ *   09-18 记的那套「底色徽章 DOM 锚点」整体废弃。payload 的额外收益：
+ *   `refreshAt` 绝对时间戳（DOM 时代只有 "2d ago"）、`line` UUID 直接给出、
+ *   `isOnline`/`employmentKey` 数值与键比文案稳。
+ * * **薪资并非"绝大多数存在"**：payload 里 `salaryKey` 的实测分布是
+ *   `keep.secret × 4 / 区间 × 6`（10 条里 4 条保密，还原为 "Negotiable" 面议）。
+ *   ⇒ `requiredFields` **不再含 `salary_raw`**（与 zhipin 同款取舍：留着会把约四成
+ *   记录打进 `pending_repair`；`fieldCompleteness: medium` 如实声明）。
+ * * **详情页是 SSR 直出 DOM**（与列表页相反）：h1 / 公司名（渐变卡内 `p.font-medium`）
+ *   / 行业（兄弟行 `p.text-sm`）/ 薪资（`items-start shrink-0` 容器的金额元素 ——
+ *   **不是** text-3xl，那是 h1 的 `md:` 前缀）/ 徽章行（SSR 已翻好文本，第 2 枚是行业）
+ *   / JD（`Job Description` 与 `Requirements` 两段 prose，按标题锚定拼接）全部可锚。
+ *   ⇒ 详情选择器全套校准，公司名/行业从"留空"升级为可锚定。
  *
- * ⚠️ 这些底色是 Tailwind 语义化色板（emerald=薪资 / gray=地点 / blue=雇佣 / orange=工作模式 /
- * slate=经验），是**平台自己用来区分字段的稳定约定**，比序号依赖稳。任何一项都可以在 DB 里
- * 覆盖着改（ADR-19），选错只影响该字段、不影响卡片总数。
+ * ## 翻页与筛选（已实测）
  *
- * ## 翻页与筛选（全部已实测）
- *
- * * 翻页：`?page=N`（如 `?page=2`），每页 10 条、共 749 页；分页容器 `nav[aria-label="pagination"]`，
- *   `hasNextPage` 用「分页容器里是否存在页码 > 当前页的链接」判断 —— **不自己拼下一页 URL**。
- * * 关键词：`?kw=<词>`（键名是 **`kw`**，不是 `keyword`）；触发需在搜索框逐字输入 + 回车。
- * * 类别：`?type=<slug>`，值 `teaching / marketing / sales_support / other`（`marketing` 与
- *   zh 站「市场营销」都实测映射到 `type=marketing`）。
+ * * 翻页：`?page=N` 在 **payload 层**真换数据（p1/p2 首条 UUID 不同），每页 10 条。
+ *   payload 里**没有任何分页元信息**（total/hasMore 实测全无）⇒ `hasNextPage` 用
+ *   「本页满 `pageSize` 条即有下一页」判断（liepin「本页不满即停」的同款镜像；
+ *   末页恰好满页时会多探一页空页，由主链按 NO_RECORDS 收尾，可接受）。
+ * * 关键词：`?kw=<词>`（键名是 **`kw`**，不是 `keyword`）。
+ * * 类别：`?type=<slug>`，值 `teaching / marketing / sales_support / other`。
  * * 雇佣类型：`?employmentId=1`（Full-time / 全职）、`?employmentId=2`（Part-time / 兼职）。
  * * 工作模式：`?isOnline=1`（Remote / 远程）、`?isOnline=0`（On-site / 现场）。
- * * **没有城市 URL 筛选**：页面的地点 quick 按钮（中国/英国…）点击**不产生 URL 参数**，
- *   纯客户端；「More」下拉给的是 `nationalitieParentN`（国籍/语言过滤，不是城市）——
- *   所以本适配器**不声明城市维度**，带城市一律 `buildSearchUrl` 返回 null（fail-closed，
+ * * **没有城市 URL 筛选**：页面的地点 quick 按钮纯客户端；「More」下拉是国籍/语言过滤
+ *   —— 所以本适配器**不声明城市维度**，带城市一律 `buildSearchUrl` 返回 null（fail-closed，
  *   绝不「抓了全国假装抓了深圳」）。
- *
- * ## 详情页（2026-09-18 探针注明，待 probe:hiredchina 落盘详情夹具校准）
- *
- * 标题 `h1`；薪资在渐变卡片 `div[class*="bg-gradient-to-br"]` 内的 `[class*="text-3xl"]`；
- * 徽章行 `div.flex.flex-wrap.gap-2` 按「地点 → 行业 → 雇佣类型 → 工作模式 → 语言」顺序；
- * JD 全文 `div.prose.prose-sm`。⚠️ **本平台详情页没有**签证担保 / 公司规模 / 公司性质 /
- * relocation 字段 —— 因此 `visa` / `companySize` / `companyNature` 一律不编（该平台没有，
- * 编了就是臆造）。
  *
  * ## 判定墙
  *
@@ -74,25 +65,30 @@
  *
  * ## 投递 / 打招呼
  *
- * 列表公共可看（未登录可抓，`searchWithoutLogin: true`），投递需登录。未在列表夹具验证
+ * 列表公共可看（未登录可抓，`searchWithoutLogin: true`），投递需登录。未在夹具验证
  * 稳定投递按钮契约之前，**不实现** `actions`（fail-closed，见 docs/ADAPTERS.md §6）。
  *
  * ## 本目录分工
  *
- * * `index.ts` —— 只导出 `createHiredChinaAdapter` 与 `HiredChinaAdapterOptions`（编排）。
- * * `config.ts` —— 选择器 / URL 参数 / 值域 / 判墙信号 / 默认配置与 `merge*`（配置面）。
+ * * `index.ts` —— 只导出 `createHiredChinaAdapter` 与 `HiredChinaAdapterOptions`（编排）；
+ *   判墙的**唯一实现**（`detectBlockOf`）也在本文件 —— 与 `zhipin` 同一处，将来动作链
+ *   落地时它的第二个消费者（`assertActionPage`）直接接在这里，不必再抄一遍信号集。
+ * * `config.ts` —— payload 锚点 / 选择器 / URL 参数 / 值域 / 判墙信号 / 默认配置与 `merge*`。
  * * `urls.ts` —— 列表页 URL 的宿主机侧构造（不碰 `document`）。
- * * `page.ts` —— `page.evaluate` 送进浏览器的自包含解析函数（列表 / 详情 / 翻页）。
- * * 本平台没有「页面内请求且结果回给宿主」的通道，故无 `api.ts`。
+ * * `page/list.ts` —— 列表侧页面上下文函数（RSC 流 → `initialData.list` → `RawJob`）。
+ * * `page/detail.ts` —— 详情侧页面上下文函数（JD / 薪资 / 公司 / 行业 / 徽章行归一）。
+ * * 本平台没有「页面内请求且结果回给宿主」的通道（数据内嵌在 HTML 里），故无 `api.ts`。
  * * 配置面（`DEFAULT_*` / `merge*`）一律从 `./config.js` 取，本文件不转出。
+ *
+ * 📌 `page/` 这一层对齐 `zhipin/page/` 的功能分区（`liepin` 2026-09-20 做过同款对齐）：
+ *    "这段函数在哪个页面上下文里跑"是读这份代码时最要紧的一件事。
  */
 import type { BlockKind, CoreField } from '../../../../shared/contract/enums/crawl.js'
-import { CORE_FIELDS } from '../../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../../pacing.js'
 import { humanBrowse } from '../../humanize.js'
 import { detectBlockWithSignals, signalsOf } from '../../block-signals.js'
 import { platformFacts } from '../../platform-facts.js'
-import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../../types.js'
+import type { CriteriaDimension, PageLike, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../../types.js'
 import {
   DEFAULT_HIREDCHINA_CONFIG,
   HIREDCHINA_BLOCK_SIGNALS,
@@ -101,15 +97,14 @@ import {
   HIREDCHINA_WORK_MODE_OPTIONS,
 } from './config.js'
 import type { HiredChinaConfig } from './config.js'
-import { extractDetailInPage, extractJobsInPage, hasNextPageInPage } from './page.js'
+import { extractDetailInPage } from './page/detail.js'
+import { extractJobsFromPayloadInPage } from './page/list.js'
 import { buildHiredChinaSearchUrl } from './urls.js'
 
 export interface HiredChinaAdapterOptions {
   config?: HiredChinaConfig
   /** 抓取请求之间的随机延时区间（§P5 保守优先）。 */
   delayRangeMs?: [number, number]
-  /** 等列表渲染出来的上限（ms）。 */
-  waitForListMs?: number
 }
 
 /** 构造 HiredChina 适配器。 */
@@ -118,13 +113,31 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
 
   /**
-   * 上一次 `gotoSearch` 记下的筛选条件（与 waiqi 同因：`readListPage(page)` / `hasNextPage(page)`
-   * 只拿得到 page，拿不到 criteria —— 见 domain/crawl.ts 的循环）。
+   * 最近一次 `readListPage` 解析出的条数 —— `hasNextPage(page)` 只拿得到 page
+   * （见 domain/crawl.ts 的循环），满页判据要靠它（payload 无任何分页元信息）。
    */
-  const pending = new WeakMap<object, SearchCriteria>()
+  const lastCount = new WeakMap<object, number>()
+
+  /**
+   * 判墙的**唯一实现**（与 `zhipin` / `liepin` 同一处）。
+   *
+   * 现在只有一个消费者（`guard.detectBlock`），但先抽出来是因为动作链一旦落地，
+   * `assertActionPage` 就是第二个 —— 各写一遍 `page.evaluate(detectBlockWithSignals, …)`
+   * 的话，改信号集时漏掉一处就会出现"采集认得这道墙、动作不认得"，
+   * 而动作那边恰恰是**会真发东西**的一侧。
+   *
+   * `card` 是判墙锚（"0 卡片 + 短文本"判 blank/登录墙的那条判据）—— 列表解析已走
+   * payload，不再有卡片选择器；真浏览器 hydrate 后 `a[href*="/job/"]` 会命中渲染出的
+   * 卡片，语义仍是"页面上有没有岗位"。
+   */
+  const detectBlockOf = async (page: PageLike): Promise<BlockKind | null> =>
+    await page.evaluate(detectBlockWithSignals, {
+      signals: signalsOf(HIREDCHINA_BLOCK_SIGNALS),
+      card: config.selectors.card,
+    })
 
   const dimensions: CriteriaDimension[] = [
-    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，对应 ?kw=（实测键名；需在页面输入触发）' },
+    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，对应 ?kw=（实测键名）' },
     {
       key: 'type',
       label: 'Job Type',
@@ -141,13 +154,13 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
       key: 'workMode',
       label: '工作模式',
       values: HIREDCHINA_WORK_MODE_OPTIONS,
-      hint: '对应 ?isOnline=（已实测：1=远程 / 0=现场）；解析时归一到 远程/现场/混合 标签',
+      hint: '对应 ?isOnline=（已实测：1=远程 / 0=现场）；解析时按 payload 的 isOnline 归一',
     },
     {
       key: 'city',
       label: '城市',
       values: Object.keys(config.cityCodes).map((city) => ({ value: city, label: city })),
-      // 同上：本平台**没有**城市筛选，带城市一律拒绝 —— 空表在这里是"别给"，不是"随便给"
+      // 本平台**没有**城市筛选，带城市一律拒绝 —— 空表在这里是"别给"，不是"随便给"
       closed: true,
       hint: '⚠️ 本平台**没有城市 URL 筛选**（地点 quick 按钮纯客户端，More 下拉是国籍过滤）→ 不筛选；带城市一律拒绝，不猜',
     },
@@ -156,7 +169,7 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
       label: '抓取页数上限',
       values: [],
       max: config.maxPages,
-      hint: `翻页已实测有效（?page=N、每页 10 条、749 页）；` +
+      hint: `翻页已实测有效（?page=N 在 payload 层真换数据、每页 10 条）；` +
         `上限 ${String(config.maxPages)} 页是对 Cloudflare 主站风控的保守取舍，不是平台限制`,
     },
   ]
@@ -166,22 +179,24 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
     ...platformFacts('hiredchina'),
     displayName: 'HiredChina',
     capabilities: {
-      // 列表公共可看（探针浏览器未登录即可渲染列表）→ 搜索不需要登录。
+      // 列表公共可看（探针未登录即可抓）→ 搜索不需要登录。
       searchWithoutLogin: true,
       supportsAttachment: false,
       supportsReadReceipt: false,
       supportsInbox: false,
       supportsGreeting: false,
-      // 结构化卡片：标题/公司/薪资/地点几乎都在；但字段靠底色徽章锚定，偶发缺失 → medium。
+      // 薪资约四成 keep.secret（2026-09-20 实测 4/10）→ 如实 medium，不夸大成 high。
       fieldCompleteness: 'medium',
       // 主站带 Cloudflare managed challenge（raw HTTP 实测命中）→ 如实 medium。
       antiBot: 'medium',
     },
-    // 薪资绝大多数存在（"Negotiable" 也是合法值，见 validate.ts）→ 用完整核心四字段。
-    requiredFields: [...CORE_FIELDS] as readonly CoreField[],
+    // ⚠️ 不含 salary_raw：payload 实测 10 条里 4 条 `salaryKey=keep.secret`（还原为
+    // "Negotiable" 面议）—— 列进必需字段会把约四成记录打进 pending_repair（zhipin 同款
+    // 取舍，清单按各平台实测覆盖率定，不是统一模板）。
+    requiredFields: ['title', 'company', 'source_url'] as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: config.maxPages,
-    // 未声明默认深度（hint 只说了上限的取舍理由）—— 1 页。
+    // 未声明默认深度 —— 1 页。
     defaultMaxPages: 1,
 
     criteria: {
@@ -196,12 +211,10 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
         if (url === null) {
           throw new Error(`HiredChina：城市「${criteria.city ?? ''}」筛选未实现（URL 参数未确证）—— 拒绝猜测`)
         }
-        pending.set(page as object, criteria)
         await page.goto(url)
-        // 列表是 RSC SSR，load 时卡片应已在；仍等一次卡片锚点，防「今天没有新岗位」误读。
-        if (page.waitForSelector !== undefined) {
-          await page.waitForSelector(config.selectors.card, options.waitForListMs ?? 15_000)
-        }
+        // 不等卡片 DOM：列表卡片是客户端组件渲染的，raw HTML 里**没有**（2026-09-20
+        // 实测定案）；岗位数据在 RSC 流里，HTML 送达那一刻就完整可读 —— `readListPage`
+        // 直接解析 payload，无需等待渲染。风控接管由 `detectBlock` 判（Cloudflare 信号）。
         if (delayMax > 0) {
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
@@ -210,44 +223,38 @@ export function createHiredChinaAdapter(options: HiredChinaAdapterOptions = {}):
       },
 
       async readListPage(page): Promise<RawJob[]> {
-        const jobs = await page.evaluate(extractJobsInPage, config)
-        if (jobs.length === 0) {
-          // 0 条可能是真没结果，也可能是改版 —— 交给主链按 NO_RECORDS 记 partial，不在这里猜。
-          return []
-        }
+        // 0 条可能是真没结果，也可能是改版（RSC 流锚点漂移）—— 交给主链按
+        // NO_RECORDS 记 partial，不在这里猜。
+        const jobs = await page.evaluate(extractJobsFromPayloadInPage, {
+          anchors: config.payloadAnchors,
+          lang: config.lang,
+        })
+        lastCount.set(page as object, jobs.length)
         return jobs
       },
 
       async hasNextPage(page): Promise<boolean> {
-        const criteria = pending.get(page as object) ?? {}
-        const pageNo = criteria.page !== undefined && criteria.page > 0 ? Math.trunc(criteria.page) : 1
-        return await page.evaluate(hasNextPageInPage, {
-          selector: config.selectors.pagination,
-          currentPage: pageNo,
-        })
+        // payload 里没有任何分页元信息（total/hasMore 实测全无）→ 满页即有下一页
+        // （liepin「本页不满即停」的同款镜像；末页恰好满页时多探一页空页可接受）。
+        const count = lastCount.get(page as object) ?? 0
+        return count > 0 && count >= config.pageSize
       },
     },
 
     guard: {
-      async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockWithSignals, {
-          signals: signalsOf(HIREDCHINA_BLOCK_SIGNALS),
-          card: config.selectors.card,
-          // ⚠️ **刻意不传 `cardBox`**：原实现的 arg 里声明了它，但函数体从未使用过
-          //    （只 querySelectorAll(arg.card)）。传进去会让"卡片数为 0"多一条兜底判据，
-          //    从而少判 blank —— 那是行为改变，不是迁移。
-        })
-      },
+      // 判墙的实现只有一份（`detectBlockOf`）—— 动作链将来落地时复用同一份信号集。
+      detectBlock: detectBlockOf,
     },
 
-    // 详情页 JD 全文（P2 详情抓取）。选择器（h1 / 渐变卡片薪资 / prose JD）探针注明，
-    // 待 probe:hiredchina 落盘详情夹具校准；该平台无签证/公司规模字段，故不编这些。
+    // 详情页 JD 全文（P2 详情抓取）。选择器 2026-09-20 由真实详情页夹具全套校准
+    // （h1 / 公司 / 行业 / 薪资 / 徽章行 / JD 按标题锚定拼接）；该平台无签证/公司
+    // 规模字段，故不编这些。
     detail: {
       async extract(page): Promise<RawJobDetail> {
         return await page.evaluate(extractDetailInPage, { selectors: config.detailSelectors })
       },
     },
 
-    // ⚠️ 不实现 `actions`：投递需登录且列表夹具未验证稳定投递契约 → fail-closed。
+    // ⚠️ 不实现 `actions`：投递需登录且未验证稳定投递契约 → fail-closed。
   }
 }

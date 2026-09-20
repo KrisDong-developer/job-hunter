@@ -173,4 +173,34 @@ export const RESUMES = `
   color:var(--dsw-alias-label-secondary)}
 .jh-file-pdf{background:var(--jh-error-fg);
   color:var(--dsw-alias-label-primary-foreground)}
+/* 2026-09-20（UICraft）：文件名即打开入口 —— 行给 hover 反馈（可点的整行），
+   并列的「打开」按钮已删（同一动作两个入口是噪音）。 */
+.jh-file-row{transition:border-color .12s}
+.jh-file-row:hover{border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-hover)}
+.jh-file-row .jh-file-name:hover{text-decoration:underline}
+/* 空态：就地给动作（跨区域指路是最差的引导），不再让人去右上角找导出。 */
+.jh-files-empty{display:flex;flex-direction:column;gap:10px}
+.jh-files-empty-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── 话术子页（v12 多赛道）：一份简历一条赛道，开场模板跟着简历走 ──────
+   显隐与附件子 tab 同一套：默认藏，greeting 模式下独占工作区。 */
+.jh-work-greeting{display:none}
+.jh-mode-greeting .jh-work-editor,.jh-mode-greeting .jh-work-preview,
+.jh-mode-greeting .jh-work-files,.jh-mode-greeting .jh-splitter{display:none}
+.jh-mode-greeting .jh-work-greeting{display:block;overflow:auto;min-height:0;padding-right:4px}
+.jh-greeting-panel{display:flex;flex-direction:column;gap:10px;max-width:760px}
+.jh-greeting-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* ⚠️ (0,2,0)：必须盖过本文件更靠前的全局 .jh-select 的 width:100%（同特异性按层叠后者胜） */
+.jh-greeting-actions .jh-select{width:auto}
+.jh-greeting-item{display:flex;flex-direction:column;gap:8px}
+.jh-greeting-item-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.jh-greeting-name{flex:1 1 220px;min-width:0}
+/* 来源徽章：短文案（AI 生成 / 规则兜底 / 手写），完整语义在 title —— 轻描边胶囊，不抢正文 */
+.jh-greeting-via{flex:0 0 auto;font-size:11px;line-height:18px;padding:0 9px;border-radius:999px;
+  border:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.jh-greeting-meta{flex:0 0 auto;font-size:12px;color:var(--jh-muted-fg)}
+.jh-greeting-body{width:100%;box-sizing:border-box;min-height:88px;resize:vertical}
+/* footer：左读统计、右做动作；wrap 在窄容器下统计先折行，动作保持一行 */
+.jh-greeting-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 `

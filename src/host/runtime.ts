@@ -780,6 +780,37 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     scheduler?.start()
   }
 
+  /**
+   * R20 入口纪律的「自愈」版：不持租约时先试一次**内联接管**，仍拿不到才拒绝。
+   *
+   * 为什么需要它：宿主可能在同一份数据目录上同时拉起两个实例（DSH Desktop 的
+   * 桌面主进程 + 无头 harness），谁先创建运行时谁拿到租约，输家只读。之后持有者
+   * 若退出，理论上 30 秒心跳轮询会自动接管，但轮询未必被宿主环境驱动
+   * （2026-09-20 实例：后台 harness 被结束后，面板实例的轮询没跑，用户每次
+   * 操作都被 CONFLICT 挡住，只能手动点「重新检测」）。在这里内联试一次
+   * `takeOverLease` —— 它只在对方**心跳已过期**时成功，绝不会抢活实例的锁 ——
+   * 让「持有者已死」在用户的下一次操作时就地自愈。
+   */
+  const ensureLease = (hint: string): void => {
+    if (lease.held()) return
+    // 数据层不可用（尚未就绪 / 已 close）时**绝不尝试接管**：close 时租约已还，
+    // `acquire()` 会把锁重新拿回来，"close 之后必须拒绝"就变成"close 之后又能跑了"。
+    // 这里维持原纪律：直接按 CONFLICT 拒绝（说法沿用 readOnlyReason）。
+    if (store === undefined) {
+      throw new DomainError('CONFLICT', readOnlyReason() ?? '本实例不持有租约', { hint })
+    }
+    takeOverLease({
+      lease,
+      events: bus,
+      ...(logger === undefined ? {} : { logger }),
+      onAcquired: onLeaseAcquired,
+      describe: (verdict) =>
+        `用户操作触发接管（原持有者 pid ${String(verdict.other?.pid ?? '?')} 心跳已过期）`,
+    })
+    // 接管成功（lease.held 变 true）时 requireLease 直接放行；它只在仍不持有时抛 CONFLICT。
+    requireLease(lease, readOnlyReason, hint)
+  }
+
   /** 心跳（含"等对方过期就自己接管"的探测循环）。取消函数归 close 保管。 */
   const cancelHeartbeat = (): void => {
     if (heartbeatCancel === null) return
@@ -1244,7 +1275,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         throw dataNotReady(runtime)
       }
       // 不持租约就不许驱动浏览器：两个实例抢同一个 profile 会直接报错（R20）
-      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边抓取。')
+      ensureLease('另一个实例正在运行 —— 请在那边抓取。')
 
       bus.publish('crawl.started', { platformId: options.platformId, criteria: options.criteria })
       try {
@@ -1497,7 +1528,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       // 与 `crawl` 同一条纪律（R20）：只读实例不许开浏览器。
       // 两个实例共用一个 browser-profile 目录会互相踩，而登录引导恰好是**最长**的一次占用
       // （用户在里面输密码，可能几分钟）—— 恰恰是最不该被第二个实例插进来的场景。
-      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边登录，避免两个实例抢同一个浏览器 profile。')
+      ensureLease('另一个实例正在运行 —— 请在那边登录，避免两个实例抢同一个浏览器 profile。')
       return need(loginFlow).start(platformId)
     },
 
@@ -1505,7 +1536,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       // 检测也要真的打开招聘站页面（`auth.isLoggedIn` 判的是**当前页**），
       // 所以离线闸门与租约约束一条都不能少 —— 与 `startLogin` 完全同级。
       assertNetworkAllowed('打开招聘网站检测登录态')
-      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边检测，避免两个实例抢同一个浏览器 profile。')
+      ensureLease('另一个实例正在运行 —— 请在那边检测，避免两个实例抢同一个浏览器 profile。')
       return await need(loginFlow).check(platformId)
     },
 
@@ -1604,7 +1635,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
     runCleanup(only): CleanupResultDto {
       const opened = need(store)
       // 与 `crawl` / `startLogin` 同一条纪律：只读实例不许写库（两个实例抢同一个文件）
-      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边清理数据。')
+      ensureLease('另一个实例正在运行 —— 请在那边清理数据。')
       const result = runCleanupOf(opened, only === undefined ? {} : { only }, clock)
       if (result.totalRows > 0) {
         bus.publish('storage.cleaned', {
@@ -1669,7 +1700,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
 
     importJobs(input): DataImportResultDto {
       const opened = need(store)
-      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边导入数据。')
+      ensureLease('另一个实例正在运行 —— 请在那边导入数据。')
       const companyService = companies
       const intelService = intel
       const result = importJobsOf(

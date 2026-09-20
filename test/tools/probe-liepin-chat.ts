@@ -18,12 +18,16 @@
  * ② 详情页：**hover** 沟通入口（`mouse.move` 只移动，不算点击）→ 采浮层/按钮契约；
  *    投递入口只取证不点；
  * ③ 我的沟通：真鼠标点侧边栏 `#im-c-entry`（默认允许 —— 只读导航，不发任何消息），
- *    采会话列表 DOM 与 `im.c.chat.*` 接口；
+ *    采会话列表 DOM 与 `im.c.chat.*` 接口；**再点开第一行会话**（同样是只读：打开一条
+ *    已存在的会话，不发任何消息）→ 采**会话面板的输入面**（`textarea` + placeholder
+ *    「按Enter键发送」）。输入面只在"打开会话之后"才渲染，不点进去这一格永远没有证据；
  * ④ 全程采 `api-c.liepin.com` 等接口，**记 method + postData**（`.probe-liepin-capture/`）。
  *
  * ⚠️ **默认不点任何会产生对外动作的按钮**（沟通 / 打招呼 / 投递 / 发送）。
  *    要点头得显式开：`LIEPIN_ALLOW_CHAT=1`（沟通类）、`LIEPIN_ALLOW_APPLY=1`（投递类）。
  *    这条护栏是被智联那次"误投一份简历"逼出来的 —— 详见 `PLATFORM-ZHAOPIN.md` §8.4。
+ *    「打开我的沟通」与「点开会话行」**不在**这条护栏内：它们只读自己的会话，
+ *    与「聊一聊」（会触发 `open-chat`、给对方建会话）是两件事。
  * ⚠️ 猎聘的风控比 BOSS/智联都硬：`security.min.js` 会检测"CDP 控制页面"并主动探测调试端口
  *    （v6 实测：只导航也会被 `about:blank` 销毁）⇒ **必须 patchright 启动式 + stealth 注入**，
  *    不能用 attach。本探针与 `probe-liepin-v8` 同一条路线。
@@ -34,6 +38,11 @@
  *   * `liepin-walk-<NN>-<kind>.html`  每个去重后的页面状态一份整页 HTML
  *   * `liepin-chat-report.json`       `snapshots[]`（含控件清单 + hover 前后对比）/ `network[]`
  *     （url/method/status/postData/body 片段）/ `login`（闸门 = 渲染，**不下登录结论**）/ `autoWalk.steps[]`
+ *     / `imSurface`（IM 抽屉与会话面板的选择器命中数 + 输入面 + 消息条目类名）
+ *     / `contactRows[]`（会话行摘要：未读 / `direction` / `extType` / 最后一条 `msg` / `jobId`）
+ *
+ * ⚠️ **IM 类接口的响应体不按 4000 字符截断**（`IM_BODY_CAP`）：一条会话行的 `lastPayload`
+ *    就可能上千字符，截断会把后面几行挤掉 —— 而"方向怎么判"全在**行**里。
  *
  * ⚠️ 刻意**不写 `test/fixtures/`**（那里是被用例硬编码钉住的夹具）。要钉住某一份就人工复制并同步期望值。
  *
@@ -49,6 +58,8 @@
  *   LIEPIN_RENDER_SEC  等待卡片渲染上限（秒，默认 60）—— **不是**等登录
  *   LIEPIN_ALLOW_CHAT  `1` = 允许点沟通类入口（**可能真的发出招呼**，默认禁止）
  *   LIEPIN_ALLOW_APPLY `1` = 允许点投递类入口（**会真的投出简历**，默认禁止）
+ *   LIEPIN_ALLOW_SEND  `1` = 发送实验：在抽屉第一行会话里真键盘打一句测试话术并回车
+ *                       （**会真的发出一条消息**，默认禁止；文案 LIEPIN_SEND_TEXT 可改）
  *   LIEPIN_AUTO_WALK   `0` = 只录制、由你手动走
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -56,6 +67,7 @@ import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page, type Response } from 'patchright'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
+import { humanPress, humanType } from '../../src/host/platform/humanize.js'
 // ⚠️ **直接用适配器自己那套**（42/42 校准过的）选择器与 URL 构造器。
 // 第一版探针在这里栽过：卡片选择器与"登录标记"都是我现编的，结果**登录着也判成未登录、
 // 卡片数恒为 0** —— 白白等了一轮登录超时。探针的价值恰恰是"用适配器的眼睛看页面"，
@@ -83,6 +95,21 @@ const REPORT_PATH = join(CAPTURE_DIR, 'liepin-chat-report.json')
 const AUTO_WALK = process.env['LIEPIN_AUTO_WALK'] !== '0'
 const ALLOW_CHAT = process.env['LIEPIN_ALLOW_CHAT'] === '1'
 const ALLOW_APPLY = process.env['LIEPIN_ALLOW_APPLY'] === '1'
+/**
+ * 发送实验（默认禁止）：在抽屉第一行会话里用真键盘打一句测试话术并回车。
+ *
+ * 这是 `sayHello`/`reply` 落地前**唯一没真跑过的一步**（打字 + 回车 + 送达回读）。
+ * ⚠️ **会真的给会话对面的真人发出一条消息**（默认「测试，请忽略。」，LIEPIN_SEND_TEXT 可改）。
+ */
+const ALLOW_SEND = process.env['LIEPIN_ALLOW_SEND'] === '1'
+/**
+ * IM 类接口的响应体留多长。
+ *
+ * 页面级默认 4000 字符，对会话列表太短：一条会话行的 `lastPayload` 就可能上千字符，
+ * 两三行就把后面几行挤掉 —— 而"会话行有哪些字段、方向怎么判"全在**行**里，
+ * 截断等于把证据采废（2026-09-19 那次 2 行约 2600 字符，属于侥幸没截断）。
+ */
+const IM_BODY_CAP = 40_000
 
 const CONFIG: LiepinConfig = DEFAULT_LIEPIN_CONFIG
 const SEARCH_URL =
@@ -346,6 +373,15 @@ export async function probeContactListInPage(arg: {
   realImId: string
   /** 页面自己那次请求的头（**同一份**）；不带头时实测连对照组都失败。 */
   headers: Record<string, string>
+  /**
+   * **适配器自己那套静态头**（`LIEPIN_API_HEADERS`）—— 用来验证"适配器能不能自建请求调这个接口"。
+   *
+   * 为什么这一维必须单独验：搜索接口的门是 `x-fscp-*` 一族的**完整性**（少一项就 `-1400`，
+   * 见那份实测表），但 IM 接口是**另一个后端应用段**，门槛没理由假设相同。
+   * 不验就只能把页面那 20 个头（含 `user-agent` / `sec-ch-ua` 这类随环境变的）整份抄进配置 ——
+   * 那既不可维护，也会把"环境指纹"写死。
+   */
+  adapterHeaders: Record<string, string>
 }): Promise<{
   cookieHasImId: boolean
   /** 页面 JS 能看到的 imId 型 cookie 名（httpOnly 的看不到 —— 这本身就是结论）。 */
@@ -364,37 +400,85 @@ export async function probeContactListInPage(arg: {
     .map((part) => part.trim().split('=')[0] ?? '')
     .filter((name) => /^imId/i.test(name))
 
-  const bodies: Array<{ name: string; body: string }> = [
-    { name: '空 imId', body: `imUserType=0&imId=&imApp=1&pageSize=${String(arg.pageSize)}&curPage=0` },
-    { name: '不带 imId 参数', body: `imUserType=0&imApp=1&pageSize=${String(arg.pageSize)}&curPage=0` },
+  /** 请求体里 imId 的三种写法：空串 / 整个参数不要 / 带真实值（对照）。 */
+  const bodyOf = (imId: string | null): string =>
+    imId === null
+      ? `imUserType=0&imApp=1&pageSize=${String(arg.pageSize)}&curPage=0`
+      : `imUserType=0&imId=${imId}&imApp=1&pageSize=${String(arg.pageSize)}&curPage=0`
+
+  // ⚠️ 这个接口的体是**表单**（`imUserType=0&...`），所以 content-type 必须是 urlencoded ——
+  //    而 `LIEPIN_API_HEADERS` 里那份是给**JSON 体**的搜索接口准备的（application/json），
+  //    照抄会送出"JSON 头 + 表单体"的错配组合。这一格也是本次要验的东西之一。
+  const formHeaders = (base: Record<string, string>): Record<string, string> => ({
+    ...base,
+    'content-type': 'application/x-www-form-urlencoded',
+  })
+
+  const variants: Array<{ name: string; body: string; headers: Record<string, string> }> = [
+    { name: '空 imId（页面头，对照组）', body: bodyOf(''), headers: formHeaders(arg.headers) },
+    { name: '不带 imId 参数（页面头）', body: bodyOf(null), headers: formHeaders(arg.headers) },
   ]
   if (arg.realImId !== '') {
-    bodies.push({
-      name: '对照组：带真实 imId',
-      body: `imUserType=0&imId=${arg.realImId}&imApp=1&pageSize=${String(arg.pageSize)}&curPage=0`,
+    variants.push({
+      name: '对照组：带真实 imId（页面头）',
+      body: bodyOf(arg.realImId),
+      headers: formHeaders(arg.headers),
     })
   }
+  if (Object.keys(arg.adapterHeaders).length > 0) {
+    // 与 `fetchListInPage` 同构：三项遥测在页面里现造（UUID / 当前页 URL / 空串）
+    const uuid = ((): string => {
+      const cryptoImpl = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+      if (typeof cryptoImpl?.randomUUID === 'function') return cryptoImpl.randomUUID()
+      const hex = (length: number): string => {
+        let out = ''
+        while (out.length < length) out += Math.floor(Math.random() * 16).toString(16)
+        return out.slice(0, length)
+      }
+      return `${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}`
+    })()
+    const adapted = formHeaders({
+      ...arg.adapterHeaders,
+      'x-fscp-trace-id': uuid,
+      'x-fscp-bi-stat': JSON.stringify({
+        location: (globalThis as { location?: { href?: string } }).location?.href ?? '',
+      }),
+      'x-fscp-fe-version': '',
+    })
+    variants.push({ name: '空 imId（适配器头：六项静态 + 现造遥测）', body: bodyOf(''), headers: adapted })
+    // 反向对照：**只给静态头**。若它失败而上面那条成功，说明门同样在 `x-fscp-*` 一族；
+    // 若它成功，说明这个接口连遥测都不需要（实现可以更简单）。
+    variants.push({ name: '空 imId（适配器头：仅六项静态）', body: bodyOf(''), headers: formHeaders(arg.adapterHeaders) })
+  }
 
-  const variants: Array<{ name: string; ok: boolean; note: string; rows: number; raw: string }> = []
-  for (const variant of bodies) {
+  const results: Array<{ name: string; ok: boolean; note: string; rows: number; raw: string }> = []
+  for (const variant of variants) {
     try {
       const response = await globalThis.fetch(arg.api, {
         method: 'POST',
-        headers: { ...arg.headers, 'content-type': 'application/x-www-form-urlencoded' },
+        headers: variant.headers,
         body: variant.body,
         credentials: 'include',
       })
       const text = await response.text()
       let rows = -1
+      let flag = '?'
       try {
-        const parsed = JSON.parse(text) as { data?: { list?: unknown[] } }
+        const parsed = JSON.parse(text) as { flag?: unknown; data?: { list?: unknown[] } }
+        flag = String(parsed.flag)
         rows = Array.isArray(parsed.data?.list) ? parsed.data.list.length : -1
       } catch {
         /* 不是 JSON 就把原文留着 */
       }
-      variants.push({ name: variant.name, ok: true, note: `HTTP ${String(response.status)}`, rows, raw: text.slice(0, 400) })
+      results.push({
+        name: variant.name,
+        ok: response.ok,
+        note: `HTTP ${String(response.status)} · flag=${flag}`,
+        rows,
+        raw: text.slice(0, 300),
+      })
     } catch (error) {
-      variants.push({
+      results.push({
         name: variant.name,
         ok: false,
         note: error instanceof Error ? error.message : String(error),
@@ -403,7 +487,7 @@ export async function probeContactListInPage(arg: {
       })
     }
   }
-  return { cookieHasImId: cookieImIdNames.length > 0, cookieImIdNames, variants }
+  return { cookieHasImId: cookieImIdNames.length > 0, cookieImIdNames, variants: results }
 }
 
 /**
@@ -786,6 +870,166 @@ export function overlaysInPage(arg: { selectors: string[] }): Array<{
   return out
 }
 
+/**
+ * **在页面上下文里**量 IM 侧的选择器命中数（抽屉里的会话列表 + 会话面板里的输入面）。
+ *
+ * 为什么单独一个函数：`scanLiepinPageInPage` 量的是**搜索/详情**那套适配器选择器，
+ * 而 IM 是**另一个前端应用**（`feim.liepin.com/lp-manifest.json` → `lp_fe_im_pc` 微前端），
+ * 它自带一套类名体系（`im-ui-*` / `ant-im-*`）—— 只能用**候选表**先量命中数，
+ * 坐实了再往 `LiepinSelectors` 里搬（与当初 `imEntry` 同一条纪律）。
+ *
+ * 2026-09-19 捕获里已经见过的东西（这次是**复现**它们）：
+ *   * 会话行 `div.im-ui-contact-list-item.im-ui-contact-item`，带
+ *     `data-tlg-ext='{"unread":true,"to_imid":"…"}'`（未读与对方 imId 直接读得到）；
+ *   * 未读徽章 `.ant-im-badge-count`（文本就是未读数）；
+ *   * 输入面 `textarea.ant-im-input.im-ui-textarea`，placeholder 明写「按Enter键发送」；
+ *   * 我方消息 `.im-ui-message-item-send` / 正文 `.im-ui-txt.send` /
+ *     发送中图标 `.im-ui-message-item-loadingicon-send`。
+ */
+export function probeImSurfaceInPage(arg: { selectors: string[]; maxSamples: number }): {
+  hits: Record<string, number>
+  composer: { tag: string; cls: string; placeholder: string; rows: string } | null
+  messageItemClasses: string[]
+  contactFirst: { dataTlgExt: string; title: string; sub: string } | null
+} {
+  const clean = (value: string | null | undefined): string =>
+    value === null || value === undefined ? '' : value.replace(/\s+/g, ' ').trim()
+  const q = (selector: string): Element[] => {
+    try {
+      return Array.from(document.querySelectorAll(selector))
+    } catch {
+      return []
+    }
+  }
+  const hits: Record<string, number> = {}
+  for (const selector of arg.selectors) hits[selector] = q(selector).length
+
+  const composerNode = q('textarea').find((el) => {
+    const placeholder = el.getAttribute('placeholder') ?? ''
+    return /Enter|发送/i.test(placeholder)
+  })
+  const composer =
+    composerNode === undefined
+      ? null
+      : {
+          tag: composerNode.tagName.toLowerCase(),
+          cls: composerNode.getAttribute('class') ?? '',
+          placeholder: composerNode.getAttribute('placeholder') ?? '',
+          rows: composerNode.getAttribute('rows') ?? '',
+        }
+
+  const messageItemClasses: string[] = []
+  for (const node of q('[class*="im-ui-message-item"]')) {
+    const cls = node.getAttribute('class') ?? ''
+    if (cls !== '' && !messageItemClasses.includes(cls)) messageItemClasses.push(cls)
+    if (messageItemClasses.length >= arg.maxSamples) break
+  }
+
+  let contactFirst: { dataTlgExt: string; title: string; sub: string } | null = null
+  const firstContact = q('.im-ui-contact-item')[0]
+  if (firstContact !== undefined) {
+    contactFirst = {
+      dataTlgExt: firstContact.getAttribute('data-tlg-ext') ?? '',
+      title: clean(firstContact.querySelector('.im-ui-contact-title-name')?.textContent),
+      sub: clean(firstContact.querySelector('.im-ui-contact-title-sub')?.textContent),
+    }
+  }
+  return { hits, composer, messageItemClasses, contactFirst }
+}
+
+/**
+ * **在页面上下文里**读"我发出的消息"（自包含）：条数 / 文本列表 / 是否有发送中的。
+ *
+ * `messageLoading` 是消息条目内的 loading 图标（实测类名
+ * `.im-ui-message-item-loadingicon-send`，空闲时带 `hide` 类）——「文本已上屏但
+ * 还在转圈」就是 pending，转完才是 delivered。
+ */
+export function readMyMessagesInPage(arg: {
+  selectors: { myMessage: string; messageText: string; messageLoading: string }
+}): { count: number; texts: string[]; loading: boolean } {
+  const clean = (value: string | null | undefined): string =>
+    value === null || value === undefined ? '' : value.replace(/\s+/g, ' ').trim()
+  let nodes: Element[] = []
+  try {
+    nodes = Array.from(document.querySelectorAll(arg.selectors.myMessage))
+  } catch {
+    return { count: 0, texts: [], loading: false }
+  }
+  const texts: string[] = []
+  let loading = false
+  for (const node of nodes) {
+    let text = ''
+    try {
+      const content = node.querySelector(arg.selectors.messageText)
+      text = clean(content === null ? node.textContent : content.textContent)
+    } catch {
+      text = ''
+    }
+    texts.push(text)
+    try {
+      const icon = node.querySelector(arg.selectors.messageLoading)
+      if (icon !== null && !(icon.getAttribute('class') ?? '').includes('hide')) loading = true
+    } catch {
+      /* 选择器非法就当不在转圈 */
+    }
+  }
+  return { count: nodes.length, texts, loading }
+}
+
+/**
+ * 把会话列表响应里的**行**整理成可读摘要（宿主侧纯函数）。
+ *
+ * 为什么要这一步而不是只存原文：`lastPayload` 是**一个 JSON 字符串**（要再解一层才看得到
+ * 真正那句话与 `ext.extType`），方向判据全靠它。原文也留在 `network[]` 里，
+ * 但摘要让"这一轮采到了什么"当场可见。
+ */
+export function summarizeContactRows(payload: unknown): Array<{
+  id: string
+  name: string
+  company: string
+  unReadCnt: string
+  direction: string
+  oppositeRead: string
+  latestMsgTime: string
+  latestMsgIsRevoke: string
+  extType: string
+  msg: string
+  jobId: string
+}> {
+  const root = payload as { data?: { list?: unknown[] } } | null
+  const list = root?.data?.list
+  if (!Array.isArray(list)) return []
+  const text = (value: unknown): string => (value === undefined || value === null ? '' : String(value))
+  return list.map((entry) => {
+    const row = (entry ?? {}) as Record<string, unknown>
+    let payloadInner = row['lastPayload']
+    if (typeof payloadInner === 'string') {
+      try {
+        payloadInner = JSON.parse(payloadInner) as unknown
+      } catch {
+        payloadInner = null
+      }
+    }
+    const inner = (payloadInner ?? {}) as {
+      bodies?: Array<{ msg?: unknown }>
+      ext?: { extType?: unknown; extBody?: { bizData?: { jobId?: unknown } } }
+    }
+    return {
+      id: text(row['id']),
+      name: text(row['name']),
+      company: text(row['company']),
+      unReadCnt: text(row['unReadCnt']),
+      direction: text(row['direction']),
+      oppositeRead: text(row['oppositeRead']),
+      latestMsgTime: text(row['latestMsgTime']),
+      latestMsgIsRevoke: text(row['latestMsgIsRevoke']),
+      extType: text(inner.ext?.extType),
+      msg: text(inner.bodies?.[0]?.msg),
+      jobId: text(inner.ext?.extBody?.bizData?.jobId),
+    }
+  })
+}
+
 /* ── 宿主侧 ─────────────────────────────────────────────────────────── */
 
 /**
@@ -847,6 +1091,29 @@ async function main(): Promise<void> {
    * 所以必须落到文件里（不能只打在终端里）。
    */
   let cityCodeTable: Array<{ code: string; name: string }> = []
+  /**
+   * IM 侧选择器的量测结果（抽屉 + 会话面板）。
+   *
+   * 落进报告而不是只打终端：`sayHello`/`reply` 的实现与否取决于"输入面到底有没有稳定选择器"，
+   * 这是**决策依据**，必须能回头查。
+   */
+  let imSurface: ReturnType<typeof probeImSurfaceInPage> | null = null
+  /** 会话行的可读摘要（`lastPayload` 解一层后的关键字段）—— 方向判据的证据。 */
+  let contactRowSummary: ReturnType<typeof summarizeContactRows> = []
+  /**
+   * 发送实验的结果（LIEPIN_ALLOW_SEND=1 才有）：话术、textarea 上屏值、DOM 送达与否、
+   * 送达后我方消息条数与 loading 态 —— `sayHello`/`reply` 实现的**直接依据**。
+   */
+  let sendExperiment: {
+    text: string
+    focusAfterClick: string
+    typedVia: string
+    typedValue: string
+    domDelivered: boolean
+    myMessageCountAfter: number
+    loadingAfter: boolean | null
+    lastTextsAfter: string[]
+  } | null = null
   const isSynthetic = (at: string): boolean => {
     const t = new Date(at).getTime()
     return syntheticWindows.some((window_) => t >= window_.from && t <= window_.to)
@@ -893,7 +1160,11 @@ async function main(): Promise<void> {
             /* 拿不到头也不许炸 */
           }
           try {
-            entry.bodyHead = (await response.text()).slice(0, 4_000)
+            // IM 类响应体放宽（会话行的 lastPayload 很长，4000 字符会把后面几行挤掉）
+            const cap = /get-contact-list|open-chat|unread-count|my-contact-list|socket/i.test(url)
+              ? IM_BODY_CAP
+              : 4_000
+            entry.bodyHead = (await response.text()).slice(0, cap)
           } catch {
             /* 读不到 body 也不许炸 */
           }
@@ -1403,20 +1674,24 @@ async function main(): Promise<void> {
       //    不产生任何对外动作 —— 与「聊一聊」（会给 HR 发消息）是两件事。
       //    所以这里的护栏形状是**白名单选择器**，而不是上面那套按文案的黑名单。
       const IM_ENTRY_SELECTOR = '#im-c-entry .im-ui-basic-entry, #im-c-entry .im-ui-basic-entry-title'
-      // ⚠️ 刚打过招呼（`LIEPIN_ALLOW_CHAT=1`）时**必须回搜索页重来一次**：
-      //    目的是让 IM 微前端重新初始化，从而一定再发一遍
-      //    `im.c.contact.get-contact-list` —— 这次拿到的 `totalCount` / `list`
-      //    才是"打过招呼之后"的状态，**会话行的字段形状就在这一份里**。
-      //    不刷新的话抽屉可能走缓存，采到的是打招呼之前的空列表。
-      if (ALLOW_CHAT) {
-        await page.goto(SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => undefined)
-        await page.waitForTimeout(6_000)
+      // ⚠️ **无论 ALLOW_CHAT 与否都回搜索页**（2026-09-20 第二轮实测的教训）：
+      //    详情页上 `#im-c-entry` 在、但内层 `.im-ui-basic-entry` 是**懒加载**的 ——
+      //    快照实测：搜索页 basic-entry=1，详情页=0（这轮定位失败就断在这里）。
+      //    搜索页稳定渲染；回搜索页也让 IM 微前端重新初始化、必发一遍
+      //    `im.c.contact.get-contact-list`（刚打过招呼时拿到的才是"之后"的状态）。
+      await page.goto(SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => undefined)
+      await page.waitForTimeout(6_000)
+      // 入口轮询（最多 ~15s）：哪怕在搜索页上，微前端偶尔也晚几秒
+      let imEntry: Awaited<ReturnType<typeof centerOfSelectorInPage>> | null = null
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        imEntry = await page
+          .evaluate(centerOfSelectorInPage, { selector: IM_ENTRY_SELECTOR, maxTextLength: 12 })
+          .catch(() => null)
+        if (imEntry !== null && imEntry.found) break
+        await page.waitForTimeout(3_000)
       }
-      const imEntry = await page
-        .evaluate(centerOfSelectorInPage, { selector: IM_ENTRY_SELECTOR, maxTextLength: 12 })
-        .catch(() => null)
       if (imEntry === null || !imEntry.found) {
-        record('打开「我的沟通」', false, `没找到可见的 ${IM_ENTRY_SELECTOR}（入口可能在别的 DOM 里，看截图/HTML）`)
+        record('打开「我的沟通」', false, `没找到可见的 ${IM_ENTRY_SELECTOR}（轮询 15s 仍无 —— 微前端没加载？看截图/HTML）`)
       } else {
         const beforeUrl = page.url()
         await page.mouse.move(imEntry.x, imEntry.y, { steps: 8 })
@@ -1430,6 +1705,47 @@ async function main(): Promise<void> {
             (page.url() === beforeUrl ? '没有换页（大概率是弹层）' : `已跳到 ${page.url().slice(0, 100)}`),
         )
         await capture(page, 'im-entry', true)
+        // ── IM 侧选择器复现：抽屉里的会话列表（只读）─────────────────────
+        // 候选表先量命中数 —— 与当初 `imEntry` 同一条纪律（先见过、再搬进配置）。
+        const IM_SURFACE_SELECTORS = [
+          '.ant-im-drawer',
+          '.im-ui-contact-list-wrapper',
+          '.im-ui-contact-item',
+          '.im-ui-contact-title-name',
+          '.im-ui-contact-title-sub',
+          '.ant-im-badge-count',
+          '.im-ui-system-tip',
+          '.im-ui-chat-modal-container',
+          'textarea.im-ui-textarea',
+          '.im-ui-message-item',
+          '.im-ui-message-item-send',
+          '.im-ui-message-item-body',
+          '.im-ui-message-item-loadingicon',
+          '.im-ui-txt.send',
+        ]
+        const drawerSurface = await page
+          .evaluate(probeImSurfaceInPage, { selectors: IM_SURFACE_SELECTORS, maxSamples: 12 })
+          .catch(() => null)
+        if (drawerSurface === null) {
+          record('IM 抽屉选择器', false, 'evaluate 失败')
+        } else {
+          record(
+            'IM 抽屉选择器（会话列表侧）',
+            (drawerSurface.hits['.im-ui-contact-item'] ?? 0) > 0,
+            Object.entries(drawerSurface.hits)
+              .filter(([, n]) => n > 0)
+              .map(([s, n]) => `${s}:${String(n)}`)
+              .join(' · ') || '(全 0 —— 抽屉没开或类名变了)',
+          )
+          if (drawerSurface.contactFirst !== null) {
+            record(
+              '  首个会话行',
+              true,
+              `data-tlg-ext=${drawerSurface.contactFirst.dataTlgExt} · 标题「${drawerSurface.contactFirst.title}」· 副标题「${drawerSurface.contactFirst.sub}」`,
+            )
+          }
+        }
+
         // 把**最新一次** `get-contact-list` 原文打出来：这是判断"打招呼有没有造出会话"、
         // 以及拿会话行字段形状的唯一依据（见 ADAPTERS §7.2 猎聘条）。
         const contactCalls = network.filter((entry) => entry.url.includes('get-contact-list'))
@@ -1442,8 +1758,29 @@ async function main(): Promise<void> {
             true,
             `POST ${latest.url.split('?')[0]} · 请求体 ${latest.postData ?? '(空)'} · 响应 ${(latest.bodyHead ?? '').slice(0, 400)}`,
           )
+          // 行摘要：`lastPayload` 是**一个 JSON 字符串**（要再解一层），方向判据全靠它 ——
+          // 直接把"这一轮采到了哪些行、每行是什么"落进报告，免得每次都要手写脚本挖。
+          let parsedBody: unknown = null
+          try {
+            parsedBody = JSON.parse(latest.bodyHead ?? '')
+          } catch {
+            parsedBody = null
+          }
+          const rows = summarizeContactRows(parsedBody)
+          if (rows.length > 0) {
+            contactRowSummary = rows
+            record('  会话行摘要', true, `共 ${String(rows.length)} 行`)
+            for (const row of rows) {
+              record(
+                `    行 ${row.name}/${row.company.slice(0, 10)}`,
+                true,
+                `unread=${row.unReadCnt} direction=${row.direction} oppositeRead=${row.oppositeRead} ` +
+                  `extType=${row.extType} revoke=${row.latestMsgIsRevoke} jobId=${row.jobId} msg=「${row.msg.slice(0, 60)}」`,
+              )
+            }
+          }
 
-          /* ── 4. imId 来源：空着能不能调（决定收件箱能否接口化）──────── */
+          /* ── 4. imId 来源 + 请求头门槛（决定收件箱能否接口化）──────── */
           const realImId = /(?:^|&)imId=([^&]*)/.exec(latest.postData ?? '')?.[1] ?? ''
           const apiUrl = latest.url.split('?')[0] ?? ''
           const windowFrom = Date.now()
@@ -1453,6 +1790,8 @@ async function main(): Promise<void> {
               pageSize: 30,
               realImId,
               headers: latest.headers,
+              // 适配器将来要用的那一份（六项静态；遥测在页面里现造）
+              adapterHeaders: LIEPIN_API_HEADERS,
             })
             .catch(() => null)
           await page.waitForTimeout(800)
@@ -1476,6 +1815,269 @@ async function main(): Promise<void> {
                 item.ok && item.rows >= 0,
                 `${item.note} · list.length=${String(item.rows)} · ${item.raw.slice(0, 220)}`,
               )
+            }
+          }
+        }
+
+        // ── IM 会话面板：点开**第一行会话**（只读：只是打开会话，不发任何消息）──
+        // 为什么这一步是安全的、也是必要的：`.im-ui-chat-modal-container` 在抽屉打开时是**空的**，
+        // 输入面（`textarea` + placeholder「按Enter键发送」）只在**打开某个会话之后**才渲染 ——
+        // 不点进去，「打招呼/回复能不能做」这一格永远没有证据。点会话行 = 读一条已存在的会话，
+        // 与「聊一聊」（会触发 `open-chat`、给 HR 建会话）是两件事，所以同样不需要开关。
+        const contactSpot = await page
+          .evaluate(centerOfSelectorInPage, { selector: '.im-ui-contact-item', maxTextLength: 40 })
+          .catch(() => null)
+        if (contactSpot === null || !contactSpot.found) {
+          record('打开一条会话', false, '抽屉里没有可见的 .im-ui-contact-item（没有会话？类名变了？）')
+        } else {
+          await page.mouse.move(contactSpot.x, contactSpot.y, { steps: 8 })
+          await page.waitForTimeout(200)
+          await page.mouse.click(contactSpot.x, contactSpot.y)
+          await page.waitForTimeout(6_000)
+          record('打开一条会话', true, `真鼠标点击会话行「${contactSpot.text.slice(0, 30)}」（只读，未发任何消息）`)
+          await capture(page, 'im-chat-panel', true)
+          const panelSurface = await page
+            .evaluate(probeImSurfaceInPage, { selectors: IM_SURFACE_SELECTORS, maxSamples: 20 })
+            .catch(() => null)
+          if (panelSurface === null) {
+            record('IM 面板选择器', false, 'evaluate 失败')
+          } else {
+            imSurface = panelSurface
+            record(
+              'IM 面板选择器（会话侧）',
+              panelSurface.composer !== null,
+              Object.entries(panelSurface.hits)
+                .filter(([, n]) => n > 0)
+                .map(([s, n]) => `${s}:${String(n)}`)
+                .join(' · ') || '(全 0)',
+            )
+            record(
+              '  输入面',
+              panelSurface.composer !== null,
+              panelSurface.composer === null
+                ? '没找到带「Enter/发送」placeholder 的 textarea ⇒ 会话面板没打开'
+                : `<${panelSurface.composer.tag}> class="${panelSurface.composer.cls}" placeholder="${panelSurface.composer.placeholder}" rows=${panelSurface.composer.rows}`,
+            )
+            if (panelSurface.messageItemClasses.length > 0) {
+              record('  消息条目类名', true, panelSurface.messageItemClasses.join(' | ').slice(0, 400))
+            }
+          }
+
+          /* ── 5. 发送实验（LIEPIN_ALLOW_SEND=1）：给 `sayHello`/`reply` 补最后一块证据 ──
+           *
+           * 整条发送链路里**从未真跑过的只有"打字 + 回车"这一步**（此前探针只走到开面板）。
+           * 这里在**当前打开的这条会话**里用真键盘打一句测试话术并回车，验证四件事：
+           *   ① textarea 吃不吃 CDP 键盘事件（React 受控组件，理论上吃，要实证）；
+           *   ② Enter 是否真的把消息发出去（placeholder 明写「按Enter键发送」）；
+           *   ③ 发出后 `.im-ui-message-item-send` 是否出现同文本、loadingicon 是否归 `hide`；
+           *   ④ `get-contact-list` 的 `lastPayload` 是否变成这句话（接口层交叉验证）。
+           *
+           * ⚠️ **这一步会给会话对面的真人发出一条消息**（默认文案「测试，请忽略。」），
+           *    所以独立于 LIEPIN_ALLOW_CHAT 单独设开关，默认禁止。目标 = 刚点开的那条会话
+           *    （抽屉第一行 = 最近会话）。要换文案用 LIEPIN_SEND_TEXT。
+           */
+          if (ALLOW_SEND) {
+            const sendText = process.env['LIEPIN_SEND_TEXT'] ?? '测试，请忽略。'
+            const composer = await page
+              .evaluate(centerOfSelectorInPage, { selector: 'textarea.im-ui-textarea', maxTextLength: 10 })
+              .catch(() => null)
+            if (composer === null || !composer.found) {
+              record('发送实验', false, '找不到可见的 textarea.im-ui-textarea —— 会话面板没开？')
+            } else {
+              // 发送前的我方消息基线（对比"新出现的那条"用）
+              const before = await page
+                .evaluate(readMyMessagesInPage, {
+                  selectors: {
+                    myMessage: '.im-ui-message-item-send',
+                    messageText: '.im-ui-txt.send',
+                    messageLoading: '.im-ui-message-item-loadingicon-send',
+                  },
+                })
+                .catch(() => null)
+              record(
+                '发送实验（前态）',
+                true,
+                `我方消息 ${String(before?.count ?? -1)} 条：${(before?.texts ?? []).slice(-3).join(' | ').slice(0, 200)}` +
+                  ` · loading=${String(before?.loading ?? '?')}`,
+              )
+              // 点击聚焦 → 验证焦点真的落进了输入框 → 拟人逐字符输入 → 回车。
+              // ⚠️ 2026-09-20 第一次实验的教训：点击落在**动画中的弹窗**上、焦点没进输入框 ⇒
+              //    `insertText` 全部落空（textarea.value 恒空、Enter 落空、什么都没发出）。
+              //    第二次（焦点落定后）insertText 即正常上屏并送达 —— 根因是**焦点**，不是输入法。
+              //    所以这一版：① 点击后先验证 document.activeElement；② value 不对就再聚焦并
+              //    回退**真键盘逐键**（keyboard.type），把"哪条路能上屏"钉进证据。
+              await page.mouse.move(composer.x, composer.y, { steps: 8 })
+              await page.waitForTimeout(150)
+              await page.mouse.click(composer.x, composer.y)
+              await page.waitForTimeout(400)
+              const focusAfterClick = await page.evaluate(() => {
+                const el = document.activeElement
+                if (el === null) return '(body)'
+                const tag = el.tagName.toLowerCase()
+                const cls = String(el.className).split(/\s+/).filter(Boolean).join('.')
+                return cls === '' ? tag : `${tag}.${cls}`
+              })
+              record('发送实验（焦点）', focusAfterClick.includes('textarea'), `document.activeElement=${focusAfterClick}`)
+
+              let typedValue = ''
+              let typedVia = ''
+              await humanType(page.keyboard, sendText, { wait: (ms) => page.waitForTimeout(ms) })
+              await page.waitForTimeout(500)
+              typedValue = await page.evaluate(() => {
+                const el = document.querySelector('textarea.im-ui-textarea') as HTMLTextAreaElement | null
+                return el === null ? '' : el.value
+              })
+              typedVia = 'insertText（拟人）'
+              if (typedValue !== sendText) {
+                // 回退一：真键盘逐键（keydown/keypress/input/keyup 全套事件）
+                await page.mouse.click(composer.x, composer.y)
+                await page.waitForTimeout(300)
+                await page.keyboard.type(sendText, { delay: 55 })
+                await page.waitForTimeout(500)
+                typedValue = await page.evaluate(() => {
+                  const el = document.querySelector('textarea.im-ui-textarea') as HTMLTextAreaElement | null
+                  return el === null ? '' : el.value
+                })
+                typedVia = 'keyboard.type（真键盘逐键）'
+              }
+              const typed = typedValue
+              record(
+                '发送实验（上屏）',
+                typed === sendText,
+                `via=${typedVia} · textarea.value=${JSON.stringify(typed)}`,
+              )
+              // 护栏：只有**完整上屏**才按回车 —— 半截文本发出去就是给对面发了一条残句。
+              if (typed !== sendText) {
+                record('发送实验（中止）', false, '上屏失败，不按回车（不会发出任何消息），本轮实验结束')
+                sendExperiment = {
+                  text: sendText,
+                  focusAfterClick,
+                  typedVia,
+                  typedValue: typed,
+                  domDelivered: false,
+                  myMessageCountAfter: before?.count ?? -1,
+                  loadingAfter: before?.loading ?? null,
+                  lastTextsAfter: (before?.texts ?? []).slice(-3),
+                }
+                await capture(page, 'im-chat-send-aborted', true)
+              } else {
+                await humanPress(page.keyboard, 'Enter', { wait: (ms) => page.waitForTimeout(ms) })
+
+              // 轮询送达：同文本出现在我方消息节点 + loadingicon 归 hide
+              let after = before
+              let delivered = false
+              for (let attempt = 0; attempt < 12; attempt += 1) {
+                await page.waitForTimeout(1_000)
+                after = await page
+                  .evaluate(readMyMessagesInPage, {
+                    selectors: {
+                      myMessage: '.im-ui-message-item-send',
+                      messageText: '.im-ui-txt.send',
+                      messageLoading: '.im-ui-message-item-loadingicon-send',
+                    },
+                  })
+                  .catch(() => null)
+                if ((after?.texts ?? []).some((t) => t.includes(sendText))) {
+                  delivered = true
+                  break
+                }
+              }
+              record(
+                '发送实验（DOM 送达）',
+                delivered,
+                delivered
+                  ? `我方消息节点出现同文本（共 ${String(after?.count ?? -1)} 条）· loading=${String(after?.loading ?? '?')}` +
+                    ` · 末 3 条：${(after?.texts ?? []).slice(-3).join(' | ').slice(0, 240)}`
+                  : `轮询 12 秒没看到同文本 —— 我方消息 ${String(after?.count ?? -1)} 条：` +
+                    `${(after?.texts ?? []).slice(-3).join(' | ').slice(0, 240)}`,
+              )
+              await capture(page, 'im-chat-after-send', true)
+
+              // 接口层交叉验证：get-contact-list 的第一行（发送后会跳到最前）lastPayload 是否就是这句话。
+              // ⚠️ 必须在**页面里**解析完再带出来：会话行的 lastPayload 一条就可能上千字符，
+              //    `probeContactListInPage` 的 `raw` 只留 300 字符（够看 flag、不够解析行）。
+              const crossCheck = await page
+                .evaluate(
+                  async (arg: { api: string; headers: Record<string, string>; expectText: string }) => {
+                    const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch
+                    if (typeof fetchImpl !== 'function') return { ok: false, note: '页面没有 fetch', firstMsg: '' }
+                    const uuid = ((): string => {
+                      const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+                      if (typeof c?.randomUUID === 'function') return c.randomUUID()
+                      const hex = (n: number): string => {
+                        let out = ''
+                        while (out.length < n) out += Math.floor(Math.random() * 16).toString(16)
+                        return out.slice(0, n)
+                      }
+                      return `${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}`
+                    })()
+                    try {
+                      const response = await fetchImpl(arg.api, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {
+                          ...arg.headers,
+                          'content-type': 'application/x-www-form-urlencoded',
+                          'x-fscp-trace-id': uuid,
+                          'x-fscp-bi-stat': JSON.stringify({
+                            location: (globalThis as { location?: { href?: string } }).location?.href ?? '',
+                          }),
+                          'x-fscp-fe-version': '',
+                        },
+                        body: 'imUserType=0&imId=&imApp=1&pageSize=30&curPage=0',
+                      })
+                      const text = await response.text()
+                      const parsed = JSON.parse(text) as {
+                        flag?: number
+                        data?: { list?: Array<{ lastPayload?: string | { bodies?: Array<{ msg?: string }> } }> }
+                      }
+                      if (parsed.flag !== 1) return { ok: false, note: `flag=${String(parsed.flag)}`, firstMsg: '' }
+                      const first = parsed.data?.list?.[0]
+                      let firstMsg = ''
+                      let payload: unknown = first?.lastPayload
+                      if (typeof payload === 'string') {
+                        try {
+                          payload = JSON.parse(payload) as { bodies?: Array<{ msg?: string }> }
+                        } catch {
+                          payload = null
+                        }
+                      }
+                      const bodies = (payload as { bodies?: Array<{ msg?: string }> } | null)?.bodies
+                      firstMsg = bodies?.map((b) => String(b?.msg ?? '')).join(' ') ?? ''
+                      return {
+                        ok: true,
+                        note: firstMsg.includes(arg.expectText) ? '第一行就是这句话' : '第一行不是这句话',
+                        firstMsg,
+                      }
+                    } catch (error) {
+                      return { ok: false, note: error instanceof Error ? error.message : String(error), firstMsg: '' }
+                    }
+                  },
+                  {
+                    api: 'https://api-c.liepin.com/api/com.liepin.im.c.contact.get-contact-list',
+                    headers: LIEPIN_API_HEADERS,
+                    expectText: sendText,
+                  },
+                )
+                .catch(() => null)
+              record(
+                '发送实验（接口交叉验证）',
+                crossCheck?.ok === true && crossCheck.firstMsg.includes(sendText),
+                crossCheck === null
+                  ? 'evaluate 失败'
+                  : `${crossCheck.note} · get-contact-list 第一行 msg=${JSON.stringify(crossCheck.firstMsg.slice(0, 80))}`,
+              )
+                sendExperiment = {
+                  text: sendText,
+                  focusAfterClick,
+                  typedVia,
+                  typedValue: typed,
+                  domDelivered: delivered,
+                  myMessageCountAfter: after?.count ?? -1,
+                  loadingAfter: after?.loading ?? null,
+                  lastTextsAfter: (after?.texts ?? []).slice(-3),
+                }
+              }
             }
           }
         }
@@ -1521,6 +2123,12 @@ async function main(): Promise<void> {
           network: network.map((entry) => ({ ...entry, synthetic: isSynthetic(entry.at) })),
           /** 城市弹窗遍历出来的完整城市码表（市级，6 位码）—— 填 `cityCodes` 的数据来源。 */
           cityCodeTable,
+          /** IM 侧选择器量测（抽屉/会话面板/输入面）—— `sayHello`/`reply` 的决策依据。 */
+          imSurface,
+          /** 会话行摘要（未读 / direction / extType / 最后一条 msg / jobId）。 */
+          contactRows: contactRowSummary,
+          /** 发送实验（LIEPIN_ALLOW_SEND=1）：打字+回车这条链路的实测结果。 */
+          sendExperiment,
           notes: [
             'scan.chatCandidates 是页面上含「沟通/聊一聊/消息」的可见元素（找入口的依据）。',
             'network[] 记了 method + postData —— 接口化实现的前提（只有 url/body 时调用形态无从复现）。',

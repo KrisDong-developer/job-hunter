@@ -40,9 +40,27 @@ export const JOBS_FILTERS = `
    折叠开关上的「已选 N 项」算的是**草稿**，列表头栏那句算的是**已生效**的条件 ——
    两者可以不一致，这行字把差别直接说出来，免得用户以为"已经筛过了"。 */
 .jh-jobs-filter-pending{font-size:12px;font-weight:600;color:var(--jh-warn-fg)}
-/* 「保存为视图」的就地输入（批次 B2）：与工具条里其它控件同高同宽档，
-   150px 够写「深圳 Java 20K+」这种名字（上限 40 字由 maxLength 管）。 */
-.jh-jobs-view-name{width:150px}
+/* ── 2026-09-20 布局重排（UICraft arrange 工作流）──────────────────────
+   筛选区拆四层：视图行（导航）/ 工具条（表单）/ 筛选中 chips（状态）/ 高级折叠。
+   上一版 11 个控件排在一条 flex-wrap 线里，窄面板折成三行错落的块 ——
+   分层后每行一种语义，squint test 里各自成组；间距仍走 8px 一档。 */
+/* 行 1 · 视图：导航 chips（对标 Jira / GitHub saved searches）。当前套用的高亮。 */
+.jh-jobs-viewrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.jh-jobs-viewrow-label,.jh-jobs-applied-label{flex:0 0 auto;font-size:12px;
+  color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.jh-jobs-view-item{display:inline-flex;align-items:center;gap:2px}
+/* 删除视图：贴在 chip 右侧的小 ✕。视觉尺寸 11px，触达面积靠 padding 撑到 ≥27px。 */
+.jh-jobs-view-del{border:0;background:transparent;cursor:pointer;color:var(--jh-muted-fg);
+  font-size:11px;line-height:1;padding:8px 4px;border-radius:6px}
+.jh-jobs-view-del:hover{color:var(--jh-error-fg)}
+/* 行 3 · 筛选中：已生效条件。与高级面板里"可选"的 chips 区分 —— 选中态描边；
+   ✕ 跟在文案后面，整枚 chip 可点（移除即生效）。 */
+.jh-jobs-applied{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.jh-jobs-chip-x{margin-left:5px;font-size:11px;opacity:.75}
+/* 「保存为视图」的就地输入（批次 B2）：150px 够写「深圳 Java 20K+」这种名字
+   （上限 40 字由 maxLength 管）。⚠️ 选择器带父级（0,2,0）：单类会在层叠里输给
+   更靠后的 RESUMES 段那条全局 .jh-input 的 width:100%（见 styles/index.ts 顺序）。 */
+.jh-jobs-viewrow .jh-jobs-view-name{width:150px}
 /* 折叠开关：只有一行小字，图标在最前面指示展开态。
    align-self 让它只占文字那点宽度 —— 整行可点的隐形大按钮会盖住下面的面板边缘。 */
 .jh-jobs-filter-toggle{display:flex;align-items:center;gap:6px;align-self:flex-start;
@@ -72,12 +90,16 @@ export const JOBS_FILTERS = `
 export const JOBS = `
 /* ── U1 岗位库 ───────────────────────────────────────────────────── */
 .jh-listbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;flex-wrap:wrap}
-/* 列表头栏右侧：排序 + 分页。排序搬到这儿而不是留在筛选条里 ——
-   它决定"结果怎么排"，是列表自己的事，改完当场生效。 */
+/* 列表头栏右侧：只剩排序（2026-09-20 布局重排 + 精简）—— 分页搬到页脚，
+   全选挪到行首（它作用于整个列表，是这一行第一个主人），margin-left:auto 只推排序。 */
 .jh-listbar-right{display:flex;align-items:center;gap:12px;margin-left:auto}
-.jh-sort{display:inline-flex;align-items:center;gap:6px}
-.jh-sort-label{font-size:12px;color:var(--jh-muted-fg)}
-.jh-sort-select{width:auto}
+/* ⚠️ 特异性必须到 (0,2,0)：单类 .jh-sort-select 会输给层叠更靠后的 RESUMES 段
+   全局 .jh-select 的 width:100%（styles/index.ts 的拼装顺序）—— select 一旦撑满，
+   flex 收缩把旁边的「选中本页」压到 min-content，中文按字断行、四个字竖着排
+   （2026-09-20 修的就是这个）。 */
+.jh-listbar .jh-sort-select{width:auto}
+/* 防御同一类挤压：全选标签不许收缩、不许按字断行 —— 宁可整行换行，不竖排。 */
+.jh-listbar .jh-check{flex:0 0 auto;white-space:nowrap}
 .jh-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 /* 卡片 = 选择主区域 + 右侧行内动作竖排（打招呼 / 投递简历 / 划掉）。列成一行是因为
    主按钮横贯整张卡，行内按钮不能嵌进它内部（button 不能套 button）；把它们平放在主按钮右边。 */
@@ -139,6 +161,20 @@ export const JOBS = `
 .jh-job-main .jh-tags{margin-top:6px}
 /* 重取期间的提示（第四轮修复，审核 P2-6）：列表不再整块消失，而是就地说明在更新 */
 .jh-refreshing{font-size:12px;color:var(--jh-muted-fg)}
+/* ── 列表页脚（2026-09-20 布局重排）───────────────────────────────────
+   分页从列表头栏搬下来：翻页是"读完这一屏之后"的动作，入口长在列表末尾。
+   hairline 分隔让人读得出这是列表的收尾，而不是又一块新内容；
+   三件套 = 每页条数 · 页码 · 跳页（Ant Design / SAP Fiori list report 同构）。 */
+.jh-jobs-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  flex-wrap:wrap;margin-top:12px;padding-top:12px;
+  border-top:1px solid var(--dsw-alias-border-l1)}
+.jh-jobs-foot-size{display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--jh-muted-fg)}
+/* 同上：必须 (0,2,0) 才盖得过 RESUMES 段的全局 .jh-select 的 width:100%。 */
+.jh-jobs-foot-size .jh-select{width:auto}
+.jh-jobs-foot-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}
+.jh-jump{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--jh-muted-fg)}
+.jh-jump .jh-jump-input{width:38px;text-align:center}
 /* 回执行首的小标记（第四轮修复，审核 P3）：原来是 ✅/❌ emoji —— 与
    "手画 SVG 是因为字形在部分中文字体里会退回豆腐块"那套理由正好相反，
    而且各平台字形不一致。这里用它旁边那两枚 SVG（见 jobs 目录的 icons.tsx）。 */
@@ -179,8 +215,10 @@ export const JOBS_DEDUP = `
 `
 
 export const PAGER = `
-/* 分页器：只有"上一页/下一页"两个文字按钮时，用户不知道总共有多少页 */
-.jh-pager{display:flex;align-items:center;gap:4px;margin-left:auto}
+/* 分页器：只有"上一页/下一页"两个文字按钮时，用户不知道总共有多少页。
+   2026-09-20：从列表头栏右端搬到列表页脚（.jh-jobs-foot 负责两端布局），
+   不再自己 margin-left:auto 硬推。 */
+.jh-pager{display:flex;align-items:center;gap:4px}
 .jh-pg{min-width:28px;height:28px;padding:0 8px;font-size:12.5px;cursor:pointer;
   border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;
   color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}

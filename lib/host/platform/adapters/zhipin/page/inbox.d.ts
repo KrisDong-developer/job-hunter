@@ -12,15 +12,17 @@ import type { ZhipinInboxSelectors } from '../config.js';
 /**
  * **在页面上下文里**解析收件箱（求职者端会话列表）。
  *
- * 结构（BossHunter `JS_EXTRACT_CHAT_LIST` 实测）：
+ * 结构（2026-09-18 / **09-20 两次真实会话实测**，两条会话行逐字段核对过）：
  *   li[role=listitem]
- *     ├ .name-box                              ← 名字容器
+ *     ├ .name-box                              ← 名字容器（实测 3 个 span：HR 名 / 公司 / 头衔）
  *     │    ├ span[0] = HR 名
  *     │    ├ span[1] = 公司名
  *     │    └ span[last] = HR 头衔
  *     ├ .name-text                             ← HR 名（独立节点，更稳）
  *     ├ .last-msg-text                         ← 最后一条消息
- *     └ .message-status                        ← 方向线索（status-read/status-delivery 是"我发的"）
+ *     ├ .message-status                        ← 方向线索（`status-delivery` / `status-read` 是"我发的"）
+ *     ├ .notice-badge                          ← 未读数（09-20 实测：HR 主动发来的那行才有）
+ *     └ .time                                  ← `00:53` / `昨天`（相对时间，原样带出）
  *
  * `direction`：`RawInboxMessage` 只有 `hr | me` 两档。分不清时**按 hr 记**
  * —— 收件箱的用途是"有没有人回我"，漏报比误报贵（BossHunter 同样把不确定行
@@ -34,8 +36,9 @@ export declare function readInboxInPage(arg: {
 /**
  * **在页面上下文里**判断某个岗位当前的接触阶段。
  *
- * 判据只用**已实测**的收件箱选择器（2026-09-18）：
- *   `.time` / `.name-text` / `.name-box` / `.last-msg-text` / `.message-status` / 未读徽章。
+ * 判据只用**已实测**的收件箱选择器（2026-09-18 / 09-20）：
+ *   `.time` / `.name-text` / `.name-box` / `.last-msg-text` / `.message-status` /
+ *   未读徽章 `.notice-badge`。
  *
  * ⚠️ 认不出来就返回 `null` 并带上原因，**绝不猜**：
  *   * 列表里没有这一行 → 分不清"从没打过招呼"与"会话已超出平台保留窗口"，返回 `none` 会写错账；

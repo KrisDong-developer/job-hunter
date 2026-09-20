@@ -1,3 +1,56 @@
+/**
+ * 会话/动作选择器集（`sayHello` / `reply` 用；全部来自 2026-09-19 / 09-20 两次登录态实测）。
+ */
+export interface LiepinChatSelectors {
+    /**
+     * 详情页「聊一聊 / 继续聊」入口（2026-09-19 实测 `a.btn-main` / `a.btn-chat`）。
+     *
+     * ⚠️ 平台事实：按钮**hover 后才出现**（get_jobs 实测），所以流程是先悬停再点击；
+     * 按钮文案被平台拒绝时也会立刻从「聊一聊」翻成「继续聊」（乐观假象）——
+     * **只当点击目标，不当"已联系"的判据**。
+     */
+    chatButton: string;
+    /**
+     * 入口候选里要**排除**的祖先容器：详情页侧边栏的「我的沟通 / 我的投递」
+     * （`.sider-bar-item-box`，2026-09-19 实测按文档顺序会先命中它们 —— 白点一轮）。
+     */
+    chatButtonExclude: string;
+    /** 入口文案（「聊一聊」或「继续聊」—— 两种状态都是同一个按钮）。 */
+    chatButtonText: string;
+    /**
+     * 「简历完整度不足」弹窗（2026-09-19 实测：`open-chat` 被拒时弹它，
+     * HTTP 仍是 200、code 30011 —— 这是**拒绝路径唯一的 DOM 证据**）。
+     */
+    completeResumeModal: string;
+    /**
+     * 收件箱抽屉入口（侧边栏 `#im-c-entry`，**不是 `<a>`**、按 href 找命中 0）。
+     * ⚠️ 标题会从「我的沟通」变成「有新消息」（有未读时）—— 只能按选择器定位。
+     */
+    drawerEntry: string;
+    /** 抽屉里的会话行（2026-09-20 实测 `.im-ui-contact-item`；内层还有 unread 徽章）。 */
+    contactRow: string;
+    /** 会话行副标题（实测格式「HR·公司名」—— reply 按公司匹配就靠它）。 */
+    contactRowSub: string;
+    /**
+     * 会话输入框（2026-09-20 实测 `<textarea class="ant-im-input ant-im-input-borderless im-ui-textarea"
+     * placeholder="请输入文字，按Enter键发送" rows="2">`）。
+     */
+    composer: string;
+    /** 「我发出的」消息条目（`.im-ui-message-item-send`）。 */
+    myMessage: string;
+    /** 我方消息正文节点（`.im-ui-txt.send`）。 */
+    messageText: string;
+    /**
+     * 我方消息的发送中图标（`.im-ui-message-item-loadingicon-send`）。
+     * 实测空闲时带 `hide` 类 ⇒「文本在 + 图标在转」= pending，「文本在 + 图标 hide」= delivered。
+     */
+    messageLoading: string;
+}
+/** 发送后轮询确认送达的节奏（与 zhipin 的 `ZhipinDeliveryPoll` 同形）。 */
+export interface LiepinDeliveryPoll {
+    attempts: number;
+    intervalMs: number;
+}
 /** 结构锚点集（2026-09-18 由 v8 探针真实夹具校准）。每一项都可以在 DB 里覆盖着改（ADR-19）。 */
 export interface LiepinSelectors {
     /** 卡片容器（get_jobs 生产验证 + 夹具确认：`div._40108Nrnc3.job-card-pc-container`）。 */
@@ -68,6 +121,7 @@ export interface LiepinUrlParams {
 }
 export interface LiepinConfig {
     selectors: LiepinSelectors;
+    chatSelectors: LiepinChatSelectors;
     urlParams: LiepinUrlParams;
     /**
      * 城市名 → 平台城市码（**370 个实测值**，2026-09-19 逐省点开「请选择城市」弹窗采得）。
@@ -93,6 +147,30 @@ export interface LiepinConfig {
     salaryPattern: string;
     /** 职位链接里抠平台 id 的模式。 */
     jobIdPattern: string;
+    /**
+     * ── 平台的**数字 job id**：从卡片 href 的埋点参数 `pgRef` 里抠（2026-09-20 定案）──
+     *
+     * 猎聘同一张岗位卡上有**两个 id**，而且它们不是一回事（实测 42/42 张卡）：
+     *
+     * | 来源 | 形态 | 例 |
+     * |---|---|---|
+     * | 详情页 URL 路径 | `/job/<10 位>.shtml` | `1984775119` |
+     * | `href` 的 `pgRef` 埋点 | `job_listcard%40<kind>_<8 位>%3A<n>` | `84775119` |
+     * | 搜索接口 `job.jobId` | 8 位数字 | `84775119` |
+     * | IM（`open-chat` / 消息里的岗位卡） | 8 位数字 | `84775119` |
+     *
+     * ⚠️ **这个模式修掉的是一个真 bug**：适配器是双通道（接口优先、失败回退 DOM），
+     * 而两条通道原先各拿一套 id —— 接口通道给 `job.jobId`（8 位），DOM 通道给 URL 路径 id
+     * （10 位）。同一批岗位在两轮之间换了通道，就会被幂等 upsert 当成**两批新岗位**各写一遍。
+     * 实测证据（`test/fixtures/liepin-search.html` × `liepin-search-api.json`，同一批 42 条）：
+     * DOM 的 `pgRef` 数字 id 集合与接口 `job.jobId` 集合**完全相等（42/42，零差异）**，
+     * 而 URL 路径 id 只有 **19/42** 相等（那 19 条是 `/a/` 形态，两种 id 恰好同值）。
+     *
+     * 所以本表把 **`pgRef` 的数字 id 定为规范 id**（它同时是 IM 侧的 join 键），
+     * 抠不到时回退 URL 路径 id 并记 note（那种记录与接口通道**可能对不上**，
+     * 由字段/幂等层如实暴露，而不是猜）。
+     */
+    jobPgRefPattern: string;
     /** 城市模式：猎聘把城市包在【】里（夹具实测：`Java工程师【佛山-顺德区】急聘…`）。 */
     cityPattern: string;
     /** 经验词模式（链接文本尾部匹配，夹具实测如「5年以上」）。 */
@@ -109,6 +187,38 @@ export interface LiepinConfig {
     searchApiPath: string;
     /** 接口是否启用（false = 强制 DOM 通道，校准/排障用）。 */
     searchApiEnabled: boolean;
+    /**
+     * ── 收件箱（会话列表）接口 ───────────────────────────────────────────
+     *
+     * `POST {searchApiOrigin}/api/com.liepin.im.c.contact.get-contact-list`，
+     * 表单体（见 `buildContactListBody`）。2026-09-20 探针实测：
+     * **六项静态头 + 三项现造遥测**才通（只给静态头就 `-1400`），
+     * 而 `imId` 留空即可（服务端靠 cookie 认人）。
+     */
+    contactListApiPath: string;
+    /** 每页条数（照抄页面自己发的 30）。 */
+    contactListPageSize: number;
+    /**
+     * 最多翻几页。
+     *
+     * ⚠️ 翻页**不能看响应里的 `hasNext` / `hasMore` / `totalCount` / `pageSize`**：
+     * 实测 `list.length = 8` 时这四个值全是 0/false（全是坏的）。唯一的停手判据是
+     * **"本页不满一页即到底"**（与智联 `talkListMaxPages` 同一套路）。
+     */
+    contactListMaxPages: number;
+    /**
+     * ── 高危动作的节奏（与 zhipin 的三档停留同形）─────────────────────────
+     *
+     * `[0, 0]` = 关闭（离线测试靠它把每个用例从十几秒压到毫秒）。
+     */
+    /** 打招呼前在岗位详情页「看一会儿」的区间（打开即动手是最强的机器信号）。 */
+    dwellBeforeGreetMs: [number, number];
+    /** 回复前的「读完再回」区间（比打招呼短）。 */
+    dwellBeforeReplyMs: [number, number];
+    /** 动作流程里等按钮/弹窗/输入框出现的时间上限（ms）。 */
+    actionWaitMs: number;
+    /** 发送后的送达校验轮询（次数 × 间隔）。 */
+    deliveryPoll: LiepinDeliveryPoll;
 }
 export declare const LIEPIN_SALARY_PATTERN = "\\d+(?:\\.\\d+)?\\s*[-~]\\s*\\d+(?:\\.\\d+)?\\s*[kK\u4E07](?:\\s*[\u00B7x\u00D7]\\s*\\d+\\s*\u85AA)?|\\d+(?:\\.\\d+)?\\s*[kK\u4E07]\\s*\u4EE5\u4E0A|\u9762\u8BAE";
 /** 岗位链接形态（夹具实测两种并存）：`/job/<纯数字>.shtml`（普通岗）与
@@ -117,12 +227,30 @@ export declare const LIEPIN_SALARY_PATTERN = "\\d+(?:\\.\\d+)?\\s*[-~]\\s*\\d+(?
  */
 export declare const LIEPIN_JOB_ID_PATTERN = "/(?:job|a)/(\\d+)\\.shtml";
 /**
+ * 卡片 href 的埋点参数 `pgRef` 里的**数字 job id**（= 接口的 `job.jobId`、IM 的 join 键）。
+ *
+ * 实测形态两种（`encode` 后）：`…job_listcard%402_84775119%3A1`（`/job/` 类岗）
+ * 与 `…job_listcard%401_79162695%3A1`（`/a/` 类岗）—— `%40`=`@`、`%3A`=`:`。
+ * 也接受未编码写法（同一条 href 在别的上下文里给的是原文）。
+ */
+export declare const LIEPIN_JOB_PGREF_PATTERN = "job_listcard(?:%40|@)\\d+_(\\d+)(?:%3A|:)";
+/**
  * 搜索接口（v2 接口化解析，2026-09-18 采样）：
  * `POST https://api-c.liepin.com/api/com.liepin.searchfront4c.pc-search-job`。
  * 响应比 DOM 富（labels/refreshTime/compId/recruiter），refreshTime 让
  * publishedAt 首次可用。请求体结构来自真实采样（见 fixtures/liepin-search-api.json）。
  */
 export declare const LIEPIN_SEARCH_API_PATH = "/api/com.liepin.searchfront4c.pc-search-job";
+/**
+ * 会话列表接口（收件箱的唯一通道，2026-09-20 实测）：
+ * `POST {searchApiOrigin}/api/com.liepin.im.c.contact.get-contact-list`。
+ *
+ * 为什么收件箱走**接口**而不是 DOM：抽屉（AntD drawer）里的会话行实测只有
+ * **名字 / 公司 / 头衔 / 未读徽章 / 时间**（`.im-ui-contact-title-name` /
+ * `.im-ui-contact-title-sub` / `.ant-im-badge-count`）——**没有最后一条消息的正文**，
+ * 而合同要的 `lastMessage` 与方向判据（`unReadCnt` / `extType`）都只在接口里。
+ */
+export declare const LIEPIN_CONTACT_LIST_API_PATH = "/api/com.liepin.im.c.contact.get-contact-list";
 /**
  * 搜索接口的**静态请求头** —— 2026-09-19 用"逐组削减"实测出的最小充分集。
  *

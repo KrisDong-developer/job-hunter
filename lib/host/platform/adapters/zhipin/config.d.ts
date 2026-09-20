@@ -52,6 +52,21 @@ export interface ZhipinDetailSelectors {
     companyFacts: string;
     /** 旧版规模/行业标签（`.res-industry-item` / `.company-info-item`）—— 仅兜底。 */
     companyTags: string;
+    /**
+     * JD 正文里要**剔掉**的平台水印字串（不是选择器，是清洗规则 —— 放这里是为了**可被 DB 覆盖**：
+     * 平台换字串时不必发版，改 `detailSelectors.jdWatermarkTexts` 即可）。
+     *
+     * 为什么要它（2026-09-20 实测）：BOSS 把品牌字串做成**随机类名**的 `<span>` 塞进 JD 正文的
+     * 任意位置，真实原文形如
+     * `<span class="TkBBeZbHdGjN">BOSS直聘</span>岗位职责<br>1. 参与后<span class="pyKakWzEQwNK">来自BOSS直聘</span>端业务系统…`
+     * ⇒ 直接取 `textContent` 会得到「…参与后来自BOSS直聘端业务系统…」，**把「后端业务系统」从中间劈开**，
+     * 还会在开头多一段品牌串。JD 是要**写库并喂给打分/技能差距分析**的，脏文本一路带下去。
+     *
+     * ⚠️ 匹配口径：元素的（去空白）**全文恰好等于**名单里某一项才算水印 —— 整棵子树跳过。
+     * 不用 `includes`：JD 里正常出现的「BOSS直聘」如果是**短语的一部分**，不该被删。
+     * ⚠️ 类名每次随机（实测两种），所以**只能按文本判**，按类名一律匹配不到。
+     */
+    jdWatermarkTexts: readonly string[];
 }
 /**
  * 会话/动作选择器集（BossHunter 求职者端 `sender.py` / `monitor.py` 生产实测）。
@@ -85,11 +100,53 @@ export interface ZhipinChatSelectors {
     resumeButton: string;
     /** 工具条按钮「不可用」的类名标记（实测：`unable`）。 */
     resumeButtonDisabledClass: string;
-    /** 简历选择弹窗。⚠️ 未实测（本次「发简历」不可用，弹窗没打开过）。 */
+    /**
+     * 简历选择弹窗里的**空态提示**（2026-09-20 实测：`.resume-top-tip`，
+     * 文案形如「未上传简历」＋一个 `.btn-upload`「去上传」）。
+     *
+     * 为什么要读它：「弹窗里没有可选项」有两种原因，要做的事完全不同 ——
+     *   * 空态（本账号就是这种）：**简历库里没有附件简历**，得先去「我的简历」上传；
+     *   * 有条目但我没选中。
+     * 不读提示就只能含糊地说"平台里可能还没有可用简历"，用户不知道下一步做什么。
+     */
+    resumeDialogEmptyTip: string;
+    /**
+     * 简历选择弹窗（2026-09-20 实测打开过，`resume-dialog-2026-09-20.html`）。
+     *
+     * 结构（实测原文）：
+     * ```
+     * div.boss-popup__wrapper.boss-dialog…choose-resume-dialog   ← 弹窗外壳（也带这个类）
+     *   div.boss-popup__content
+     *     div.boss-dialog__header > h3 「请选择要发送的简历」
+     *     div.boss-dialog__body
+     *       div.choose-resume-dialog                              ← 内层业务容器（同类名）
+     *         div.resume-choose-container                         ← 简历条目容器
+     *           div.resume-top-tip（空态：「未上传简历」+ .btn-upload「去上传」）
+     *         div.footer
+     *           div.manage-btn 「管理附件」
+     *           button.btn-v2.btn-sure-v2.btn-confirm 「发送」      ← 未选简历时带 disabled
+     *   div.boss-popup__close > i.icon-close
+     * ```
+     * ⚠️ `.choose-resume-dialog` 实测命中 **2 个**节点（外壳 + 内层容器），两个都带这个类。
+     *   判"弹窗开没开"够用；但**取条目/按钮必须带后代关系**（见下面两条）。
+     */
     resumeDialog: string;
-    /** 弹窗里的简历条目。⚠️ 未实测。 */
+    /**
+     * 弹窗里的简历条目。⚠️ **条目本身的类名仍未实测**。
+     *
+     * 实测到的是**容器** `.resume-choose-container`（2026-09-20）；条目为空的原因是账号里
+     * 根本没有附件简历（弹窗实测渲染的是空态 `.resume-top-tip`「未上传简历 / 去上传」）。
+     * 所以这份候选里：第一条是实测容器 + BossHunter 的 `.list-item`，第二条是同一容器的
+     * **结构式**候选（容器下非空态的直接子元素），由实测结构推导，不是凭空编的类名。
+     */
     resumeDialogItem: string;
-    /** 弹窗确认发送按钮。⚠️ 未实测。 */
+    /**
+     * 弹窗确认发送按钮 —— **2026-09-20 实测**：`button.btn-v2.btn-sure-v2.btn-confirm`（文案「发送」）。
+     *
+     * ⚠️ 未选中简历时它带 `disabled` 类**且**带 `disabled` 属性 ⇒ 点了什么都不会发生。
+     * 这正是 `sendResume` 必须先读按钮状态的原因：不读就会把"弹窗还在那儿"误报成
+     * 「已确认发送但没看到简历卡片（pending）」—— 那是在说一件没发生的事。
+     */
     resumeDialogConfirm: string;
     /** 会话里已发出的简历卡片（用于校验）。⚠️ 未实测。 */
     resumeCard: string;
@@ -99,16 +156,21 @@ export interface ZhipinChatSelectors {
 /**
  * 收件箱（求职者端会话列表）选择器集。
  *
- * ⚠️ **哪些是实测的、哪些还不是**（2026-09-18 `probe:zhipin-chat` 空列表外壳快照）：
- *   * ✅ **已实测**：列表容器 `.chat-content .user-list`、空态 `.user-list .no-data`；
- *   * ❌ **仍未实测**：行元素本身、以及行内的名字/公司/最后一条/未读 ——
- *     本账号当时**一条会话都没有**（页面自报「30天内暂无联系人」），没有行可看。
- *     所以行选择器先用"容器下的直接子元素（排除空态）"这种**结构式**写法（由实测容器推导，
- *     不是凭空编类名），再挂上招聘者端的类名作兜底。
+ * 📌 **2026-09-20 二次实测（账号有 2 条会话，其中一条是 HR 主动发来的未读会话）
+ *    后，本节已无「未实测」项**：
+ *   * ✅ 列表容器 `.chat-content .user-list`、筛选 tab `.label-list`、空态 `.user-list .no-data` /
+ *     `.chat-no-data .no-data-text`（09-18 空列表外壳实测）；
+ *   * ✅ 行元素 `li[role=listitem]`、行内 `.name-text` / `.name-box`（span 依次是 名字/公司/头衔）
+ *     / `.last-msg-text` / `.message-status` / `.time`（09-18 真实会话实测）；
+ *   * ✅ **未读徽章 = `.notice-badge`**（09-20 实测：HR 主动发来的那行有它，文本就是未读数
+ *     `1`；同时**没有** `.message-status` —— 说明那条最后一句是 HR 说的，方向判据吻合）；
+ *   * ✅ **`.message-status status-read`（文案 `[已读]`）**（09-20 实测：我发的那条被读了）。
+ *     至此 `delivered` 与 `read` 两档都有真实样本 —— `detectStageInPage` 里那条分支
+ *     不再是"代码支持但没样本"。
  *
  * ⚠️ 招聘者端（BossHunter 的取证对象）与求职者端是**两套 DOM**：招聘者端用
  * `.chat-list-wrap` / `.geek-item-wrap` / `.chat-message-filter-left`，求职者端实测
- * `.user-list` / `.label-list` —— 直接用招聘者端的类名会全线命中 0（本次实测确认）。
+ * `.user-list` / `.label-list` —— 直接用招聘者端的类名会全线命中 0（已实测确认）。
  */
 export interface ZhipinInboxSelectors {
     /** 会话列表容器（实测）。空列表时容器**仍在**，行不在 —— 这是区分"真的空"与"选择器腐烂"的锚点。 */
@@ -119,19 +181,19 @@ export interface ZhipinInboxSelectors {
     filterTabs: string;
     /** 单个筛选 tab 元素（实测 `.label-list li`，按 `.label-name` 文案匹配）。 */
     tabItem: string;
-    /** 会话行（候选；容器已实测，行元素待一条真实会话确认）。 */
+    /** 会话行（✅ 实测 `li[role=listitem]`；后两条是同元素的结构式兜底）。 */
     row: string;
-    /** 行内 HR 名（候选，招聘者端来源，**待确认**）。 */
+    /** 行内 HR 名（✅ 实测 `.name-text`）。 */
     name: string;
-    /** 名字容器（第 2 个 span 是公司名，最后一个是 HR 头衔；**待确认**）。 */
+    /** 名字容器（✅ 实测 `.name-box`，span 依次是 名字 / 公司 / 头衔）。 */
     nameBox: string;
-    /** 最后一条消息（候选，**待确认**）。⚠️ 不要放 `.last-msg`（它是**容器**，文档顺序排在 `.last-msg-text` 之前，会被先选中）。 */
+    /** 最后一条消息（✅ 实测 `.last-msg-text`）。⚠️ 不要放 `.last-msg`（它是**容器**，文档顺序排在 `.last-msg-text` 之前，会被先选中）。 */
     lastMessage: string;
-    /** 送达/已读状态（区分方向用，**待确认**）。 */
+    /** 送达/已读状态（✅ 实测 `.message-status`；**节点在 ⇒ 最后一条是我发的**）。 */
     status: string;
-    /** 未读标记（候选，**待确认**）。 */
+    /** 未读标记（✅ 2026-09-20 实测 `.notice-badge`，文本就是未读数；其余为兜底候选）。 */
     unread: string;
-    /** 时间节点（✅ 2026-09-18 实测存在，就是 `.time`，形如 `00:53`）。 */
+    /** 时间节点（✅ 实测 `.time`，形如 `00:53` / `昨天`）。 */
     time: string;
 }
 /** 发送后轮询确认送达的节奏。 */
@@ -271,6 +333,14 @@ export declare const ZHIPIN_PAGE_SIZE = 15;
  * 而每轮 15 条 → 平台自己对一个搜索条件封顶 300 条。再多滚也不会给新数据。
  */
 export declare const ZHIPIN_MAX_SCROLL_ROUNDS = 20;
+/**
+ * `scrollRounds` 的缺省值（方案里没配时）。
+ *
+ * 2026-09-20 起从 1 提到 3（≈45 条/轮采集）：第一屏 15 条对"尽量多拉"太少，
+ * 而 3 轮的请求密度仍在提示语建议的 2–4 安全区内（BOSS antiBot=high，
+ * 缺省就该保守，拉满 20 轮要显式配置）。
+ */
+export declare const ZHIPIN_DEFAULT_SCROLL_ROUNDS = 3;
 export declare const DEFAULT_ZHIPIN_CONFIG: ZhipinConfig;
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
 export declare function mergeZhipinConfig(override: unknown): ZhipinConfig;

@@ -14,10 +14,14 @@ import type { ApplicationChannel, ApplicationStage, ContactStage, StageSource } 
  */
 export interface GreetingTemplateRecord {
     id: number;
+    /** 归属简历（v12 多赛道）；`null` = 通用模板。 */
+    resumeId: number | null;
     name: string;
     body: string;
     vars: string[];
     scene: string;
+    /** 生成来源：llm（已过校验）/ rule（规则兜底）/ manual（手写）。 */
+    via: 'llm' | 'rule' | 'manual';
     uses: number;
     replies: number;
     createdAt: string;
@@ -116,15 +120,26 @@ export interface StageEventInput {
     note?: string | null;
 }
 export interface PipelineRepo {
-    listTemplates(): GreetingTemplateRecord[];
+    /**
+     * `resumeId` 过滤：传数字 = 只看这份简历的；传 `null` = 只看通用模板；
+     * 不传 = 全部（`/outreach/greeting/templates` 的旧行为不变）。
+     */
+    listTemplates(options?: {
+        resumeId?: number | null;
+    }): GreetingTemplateRecord[];
     upsertTemplate(input: {
         id?: number;
         name: string;
         body: string;
         vars?: string[];
         scene?: string;
+        /** 新建时的归属；编辑**不**改归属（模板不会因为被编辑就换了赛道）。 */
+        resumeId?: number | null;
+        via?: 'llm' | 'rule' | 'manual';
     }, now: string): GreetingTemplateRecord;
     removeTemplate(id: number): boolean;
+    /** 删除某份简历名下的全部模板（简历删除时连带清理，不留孤儿数据）。 */
+    removeTemplatesByResume(resumeId: number): number;
     /** 发送成功/收到回复时累加，用于算模板回复率（§11.3）。 */
     bumpTemplate(id: number, field: 'uses' | 'replies'): void;
     createGreeting(input: {

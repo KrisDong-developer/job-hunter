@@ -29,6 +29,14 @@ export const AI_PURPOSES = [
   'message_extract',
   /** 消息中心：按情境拟一段回复草稿（协商时间/问薪资/婉拒），发送仍要用户确认。 */
   'reply_draft',
+  /**
+   * 简历赛道级的打招呼话术模板（简历中心「话术」子页）。
+   *
+   * 与 `greeting_draft`（岗位话术）分开的理由：这个用途会把**简历内容**发给模型
+   * （脱敏后），而 `greeting_draft` 只发岗位标量字段 —— 隐私等级不同，
+   * 用户应当能"只开岗位话术、不让模型碰简历"，反之亦然（I5 知情同意）。
+   */
+  'greeting_template',
 ] as const
 
 export type AiPurpose = (typeof AI_PURPOSES)[number]
@@ -49,6 +57,7 @@ export const AI_PURPOSE_LABEL: Record<AiPurpose, string> = {
   cover_letter: 'Cover Letter',
   message_extract: '消息日程识别',
   reply_draft: '回复拟稿',
+  greeting_template: '简历话术模板',
 }
 
 /**
@@ -83,6 +92,9 @@ export const AI_PURPOSE_DEFAULT_ENABLED: Record<AiPurpose, boolean> = {
   message_extract: true,
   // 回复拟稿：默认开 —— 生成的是"草稿"，真正发送还要用户确认并过闸门
   reply_draft: true,
+  // 简历话术模板：**默认关** —— 它把简历内容发给模型（与 resume_tailor 同一等级的知情同意），
+  // 关掉时仍可用规则兜底生成（只用本地事实拼装，不外发任何内容）
+  greeting_template: false,
 }
 
 export interface AiConfig {

@@ -28,6 +28,27 @@ import type { ZhipinDetailSelectors } from '../config.js'
  *   div.sider-company
  *     ├ .company-info a（第一个是 logo 链接、文本空；第二个才是公司名）
  *     └ p × 3：i.icon-stage（融资阶段）/ i.icon-scale（规模）/ i.icon-industry（行业）
+ *
+ * ## JD 里的**水印注入**（2026-09-20 实测发现，必须剔掉，否则写库的就是脏文本）
+ *
+ * BOSS 会把**品牌字串做成随机类名的 `<span>` 塞进 JD 正文的任意位置**。2026-09-20 的
+ * 真实快照（`.probe-zhipin-capture/detail-2026-09-20.html`）里 JD 容器原文是：
+ *
+ * ```
+ * <span class="TkBBeZbHdGjN">BOSS直聘</span>岗位职责<br>1. 参与后<span class="pyKakWzEQwNK">来自BOSS直聘</span>端业务系统的需求分析、…
+ * ```
+ *
+ * ⇒ 直接 `textContent` 得到的是 **「BOSS直聘岗位职责1. 参与后来自BOSS直聘端业务系统…」**：
+ * 开头多一段品牌串，而且**「后端业务系统」被从中间劈成了「后 + 水印 + 端业务系统」**。
+ * 这不是显示问题 —— `crawl.ts` 会把 `jdText` 原样写库（`store.job.setJdText`），
+ * 而它下游要喂给打分与面试技能差距分析（`interviews.ts` 的 `techTokens`）：
+ * 脏 JD 会让「后端」这类词断成两半、还凭空多出一个品牌词。
+ *
+ * 类名是**每次随机**的（实测 `TkBBeZbHdGjN` / `pyKakWzEQwNK` 两个），**不能按类名匹配**；
+ * 只能**按文本**判：元素的（去空白）全文恰好等于水印串 ⇒ 整个元素跳过（连子节点）。
+ * 水印名单在 `ZhipinDetailSelectors.jdWatermarkTexts`（可 DB 覆盖，平台换字串时不必发版）。
+ * ⚠️ 除了剔水印，JD 的取文本方式**与改动前逐字节一致**（`<br>` 本来就不产字符、`clean()` 照旧折空白）
+ * —— 否则会静默改写所有已入库 JD 的格式，而既有用例正是钉住那个格式的。
  */
 export function extractDetailInPage(arg: { selectors: ZhipinDetailSelectors }): RawJobDetail {
   const clean = (value: string | null | undefined): string => (value ?? '').replace(/\s+/g, ' ').trim()
@@ -53,6 +74,37 @@ export function extractDetailInPage(arg: { selectors: ZhipinDetailSelectors }): 
     } catch {
       return false
     }
+  }
+  /** 这个元素的（去空白）全文是不是一段水印？是 ⇒ 整棵子树跳过。 */
+  const isWatermark = (el: Element): boolean => {
+    const text = clean(el.textContent).replace(/\s+/g, '')
+    if (text === '') return false
+    for (const mark of arg.selectors.jdWatermarkTexts) {
+      if (clean(mark).replace(/\s+/g, '') === text) return true
+    }
+    return false
+  }
+  /**
+   * 取 JD 正文文本：**逐节点走**，跳过水印元素（`textContent` 会把它们一并带出来）。
+   *
+   * ⚠️ `<br>` **不产出任何字符** —— 这是刻意的：`textContent` 里它本来就不占字符，
+   * 本函数除了"剔水印"之外**不得改变任何输出**（改了就会静默改写所有已入库 JD 的格式，
+   * 而既有用例正是钉住当前格式的）。
+   */
+  const jdTextOf = (root: Element): string => {
+    const parts: string[] = []
+    const walk = (node: Node): void => {
+      if (node.nodeType === 3) {
+        parts.push(node.nodeValue ?? '')
+        return
+      }
+      if (node.nodeType !== 1) return
+      const el = node as Element
+      if (isWatermark(el)) return
+      for (const child of Array.from(el.childNodes)) walk(child)
+    }
+    walk(root)
+    return clean(parts.join(''))
   }
 
   // 标题：`.info-primary .name h1` → `.name h1` → 文档标题去后缀（兜底链）
@@ -84,11 +136,11 @@ export function extractDetailInPage(arg: { selectors: ZhipinDetailSelectors }): 
     .map((node) => clean(node.textContent))
     .filter((text) => text !== '')
 
-  // JD 正文：跳过「公司介绍」区块（那里有第二份 `.job-sec-text`）
+  // JD 正文：跳过「公司介绍」区块（那里有第二份 `.job-sec-text`），并剔掉平台注入的水印字串
   let jdText = ''
   for (const node of queryAll(arg.selectors.jdText)) {
     if (inside(node, arg.selectors.jdExclude)) continue
-    const text = textOf(node)
+    const text = jdTextOf(node)
     if (text !== '') {
       jdText = text
       break

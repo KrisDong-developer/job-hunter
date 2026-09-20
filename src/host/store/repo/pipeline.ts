@@ -17,10 +17,14 @@ import { asId, asInt, asIntOrNull, asJson, asText, asTextOrNull, type Row } from
 
 export interface GreetingTemplateRecord {
   id: number
+  /** 归属简历（v12 多赛道）；`null` = 通用模板。 */
+  resumeId: number | null
   name: string
   body: string
   vars: string[]
   scene: string
+  /** 生成来源：llm（已过校验）/ rule（规则兜底）/ manual（手写）。 */
+  via: 'llm' | 'rule' | 'manual'
   uses: number
   replies: number
   createdAt: string
@@ -128,12 +132,27 @@ export interface StageEventInput {
 
 export interface PipelineRepo {
   // ── 话术模板 ────────────────────────────────────────────────────
-  listTemplates(): GreetingTemplateRecord[]
+  /**
+   * `resumeId` 过滤：传数字 = 只看这份简历的；传 `null` = 只看通用模板；
+   * 不传 = 全部（`/outreach/greeting/templates` 的旧行为不变）。
+   */
+  listTemplates(options?: { resumeId?: number | null }): GreetingTemplateRecord[]
   upsertTemplate(
-    input: { id?: number; name: string; body: string; vars?: string[]; scene?: string },
+    input: {
+      id?: number
+      name: string
+      body: string
+      vars?: string[]
+      scene?: string
+      /** 新建时的归属；编辑**不**改归属（模板不会因为被编辑就换了赛道）。 */
+      resumeId?: number | null
+      via?: 'llm' | 'rule' | 'manual'
+    },
     now: string,
   ): GreetingTemplateRecord
   removeTemplate(id: number): boolean
+  /** 删除某份简历名下的全部模板（简历删除时连带清理，不留孤儿数据）。 */
+  removeTemplatesByResume(resumeId: number): number
   /** 发送成功/收到回复时累加，用于算模板回复率（§11.3）。 */
   bumpTemplate(id: number, field: 'uses' | 'replies'): void
 
@@ -297,17 +316,22 @@ export interface PipelineRepo {
   removeQuestionNote(id: number): boolean
 }
 
-const toTemplate = (row: Row): GreetingTemplateRecord => ({
-  id: asInt(row['id']),
-  name: asText(row['name']),
-  body: asText(row['body']),
-  vars: asJson<string[]>(row['vars_json'], []),
-  scene: asText(row['scene']),
-  uses: asInt(row['uses']),
-  replies: asInt(row['replies']),
-  createdAt: asText(row['created_at']),
-  updatedAt: asText(row['updated_at']),
-})
+const toTemplate = (row: Row): GreetingTemplateRecord => {
+  const via = asText(row['via'], 'manual')
+  return {
+    id: asInt(row['id']),
+    resumeId: asIntOrNull(row['resume_id']),
+    name: asText(row['name']),
+    body: asText(row['body']),
+    vars: asJson<string[]>(row['vars_json'], []),
+    scene: asText(row['scene']),
+    via: via === 'llm' ? 'llm' : via === 'rule' ? 'rule' : 'manual',
+    uses: asInt(row['uses']),
+    replies: asInt(row['replies']),
+    createdAt: asText(row['created_at']),
+    updatedAt: asText(row['updated_at']),
+  }
+}
 
 const toGreeting = (row: Row): GreetingRecord => ({
   id: asInt(row['id']),
@@ -402,15 +426,22 @@ function tally(rows: Row[], column: string): Record<string, number> {
 
 export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
   const insertTemplate = db.prepare(
-    `INSERT INTO greeting_template (name, body, vars_json, scene, uses, replies, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 0, 0, ?, ?)`,
+    `INSERT INTO greeting_template (name, body, vars_json, scene, resume_id, via, uses, replies, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
   )
   const updateTemplate = db.prepare(
-    'UPDATE greeting_template SET name = ?, body = ?, vars_json = ?, scene = ?, updated_at = ? WHERE id = ?',
+    'UPDATE greeting_template SET name = ?, body = ?, vars_json = ?, scene = ?, via = ?, updated_at = ? WHERE id = ?',
   )
   const selectTemplates = db.prepare('SELECT * FROM greeting_template ORDER BY uses DESC, id DESC')
+  const selectTemplatesByResume = db.prepare(
+    'SELECT * FROM greeting_template WHERE resume_id = ? ORDER BY uses DESC, id DESC',
+  )
+  const selectTemplatesGeneric = db.prepare(
+    'SELECT * FROM greeting_template WHERE resume_id IS NULL ORDER BY uses DESC, id DESC',
+  )
   const selectTemplate = db.prepare('SELECT * FROM greeting_template WHERE id = ?')
   const deleteTemplate = db.prepare('DELETE FROM greeting_template WHERE id = ?')
+  const deleteTemplatesByResume = db.prepare('DELETE FROM greeting_template WHERE resume_id = ?')
   const bumpUses = db.prepare('UPDATE greeting_template SET uses = uses + 1 WHERE id = ?')
   const bumpReplies = db.prepare('UPDATE greeting_template SET replies = replies + 1 WHERE id = ?')
 
@@ -525,23 +556,40 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
 
   return {
     // ── 模板 ──────────────────────────────────────────────────────
-    listTemplates(): GreetingTemplateRecord[] {
-      return (selectTemplates.all() as Row[]).map(toTemplate)
+    listTemplates(options): GreetingTemplateRecord[] {
+      const rows =
+        options?.resumeId === undefined
+          ? (selectTemplates.all() as Row[])
+          : options.resumeId === null
+            ? (selectTemplatesGeneric.all() as Row[])
+            : (selectTemplatesByResume.all(options.resumeId) as Row[])
+      return rows.map(toTemplate)
     },
 
     upsertTemplate(input, now): GreetingTemplateRecord {
+      const via = input.via ?? 'manual'
       if (input.id === undefined) {
         const result = insertTemplate.run(
           input.name,
           input.body,
           JSON.stringify(input.vars ?? []),
           input.scene ?? '',
+          input.resumeId ?? null,
+          via,
           now,
           now,
         )
         return toTemplate(selectTemplate.get(asId(result.lastInsertRowid)) as Row)
       }
-      updateTemplate.run(input.name, input.body, JSON.stringify(input.vars ?? []), input.scene ?? '', now, input.id)
+      updateTemplate.run(
+        input.name,
+        input.body,
+        JSON.stringify(input.vars ?? []),
+        input.scene ?? '',
+        via,
+        now,
+        input.id,
+      )
       const row = selectTemplate.get(input.id) as Row | undefined
       if (row === undefined) throw new Error(`greeting_template ${String(input.id)} 不存在`)
       return toTemplate(row)
@@ -549,6 +597,10 @@ export function createPipelineRepo(db: DatabaseSync): PipelineRepo {
 
     removeTemplate(id): boolean {
       return Number(deleteTemplate.run(id).changes) > 0
+    },
+
+    removeTemplatesByResume(resumeId): number {
+      return Number(deleteTemplatesByResume.run(resumeId).changes)
     },
 
     bumpTemplate(id, field): void {

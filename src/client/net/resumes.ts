@@ -3,7 +3,8 @@
  */
 import { ROUTE_PREFIX } from '../../shared/config/plugin.js'
 import type { ResumeFormat, ResumeTemplate } from '../../shared/contract/enums/resume.js'
-import type { ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js'
+import type { GreetingTemplateDto, ResumeDto, ResumeFileDto, ResumeSummaryDto, TailoringDto } from '../../shared/contract/dto/resume.js'
+import type { GreetingTone } from '../../shared/contract/enums/pipeline.js'
 import type { ResumeContent } from '../../shared/domain/resume-content.js'
 import { request } from './client.js'
 import type { ResumeDetailDto } from '../../shared/contract/dto/resume.js'
@@ -126,6 +127,46 @@ export async function adoptTailoring(id: number, adopted: boolean): Promise<Tail
     { method: 'POST', body: JSON.stringify({ adopted }) },
   )
   return result.tailoring
+}
+
+// ── 话术模板（v12 多赛道）：简历中心「话术」子页 ─────────────────────
+
+export async function fetchGreetingTemplates(
+  resumeId: number,
+  signal?: AbortSignal,
+): Promise<{ items: GreetingTemplateDto[] }> {
+  return await request<{ items: GreetingTemplateDto[] }>(
+    `/resumes/${String(resumeId)}/greeting-templates`,
+    signal === undefined ? {} : { signal },
+  )
+}
+
+export async function generateGreetingTemplate(
+  resumeId: number,
+  tone: GreetingTone,
+): Promise<GreetingTemplateDto> {
+  const result = await request<{ ok: boolean; template: GreetingTemplateDto }>(
+    `/resumes/${String(resumeId)}/greeting-templates/generate`,
+    { method: 'POST', body: JSON.stringify({ tone }) },
+  )
+  return result.template
+}
+
+export async function saveGreetingTemplate(
+  resumeId: number,
+  input: { id?: number; name: string; body: string },
+): Promise<GreetingTemplateDto> {
+  const result = await request<{ ok: boolean; template: GreetingTemplateDto }>(
+    `/resumes/${String(resumeId)}/greeting-templates`,
+    { method: 'POST', body: JSON.stringify(input) },
+  )
+  return result.template
+}
+
+export async function deleteGreetingTemplate(resumeId: number, templateId: number): Promise<void> {
+  await request<{ ok: boolean }>(`/resumes/${String(resumeId)}/greeting-templates/${String(templateId)}`, {
+    method: 'DELETE',
+  })
 }
 
 // ── P7：跟进、消息、面试、看板 ────────────────────────────────────────

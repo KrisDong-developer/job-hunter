@@ -8,7 +8,7 @@ import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone
 import { createGuopinAdapter } from '../../src/host/platform/adapters/guopin/index.js'
 import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina/index.js'
 import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed/index.js'
-import { createLagouAdapter } from '../../src/host/platform/adapters/lagou/index.js'
+import { createLinkedInAdapter } from '../../src/host/platform/adapters/linkedin/index.js'
 import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job/index.js'
 import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin/index.js'
 import type { SiteAdapter } from '../../src/host/platform/types.js'
@@ -298,8 +298,8 @@ function citiesOf(adapter: SiteAdapter): string[] {
 }
 
 test('提示：选到还没校准/已停用的平台时要说清楚，而不是让你白跑一轮', () => {
-  const platforms = ['51job', 'lagou', 'indeed']
-  const { store, plans } = withPlatforms(createFiftyOneAdapter, createLagouAdapter, createIndeedAdapter)
+  const platforms = ['51job', 'guopin', 'indeed']
+  const { store, plans } = withPlatforms(createFiftyOneAdapter, createGuopinAdapter, createIndeedAdapter)
   try {
     const checked = plans.validate({
       name: '多平台',
@@ -307,8 +307,8 @@ test('提示：选到还没校准/已停用的平台时要说清楚，而不是�
       criteria: { keyword: 'Java', city: '深圳' },
     })
     assert.ok(
-      checked.notices.some((note) => note.includes('lagou') && note.includes('实验')),
-      `应当提示 lagou 是实验性平台：${checked.notices.join(' | ')}`,
+      checked.notices.some((note) => note.includes('guopin') && note.includes('实验')),
+      `应当提示 guopin 是实验性平台：${checked.notices.join(' | ')}`,
     )
     assert.ok(
       checked.notices.some((note) => note.includes('indeed') && note.includes('停用')),
@@ -443,14 +443,14 @@ test('批次 3：城市表为空的平台带城市 → 硬拒（空表 ≠ 自�
   }
 })
 
-test('批次 3：自由文本城市（拉勾原样收中文名）**不该**被拦也不该被提示', () => {
-  // 反向的坑：lagou 的 city 是自由文本，表里的 20 个只是建议。
+test('批次 3：自由文本城市（LinkedIn 原样收地名）**不该**被拦也不该被提示', () => {
+  // 反向的坑：linkedin 的 city 是自由文本，表里的 9 个只是建议。
   // 旧行为会为「珠海」报一条**假的**警告（甚至硬拒）—— 误报比不报更伤。
-  const { store, plans } = withPlatforms(createLagouAdapter, createIndeedAdapter)
+  const { store, plans } = withPlatforms(createLinkedInAdapter, createIndeedAdapter)
   try {
     const checked = plans.validate({
       name: '自由文本城市',
-      platforms: ['lagou', 'indeed'],
+      platforms: ['linkedin', 'indeed'],
       criteria: { keyword: 'Java', city: '珠海' },
     })
     assert.equal(checked.criteria['city'], '珠海', '自由文本平台应当原样接受')

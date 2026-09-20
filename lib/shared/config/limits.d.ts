@@ -49,6 +49,15 @@ export declare const MAX_SAVED_JOB_VIEW_NAME = 40;
 /** 视图里每个多选项（城市 / 经验 / 学历 / 屏蔽标注）最多几项。 */
 export declare const MAX_SAVED_JOB_VIEW_ITEMS = 20;
 /**
+ * 每份简历的打招呼话术模板条数上限（简历中心「话术」子页）。
+ *
+ * 模板按**简历**归属（一份简历 = 一条求职赛道），量级跟着"2–4 个方向"走，
+ * 每个方向留几条不同语气的开场就够 —— 太多等于没有（HR 只会看到随机一条）。
+ */
+export declare const MAX_RESUME_GREETING_TEMPLATES = 6;
+/** 话术模板名字的长度上限（与保存视图的名字同一档）。 */
+export declare const MAX_GREETING_TEMPLATE_NAME = 40;
+/**
  * 「导出选中岗位」（`GET /jobs/export`）一次最多几条。
  *
  * 上限来自传输方式：id 列表拼在 URL 上（见该路由的注释），500 个 id 约 2–3KB，

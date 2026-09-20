@@ -8,8 +8,6 @@
  * 一次运行完成四件事：
  *   1. **夹具采集**：访问 `https://www.iguopin.com/jobList?keyword=<kw>`，
  *      保存列表页 HTML → `test/fixtures/guopin-search.html`；
- *      设置 `GUOPIN_PAGE=2`（或任意 >1 的页码猜测）再跑一次会存 `guopin-search-pN.html`，
- *      对比 jobId 重叠即可**验证分页参数**（适配器目前 `hasNextPage=false` 正卡在这里）。
  *   2. **选择器校准输出**：统计候选卡片 class 的命中数（帮助把 `container` 那段宽松
  *      `closest()` 收紧成精确 class），并采样岗位详情链接与公司链接 href 形态。
  *   3. **解析 CLI**：用 jsdom 离线加载刚保存的夹具，跑 `extractJobsInPage` 与
@@ -19,8 +17,10 @@
  * 用法：
  *   npm run probe:guopin                      # 关键词默认 Java
  *   $env:GUOPIN_KEY='前端'; npm run probe:guopin
- *   $env:GUOPIN_PAGE='2'; ...                # 验证分页参数是否真换数据（存 -p2 夹具）
  *   $env:GUOPIN_PROFILE='D:\somewhere'; ...  # 默认用仓库 .probe-guopin-profile
+ *
+ * 🔗 分页契约的验证走 `npm run probe:guopin-pagination`（2026-09-20 已定案：
+ * URL `?page=` 无效、点击翻页有效、共 20 页）；登录态采集走 `npm run probe:guopin-login`。
  *
  * ⚠️ 这是**手动跑一次**的校准工具，不是自动化测试的一部分（§14）：
  *   它会访问真实国聘网。别对着线上频繁连打，间隔拉长即可（国聘无强风控）。
@@ -35,12 +35,10 @@ import {
   DEFAULT_GUOPIN_CONFIG,
   GUOPIN_BLOCK_SIGNALS,
 } from '../../src/host/platform/adapters/guopin/config.js'
-import { extractJobsInPage } from '../../src/host/platform/adapters/guopin/page.js'
+import { extractJobsInPage } from '../../src/host/platform/adapters/guopin/page/list.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 
 const KEYWORD = process.env['GUOPIN_KEY'] ?? 'Java'
-/** 页码猜测（验证分页用；1 起）。适配器目前单页，只在确证参数后改为可传。 */
-const PAGE = Math.max(1, Number.parseInt(process.env['GUOPIN_PAGE'] ?? '1', 10) || 1)
 const PROFILE = process.env['GUOPIN_PROFILE'] ?? join(process.cwd(), '.probe-guopin-profile')
 const FIXTURE_DIR = join(process.cwd(), 'test', 'fixtures')
 /** 只离线分析已存夹具（`GUOPIN_OFFLINE=1`），不访问真实站点、不校验选择器更新后的命中。 */
@@ -92,17 +90,15 @@ async function analyzeFixture(fixturePath: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const pageSuffix = PAGE === 1 ? '' : `-p${String(PAGE)}`
-  const fixturePath = join(FIXTURE_DIR, `guopin-search${pageSuffix}.html`)
+  const fixturePath = join(FIXTURE_DIR, 'guopin-search.html')
   if (OFFLINE_ONLY) {
     await analyzeFixture(fixturePath)
     return
   }
 
-  log(`关键词：${KEYWORD} · 页码猜测：${String(PAGE)}`)
+  log(`关键词：${KEYWORD}`)
   log(`profile：${PROFILE}`)
-  const keywordParam = PAGE === 1 ? KEYWORD : `_page${String(PAGE)}_${KEYWORD}`
-  const probeUrl = `https://www.iguopin.com/jobList?keyword=${encodeURIComponent(keywordParam)}`
+  const probeUrl = `https://www.iguopin.com/jobList?keyword=${encodeURIComponent(KEYWORD)}`
   log(`探测地址：${probeUrl}`)
 
   const executablePath = discoverExecutable(candidateExecutables())

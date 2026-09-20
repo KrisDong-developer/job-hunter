@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import { JSDOM } from 'jsdom'
 import { createLiepinAdapter } from '../../src/host/platform/adapters/liepin/index.js'
 import { DEFAULT_LIEPIN_CONFIG } from '../../src/host/platform/adapters/liepin/config.js'
-import { extractJobDetailInPage } from '../../src/host/platform/adapters/liepin/page.js'
+import { extractJobDetailInPage } from '../../src/host/platform/adapters/liepin/page/detail.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 
 /**
