@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * BOSS 直聘「会话页 + 岗位详情页」登录态探针 —— 为 `adapters/zhipin.ts` 的
+ * BOSS 直聘「会话页 + 岗位详情页」登录态探针 —— 为 `adapters/zhipin/index.ts` 的
  * `sayHello` / `readInbox` / `sendResume` / `detail.extract` 补**我们自己的**实测证据。
  *
  * ## 为什么还缺这一份
@@ -214,7 +214,7 @@ const RESUME_SELECTOR_CANDIDATES: Record<string, readonly string[]> = {
 }
 
 /**
- * 详情页候选（**与 `adapters/zhipin.ts` 的 `detailSelectors` 保持一致** ——
+ * 详情页候选（**与 `adapters/zhipin/config.ts` 的 `detailSelectors` 保持一致** ——
  * 报告要能直接回答"适配器现在这几条还命中吗"，否则校准完就脱节了）。
  *
  * 2026-09-18 实测：`tags`(旧) 与 `companyTags`(旧) 命中 **0**，已改名为
@@ -854,7 +854,7 @@ async function main(): Promise<void> {
         '会话页那几项选择器仍缺实测证据。',
     )
   }
-  log('✔ 采集完成 —— 接下来按这份报告核对 adapters/zhipin.ts 的 chat/inbox/detail 选择器。')
+  log('✔ 采集完成 —— 接下来按这份报告核对 adapters/zhipin/config.ts 的 chat/inbox/detail 选择器。')
   await context.close()
   if (!chatOk) process.exitCode = 1
 }

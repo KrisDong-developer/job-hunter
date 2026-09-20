@@ -37,15 +37,15 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { createSinoJobsAdapter } from '../../src/host/platform/adapters/sinojobs/index.js'
 import {
-  createSinoJobsAdapter,
   SINOJOBS_ADDRESS_CODES,
   SINOJOBS_API_PATH,
   SINOJOBS_DETAIL_URL_TEMPLATE,
   SINOJOBS_LIST_URL,
   SINOJOBS_PAGE_SIZE,
   SINOJOBS_WEB_BASE,
-} from '../../src/host/platform/adapters/sinojobs.js'
+} from '../../src/host/platform/adapters/sinojobs/config.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
 
 const KEYWORD = process.env['SINOJOBS_KEY'] ?? 'Java'

@@ -2,17 +2,21 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { createLiepinAdapter } from '../../src/host/platform/adapters/liepin/index.js'
+import {
+  DEFAULT_LIEPIN_CONFIG,
+  LIEPIN_API_HEADERS,
+  mergeLiepinConfig,
+} from '../../src/host/platform/adapters/liepin/config.js'
 import {
   buildLiepinSearchUrl,
   buildSearchRequestBody,
-  createLiepinAdapter,
-  DEFAULT_LIEPIN_CONFIG,
-  isLoggedInInPage,
-  LIEPIN_API_HEADERS,
-  mergeLiepinConfig,
+} from '../../src/host/platform/adapters/liepin/urls.js'
+import {
   parseSearchApiResponse,
   refreshTimeToIso,
-} from '../../src/host/platform/adapters/liepin.js'
+} from '../../src/host/platform/adapters/liepin/api.js'
+import { isLoggedInInPage } from '../../src/host/platform/adapters/liepin/page.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
 

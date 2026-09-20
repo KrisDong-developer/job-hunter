@@ -2,7 +2,7 @@
 /**
  * BOSS 直聘「登录态」夹具探针 —— 为分页契约与薪资字段补证据。
  *
- * 背景（`adapters/zhipin.ts` 文件头记的未登录形态）：
+ * 背景（`adapters/zhipin/index.ts` 文件头记的未登录形态）：
  *   * 未登录视图**没有分页区**（`hasNextPage` 只能恒 false）、**薪资隐藏**（元素在、文本空）、
  *     岗位链接**不带 securityId** —— 于是适配器被限死在单页 15 条。
  *   本探针把登录态下的真实结构抓下来，用于校准：
@@ -27,13 +27,10 @@ import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page, type Response } from 'patchright'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
-import {
-  buildJoblistBody,
-  DEFAULT_ZHIPIN_CONFIG,
-  extractJobsInPage,
-  fetchJoblistInPage,
-  salaryMapOf,
-} from '../../src/host/platform/adapters/zhipin.js'
+import { DEFAULT_ZHIPIN_CONFIG } from '../../src/host/platform/adapters/zhipin/config.js'
+import { buildJoblistBody } from '../../src/host/platform/adapters/zhipin/urls.js'
+import { fetchJoblistInPage, salaryMapOf } from '../../src/host/platform/adapters/zhipin/api.js'
+import { extractJobsInPage } from '../../src/host/platform/adapters/zhipin/page/list.js'
 
 const KEYWORD = process.env['ZHIPIN_KEY'] ?? 'Java'
 /** 城市码来自 BossHunter 的 boss_cities.json（第一方：zhipin 官方 cityGroup 接口）。深圳 = 101280600。 */
@@ -80,7 +77,7 @@ interface PageScan {
   salaryFilled: number
   /**
    * 其中**含私有区码点**（字体混淆）的张数 —— 2026-09-18 起这是判断"薪资能不能用"的依据：
-   * 登录态下 `salaryFilled` 会满，但那些文本是乱码（见 `adapters/zhipin.ts` 文件头「薪资混淆」）。
+   * 登录态下 `salaryFilled` 会满，但那些文本是乱码（见 `adapters/zhipin/index.ts` 文件头「薪资混淆」）。
    */
   salaryObfuscated: number
   companyFilled: number
@@ -312,7 +309,7 @@ async function main(): Promise<void> {
       // ⚠️ `method` 与 `postData` **必须记**：只记 url/status/body 时，一个
       // `joblist.json?_=时间戳` 的 URL 根本看不出查询条件是怎么传的（BOSS 的搜索条件
       // 走 POST 体），照抄就是猜。2026-09-18 就是因为缺这两项，导致
-      // "从接口取薪资明文"这一步卡住（见 `adapters/zhipin.ts` 文件头「薪资混淆」）。
+      // "从接口取薪资明文"这一步卡住（见 `adapters/zhipin/index.ts` 文件头「薪资混淆」）。
       const method = request.method()
       let postData: string | null = null
       try {

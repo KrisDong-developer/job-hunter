@@ -9,7 +9,7 @@ import { test } from 'node:test'
 import {
   DEFAULT_FIFTYONE_CONFIG,
   mergeFiftyOneConfig,
-} from '../../src/host/platform/adapters/fiftyone-job.js'
+} from '../../src/host/platform/adapters/fiftyone-job/config.js'
 import { mergeAdapterConfig } from '../../src/host/platform/config-merge.js'
 
 test('顶层白名单：多出来的**顶层**键丢弃（DB 拼错键名应当静默无效）', () => {

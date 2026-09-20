@@ -20,24 +20,32 @@
  */
 import { REQUEST_DELAY_MAX_MS, REQUEST_DELAY_MIN_MS } from '../../shared/config/crawl.js'
 import { PLUGIN_ID } from '../../shared/config/plugin.js'
+import { createFiftyOneAdapter } from '../platform/adapters/fiftyone-job/index.js'
 import {
-  createFiftyOneAdapter,
   DEFAULT_FIFTYONE_CONFIG,
   mergeFiftyOneConfig,
-} from '../platform/adapters/fiftyone-job.js'
-import { createGuopinAdapter, DEFAULT_GUOPIN_CONFIG, mergeGuopinConfig } from '../platform/adapters/guopin.js'
+} from '../platform/adapters/fiftyone-job/config.js'
+import { createGuopinAdapter } from '../platform/adapters/guopin/index.js'
+import { DEFAULT_GUOPIN_CONFIG, mergeGuopinConfig } from '../platform/adapters/guopin/config.js'
+import { createHiredChinaAdapter } from '../platform/adapters/hiredchina/index.js'
 import {
-  createHiredChinaAdapter,
   DEFAULT_HIREDCHINA_CONFIG,
   mergeHiredChinaConfig,
-} from '../platform/adapters/hiredchina.js'
-import { createIndeedAdapter, DEFAULT_INDEED_CONFIG, mergeIndeedConfig } from '../platform/adapters/indeed.js'
-import { createLagouAdapter, DEFAULT_LAGOU_CONFIG, mergeLagouConfig } from '../platform/adapters/lagou.js'
-import { createLiepinAdapter, DEFAULT_LIEPIN_CONFIG, mergeLiepinConfig } from '../platform/adapters/liepin.js'
-import { createSinoJobsAdapter, DEFAULT_SINOJOBS_CONFIG, mergeSinoJobsConfig } from '../platform/adapters/sinojobs.js'
-import { createWaiqiAdapter, DEFAULT_WAIQI_CONFIG, mergeWaiqiConfig } from '../platform/adapters/waiqi-job.js'
-import { createZhaopinAdapter, DEFAULT_ZHAOPIN_CONFIG, mergeZhaopinConfig } from '../platform/adapters/zhaopin.js'
-import { createZhipinAdapter, DEFAULT_ZHIPIN_CONFIG, mergeZhipinConfig } from '../platform/adapters/zhipin.js'
+} from '../platform/adapters/hiredchina/config.js'
+import { createIndeedAdapter } from '../platform/adapters/indeed/index.js'
+import { DEFAULT_INDEED_CONFIG, mergeIndeedConfig } from '../platform/adapters/indeed/config.js'
+import { createLagouAdapter } from '../platform/adapters/lagou/index.js'
+import { DEFAULT_LAGOU_CONFIG, mergeLagouConfig } from '../platform/adapters/lagou/config.js'
+import { createLiepinAdapter } from '../platform/adapters/liepin/index.js'
+import { DEFAULT_LIEPIN_CONFIG, mergeLiepinConfig } from '../platform/adapters/liepin/config.js'
+import { createSinoJobsAdapter } from '../platform/adapters/sinojobs/index.js'
+import { DEFAULT_SINOJOBS_CONFIG, mergeSinoJobsConfig } from '../platform/adapters/sinojobs/config.js'
+import { createWaiqiAdapter } from '../platform/adapters/waiqi-job/index.js'
+import { DEFAULT_WAIQI_CONFIG, mergeWaiqiConfig } from '../platform/adapters/waiqi-job/config.js'
+import { createZhaopinAdapter } from '../platform/adapters/zhaopin/index.js'
+import { DEFAULT_ZHAOPIN_CONFIG, mergeZhaopinConfig } from '../platform/adapters/zhaopin/config.js'
+import { createZhipinAdapter } from '../platform/adapters/zhipin/index.js'
+import { DEFAULT_ZHIPIN_CONFIG, mergeZhipinConfig } from '../platform/adapters/zhipin/config.js'
 import type { AdapterRegistry } from '../platform/registry.js'
 import type { AdapterLogger, SiteAdapter } from '../platform/types.js'
 import type { Store } from '../store/store.js'

@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import {
-  buildIndeedSearchUrl,
-  createIndeedAdapter,
-  DEFAULT_INDEED_CONFIG,
-  mergeIndeedConfig,
-} from '../../src/host/platform/adapters/indeed.js'
+import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed/index.js'
+import { DEFAULT_INDEED_CONFIG, mergeIndeedConfig } from '../../src/host/platform/adapters/indeed/config.js'
+import { buildIndeedSearchUrl } from '../../src/host/platform/adapters/indeed/urls.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 

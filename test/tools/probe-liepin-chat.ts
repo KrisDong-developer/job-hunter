@@ -61,16 +61,20 @@ import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
 // 卡片数恒为 0** —— 白白等了一轮登录超时。探针的价值恰恰是"用适配器的眼睛看页面"，
 // 现编一套等于同时维护两份真相，还会让人误以为线上选择器坏了。
 import {
-  buildLiepinSearchUrl,
-  buildSearchRequestBody,
   DEFAULT_LIEPIN_CONFIG,
-  fetchListInPage,
   LIEPIN_API_HEADERS,
   LIEPIN_JOB_ID_PATTERN,
   LIEPIN_SALARY_PATTERN,
-  parseSearchApiResponse,
   type LiepinConfig,
-} from '../../src/host/platform/adapters/liepin.js'
+} from '../../src/host/platform/adapters/liepin/config.js'
+import {
+  buildLiepinSearchUrl,
+  buildSearchRequestBody,
+} from '../../src/host/platform/adapters/liepin/urls.js'
+import {
+  fetchListInPage,
+  parseSearchApiResponse,
+} from '../../src/host/platform/adapters/liepin/api.js'
 
 const KEYWORD = process.env['LIEPIN_KEY'] ?? 'Java'
 const PROFILE = process.env['LIEPIN_PROFILE'] ?? join(process.cwd(), '.probe-liepin-profile')

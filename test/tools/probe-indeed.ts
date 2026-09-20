@@ -35,7 +35,11 @@
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createIndeedAdapter, DEFAULT_INDEED_CONFIG, type IndeedConfig } from '../../src/host/platform/adapters/indeed.js'
+import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed/index.js'
+import {
+  DEFAULT_INDEED_CONFIG,
+  type IndeedConfig,
+} from '../../src/host/platform/adapters/indeed/config.js'
 import type { RawJob } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 

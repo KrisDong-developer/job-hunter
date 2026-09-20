@@ -14,15 +14,15 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job/index.js'
 import {
-  buildWaiqiRequestBody,
-  createWaiqiAdapter,
   DEFAULT_WAIQI_CONFIG,
   mergeWaiqiConfig,
   WAIQI_MAX_PAGES,
   WAIQI_MAX_PAGE_SIZE,
   type WaiqiConfig,
-} from '../../src/host/platform/adapters/waiqi-job.js'
+} from '../../src/host/platform/adapters/waiqi-job/config.js'
+import { buildWaiqiRequestBody } from '../../src/host/platform/adapters/waiqi-job/urls.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 

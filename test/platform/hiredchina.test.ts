@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina/index.js'
 import {
-  buildHiredChinaSearchUrl,
-  createHiredChinaAdapter,
   DEFAULT_HIREDCHINA_CONFIG,
   mergeHiredChinaConfig,
-} from '../../src/host/platform/adapters/hiredchina.js'
+} from '../../src/host/platform/adapters/hiredchina/config.js'
+import { buildHiredChinaSearchUrl } from '../../src/host/platform/adapters/hiredchina/urls.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 

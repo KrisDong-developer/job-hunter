@@ -3,7 +3,7 @@ import { type Clock } from '../util/time.js';
 import type { PlatformLocks } from '../platform/locks.js';
 import { type BurstGuardLike } from '../platform/pacing.js';
 import type { AdapterRegistry } from '../platform/registry.js';
-import type { PageSource, SearchCriteria } from '../platform/types.js';
+import { type PageSource, type SearchCriteria } from '../platform/types.js';
 import type { Store } from '../store/store.js';
 import type { CompanyService } from './companies.js';
 import type { JobService } from './jobs.js';

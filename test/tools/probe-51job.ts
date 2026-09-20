@@ -36,11 +36,11 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page, type Request } from 'patchright'
+import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job/index.js'
 import {
-  createFiftyOneAdapter,
   DEFAULT_FIFTYONE_CONFIG,
   type FiftyOneConfig,
-} from '../../src/host/platform/adapters/fiftyone-job.js'
+} from '../../src/host/platform/adapters/fiftyone-job/config.js'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
 import type { PageLike, RawJob } from '../../src/host/platform/types.js'

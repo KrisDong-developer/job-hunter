@@ -1,0 +1,46 @@
+/**
+ * BOSS 直聘列表接口（薪资明文通道）的页面内请求与响应解析。
+ *
+ * `fetchJoblistInPage` 是**页面上下文函数**（`page.evaluate` 序列化后送进浏览器执行）：
+ * 不得引用任何模块级的值；`salaryMapOf` 是宿主机侧的纯解析，不受此限。
+ * 完整实测记录见 `./index.ts` 文件头。
+ */
+
+/**
+ * **在页面上下文里**发 joblist 请求（自包含；用页面自己的 fetch 带 Cookie/指纹/TLS）。
+ * 返回解析后的 JSON；任何失败返回 `null`（调用方**保持 DOM 结果**）。
+ */
+export function fetchJoblistInPage(arg: { apiPath: string; body: string }): Promise<unknown> {
+  const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch
+  if (typeof fetchImpl !== 'function') return Promise.resolve(null)
+  return fetchImpl(arg.apiPath, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: arg.body,
+  })
+    .then((response) => (response.ok ? (response.json() as Promise<unknown>) : null))
+    .catch(() => null)
+}
+
+/**
+ * 从 joblist 响应里取 `encryptJobId → salaryDesc`。
+ *
+ * 连接键是 `encryptJobId` ↔ 卡片 href 里那个 id（2026-09-18 实测重合 15/15）。
+ * 结构不符就返回空表（**不抛错**：这条通道只是"锦上添花"，失败不该让整轮抓取失败）。
+ */
+export function salaryMapOf(payload: unknown): Map<string, string> {
+  const out = new Map<string, string>()
+  if (payload === null || typeof payload !== 'object') return out
+  const list = (payload as { zpData?: { jobList?: unknown } }).zpData?.jobList
+  if (!Array.isArray(list)) return out
+  for (const entry of list) {
+    if (entry === null || typeof entry !== 'object') continue
+    const item = entry as { encryptJobId?: unknown; salaryDesc?: unknown }
+    const id = typeof item.encryptJobId === 'string' ? item.encryptJobId : ''
+    const salary = typeof item.salaryDesc === 'string' ? item.salaryDesc.trim() : ''
+    if (id === '' || salary === '') continue
+    out.set(id, salary)
+  }
+  return out
+}

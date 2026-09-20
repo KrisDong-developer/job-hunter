@@ -3,7 +3,7 @@
  * 拉勾网探针 v1 —— 复用猎聘 v8 / BOSS 验证过的路线：
  * patchright **启动式** + 系统 Chrome + stealth 注入（D-17a 三件套）。
  *
- * 拉勾与 BOSS 的差异（见 adapters/lagou.ts 文件头）：
+ * 拉勾与 BOSS 的差异（见 adapters/lagou/index.ts 文件头）：
  *   * 列表页公开可爬（未登录可拿职位与薪资明文），但 **WAF 滑块（CF_APP_WAF）** 会
  *     对自动化流量高频弹验证页（URL 变 `/s/list_<hex>`）—— 探针检测到弹窗就提示手动
  *     完成滑块（最多等 3 分钟），过了之后列表才会渲染；

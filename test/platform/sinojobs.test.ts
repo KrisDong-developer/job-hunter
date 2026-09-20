@@ -15,15 +15,15 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { createSinoJobsAdapter } from '../../src/host/platform/adapters/sinojobs/index.js'
 import {
-  buildSinoJobsRequestBody,
-  createSinoJobsAdapter,
   DEFAULT_SINOJOBS_CONFIG,
   mergeSinoJobsConfig,
   SINOJOBS_MAX_PAGES,
   SINOJOBS_PAGE_SIZE,
   type SinoJobsConfig,
-} from '../../src/host/platform/adapters/sinojobs.js'
+} from '../../src/host/platform/adapters/sinojobs/config.js'
+import { buildSinoJobsRequestBody } from '../../src/host/platform/adapters/sinojobs/urls.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 

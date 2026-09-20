@@ -1,5 +1,7 @@
 import { type Clock } from '../util/time.js';
 import type { Store } from '../store/store.js';
+import type { PlatformLocks } from '../platform/locks.js';
+import { type BurstGuardLike } from '../platform/pacing.js';
 import type { SessionService } from '../platform/session.js';
 import type { ApprovalPort, ApprovalRequest } from './approval.js';
 import { type GuardConfig, type RuleVerdict } from './rules.js';
@@ -45,6 +47,22 @@ export interface GuardDeps {
         info(message: string): void;
         warn(message: string): void;
     };
+    /**
+     * 按平台互斥锁（与采集**共用同一把**）。
+     *
+     * 为什么动作链也要拿它：`platform/pacing.ts` 的突发惩罚窗口成立的前提是
+     * "同一平台串行"（那里注释写着"同平台串行由 platform/locks.ts 保证"）——
+     * 而在这之前，采集拿锁、动作不拿，于是"采集刚打完 3 个页面、动作立刻又发一条"
+     * 这种事完全不受窗口约束。同一个站点的两种流量必须是同一条节奏。
+     */
+    locks?: PlatformLocks;
+    /**
+     * 取某个平台的突发惩罚守卫（与采集**共用同一份实例**，跨轮次连续）。
+     * 见 `crawl.ts` 的 `createBurstGuard` 与 `runtime.ts` 的按平台记忆。
+     */
+    burstOf?: (platformId: string) => BurstGuardLike | undefined;
+    /** 等待函数（测试注入用；默认真实 setTimeout）。 */
+    sleep?: (ms: number) => Promise<void>;
 }
 export interface Guard {
     /** 唯一执行入口。`fn` 收到一次性令牌，危险实现必须校验它。 */

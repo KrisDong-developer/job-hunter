@@ -16,11 +16,11 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin/index.js'
 import {
-  createZhipinAdapter,
   DEFAULT_ZHIPIN_CONFIG,
   type ZhipinConfig,
-} from '../../src/host/platform/adapters/zhipin.js'
+} from '../../src/host/platform/adapters/zhipin/config.js'
 import type { HumanKeyboard, HumanMouse } from '../../src/host/platform/humanize.js'
 import type { PageLike, RawInboxMessage } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'

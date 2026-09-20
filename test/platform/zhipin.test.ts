@@ -2,14 +2,14 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin/index.js'
+import { DEFAULT_ZHIPIN_CONFIG } from '../../src/host/platform/adapters/zhipin/config.js'
 import {
   buildJoblistBody,
   buildZhipinSearchUrl,
-  createZhipinAdapter,
-  DEFAULT_ZHIPIN_CONFIG,
-  isLoggedInByMarkersInPage,
-  salaryMapOf,
-} from '../../src/host/platform/adapters/zhipin.js'
+} from '../../src/host/platform/adapters/zhipin/urls.js'
+import { salaryMapOf } from '../../src/host/platform/adapters/zhipin/api.js'
+import { isLoggedInByMarkersInPage } from '../../src/host/platform/adapters/zhipin/page/list.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
 

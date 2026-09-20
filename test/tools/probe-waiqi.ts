@@ -2,7 +2,7 @@
 /**
  * 神仙外企（waiqi.com）探针 —— 真实在线验证器。
  *
- * 用途：对 `src/host/platform/adapters/waiqi-job.ts` 里的每一条「实测」断言
+ * 用途：对 `src/host/platform/adapters/waiqi-job/index.ts` 里的每一条「实测」断言
  * 做一次在线复核，并探查是否有可新增/可修正的点。
  * 列表接口**匿名可读**（不需要登录 / 不需要浏览器），所以直接走 HTTP 即可。
  *

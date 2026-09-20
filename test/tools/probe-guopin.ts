@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 国聘网探针 —— 校准国聘适配器（`adapters/guopin.ts`）的真实线上夹具。
+ * 国聘网探针 —— 校准国聘适配器（`adapters/guopin/index.ts`）的真实线上夹具。
  *
  * 国聘是政府背景平台（antiBot=low，见适配器文件头），风控强度低，用 patchright
  * 启动式 + 系统真实 Chrome 即可（与主题一致但不需猎聘那种端口守卫/stealth 排查）。
@@ -34,8 +34,8 @@ import { detectBlockWithSignals, signalsOf } from '../../src/host/platform/block
 import {
   DEFAULT_GUOPIN_CONFIG,
   GUOPIN_BLOCK_SIGNALS,
-  extractJobsInPage,
-} from '../../src/host/platform/adapters/guopin.js'
+} from '../../src/host/platform/adapters/guopin/config.js'
+import { extractJobsInPage } from '../../src/host/platform/adapters/guopin/page.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 
 const KEYWORD = process.env['GUOPIN_KEY'] ?? 'Java'

@@ -4,7 +4,7 @@
  *
  * ## 为什么需要它（这次调研的问题定义）
  *
- * `adapters/zhaopin.ts` 的列表与详情已有真实夹具，但 **打招呼 / 收件箱 / 附件投递**
+ * `adapters/zhaopin/index.ts` 的列表与详情已有真实夹具，但 **打招呼 / 收件箱 / 附件投递**
  * 三件事**全部要登录态**，而仓库里连一份智联登录态的 DOM 都没有 ——
  * 所以它们至今是刻意 fail-closed（`capabilities.supportsGreeting = false`）。
  *

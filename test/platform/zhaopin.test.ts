@@ -11,17 +11,17 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { createZhaopinAdapter } from '../../src/host/platform/adapters/zhaopin/index.js'
 import {
-  buildTalkListUrl,
-  createZhaopinAdapter,
   DEFAULT_ZHAOPIN_CONFIG,
-  extractJobDetailInPage,
   mergeZhaopinConfig,
   ZHAOPIN_CITY_CODES,
   ZHAOPIN_MAX_PAGES,
   ZHAOPIN_SALARY_MASK,
   type ZhaopinConfig,
-} from '../../src/host/platform/adapters/zhaopin.js'
+} from '../../src/host/platform/adapters/zhaopin/config.js'
+import { buildTalkListUrl } from '../../src/host/platform/adapters/zhaopin/urls.js'
+import { extractJobDetailInPage } from '../../src/host/platform/adapters/zhaopin/page/detail.js'
 import type { HumanMouse } from '../../src/host/platform/humanize.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'

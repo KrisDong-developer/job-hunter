@@ -1,7 +1,7 @@
 # 智联招聘（zhaopin.com）平台调研与适配器落地
 
 > 调研时间：2026-09（全部结论来自线上实测或既有真实 dump，不是猜的）
-> 产出：`src/host/platform/adapters/zhaopin.ts`、`test/platform/zhaopin.test.ts`、
+> 产出：`src/host/platform/adapters/zhaopin/`、`test/platform/zhaopin.test.ts`、
 > 夹具 `test/fixtures/zhaopin-sz.html`
 > 前置阅读：`docs/ADAPTERS.md`（适配器维护手册）
 

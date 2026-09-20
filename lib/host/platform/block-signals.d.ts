@@ -147,4 +147,24 @@ export declare function detectBlockWithSignals(arg: {
     /** 结构性判据的开关，见 `BlockFlags`。 */
     flags?: BlockFlags;
 }): BlockKind | null;
+/**
+ * 从**接口失败**的返回里判读风控类型（平台无关的那一半）。
+ *
+ * ## 为什么需要它
+ *
+ * 明确返回码（waiqi 的 `1022` / `429`、zhaopin 的 `code≠200`）各平台自己在适配器里认 ——
+ * 码表是平台事实。但"返回文本里写着『请先登录』/『访问过于频繁』"这一类**没有码表**
+ * 的情况各平台完全一样，不该每家写一份正则（写十份就会有九份慢慢漂移）。
+ *
+ * 接口型平台还有一层时序问题：判墙（`detectBlock`）跑在请求**之前**，
+ * 所以请求的失败只能由适配器在拿到应答时**抛出去**（`PlatformBlockedError`），
+ * 再由主链/闸门按风控处置 —— 这个函数就是那一步的判读口径。
+ *
+ * 认不出来返回 `null`：**不猜**。把一次普通的接口失败说成"你被风控了"，
+ * 会把用户引向错误的处置（去重新登录、去等，而真实原因是服务端改了字段名）。
+ */
+export declare function blockFromApiFailure(input: {
+    code?: number | null;
+    message: string;
+}): BlockKind | null;
 //# sourceMappingURL=block-signals.d.ts.map

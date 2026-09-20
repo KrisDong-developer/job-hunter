@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job.js'
-import { createGuopinAdapter } from '../../src/host/platform/adapters/guopin.js'
-import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina.js'
-import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed.js'
-import { createLagouAdapter } from '../../src/host/platform/adapters/lagou.js'
-import { createLiepinAdapter } from '../../src/host/platform/adapters/liepin.js'
-import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job.js'
-import { createZhaopinAdapter } from '../../src/host/platform/adapters/zhaopin.js'
-import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin.js'
+import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job/index.js'
+import { createGuopinAdapter } from '../../src/host/platform/adapters/guopin/index.js'
+import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina/index.js'
+import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed/index.js'
+import { createLagouAdapter } from '../../src/host/platform/adapters/lagou/index.js'
+import { createLiepinAdapter } from '../../src/host/platform/adapters/liepin/index.js'
+import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job/index.js'
+import { createZhaopinAdapter } from '../../src/host/platform/adapters/zhaopin/index.js'
+import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin/index.js'
 import {
   CITY_DIRECTORY,
   canonicalCityOf,

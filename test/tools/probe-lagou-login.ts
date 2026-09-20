@@ -3,7 +3,7 @@
  * 拉勾「动作契约」探针 —— 抓取已登录详情页上「立即沟通 / 投递简历」按钮的真实 DOM。
  *
  * 目的：拉勾适配器的 `actions.sayHello / sendResume` 目前刻意 fail-closed（src/host/platform/
- * adapters/lagou.ts），因为没有**真机契约证据** —— 投递/沟通需要登录态 + 页面会话 anti-forge，
+ * adapters/lagou/index.ts），因为没有**真机契约证据** —— 投递/沟通需要登录态 + 页面会话 anti-forge，
  * 且按钮层级未知。本探针把手动登录后的这块 DOM 抓下来，供校准出可靠选择器，之后才实现动作。
  *
  * 流程（复用 probe-zhipin 的登录等待套路 + 本仓 D-17a 三件套）：

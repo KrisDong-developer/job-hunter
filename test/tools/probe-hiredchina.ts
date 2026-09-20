@@ -38,13 +38,15 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredchina/index.js'
 import {
-  createHiredChinaAdapter,
   DEFAULT_HIREDCHINA_CONFIG,
+  type HiredChinaConfig,
+} from '../../src/host/platform/adapters/hiredchina/config.js'
+import {
   extractDetailInPage,
   hasNextPageInPage,
-  type HiredChinaConfig,
-} from '../../src/host/platform/adapters/hiredchina.js'
+} from '../../src/host/platform/adapters/hiredchina/page.js'
 import type { RawJob, SearchCriteria } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 

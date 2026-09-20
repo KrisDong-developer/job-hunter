@@ -1,7 +1,7 @@
 # 神仙外企（waiqi.com）平台调研与适配器落地
 
 > 调研时间：2026-09-18（全部结论来自线上实测，不是猜的）
-> 产出：`src/host/platform/adapters/waiqi-job.ts`、`test/platform/waiqi.test.ts`、
+> 产出：`src/host/platform/adapters/waiqi-job/`、`test/platform/waiqi.test.ts`、
 > 夹具 `test/fixtures/waiqi-position-{sz.html,payload.json}`
 > 前置阅读：`docs/ADAPTERS.md`（适配器维护手册）
 

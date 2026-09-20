@@ -14,11 +14,11 @@ import { parseArgs } from 'node:util'
 import { createCompanyService } from '../../src/host/domain/companies.js'
 import { runCrawl, type CrawlDeps } from '../../src/host/domain/crawl.js'
 import { createJobService } from '../../src/host/domain/jobs.js'
+import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job/index.js'
 import {
-  createFiftyOneAdapter,
   DEFAULT_FIFTYONE_CONFIG,
   type FiftyOneConfig,
-} from '../../src/host/platform/adapters/fiftyone-job.js'
+} from '../../src/host/platform/adapters/fiftyone-job/config.js'
 import { createPlatformLocks } from '../../src/host/platform/locks.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { openStore } from '../../src/host/store/store.js'

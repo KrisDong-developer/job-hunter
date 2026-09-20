@@ -3,11 +3,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { JSDOM } from 'jsdom'
-import {
-  createLiepinAdapter,
-  DEFAULT_LIEPIN_CONFIG,
-  extractJobDetailInPage,
-} from '../../src/host/platform/adapters/liepin.js'
+import { createLiepinAdapter } from '../../src/host/platform/adapters/liepin/index.js'
+import { DEFAULT_LIEPIN_CONFIG } from '../../src/host/platform/adapters/liepin/config.js'
+import { extractJobDetailInPage } from '../../src/host/platform/adapters/liepin/page.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 
 /**

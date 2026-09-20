@@ -1,17 +1,20 @@
 import type { AdapterRegistry } from '../platform/registry.js';
-import type { SiteAdapter } from '../platform/types.js';
+import type { AdapterLogger, SiteAdapter } from '../platform/types.js';
 import type { Store } from '../store/store.js';
 import type { Clock } from '../util/time.js';
-/** 只用到 info —— 装配点的 logger 形状这里不需要整个。 */
-export interface AdapterLogger {
-    info(message: string): void;
-}
 /** 一个平台的注册规格。 */
 export interface AdapterSpec {
     /** 与 `setting` 里 `adapter-config` 的作用域键、以及适配器自己声明的 `id` 必须一致。 */
     id: string;
-    /** 用 DB 里那份覆盖（可能为 undefined）构造适配器。 */
-    build: (override: unknown, delayRangeMs: [number, number]) => SiteAdapter;
+    /**
+     * 用 DB 里那份覆盖（可能为 undefined）构造适配器。
+     *
+     * `logger` 只给一类适配器用：**页面内调接口**的那些。它们的降级是"接口失败 →
+     * 静默回退 DOM 解析"，而 DOM 兜底往往还能解析出四个核心字段 —— 于是接口坏掉
+     * 几个月，健康度、字段计数、量级基线**一个都不会报警**，只是 `publishedAt` /
+     * `industry` 悄悄永远是空。日志是这种缺口唯一的出口。
+     */
+    build: (override: unknown, delayRangeMs: [number, number], logger?: AdapterLogger) => SiteAdapter;
     /**
      * 配置的两层视图（J2 / `GET|PUT /platforms/:id/adapter-config`）。
      *
@@ -66,5 +69,7 @@ export declare function adapterSpecOf(id: string): AdapterSpec | undefined;
  * （`createXxxAdapter({ config })`），只写库要等下次装配才生效 ——
  * 而"界面说改好了、实际还是旧选择器"正是 J2 要消灭的那类问题。
  */
-export declare function rebuildAdapter(spec: AdapterSpec, override: unknown, registry: AdapterRegistry): SiteAdapter;
+export declare function rebuildAdapter(spec: AdapterSpec, override: unknown, registry: AdapterRegistry, 
+/** 与 `registerAdapters` 同一个 logger：热替换后适配器的降级日志不能就此消失。 */
+logger?: AdapterLogger): SiteAdapter;
 //# sourceMappingURL=adapters.d.ts.map

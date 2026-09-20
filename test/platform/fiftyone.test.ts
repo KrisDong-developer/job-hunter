@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { createFiftyOneAdapter } from '../../src/host/platform/adapters/fiftyone-job/index.js'
 import {
-  createFiftyOneAdapter,
   DEFAULT_FIFTYONE_CONFIG,
   mergeFiftyOneConfig,
   POSTED_WITHIN_OPTIONS,
   SORT_OPTIONS,
   type FiftyOneConfig,
-} from '../../src/host/platform/adapters/fiftyone-job.js'
+} from '../../src/host/platform/adapters/fiftyone-job/config.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 import { fixtureHtmlPath } from '../support/store.js'
 import type { PageLike } from '../../src/host/platform/types.js'

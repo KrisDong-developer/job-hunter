@@ -11,7 +11,7 @@
  *
  *   guard.run（规则 + 审计 + 一次性令牌；`actor: 'gui'` + `guiConfirmed` = 界面上的"我已确认"）
  *     → guard/actions/greeting.ts 的 `sendGreeting`
- *       → adapters/zhipin.ts 的 `sayHello`（CDP Input 级拟人点击 + 逐字符输入）
+ *       → adapters/zhipin/actions.ts 的 `sayHello`（CDP Input 级拟人点击 + 逐字符输入）
  *
  * 特意**不绕过**任何一层：令牌是真的、规则是真的、适配器是真的 —— 这样这条记录
  * 既是"账号里多了一条会话"，也是一次**端到端验证**。
@@ -35,7 +35,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'patchright'
-import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin.js'
+import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin/index.js'
 import { candidateExecutables, discoverExecutable } from '../../src/host/platform/browser.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'

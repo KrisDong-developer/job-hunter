@@ -13,18 +13,33 @@
 
 注册表里的 10 个适配器（装配在 `runtime.ts`，id 清单由 `test/http/router.test.ts` 钉住）：
 
-| 平台 | id | 文件 |
+| 平台 | id | 目录 |
 |---|---|---|
-| 前程无忧 | `51job` | `adapters/fiftyone-job.ts` |
-| 智联招聘 | `zhaopin` | `adapters/zhaopin.ts` |
-| 猎聘 | `liepin` | `adapters/liepin.ts` |
-| BOSS 直聘 | `zhipin` | `adapters/zhipin.ts` |
-| 拉勾 | `lagou` | `adapters/lagou.ts` |
-| 神仙外企 | `waiqi` | `adapters/waiqi-job.ts` |
-| 国聘网 | `guopin` | `adapters/guopin.ts` |
-| SinoJobs 中欧招聘 | `sinojobs` | `adapters/sinojobs.ts` |
-| Indeed | `indeed` | `adapters/indeed.ts` |
-| HiredChina | `hiredchina` | `adapters/hiredchina.ts` |
+| 前程无忧 | `51job` | `adapters/fiftyone-job/` |
+| 智联招聘 | `zhaopin` | `adapters/zhaopin/` |
+| 猎聘 | `liepin` | `adapters/liepin/` |
+| BOSS 直聘 | `zhipin` | `adapters/zhipin/` |
+| 拉勾 | `lagou` | `adapters/lagou/` |
+| 神仙外企 | `waiqi` | `adapters/waiqi-job/` |
+| 国聘网 | `guopin` | `adapters/guopin/` |
+| SinoJobs 中欧招聘 | `sinojobs` | `adapters/sinojobs/` |
+| Indeed | `indeed` | `adapters/indeed/` |
+| HiredChina | `hiredchina` | `adapters/hiredchina/` |
+
+每个平台目录内是**同一套固定词汇**（哪个文件装什么，按"这段代码在哪里运行"分）：
+
+| 文件 | 装什么 |
+|---|---|
+| `index.ts` | `createXxxAdapter` + 该平台**整段实测记录**（证据链留在这里）。**不转出配置面** |
+| `config.ts` | 选择器/URL 参数/配置类型、`DEFAULT_*`、`merge*`、值域选项、码表、正则、判墙信号 |
+| `codes.ts` | 超大码表单独成文件（只有 `liepin/` 的 370 条城码表命中） |
+| `urls.ts` | URL 与请求体的**宿主机侧**构造（可离线单测） |
+| `api.ts` | **页面内请求且结果回给宿主**的通道（响应 → `RawJob` 的解析也在这里） |
+| `page.ts` / `page/` | **会被 `page.evaluate` 序列化**的页面上下文函数；内容多时按页面功能区拆子目录 |
+| `actions.ts` | 高危动作（只有 `zhipin/` `zhaopin/` 有） |
+
+⚠️ 两条读代码时的硬约束：**`page*` 里的函数脱离模块作用域执行**（不得引用模块级的常量或工具），
+**`DEFAULT_*` / `merge*` 只从 `config.ts` 引**（`index.ts` 不做二次转出）。
 
 **唯一"没有代码"的是**：牛客 / 实习僧（校招，需求 §4.L 标"⚠️ 待预研"）与 LinkedIn（海外）。
 其余 10 个都有代码 —— 但"有代码"≠"能用"，能用程度看 `platform-facts.ts`。
@@ -33,7 +48,7 @@
 
 ## 1. 配置在哪里
 
-`FiftyOneConfig` 四块（`fiftyone-job.ts` 顶部）：
+`FiftyOneConfig` 四块（`fiftyone-job/config.ts`）：
 
 | 块 | 作用 |
 |---|---|
@@ -210,7 +225,7 @@ npm test
    返回类型是 `ActionResult`（**必须**给 `delivery`：`ok` 只说明"动作没抛错"，
    而"消息是否真的进了对方会话"是另一件事，也是本系统最不能猜的问题）。
    **现状（2026-09-18）**：`zhipin` 是**第一个真正实现** `actions` 的适配器
-   （`sayHello` / `readInbox` / `sendResume`，见 `adapters/zhipin.ts` 与
+   （`sayHello` / `readInbox` / `sendResume`，见 `adapters/zhipin/actions.ts` 与
    `test/platform/zhipin-actions.test.ts`），并且三条都已**接到底**：
    * `sayHello` → `guard/actions/greeting.ts`（既有）+ tool `greeting_send` / `POST /greeting/send`；
    * `readInbox` → `guard/actions/inbox.ts`（`inbox.sync`，**低危**、不需审批）
@@ -369,7 +384,7 @@ npm test
           探针在这种状态下不关窗口：继续等你在窗口里建立一条会话，建立后自动接着采。
         - **2026-09-18 第三次实测（一条真实会话，端到端打通）**：先用
           `npm run zhipin:send-one`（显式开关 `ZHIPIN_SEND_ONE=1`）经**真实 guard 链**
-          （`guard.run` 规则+审计+令牌 → `guard/actions/greeting.ts` → `adapters/zhipin.ts` 的
+          （`guard.run` 规则+审计+令牌 → `guard/actions/greeting.ts` → `adapters/zhipin/actions.ts` 的
           `sayHello`）给一个真岗位发了一条招呼，审计留痕 `{action:"greeting.send", result:"ok"}` ——
           这同时**验证了 sayHello 在真站上端到端可用**（CDP 点击 → 进会话 → 逐字符输入 → Enter → 送达校验）。
           随后探针采到会话级证据，又**纠正了两个来自 BossHunter 的判断**：

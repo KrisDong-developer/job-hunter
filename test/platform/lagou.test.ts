@@ -2,12 +2,10 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import {
-  buildLagouSearchUrl,
-  createLagouAdapter,
-  DEFAULT_LAGOU_CONFIG,
-  parseSearchApiResponse,
-} from '../../src/host/platform/adapters/lagou.js'
+import { createLagouAdapter } from '../../src/host/platform/adapters/lagou/index.js'
+import { DEFAULT_LAGOU_CONFIG } from '../../src/host/platform/adapters/lagou/config.js'
+import { buildLagouSearchUrl } from '../../src/host/platform/adapters/lagou/urls.js'
+import { parseSearchApiResponse } from '../../src/host/platform/adapters/lagou/api.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 
