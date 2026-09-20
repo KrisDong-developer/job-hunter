@@ -6,15 +6,19 @@ export function CompanyPanel(props: { company: CompanyProfileDto; onSaved: () =>
   return (
     <section className="jh-card jh-card-tight">
       <h3 className="jh-card-title">公司画像</h3>
-      {/* 拉黑状态必须显眼地说出来，并且**说清它不做什么** ——
-          否则用户会以为拉黑之后岗位就不再出现了。 */}
+      {/* 拉黑状态必须显眼地说出来，并且**说清它现在到底做了什么** ——
+          第五轮（批次 B）之后：岗位库里的「排除已拉黑公司的岗位」默认开着，
+          也就是这家公司的岗位**默认不再出现**；隐藏了几条会写在列表头栏，点那里能显示回来。
+          这段文案与实现必须一致：写"会隐藏"而实际不隐藏，或反过来，都是在骗人。 */}
       {props.company.blacklisted ? (
         <div className="jh-alert jh-alert-warn">
           <div className="jh-alert-head">
             <span className="jh-alert-title">这家公司被你标记为「拉黑」</span>
           </div>
           <p className="jh-alert-body">
-            这是你的人工标记。它不会自动隐藏该公司的岗位，只是在这里提示你。
+            岗位库默认不再显示这家公司的岗位（筛选里的「排除已拉黑公司的岗位」默认开着）。
+            被隐藏了几条会写在列表头栏，点那里就能显示回来。
+            {props.company.note === null ? '' : `备注：${props.company.note}`}
           </p>
         </div>
       ) : null}

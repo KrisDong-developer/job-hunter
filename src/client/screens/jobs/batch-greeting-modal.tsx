@@ -23,7 +23,7 @@ import { useEffect, useState } from 'react'
 import { ApiError } from '../../net/client.js'
 import { draftGreeting, previewGreetingBatch, sendGreetingBatch } from '../../net/outreach.js'
 import type { GreetingBatchPlanDto, GreetingBatchReceiptDto } from '../../../shared/contract/dto/batch.js'
-import { localDateTime } from '../../format/job.js'
+import { formatLocalDateTime } from '../../../shared/text/time-format.js'
 import { Modal } from '../../ui/modal.js'
 import { IconCheck, IconCross } from './icons.js'
 
@@ -310,7 +310,7 @@ export function BatchGreetingModal(props: {
                     </span>
                     {receipt.company || receipt.title}：
                     {receipt.ok
-                      ? `已发送（${String(receipt.textLength ?? 0)} 字，${receipt.sentAt === null ? '' : localDateTime(receipt.sentAt)}）`
+                      ? `已发送（${String(receipt.textLength ?? 0)} 字，${receipt.sentAt === null ? '' : formatLocalDateTime(receipt.sentAt)}）`
                       : `${receipt.message ?? '失败'}${receipt.hint === null ? '' : ` —— ${receipt.hint}`}`}
                   </li>
                 ))}

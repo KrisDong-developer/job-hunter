@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { useDialogA11y } from '../../hooks/use-dialog-a11y.js'
 import type { LlmCallDto } from '../../../shared/contract/dto/settings.js'
 import { InlineMd } from '../../ui/inline-md.js'
-import { copyToClipboard } from './clipboard.js'
+import { copyText as copyToClipboard } from '../../ui/clipboard.js'
 
 /**
  * 一次模型调用的完整留痕（JSON 查看器）。

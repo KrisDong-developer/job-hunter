@@ -1,38 +1,25 @@
-import type { JobFlagType, JobOrderValue } from '../../../shared/contract/enums/job.js'
 import { JOB_NEW_WINDOWS } from '../../../shared/contract/enums/job.js'
 import type { ExpChip } from '../../../shared/domain/job-facets.js'
+import type { JobFilterState } from '../../../shared/contract/dto/job.js'
 
-export interface Filters {
-  q: string
-  /**
-   * 城市：命中任意一个即可；空 = 不限。
-   *
-   * 界面上是**单选下拉**（2026-09-18：从一排 chips 改成下拉，与关键词 / 月薪 同排），
-   * 但底层仍按数组传 —— 查询层的多城市是一条已经验证过的路径，不为了一个下拉把它拆掉，
-   * 以后要恢复多选也只是换个控件的事。
-   */
-  cities: string[]
-  /**
-   * 经验：存的是**标准梯队的 chip id**，不是平台原始串。
-   *
-   * 原始串在库里就有十几二十种写法（`1-3年` / `1年～3年` / `2-3年` / `2年及以上`…），
-   * 全铺出来用户没法选。选中一个梯队，查询时再展开成它名下的原始取值（见 `facets.ts`）。
-   */
-  expBuckets: string[]
-  /** 学历要求多选：取值来自 facet（平台原始串，界面按学历梯度排过序）。 */
-  eduReqs: string[]
-  state: string
-  minSalary: string
-  /** 屏蔽这些标注类型的岗位（命中任意一个就不显示）。 */
-  excludeFlags: JobFlagType[]
-  /** 批次 4：按跨平台去重分组折叠（同一条岗位在多个平台各抓一条时只占一行）。 */
-  groupDuplicates: boolean
-  /** 只看新增的时间窗（'' = 全部）。见 `JOB_NEW_WINDOWS`。 */
-  newWindow: string
-  /** 排序字段。取值受 `JOB_ORDER_VALUES` 约束（与宿主校验同一个集合）。 */
-  orderBy: JobOrderValue
-  descending: boolean
-}
+/**
+ * 岗位库的筛选条件（界面控件状态）。
+ *
+ * 形状本身定义在 `shared/contract/dto/job.ts` 的 `JobFilterState` ——
+ * 因为"保存的筛选视图"要落库（`setting` 表）且**由服务端逐字段校验**，
+ * 两端必须是同一份定义（这里别名过去，不另抄一份）。
+ *
+ * 几条界面侧的语义补充：
+ *   * `cities`：底层一直是数组（查询层支持多城市），第五轮起界面上也**恢复了多选 chips**
+ *     （2026-09-18 曾为了"少一种形状"改成单选下拉，实际用起来"深圳+杭州"这种组合太常用，
+ *     每次只能看一个城市是纯损失）；
+ *   * `expBuckets`：经验存的是**标准梯队的 chip id**，不是平台原始串 ——
+ *     原始串在库里就有十几二十种写法（`1-3年` / `1年～3年` / `2年及以上`…），
+ *     全铺出来用户没法选；选中一档，查询时再展开成它名下的原始取值（见 `facets.ts`）；
+ *   * `minSalary` / `minScore`：存**字符串**而不是数字 —— 它们背后是两个输入框，
+ *     空串代表"不限"，而 `0` 与"不限"是两个意思。查询前才转成数字。
+ */
+export type Filters = JobFilterState
 
 export const EMPTY_FILTERS: Filters = {
   q: '',
@@ -41,7 +28,12 @@ export const EMPTY_FILTERS: Filters = {
   eduReqs: [],
   state: '',
   minSalary: '',
+  minScore: '',
   excludeFlags: [],
+  // 「排除已拉黑公司」默认**开着**（第五轮，批次 B）：拉黑一家公司之后，
+  // 它在岗位库里继续天天出现是显而易见的浪费。但这件事绝不静默 ——
+  // 列表头栏会写明"已隐藏 N 条"，一键就能显示回来（见 `index.tsx`）。
+  excludeBlacklisted: true,
   groupDuplicates: false,
   newWindow: '',
   orderBy: 'crawled_at',
@@ -61,6 +53,8 @@ export function toggleValue(list: string[], value: string): string[] {
  *
  * 不能用 JSON.stringify 比：多选的顺序由用户点击顺序决定，[A,B] 与 [B,A]
  * 是同一组条件，串化后却不同 —— 那会让"未应用"提示在条件其实没变时也亮着。
+ *
+ * ⚠️ 新增筛选字段时必须同步加进这里，否则"条件已改动"提示与空态判断会失灵。
  */
 export function sameFilters(left: Filters, right: Filters): boolean {
   const sameList = (a: readonly string[], b: readonly string[]): boolean =>
@@ -69,8 +63,10 @@ export function sameFilters(left: Filters, right: Filters): boolean {
     left.q === right.q &&
     left.state === right.state &&
     left.minSalary === right.minSalary &&
+    left.minScore === right.minScore &&
     left.newWindow === right.newWindow &&
     left.groupDuplicates === right.groupDuplicates &&
+    left.excludeBlacklisted === right.excludeBlacklisted &&
     left.orderBy === right.orderBy &&
     left.descending === right.descending &&
     sameList(left.cities, right.cities) &&
@@ -78,6 +74,35 @@ export function sameFilters(left: Filters, right: Filters): boolean {
     sameList(left.eduReqs, right.eduReqs) &&
     sameList(left.excludeFlags, right.excludeFlags)
   )
+}
+
+/** 只有"数字型"输入框共用的收敛：只留数字（负数与小数点都不该出现）。 */
+export function digitsOf(value: string): string {
+  return value.replace(/[^0-9]/g, '')
+}
+
+/**
+ * 最低分输入的收敛：0–100 的整数（第五轮）。
+ *
+ * 为什么界面要自己夹住：宿主对 `minScore` 是**显式 400**（"匹配分门槛必须是 0–100 的整数"），
+ * 而输入框只过滤非数字 —— 用户敲 "150" 再点筛选，整屏会变成"查询失败"。
+ * 界面先收敛，用户永远撞不到那个错误；服务端那条校验仍然留着（它还要保护非界面调用方）。
+ */
+export function clampScoreInput(value: string): string {
+  const digits = digitsOf(value).slice(0, 3)
+  if (digits === '') return ''
+  return String(Math.min(100, Number(digits)))
+}
+
+/**
+ * 最低月薪输入的收敛：只留数字，且 7 位封顶。
+ *
+ * 7 位这个上限不是随便定的：保存筛选视图时服务端按 `^\d{1,7}$` 校验
+ * （见 `host/domain/job-views.ts`），界面不封顶的话"输入 8 位数 → 保存视图失败"
+ * 会变成一个莫名其妙的服务端报错。
+ */
+export function salaryInput(value: string): string {
+  return digitsOf(value).slice(0, 7)
 }
 
 /**

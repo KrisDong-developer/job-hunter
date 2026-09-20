@@ -1,6 +1,7 @@
 import { REMOTE_KIND_LABEL, VISA_STANCE_LABEL } from '../../../shared/contract/enums/overseas.js'
 import { ApiError } from '../../net/client.js'
 import { analyzeOverseas, draftCoverLetter, fetchTimezone } from '../../net/overseas.js'
+import { copyText } from '../../ui/clipboard.js'
 import { createElement, useState } from 'react'
 
 /** 海外时区预设：常用城市 → IANA 时区。给不想手敲 America/New_York 的人一条捷径。 */
@@ -61,24 +62,10 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
     }
   }
 
-  /** 复制到剪贴板；桌面宿主不一定有 clipboard API，退回临时 textarea 兜底。 */
-  const copyText = async (text: string): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      const area = document.createElement('textarea')
-      area.value = text
-      document.body.appendChild(area)
-      area.select()
-      document.execCommand('copy')
-      document.body.removeChild(area)
-    }
-  }
-
   const copyLetter = async (): Promise<void> => {
     if (letter === null) return
-    await copyText(letter)
-    setLetterCopied(true)
+    // 复制失败要如实反映（`copyText` 返回是否成功）—— 之前这里无论如何都显示"已复制"
+    setLetterCopied(await copyText(letter))
     window.setTimeout(() => setLetterCopied(false), 2000)
   }
 

@@ -89,19 +89,69 @@ export const JOB_FLAG_LABEL: Record<JobFlagType, string> = {
  * 取值域与界面下拉同住一个文件：界面能选的与宿主接受的必须是**同一个集合** ——
  * 曾经宿主在一个数组里校验（`routes/jobs.ts`）、另在 `JobQuery` 里写了一遍联合类型、
  * 客户端再在一个数组里渲染下拉，三处的顺序还各不相同。
+ *
+ * ⚠️ `match_score`（第五轮，批次 A）排的是**库里存着的那个分**：
+ * 分数是"简历版本的函数"，换简历后旧分不会自动重算（只会被标成过期，
+ * 见 `JobDto.scoreStale`）。所以界面在按分排序/筛选时**必须**同时把过期分标出来，
+ * 否则用户会以为自己在按"当前简历的匹配度"挑岗位。
  */
-export const JOB_ORDER_VALUES = ['crawled_at', 'salary_min', 'title', 'last_seen_at', 'first_seen_at'] as const
+export const JOB_ORDER_VALUES = [
+  'crawled_at',
+  'match_score',
+  'salary_min',
+  'title',
+  'last_seen_at',
+  'first_seen_at',
+] as const
 
 export type JobOrderValue = (typeof JOB_ORDER_VALUES)[number]
 
 /** 排序下拉的选项。**数组顺序就是下拉里的顺序**。 */
 export const JOB_ORDER_OPTIONS: ReadonlyArray<{ value: JobOrderValue; label: string }> = [
   { value: 'crawled_at', label: '按抓取时间' },
+  { value: 'match_score', label: '按匹配分' },
   { value: 'salary_min', label: '按月薪' },
   { value: 'last_seen_at', label: '按最近出现' },
   { value: 'first_seen_at', label: '按首次出现' },
   { value: 'title', label: '按标题' },
 ]
+
+/**
+ * 岗位**时效档位**的天数阈值（第五轮，批次 C）。
+ *
+ * ── 为什么另立一套，而不是复用 `FRESHNESS_LEVELS` 那套采集新鲜度
+ *
+ * 已有的 `FreshnessBadge` 回答的是"**采集方案**的数据有多旧"（基准 `plan.lastSuccessAt`，
+ * 阈值随计划频率浮动）。岗位要回答的是另一个问题："**这条岗位**我们最近还见到过吗"
+ * （基准 `JobDto.lastSeenAt`）。两者基准不同、量级差两个数量级，混用会让用户
+ * 在两个屏上看到同一个词指两件事 —— 所以这里给岗位固定档：
+ *
+ *   最近见到 ≤ 3 天   → fresh（近来活跃）
+ *   4–14 天           → stale（一周多没见）
+ *   > 14 天           → cold（半月以上没见）
+ *
+ * 固定档而不是随采集频率浮动：岗位库的读者是"今天要投哪几条"，阈值跳动会让
+ * "昨天还新鲜今天突然陈旧"这种解释不清的变化出现。
+ *
+ * 与"僵尸岗位"标注（`published_at > 60 天`）**不重复**：那个看平台发布时间，
+ * 这个看我们最近一次见到它的时间，tooltip 里要写清基准。
+ */
+export const JOB_FRESHNESS_FRESH_DAYS = 3
+
+export const JOB_FRESHNESS_COLD_DAYS = 14
+
+/**
+ * 岗位时效档位的中文说法。
+ *
+ * 用词刻意与采集新鲜度（`FreshnessBadge` 的"新鲜 / 偏旧 / 陈旧"）**区分开**：
+ * 那两个词在采集屏指的是"数据有多旧"，如果岗位库用同一套词，用户会以为是同一件事。
+ * 这里的说法自带基准（"见"= 我们最近一次在平台上见到它）。
+ */
+export const JOB_FRESHNESS_LABEL: Record<FreshnessLevel, string> = {
+  fresh: '近来活跃',
+  stale: '一周多没见',
+  cold: '半月以上没见',
+}
 
 /** 「今日新增」的口径：24 小时。与 `JOB_NEW_WINDOWS` 里的 `'1d'` 是**同一个数**。 */
 export const TODAY_NEW_WINDOW_HOURS = 24

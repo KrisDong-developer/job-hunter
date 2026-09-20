@@ -20,10 +20,15 @@ export async function fetchCompanyDetail(
   )
 }
 
-/** 人工复核：打标签 / 拉黑。**只发生命中的键**，缺的键沿用现值（不会清空备注）。 */
+/**
+ * 人工复核：打标签 / 拉黑 / 备注。**只发生命中的键**，缺的键沿用现值（不会清空备注）。
+ *
+ * `note` 是第五轮补上的：后端一直收这个键、导出的 CSV 也一直有这一列，
+ * 只是客户端的类型与界面都没有它 —— 于是"为什么拉黑这家"没地方写。
+ */
 export async function updateCompanyReview(
   companyId: number,
-  patch: { blacklisted?: boolean; manualLabel?: string | null },
+  patch: { blacklisted?: boolean; manualLabel?: string | null; note?: string | null },
 ): Promise<void> {
   await request<{ ok: boolean }>(`/companies/${String(companyId)}`, {
     method: 'PATCH',

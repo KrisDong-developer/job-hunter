@@ -40,6 +40,9 @@ export const JOBS_FILTERS = `
    折叠开关上的「已选 N 项」算的是**草稿**，列表头栏那句算的是**已生效**的条件 ——
    两者可以不一致，这行字把差别直接说出来，免得用户以为"已经筛过了"。 */
 .jh-jobs-filter-pending{font-size:12px;font-weight:600;color:var(--jh-warn-fg)}
+/* 「保存为视图」的就地输入（批次 B2）：与工具条里其它控件同高同宽档，
+   150px 够写「深圳 Java 20K+」这种名字（上限 40 字由 maxLength 管）。 */
+.jh-jobs-view-name{width:150px}
 /* 折叠开关：只有一行小字，图标在最前面指示展开态。
    align-self 让它只占文字那点宽度 —— 整行可点的隐形大按钮会盖住下面的面板边缘。 */
 .jh-jobs-filter-toggle{display:flex;align-items:center;gap:6px;align-self:flex-start;

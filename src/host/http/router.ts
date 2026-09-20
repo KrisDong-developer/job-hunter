@@ -19,8 +19,10 @@
  * 精确到段数之后，只有"同一形状里既有字面量又可能是参数"的少数地方还要靠顺序：
  *   · `jobs.facets`（`/jobs/facets`）必须早于 `jobs.detail`（`/jobs/:id`）—— 否则 `facets` 被当成 id；
  *   · `jobs.batchMark`（`/jobs/batch/mark`）必须早于 `jobs.mark`（`/jobs/:id/mark`）—— 否则 `batch` 被当成 id；
+ *   · `jobs.views`（`/jobs/views`）与 `jobs.exportList`（`/jobs/export`）必须早于 `jobs.detail` ——
+ *     否则 `views` / `export` 被当成 id；
  *   · `interviews.conflicts` / `interviews.upcoming` 必须早于 `interviews.get`（`/interviews/:id`）。
- * 这三处的行为钉在 `test/http/route-precedence.test.ts` 里；改动这个数组时请连带看它。
+ * 这几处的行为钉在 `test/http/route-precedence.test.ts` 里；改动这个数组时请连带看它。
  *
  * （同一形状内的字面量优先是一贯纪律：`/repairs/clear` 也排在 `/repairs/:id/discard` 之前 ——
  * 虽然两者段数不同、当下不会互相抢，但按这条纪律排，将来加 `/repairs/:id/xxx` 时才不会踩。）
@@ -76,10 +78,13 @@ const ROUTES: RouteHandler[] = [
   health.today,
   health.events,
 
-  // ── 岗位库：`facets` / `batch/mark` 是字面量，必须排在参数形状之前 ──
+  // ── 岗位库：`facets` / `batch/mark` / `views` / `export` 都是字面量，
+  //    必须排在参数形状 `/jobs/:id` 之前 ──
   jobs.list,
   jobs.facets,
   jobs.batchMark,
+  jobs.views,
+  jobs.exportList,
   jobs.detail,
   jobs.mark,
 

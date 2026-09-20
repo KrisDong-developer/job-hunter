@@ -170,4 +170,21 @@ export declare const SCHEMA_V9 = "\nALTER TABLE plan ADD COLUMN platform_overrid
  * 公司不在库里时，登记的公司名不能丢。
  */
 export declare const SCHEMA_V10 = "\nCREATE TABLE offer (\n  id             INTEGER PRIMARY KEY,\n  company_id     INTEGER REFERENCES company(id) ON DELETE SET NULL,\n  company_name   TEXT NOT NULL DEFAULT '',\n  job_id         INTEGER REFERENCES job(id) ON DELETE SET NULL,\n  application_id INTEGER REFERENCES application(id) ON DELETE SET NULL,\n  role           TEXT NOT NULL DEFAULT '',\n  comp_json      TEXT NOT NULL DEFAULT '{}',\n  annual_cash    INTEGER,\n  deadline       TEXT,\n  state          TEXT NOT NULL DEFAULT 'pending',\n  note           TEXT,\n  created_at     TEXT NOT NULL,\n  updated_at     TEXT NOT NULL\n);\nCREATE INDEX idx_offer_state ON offer(state, deadline);\nCREATE INDEX idx_offer_company ON offer(company_id);\n\n-- \u9519\u9898\u672C\u6309\"\u516C\u53F8\"\u56DE\u6EAF\uFF08\"\u8FD9\u5BB6\u95EE\u8FC7\u4EC0\u4E48\"\uFF09\u6B64\u524D\u6CA1\u6709\u7D22\u5F15\uFF0C\u53EA\u80FD\u5168\u8868\u626B\nCREATE INDEX idx_question_company ON question_note(company_id);\n";
+/**
+ * v11 · 岗位库新增两个筛选/排序入口所需的索引（第五轮，批次 A）。
+ *
+ * 两条都是**对着 repo 层真实 SQL 核对过**的：
+ *
+ * 1. `match_score`：`ORDER BY j.match_score` 与 `WHERE j.match_score >= ?`
+ *    此前都是全表扫描 + 临时排序。它是这一轮新增的**主排序键**（"今天最值得看的几条"），
+ *    走的是热路径，必须建索引。
+ * 2. `first_seen_at`：`WHERE j.first_seen_at >= ?`（「只看新增」）与首屏
+ *    「今日新增」（`countSince`）都在用它过滤，而它此前没有索引 ——
+ *    这两处每天都要跑，却一直靠全表扫描。
+ *
+ * 注意 `match_score` 允许为 NULL（未打分的岗位）：SQLite 的索引会收录 NULL 行，
+ * 而查询里 `ORDER BY match_score IS NULL` 的前置就是为了把 NULL 排到最后 ——
+ * 索引仍可用，不用额外写部分索引。
+ */
+export declare const SCHEMA_V11 = "\nCREATE INDEX idx_job_match_score ON job(match_score);\nCREATE INDEX idx_job_first_seen_at ON job(first_seen_at);\n";
 //# sourceMappingURL=schema.d.ts.map

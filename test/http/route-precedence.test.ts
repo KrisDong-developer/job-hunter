@@ -89,6 +89,14 @@ test('路由顺序：字面量段必须赢过参数段', async () => {
       '/jobs/batch/mark 被 /jobs/:id 吞掉了（报的是 id 相关错误）',
     )
 
+    // `/jobs/views` 与 `/jobs/export`（第五轮新增）同样是字面量路径，
+    // 排在 `/jobs/:id` 之后就会被当成 id → 400「非法岗位 id」
+    const views = await call(runtime, 'GET', '/jobs/views')
+    assert.equal(views.status, 200, '/jobs/views 被 /jobs/:id 吞掉了')
+    const exportList = await call(runtime, 'GET', '/jobs/export?ids=1')
+    // 数据层可能是空的（这条只关心"没被当成 id"）：200 或 4xx 都行，但不能是「非法岗位 id」
+    assert.notEqual(messageOf(exportList), '非法岗位 id：export', '/jobs/export 被 /jobs/:id 吞掉了')
+
     // `/applications/deliver` 若排在 `/applications` 大块之后，`deliver` 会被当成 id → 400 非法投递 id
     const deliver = await call(runtime, 'POST', '/applications/deliver', { body: {} })
     assert.equal(deliver.status, 400)

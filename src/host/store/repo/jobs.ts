@@ -38,6 +38,13 @@ export interface MatchStamp {
 
 export interface JobQuery {  state?: JobState
   platformId?: string
+  /**
+   * 只要这些岗位 id（第五轮，批次 D2 的"导出选中"用）。
+   *
+   * 走 `IN` 而不是让调用方逐个 `detail()`：一次查询、顺序由 SQL 决定，
+   * 也不会因为 N 个 id 变成 N 次查询。
+   */
+  ids?: number[]
   /** 多城市：命中任意一个即可（`IN` 查询）。 */
   cities?: string[]
   /** 兼容的单城市旧字段（有 `cities` 时以 `cities` 为准）。 */
@@ -56,6 +63,25 @@ export interface JobQuery {  state?: JobState
   eduReqs?: string[]
   /** 只要月薪下限 ≥ 该值的岗位。 */
   minSalaryAtLeast?: number
+  /**
+   * 只要匹配分 ≥ 该值的岗位（第五轮，批次 A）。
+   *
+   * 注意两点口径：
+   *   * 比的是**库里存着的那个分**，它可能是**用旧版简历**算出来的
+   *     （是否过期由领域层按 `score_rev` / `score_resume_id` 判定，SQL 层不参与）；
+   *   * 未打分的岗位（`match_score IS NULL`）**不满足** `>= N`，因此会被排除 ——
+   *     这是有意的：没有分就没法参与"按分挑岗位"，悄悄放进来等于让用户
+   *     对着一批无法判断的条目做取舍。
+   */
+  minMatchScore?: number
+  /**
+   * 排除**已拉黑公司**的岗位（第五轮，批次 B）。
+   *
+   * 默认 **false**（不加条件）：拉黑是人工标记，"把人家的岗位藏起来"必须由调用方
+   * 显式要求 —— 静默隐藏数据比不隐藏更危险。界面上的「排除已拉黑公司」默认开着，
+   * 并在列表头栏写明因此隐藏了几条，用户看得见也关得掉。
+   */
+  excludeBlacklistedCompanies?: boolean
   /**
    * 只要**首次见到**时间 ≥ 该时刻（ISO）的岗位 —— 即「只看新增」。
    *
@@ -79,8 +105,10 @@ export interface JobQuery {  state?: JobState
   /**
    * **按跨平台去重分组折叠**（批次 4）。
    *
-   * 同一条岗位在 4 个平台各抓一条时，列表里只留一行（组内 id 最小的那个），
-   * 而不是让用户在一屏里看到四条几乎一样的卡片。
+   * 同一条岗位在 4 个平台各抓一条时，列表里只留一行，而不是让用户在一屏里
+   * 看到四条几乎一样的卡片。**留哪一条跟着排序键走**（第五轮，批次 A3）：
+   * 组内代表 = 这一组在当前排序下会排最前的那条（例如"按匹配分"就留分最高的），
+   * 详见 `buildWhere`。
    *
    * `total` 与分页也按**折叠后**的数量算（`countMatching` 走同一段 WHERE）——
    * 否则"共 40 条 / 只有 12 行"会变成一个新谜题。
@@ -110,6 +138,17 @@ export interface JobRepo {
   count(): number
   /** 与 `query` 用同一套 WHERE 的计数（分页 total 用）。 */
   countMatching(filters?: JobQuery): number
+  /**
+   * 分数**已过期**的岗位 id（第五轮，批次 A2）。
+   *
+   * "过期" = 有分（`match_score IS NOT NULL`）但算分时记下的简历版本与**当前启用简历**
+   * 不一致。判定条件与领域层 `decorate()` 里的 `scoreStale` **逐字对齐**
+   * （`score_rev` 不等、或 `score_resume_id` 不等，`null` 与 `null` 视为相等）——
+   * 两处若各写一套，界面说"本页 7 条已过期"而重算只算 3 条，用户只会认为其中之一坏了。
+   */
+  listStaleScoreIds(stamp: MatchStamp, limit: number): number[]
+  /** 同上，只要条数（用于"还剩多少条要重算"）。 */
+  countStaleScores(stamp: MatchStamp): number
   /** 首次见到时间 ≥ 该时刻的岗位数（U0 的「今日新增」）。 */
   countSince(iso: string): number
   countByState(): Record<string, number>
@@ -138,13 +177,21 @@ FROM job j
 LEFT JOIN company c ON c.id = j.company_id
 LEFT JOIN platform p ON p.id = j.platform_id`
 
-/** 排序列白名单 —— 绝不把入参拼进 SQL。 */
-const ORDER_COLUMNS: Record<JobOrderValue, string> = {
-  crawled_at: 'j.crawled_at',
-  salary_min: 'j.salary_min',
-  title: 'j.title',
-  last_seen_at: 'j.last_seen_at',
-  first_seen_at: 'j.first_seen_at',
+/**
+ * 排序列白名单 —— 绝不把入参拼进 SQL。
+ *
+ * 存的是**裸列名**（不带表别名）：同一份映射要服务两个地方 ——
+ * 外层 `ORDER BY j.<col>` 与折叠时"组内选代表"的子查询 `g.<col>`（见 `buildWhere`）。
+ * 写成 `j.crawled_at` 这种带别名的表达式时，子查询里就得手工替换别名 ——
+ * 那种字符串拼来拼去正是"某天改了排序键、折叠代表没跟着改"的温床。
+ */
+const ORDER_COLUMN_NAMES: Record<JobOrderValue, string> = {
+  crawled_at: 'crawled_at',
+  match_score: 'match_score',
+  salary_min: 'salary_min',
+  title: 'title',
+  last_seen_at: 'last_seen_at',
+  first_seen_at: 'first_seen_at',
 }
 
 /**
@@ -241,6 +288,17 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
   const countSinceStmt = db.prepare('SELECT count(*) AS n FROM job WHERE first_seen_at >= ?')
   const countByStateStmt = db.prepare('SELECT state, count(*) AS n FROM job GROUP BY state')
 
+  /* 分数过期的岗位（第五轮，批次 A2）。两条语句共用同一段 WHERE ——
+     与领域层的 `scoreStale` 判定逐字对齐（`score_resume_id` 用 `IS NOT`：
+     它是可空的，"两个都是 NULL"必须算相等，`<>` 在这种情况下会漏判成过期）。
+     取 id 时按 `id DESC`：与列表默认排序（抓取时间倒序）同向，
+     于是"点一次重算"先修的是用户正在看的那一批，而不是库尾的历史数据。 */
+  const STALE_SCORE_WHERE = `match_score IS NOT NULL AND (score_rev <> ? OR score_resume_id IS NOT ?)`
+  const staleScoreIdsStmt = db.prepare(
+    `SELECT id FROM job WHERE ${STALE_SCORE_WHERE} ORDER BY id DESC LIMIT ?`,
+  )
+  const countStaleScoresStmt = db.prepare(`SELECT count(*) AS n FROM job WHERE ${STALE_SCORE_WHERE}`)
+
   const buildWhere = (filters: JobQuery): { clause: string; params: Array<string | number> } => {
     const where: string[] = []
     const params: Array<string | number> = []
@@ -260,6 +318,10 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
     if (filters.cities !== undefined && filters.cities.length > 0) {
       where.push(`j.city IN (${filters.cities.map(() => '?').join(',')})`)
       params.push(...filters.cities)
+    }
+    if (filters.ids !== undefined && filters.ids.length > 0) {
+      where.push(`j.id IN (${filters.ids.map(() => '?').join(',')})`)
+      params.push(...filters.ids)
     }
     if (filters.excludeFlagTypes !== undefined && filters.excludeFlagTypes.length > 0) {
       // 标注存在独立表：屏蔽 = 该岗位**不存在**命中所选标注类型的记录。
@@ -289,20 +351,48 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
       where.push('j.salary_min >= ?')
       params.push(filters.minSalaryAtLeast)
     }
+    if (filters.minMatchScore !== undefined) {
+      // `>=` 天然排除 NULL（未打分）—— 这是有意的，见 `JobQuery.minMatchScore` 的注释。
+      where.push('j.match_score >= ?')
+      params.push(filters.minMatchScore)
+    }
+    if (filters.excludeBlacklistedCompanies === true) {
+      // 只有被显式要求时才排除已拉黑公司。
+      //
+      // 写成 NOT EXISTS 子查询而不是 `c.blacklisted = 0`（`c` 是 SELECT_BASE 里的 JOIN 别名），
+      // 有两个具体原因：
+      //   ① `countMatching` 的 FROM 只有 `job j`，**没有**那个 JOIN —— 引用 `c` 会直接报
+      //      "no such column"，而列表与计数必须是同一套条件（这是本项目反复强调的纪律）；
+      //   ② `company_id` 为 NULL 的岗位（平台没给公司名）走 LEFT JOIN 得到 NULL，
+      //      而 `NULL = 0` 是 NULL（假），那些岗位会被一起误杀 —— 它们根本没有公司可拉黑。
+      // NOT EXISTS 同时解决这两点：没有关联公司时子查询为空 → 条件成立 → 放行。
+      where.push(
+        `NOT EXISTS (SELECT 1 FROM company x WHERE x.id = j.company_id AND x.blacklisted = 1)`,
+      )
+    }
     if (filters.firstSeenSince !== undefined && filters.firstSeenSince !== '') {
       where.push('j.first_seen_at >= ?')
       params.push(filters.firstSeenSince)
     }
     if (filters.groupDuplicates === true) {
-      // 每组只留**最小 id**（`primary_job_id` 未必是最小的，而"最小的那个"是稳定且
-      // 与插入顺序一致的；用 primary 会让同一组在不同查询里换代表）。
-      // 没有分组的岗位（`dedup_group_id IS NULL`）各自独立，直接放行。
+      // 每组只留**一个代表**，而"谁当代表"必须跟着**当前的排序键**走
+      // （第五轮，批次 A3 改的就是这一点）。
       //
-      // 用相关子查询而不是 `GROUP BY`：`GROUP BY` 之后 `SELECT j.*` 拿到的行是
+      // 上一版固定留"组内最小 id"，理由是稳定；但它的代价是：用户把排序切成
+      // "按匹配分"，组里分最高的那条却仍然不显示 —— 排序看起来没生效。
+      // 现在子查询用**与外层 ORDER BY 逐字相同**的排序（同一个 IS NULL 前置、
+      // 同一个方向、同一个 id 兜底），于是"代表"恰好就是这一组在列表里会排最前的那条。
+      //
+      // 用相关子查询而不是 `GROUP BY`：`GROUP BY` 之后 `SELECT j.*` 拿到的是
       // SQLite 的"组内任一行"，非确定 —— 折叠出来的代表会随索引变化而变。
+      // 没有分组的岗位（`dedup_group_id IS NULL`）各自独立，直接放行。
+      const column = `g.${ORDER_COLUMN_NAMES[filters.orderBy ?? 'crawled_at']}`
+      const direction = filters.descending === false ? 'ASC' : 'DESC'
       where.push(
         `(j.dedup_group_id IS NULL OR j.id = (
-           SELECT MIN(g.id) FROM job g WHERE g.dedup_group_id = j.dedup_group_id
+           SELECT g.id FROM job g WHERE g.dedup_group_id = j.dedup_group_id
+           ORDER BY ${column} IS NULL, ${column} ${direction}, g.id DESC
+           LIMIT 1
          ))`,
       )
     }
@@ -316,12 +406,14 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
     offset = 0,
   ): JobDto[] => {
     const { clause, params } = buildWhere(filters)
-    const orderColumn = ORDER_COLUMNS[filters.orderBy ?? 'crawled_at']
+    const orderColumn = `j.${ORDER_COLUMN_NAMES[filters.orderBy ?? 'crawled_at']}`
     const direction = filters.descending === false ? 'ASC' : 'DESC'
     const safeLimit = Math.max(1, Math.min(Math.trunc(limit), PAGE_SIZE_MAX))
     const safeOffset = Math.max(0, Math.trunc(offset))
 
-    // 强制 LIMIT：禁止无界查询进热路径（§4.1）。NULL 排在最后，避免“面议”占据榜首。
+    // 强制 LIMIT：禁止无界查询进热路径（§4.1）。NULL 排在最后，避免“面议”占据榜首
+    // （未打分的岗位同理：不该因为"没有分数"而排在有分数的前面）。
+    // 这条 ORDER BY 与 `buildWhere` 里选折叠代表的那条是**同一套排序**，改一处必改另一处。
     const sql = `${SELECT_BASE}
       ${clause}
       ORDER BY ${orderColumn} IS NULL, ${orderColumn} ${direction}, j.id DESC
@@ -453,6 +545,16 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
 
     countMatching(filters = {}): number {
       return countMatching(filters)
+    },
+
+    listStaleScoreIds(stamp, limit): number[] {
+      const safeLimit = Math.max(1, Math.min(Math.trunc(limit), PAGE_SIZE_MAX))
+      return (staleScoreIdsStmt.all(stamp.rev, stamp.resumeId, safeLimit) as Row[]).map((row) => asInt(row['id']))
+    },
+
+    countStaleScores(stamp): number {
+      const row = countStaleScoresStmt.get(stamp.rev, stamp.resumeId) as Row | undefined
+      return asInt(row?.['n'])
     },
 
     countByState(): Record<string, number> {

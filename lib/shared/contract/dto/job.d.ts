@@ -1,4 +1,4 @@
-import type { FreshnessLevel, JobFlagType, JobState } from '../enums/job.js';
+import type { FreshnessLevel, JobFlagType, JobOrderValue, JobState } from '../enums/job.js';
 import type { ApplicationStage, ContactStage } from '../enums/pipeline.js';
 /**
  * job 域的对外 DTO —— 领域层与 HTTP / 工具之间的 JSON 边界（§4.3 字段级铁律 P7）。
@@ -91,6 +91,17 @@ export interface JobPageDto {
     /** 当前筛选下的总条数（走同一套 WHERE 的 count）。 */
     total: number;
     hasMore: boolean;
+    /**
+     * 因为「排除已拉黑公司」而被隐藏的条数（第五轮，批次 B）。
+     *
+     * 只有请求里带了 `excludeBlacklisted=1` 时才有值（那时它是**同一套筛选条件**
+     * 再去掉黑名单条件后的总数之差）。为什么由服务端算而不是前端多请求一次：
+     * 一是省一次往返，二是这个数字必须与 `total` 出自同一份条件 ——
+     * 两个数字各自算，早晚会出现"隐藏了 3 条，但列表少了 5 条"这种对不上的局面。
+     *
+     * 它的存在本身就是这条功能的纪律：**可以隐藏，但绝不静默隐藏**。
+     */
+    hiddenByBlacklist?: number;
 }
 /** 岗位库筛选器的**取值集**（`GET /jobs/facets`）。 */
 export interface JobFacetsDto {
@@ -149,11 +160,26 @@ export interface CompanyProfileDto {
     /** 人工标签（复核时打的，不是规则算的）。 */
     manualLabel: string | null;
     /**
+     * 人工备注（第五轮补上）。
+     *
+     * 这一格此前**只存在于数据库与导出的 CSV 里**：表里有 `company.note`、
+     * `PATCH /companies/:id` 也接受它，但 DTO 不带、界面更看不到 —— 于是
+     * "为什么拉黑这家"只能记在别处，而导出的那一列永远是空的。
+     */
+    note: string | null;
+    /**
      * 是否被用户人工拉黑。
      *
-     * 注意它现在的**作用范围**：这是一个人工标记，会出现在岗位详情与公司列表里，
-     * 但**不会**自动把该公司的岗位从岗位库查询结果里剔除 ——
-     * 静默隐藏数据比不隐藏更危险（用户会以为"这条岗位不存在"）。
+     * ── 作用范围（第五轮，批次 B 起有变化，务必看清）
+     *
+     * 它仍然**不会**在服务端被自动过滤：`GET /jobs` 默认照旧返回已拉黑公司的岗位，
+     * 因为静默隐藏数据比不隐藏更危险（用户会以为"这条岗位不存在"）。
+     * 但界面上「排除已拉黑公司」这个筛选**默认是开着的** —— 也就是说，
+     * 用户拉黑一家公司后，岗位库默认不再显示它，而这件事**是看得见的**：
+     * 列表头栏会写明"已隐藏 N 条（来自已拉黑公司）"，并且一键可显示回来。
+     *
+     * 所以这条链路的完整口径是：**可以隐藏，但绝不静默隐藏**。
+     * 服务端只在收到 `excludeBlacklisted=1` 时才加这个条件（由界面显式传）。
      */
     blacklisted: boolean;
 }
@@ -196,12 +222,27 @@ export interface JobListParams {
     city?: string;
     state?: string;
     minSalary?: number | null;
+    /**
+     * 最低匹配分（0–100）；不传 = 不限。
+     *
+     * ⚠️ 排的是**库里存着的那个分**（可能已过期，见 `JobDto.scoreStale`）。
+     * 未打分的岗位（`matchScore === null`）**不会被返回** —— 没有分就没法比较，
+     * 硬塞进来等于给用户看一批无法判断的条目。界面上要写明这一点。
+     */
+    minScore?: number | null;
     /** 经验要求多选：命中任意一个即可（取值来自 `fetchJobFacets`）。 */
     expReqs?: string[];
     /** 学历要求多选：同上。 */
     eduReqs?: string[];
     /** 屏蔽这些标注类型的岗位（传出 `excludeFlags`，黑白名单只有这里的类型）。 */
     excludeFlags?: JobFlagType[];
+    /**
+     * 排除**已拉黑公司**的岗位（第五轮，批次 B）。
+     *
+     * 服务端默认不做这件事（见 `CompanyProfileDto.blacklisted` 的注释）；
+     * 界面上的筛选默认开着，并在头栏写明因此隐藏了几条。
+     */
+    excludeBlacklisted?: boolean;
     /** 批次 4：按跨平台去重分组折叠（同一条岗位在多个平台各抓一条时只占一行）。 */
     groupDuplicates?: boolean;
     /**
@@ -213,5 +254,52 @@ export interface JobListParams {
     descending?: boolean;
     page?: number;
     pageSize?: number;
+}
+/**
+ * 界面的筛选条件状态（第五轮，批次 B2 起进 shared）。
+ *
+ * ── 为什么要进 shared
+ *
+ * "保存的筛选视图"要落库（`setting` 表），而**服务端必须逐字段校验**它 ——
+ * 不能把界面随手拼的 JSON 原样存进库。校验要有类型可依，所以形状放在这里，
+ * 界面侧 `screens/jobs/filters.ts` 的 `Filters` 直接别名到它：**只此一份定义**，
+ * 免得两端各写一遍然后悄悄漂移（本项目在标签文案上吃过一次这个亏）。
+ *
+ * 注意它与 `JobListParams` **不是一回事**：后者是"发给 `GET /jobs` 的查询参数"
+ * （时间窗已经算成 ISO 时刻），这里存的是**界面上的控件状态**
+ * （时间窗存 `'1d'` 这种令牌）—— 否则存下来的"近 24 小时"会随保存时间一起冻结。
+ */
+export interface JobFilterState {
+    q: string;
+    /** 命中任意一个即可；空 = 不限。 */
+    cities: string[];
+    /** 经验梯队 chip id（不是平台原始串，见界面 `filters.ts`）。 */
+    expBuckets: string[];
+    eduReqs: string[];
+    state: string;
+    minSalary: string;
+    minScore: string;
+    excludeFlags: JobFlagType[];
+    /** 排除已拉黑公司（默认 true，见 `JobListParams.excludeBlacklisted`）。 */
+    excludeBlacklisted: boolean;
+    groupDuplicates: boolean;
+    /** `''` = 不限；否则是 `JOB_NEW_WINDOWS` 里的 value。 */
+    newWindow: string;
+    orderBy: JobOrderValue;
+    descending: boolean;
+}
+/** 一个保存的筛选视图（第五轮，批次 B2）。 */
+export interface SavedJobViewDto {
+    /** 客户端生成的稳定 id（服务端只校验长度与字符集）。 */
+    id: string;
+    /** 用户起的名字。 */
+    name: string;
+    filters: JobFilterState;
+}
+/** `GET/PUT /jobs/views`：整体读、整体写（幂等，避免"改一半"的中间态）。 */
+export interface JobViewsDto {
+    views: SavedJobViewDto[];
+    /** 服务端强制的条数上限 —— 界面据此禁用"保存"并说明原因，而不是等被拒。 */
+    max: number;
 }
 //# sourceMappingURL=job.d.ts.map

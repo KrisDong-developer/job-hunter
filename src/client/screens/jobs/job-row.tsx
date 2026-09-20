@@ -2,7 +2,8 @@ import { JOB_FLAG_LABEL, type JobState } from '../../../shared/contract/enums/jo
 import { APPLICATION_STAGE_LABEL, CONTACT_STAGE_LABEL } from '../../../shared/contract/enums/pipeline.js'
 import { JOB_STATE_LABEL } from '../../../shared/contract/enums/job.js'
 import type { JobDto } from '../../../shared/contract/dto/job.js'
-import { relativeTime, localDateTime } from '../../format/job.js'
+import { relativeTime, jobFreshnessOf, jobProgressBadgeOf } from '../../format/job.js'
+import { formatLocalDateTime } from '../../../shared/text/time-format.js'
 import { DedupComparePane } from './dedup-compare-pane.js'
 import { IconChat, IconSend } from './icons.js'
 
@@ -34,6 +35,29 @@ export function JobRow(props: {
   // 解析不出来就印原始串（与详情页一致），不硬凑一个"未知时间"。
   const crawled = relativeTime(job.crawledAt) ?? job.crawledAt
   const seen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt
+  /**
+   * 时效档位（第五轮，批次 C2）：把"最近见到 X"从一串灰字升级成**带档位**的读数。
+   * 档位只是颜色 + tooltip，文字仍然是相对时间 —— 相对时间好读，档位帮你在扫的时候
+   * 一眼分出"这岗还在招"与"半月没动静"。解析不出来（`null`）就不染色，
+   * 免得把"不知道"画成"陈旧"。
+   */
+  const freshness = jobFreshnessOf(job.lastSeenAt)
+  /**
+   * 进程徽章（第五轮，批次 C1）：一个位置表达"最强的那件事实"
+   * （投递阶段 > 接触态 > 岗位处置态），规则与配色见 `format/job.ts`。
+   */
+  const badge = jobProgressBadgeOf(job)
+  /**
+   * 已经被钉上的处置态（收藏 / 忽略 / 归档）在"进程徽章"抢了那个位置之后，
+   * 不能就这么消失 —— 那三个是用户**自己做的标记**，不是系统推出来的阶段。
+   * 所以进程徽章说的是阶段时，另给一枚安静的处置态胶囊跟在后面；
+   * 常见情形（只有处置态、或只有阶段）仍然只有一枚。
+   */
+  const stateMark =
+    badge.source !== 'state' && job.state !== 'new' && job.state !== 'seen'
+      ? JOB_STATE_LABEL[job.state]
+      : null
+  const statusText = stateMark === null ? badge.label : `${badge.label}，${stateMark}`
   /** 落成局部 const 再判空：`job.dedupGroupId` 的属性收窄传不进箭头函数，展开开关的回调要用它。 */
   const dedupGroupId = job.dedupGroupId
   /**
@@ -73,7 +97,7 @@ export function JobRow(props: {
           /* 卡片里塞着标题/薪资/城市/公司/标签/分数/状态，读屏会把这一长串
              当成按钮名念完（实测约 60 字）。给一个**短而完整**的名称，
              卡内文本对读屏隐藏 —— 视觉完全不变。 */
-          aria-label={`岗位：${job.title}，${job.salaryRaw}，${job.city}${job.district === '' ? '' : `·${job.district}`}，${JOB_STATE_LABEL[job.state]}${signals === '' ? '' : `，${signals}`}`}
+          aria-label={`岗位：${job.title}，${job.salaryRaw}，${job.city}${job.district === '' ? '' : `·${job.district}`}，${statusText}${signals === '' ? '' : `，${signals}`}`}
           onClick={() => props.onSelect(job.id)}
         >
           <span className="jh-job-main" aria-hidden="true">
@@ -96,8 +120,27 @@ export function JobRow(props: {
                 改走 localDateTime：本地时间、跨年才带年份。 */}
             <span className="jh-job-origin">
               <span>{job.platformName ?? job.platformId}</span>
-              <span title={localDateTime(job.crawledAt)}>抓取 {crawled}</span>
-              <span title={localDateTime(job.lastSeenAt)}>最近见到 {seen}</span>
+              <span title={formatLocalDateTime(job.crawledAt)}>抓取 {crawled}</span>
+              {/* 时效档位（批次 C2）：颜色分三档，文字仍是相对时间。
+                  tooltip 三件事都写清：绝对本地时刻、档位说法、以及**基准**是
+                  "我们最近一次在平台上见到它"（与"僵尸岗"标注的基准不同 ——
+                  那个看平台的发布时间）。 */}
+              <span
+                className={
+                  freshness === null
+                    ? undefined
+                    : freshness.level === 'fresh'
+                      ? 'jh-ok'
+                      : freshness.level === 'stale'
+                        ? 'jh-warn'
+                        : 'jh-error'
+                }
+                title={`我们最近一次在平台上见到它：${formatLocalDateTime(job.lastSeenAt)}${
+                  freshness === null ? '' : `（${freshness.label}，约 ${String(freshness.hours)} 小时前）`
+                }`}
+              >
+                最近见到 {seen}
+              </span>
               {/* 批次 4：这条岗位在别的平台也在招（同一组）。
                   徽章只是**读数**；"展开对照"是卡片下面那枚开关。 */}
               {dedupGroupId === null ? null : (
@@ -116,8 +159,20 @@ export function JobRow(props: {
             {(job.flagTypes.length > 0 || job.matchScore !== null) && (
               <span className="jh-job-signals">
                 {job.matchScore === null ? null : (
-                  // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
-                  <span className="jh-score">粗筛 {job.matchScore}</span>
+                  // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）。
+                  // 分数过期（批次 A2）时**照旧显示**，但降饱和 + 加一句"按旧简历"：
+                  // 假装配当前分数是撒谎，直接藏起来又丢掉了相对排序的信息。
+                  <span
+                    className={`jh-score${job.scoreStale ? ' jh-score-stale' : ''}`}
+                    title={
+                      job.scoreStale
+                        ? '这个分是旧版简历下算出来的 —— 当前启用简历已改版。它仍能反映当时的相对排序，但要不作数。用列表头栏的「重算过期分数」刷新。'
+                        : undefined
+                    }
+                  >
+                    粗筛 {Math.round(job.matchScore)}
+                    {job.scoreStale ? '（按旧简历）' : ''}
+                  </span>
                 )}
                 {job.flagTypes.map((type) => (
                   <span key={type} className={`jh-flag jh-flag-${type}`}>
@@ -127,7 +182,29 @@ export function JobRow(props: {
               </span>
             )}
           </span>
-          <span className={`jh-state jh-state-${job.state}`} aria-hidden="true">{JOB_STATE_LABEL[job.state]}</span>
+          {/* 进程徽章（批次 C1）：一个位置一枚，说的是"这条走到哪一步了"。
+              tooltip 交代它说的是哪一层状态 —— 否则「已投递」会被读成
+              「已收藏」那种处置态（详情页有完整的动作条与记录）。 */}
+          <span
+            className={`jh-state${badge.variant === '' ? '' : ` jh-state-${badge.variant}`}`}
+            title={
+              badge.source === 'application'
+                ? `投递阶段：${badge.label}（最近一次投递的状态）`
+                : badge.source === 'contact'
+                  ? `接触态：${badge.label}（最近一条打招呼记录的状态）`
+                  : `岗位处置态：${badge.label}`
+            }
+            aria-hidden="true"
+          >
+            {badge.label}
+          </span>
+          {/* 用户自己的标记（收藏 / 忽略 / 归档）在阶段徽章之外**单独留一枚**：
+              它们是人工钉上的，不该被系统推出来的阶段挤掉。 */}
+          {stateMark === null ? null : (
+            <span className={`jh-state jh-state-${job.state}`} title={`岗位处置态：${stateMark}`} aria-hidden="true">
+              {stateMark}
+            </span>
+          )}
         </button>
         {/* 卡片右侧的行内动作，自上而下：打招呼 → 投递简历 → 划掉。
             这一列只放"对这一条做什么"，「收藏」因此去掉了：★ 与 ✕ 本来是

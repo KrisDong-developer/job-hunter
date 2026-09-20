@@ -8,6 +8,12 @@ export const MATCH_AND_FLAGS = `
 .jh-job-signals{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
 .jh-score{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+/* 分数已过期（第五轮，批次 A2）：换简历之后库里那个分就不再代表"当前匹配度"。
+   它仍然有信息量（旧简历下的相对排序），所以**不隐藏、不删掉**，只是不再看起来
+   和当前分数一样可信：去掉填充、文字转 muted。形状不变 → 不会造成行高跳动。
+   "为什么过期"由文字与 tooltip 说明（见 job-row 的「（按旧简历）」）。 */
+.jh-score-stale{background:transparent;color:var(--jh-muted-fg);
+  box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l3)}
 .jh-score-inline{margin-left:8px;font-size:12px}
 .jh-flag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}

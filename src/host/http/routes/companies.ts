@@ -105,6 +105,7 @@ export async function detail(ctx: RouteContext): Promise<RouteResult | undefined
       outsourcingScore: profile?.outsourcingScore ?? null,
       fraudScore: profile?.fraudScore ?? null,
       manualLabel: profile?.manualLabel ?? null,
+      note: company.note,
       blacklisted: company.blacklisted,
     },
     signals: store.signal.listByCompany(companyId).map((signal) => ({

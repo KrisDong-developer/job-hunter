@@ -4,7 +4,7 @@ import type { AsyncState } from '../../hooks/use-async.js'
 import { ApiError } from '../../net/client.js'
 import { revealDataDir } from '../../net/ops.js'
 import { IconCopy, IconFolder } from '../../ui/icons.js'
-import { copyToClipboard } from './clipboard.js'
+import { copyText as copyToClipboard } from '../../ui/clipboard.js'
 
 export function DiagnosticsPanel(props: {
   health: AsyncState<HealthDto>

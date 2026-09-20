@@ -20,7 +20,7 @@ import { ApiError } from '../../net/client.js'
 import { previewApplicationBatch, sendApplicationBatch } from '../../net/pipeline.js'
 import type { ApplicationBatchPlanDto, ApplicationBatchReceiptDto } from '../../../shared/contract/dto/batch.js'
 import { DELIVERY_STATE_LABEL, DELIVERY_STATE_TONE } from '../../../shared/contract/enums/job.js'
-import { localDateTime } from '../../format/job.js'
+import { formatLocalDateTime } from '../../../shared/text/time-format.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { InlineMd } from '../../ui/inline-md.js'
 import { Modal } from '../../ui/modal.js'
@@ -330,7 +330,7 @@ export function BatchDeliverModal(props: {
                     {receipt.company || receipt.title}：
                     {receipt.ok
                       ? `已投递（${DELIVERY_STATE_LABEL[receipt.delivery ?? 'missing']}，` +
-                        `${receipt.sentAt === null ? '' : localDateTime(receipt.sentAt)}）`
+                        `${receipt.sentAt === null ? '' : formatLocalDateTime(receipt.sentAt)}）`
                       : `${receipt.message ?? '失败'}${receipt.hint === null ? '' : ` —— ${receipt.hint}`}`}
                   </li>
                 ))}

@@ -33,6 +33,13 @@ export interface MatchStamp {
 export interface JobQuery {
     state?: JobState;
     platformId?: string;
+    /**
+     * 只要这些岗位 id（第五轮，批次 D2 的"导出选中"用）。
+     *
+     * 走 `IN` 而不是让调用方逐个 `detail()`：一次查询、顺序由 SQL 决定，
+     * 也不会因为 N 个 id 变成 N 次查询。
+     */
+    ids?: number[];
     /** 多城市：命中任意一个即可（`IN` 查询）。 */
     cities?: string[];
     /** 兼容的单城市旧字段（有 `cities` 时以 `cities` 为准）。 */
@@ -51,6 +58,25 @@ export interface JobQuery {
     eduReqs?: string[];
     /** 只要月薪下限 ≥ 该值的岗位。 */
     minSalaryAtLeast?: number;
+    /**
+     * 只要匹配分 ≥ 该值的岗位（第五轮，批次 A）。
+     *
+     * 注意两点口径：
+     *   * 比的是**库里存着的那个分**，它可能是**用旧版简历**算出来的
+     *     （是否过期由领域层按 `score_rev` / `score_resume_id` 判定，SQL 层不参与）；
+     *   * 未打分的岗位（`match_score IS NULL`）**不满足** `>= N`，因此会被排除 ——
+     *     这是有意的：没有分就没法参与"按分挑岗位"，悄悄放进来等于让用户
+     *     对着一批无法判断的条目做取舍。
+     */
+    minMatchScore?: number;
+    /**
+     * 排除**已拉黑公司**的岗位（第五轮，批次 B）。
+     *
+     * 默认 **false**（不加条件）：拉黑是人工标记，"把人家的岗位藏起来"必须由调用方
+     * 显式要求 —— 静默隐藏数据比不隐藏更危险。界面上的「排除已拉黑公司」默认开着，
+     * 并在列表头栏写明因此隐藏了几条，用户看得见也关得掉。
+     */
+    excludeBlacklistedCompanies?: boolean;
     /**
      * 只要**首次见到**时间 ≥ 该时刻（ISO）的岗位 —— 即「只看新增」。
      *
@@ -74,8 +100,10 @@ export interface JobQuery {
     /**
      * **按跨平台去重分组折叠**（批次 4）。
      *
-     * 同一条岗位在 4 个平台各抓一条时，列表里只留一行（组内 id 最小的那个），
-     * 而不是让用户在一屏里看到四条几乎一样的卡片。
+     * 同一条岗位在 4 个平台各抓一条时，列表里只留一行，而不是让用户在一屏里
+     * 看到四条几乎一样的卡片。**留哪一条跟着排序键走**（第五轮，批次 A3）：
+     * 组内代表 = 这一组在当前排序下会排最前的那条（例如"按匹配分"就留分最高的），
+     * 详见 `buildWhere`。
      *
      * `total` 与分页也按**折叠后**的数量算（`countMatching` 走同一段 WHERE）——
      * 否则"共 40 条 / 只有 12 行"会变成一个新谜题。
@@ -111,6 +139,17 @@ export interface JobRepo {
     count(): number;
     /** 与 `query` 用同一套 WHERE 的计数（分页 total 用）。 */
     countMatching(filters?: JobQuery): number;
+    /**
+     * 分数**已过期**的岗位 id（第五轮，批次 A2）。
+     *
+     * "过期" = 有分（`match_score IS NOT NULL`）但算分时记下的简历版本与**当前启用简历**
+     * 不一致。判定条件与领域层 `decorate()` 里的 `scoreStale` **逐字对齐**
+     * （`score_rev` 不等、或 `score_resume_id` 不等，`null` 与 `null` 视为相等）——
+     * 两处若各写一套，界面说"本页 7 条已过期"而重算只算 3 条，用户只会认为其中之一坏了。
+     */
+    listStaleScoreIds(stamp: MatchStamp, limit: number): number[];
+    /** 同上，只要条数（用于"还剩多少条要重算"）。 */
+    countStaleScores(stamp: MatchStamp): number;
     /** 首次见到时间 ≥ 该时刻的岗位数（U0 的「今日新增」）。 */
     countSince(iso: string): number;
     countByState(): Record<string, number>;

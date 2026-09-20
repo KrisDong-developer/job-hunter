@@ -13,6 +13,8 @@ import { useState } from 'react'
 export function CompanyReview(props: { company: CompanyProfileDto; onSaved: () => void }) {
   const [label, setLabel] = useState(props.company.manualLabel ?? '')
   const [blacklisted, setBlacklisted] = useState(props.company.blacklisted)
+  /** 备注（第五轮补上）：写"为什么拉黑这家"，会跟着导出的 CSV 一起走。 */
+  const [note, setNote] = useState(props.company.note ?? '')
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
 
@@ -22,10 +24,12 @@ export function CompanyReview(props: { company: CompanyProfileDto; onSaved: () =
     setFailure(null)
     try {
       const trimmed = label.trim()
+      const trimmedNote = note.trim()
       await updateCompanyReview(props.company.id, {
         blacklisted,
         // 空串 = 清除标签（后端把空串收敛成 null，不会存一个空标签）
         manualLabel: trimmed === '' ? null : trimmed,
+        note: trimmedNote === '' ? null : trimmedNote,
       })
       props.onSaved()
     } catch (error) {
@@ -45,6 +49,16 @@ export function CompanyReview(props: { company: CompanyProfileDto; onSaved: () =
           maxLength={40}
           placeholder="如：外包 / 已投过"
           onChange={(event) => { setLabel(event.target.value) }}
+        />
+      </label>
+      <label className="jh-review-field">
+        <span>备注</span>
+        <input
+          className="jh-input jh-input-sm"
+          value={note}
+          maxLength={200}
+          placeholder="如：同一岗位反复重发"
+          onChange={(event) => { setNote(event.target.value) }}
         />
       </label>
       <label className="jh-check">

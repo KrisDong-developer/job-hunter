@@ -129,7 +129,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/app/panel.tsx
-		var import_react39 = require("react");
+		var import_react40 = require("react");
 
 		// src/client/app/error-boundary.tsx
 		var import_react2 = require("react");
@@ -333,16 +333,177 @@ window.__ModuleLoader__.load({
 		};
 		var JOB_ORDER_OPTIONS = [
 		  { value: "crawled_at", label: "\u6309\u6293\u53D6\u65F6\u95F4" },
+		  { value: "match_score", label: "\u6309\u5339\u914D\u5206" },
 		  { value: "salary_min", label: "\u6309\u6708\u85AA" },
 		  { value: "last_seen_at", label: "\u6309\u6700\u8FD1\u51FA\u73B0" },
 		  { value: "first_seen_at", label: "\u6309\u9996\u6B21\u51FA\u73B0" },
 		  { value: "title", label: "\u6309\u6807\u9898" }
 		];
+		var JOB_FRESHNESS_FRESH_DAYS = 3;
+		var JOB_FRESHNESS_COLD_DAYS = 14;
+		var JOB_FRESHNESS_LABEL = {
+		  fresh: "\u8FD1\u6765\u6D3B\u8DC3",
+		  stale: "\u4E00\u5468\u591A\u6CA1\u89C1",
+		  cold: "\u534A\u6708\u4EE5\u4E0A\u6CA1\u89C1"
+		};
 		var TODAY_NEW_WINDOW_HOURS = 24;
 		var JOB_NEW_WINDOWS = [
 		  { value: "1d", label: "\u8FD1 24 \u5C0F\u65F6", hours: TODAY_NEW_WINDOW_HOURS },
 		  { value: "3d", label: "\u8FD1 3 \u5929", hours: 72 },
 		  { value: "7d", label: "\u8FD1 7 \u5929", hours: 168 }
+		];
+
+		// src/shared/contract/enums/pipeline.ts
+		var CONTACT_STAGE_LABEL = {
+		  none: "\u672A\u63A5\u89E6",
+		  greeted: "\u5DF2\u6253\u62DB\u547C",
+		  delivered: "\u5DF2\u9001\u8FBE",
+		  read: "HR \u5DF2\u8BFB",
+		  replied: "HR \u5DF2\u56DE\u590D",
+		  interview_scheduled: "\u5DF2\u7EA6\u9762"
+		};
+		var MANUAL_CONTACT_STAGES = ["greeted", "delivered", "read", "replied", "interview_scheduled"];
+		var APPLICATION_STAGES = [
+		  "sent",
+		  "viewed",
+		  "interviewing",
+		  "interviewed",
+		  "offer",
+		  "rejected",
+		  "no_reply"
+		];
+		var APPLICATION_STAGE_LABEL = {
+		  sent: "\u5DF2\u6295\u9012",
+		  viewed: "\u5DF2\u67E5\u770B",
+		  interviewing: "\u9762\u8BD5\u4E2D",
+		  interviewed: "\u5DF2\u9762\u8BD5",
+		  offer: "Offer",
+		  rejected: "\u5DF2\u62D2\u7EDD",
+		  no_reply: "\u65E0\u56DE\u590D"
+		};
+		var STAGE_ORDER = APPLICATION_STAGES;
+		var TERMINAL_STAGES = ["offer", "rejected", "no_reply"];
+		function nextStageOf(stage) {
+		  const index = STAGE_ORDER.indexOf(stage);
+		  if (index < 0 || index >= STAGE_ORDER.length - 1) return null;
+		  const next = STAGE_ORDER[index + 1];
+		  return next === void 0 || TERMINAL_STAGES.includes(next) ? null : next;
+		}
+		var NO_PROGRESS_DAYS = 21;
+		var APPLICATION_CHANNEL_LABEL = {
+		  platform: "\u5E73\u53F0\u5185\u6295",
+		  referral: "\u5185\u63A8",
+		  website: "\u5B98\u7F51",
+		  headhunter: "\u730E\u5934"
+		};
+
+		// src/shared/text/time-format.ts
+		function pad(value) {
+		  return String(value).padStart(2, "0");
+		}
+		function formatClock(date) {
+		  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+		}
+		function formatDay(date) {
+		  return `${String(date.getMonth() + 1)}\u6708${String(date.getDate())}\u65E5`;
+		}
+		function isSameDay(a, b) {
+		  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+		}
+		function formatRelative(target, now) {
+		  const deltaMs = target.getTime() - now.getTime();
+		  const abs = Math.abs(deltaMs);
+		  const future = deltaMs >= 0;
+		  if (abs < 6e4) return future ? "\u9A6C\u4E0A" : "\u521A\u521A";
+		  const minutes = Math.round(abs / 6e4);
+		  const text = abs < 60 * 6e4 ? `${String(minutes)} \u5206\u949F` : abs < 24 * 60 * 6e4 ? `${String(Math.floor(abs / (60 * 6e4)))} \u5C0F\u65F6` : `${String(Math.floor(abs / (24 * 60 * 6e4)))} \u5929`;
+		  return future ? `\u8FD8\u6709 ${text}` : `${text}\u524D`;
+		}
+		function formatLocalMoment(iso, now, options = {}) {
+		  if (iso === null || iso === "") return null;
+		  const date = new Date(iso);
+		  if (Number.isNaN(date.getTime())) {
+		    return iso;
+		  }
+		  const day = isSameDay(date, now) ? "\u4ECA\u5929" : isSameDay(new Date(now.getTime() + 24 * 60 * 60 * 1e3), date) ? "\u660E\u5929" : isSameDay(new Date(now.getTime() - 24 * 60 * 60 * 1e3), date) ? "\u6628\u5929" : formatDay(date);
+		  const absolute = `${day} ${formatClock(date)}`;
+		  return options.withRelative === false ? absolute : `${absolute} \xB7 ${formatRelative(date, now)}`;
+		}
+		function formatLocalDateTime(iso, now = /* @__PURE__ */ new Date()) {
+		  const at = new Date(iso);
+		  if (Number.isNaN(at.getTime())) return iso;
+		  const date = `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${formatClock(at)}`;
+		  return at.getFullYear() === now.getFullYear() ? date : `${String(at.getFullYear())}-${date}`;
+		}
+		function formatDuration(ms) {
+		  if (!Number.isFinite(ms) || ms < 0) return null;
+		  const seconds = Math.round(ms / 1e3);
+		  if (seconds < 60) return `${String(seconds)} \u79D2`;
+		  const minutes = Math.floor(seconds / 60);
+		  if (minutes < 60) {
+		    const rest2 = seconds % 60;
+		    return rest2 === 0 ? `${String(minutes)} \u5206` : `${String(minutes)} \u5206 ${String(rest2)} \u79D2`;
+		  }
+		  const hours = Math.floor(minutes / 60);
+		  const rest = minutes % 60;
+		  return rest === 0 ? `${String(hours)} \u5C0F\u65F6` : `${String(hours)} \u5C0F\u65F6 ${String(rest)} \u5206`;
+		}
+		function formatJitter(jitterMs) {
+		  if (!Number.isFinite(jitterMs) || jitterMs <= 0) return null;
+		  const minutes = Math.round(jitterMs / 6e4);
+		  return minutes <= 0 ? "\u542B\u4E0D\u5230 1 \u5206\u949F\u6296\u52A8" : `\u542B ${String(minutes)} \u5206\u949F\u6296\u52A8`;
+		}
+		var WEEKDAY_LABEL = ["\u5468\u65E5", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D"];
+		function formatWeekdays(weekdays) {
+		  const days = [...new Set(weekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort();
+		  if (days.length === 0 || days.length === 7) return "\u6BCF\u5929";
+		  if (days.length === 5 && days.every((day, index) => day === index + 1)) return "\u5DE5\u4F5C\u65E5";
+		  return days.map((day) => WEEKDAY_LABEL[day] ?? String(day)).join("\u3001");
+		}
+		function formatHourMinute(hour, minute) {
+		  return `${pad(hour)}:${pad(minute)}`;
+		}
+		function formatWindow(startHour, startMinute, endHour, endMinute) {
+		  const start = formatHourMinute(startHour, startMinute);
+		  const end = formatHourMinute(endHour, endMinute);
+		  const overnight = endHour * 60 + endMinute <= startHour * 60 + startMinute;
+		  return overnight ? `${start}\u2013\u6B21\u65E5 ${end}` : `${start}\u2013${end}`;
+		}
+		function clockValueOf(hour, minute) {
+		  return formatHourMinute(hour, minute);
+		}
+		function parseClockValue(text) {
+		  const match = /^(\d{1,2}):(\d{1,2})$/.exec(text.trim());
+		  if (match === null) return null;
+		  const hour = Number.parseInt(match[1] ?? "", 10);
+		  const minute = Number.parseInt(match[2] ?? "", 10);
+		  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+		  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+		  return { hour, minute };
+		}
+		function parseClockWindow(raw) {
+		  const matched = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(raw.trim());
+		  if (matched === null) return null;
+		  const startHour = Number(matched[1]);
+		  const startMinute = Number(matched[2]);
+		  const endHour = Number(matched[3]);
+		  const endMinute = Number(matched[4]);
+		  if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59) return null;
+		  return { startHour, startMinute, endHour, endMinute };
+		}
+		function parseWindow(raw) {
+		  const window2 = parseClockWindow(raw);
+		  if (window2 === null) return null;
+		  return {
+		    start: formatHourMinute(window2.startHour, window2.startMinute),
+		    end: formatHourMinute(window2.endHour, window2.endMinute)
+		  };
+		}
+		var WEEKDAY_PRESETS = [
+		  { key: "workdays", label: "\u5DE5\u4F5C\u65E5", days: [1, 2, 3, 4, 5] },
+		  { key: "weekend", label: "\u5468\u672B", days: [0, 6] },
+		  { key: "all", label: "\u6BCF\u5929", days: [0, 1, 2, 3, 4, 5, 6] },
+		  { key: "none", label: "\u6E05\u7A7A", days: [] }
 		];
 
 		// src/client/format/job.ts
@@ -370,12 +531,62 @@ window.__ModuleLoader__.load({
 		  if (days <= 30) return `${String(days)} \u5929\u524D`;
 		  return iso.slice(0, 10);
 		}
-		function localDateTime(iso, now = /* @__PURE__ */ new Date()) {
+		function jobProgressBadgeOf(job) {
+		  if (job.applicationStage !== null) {
+		    const stage = job.applicationStage;
+		    return {
+		      source: "application",
+		      label: APPLICATION_STAGE_LABEL[stage],
+		      variant: (
+		        // 已拒绝 / 无回复 = 这条走到头了（终态），用最安静的一档
+		        stage === "rejected" || stage === "no_reply" ? "closed" : stage === "sent" || stage === "viewed" ? "progress" : "ok"
+		      )
+		    };
+		  }
+		  if (job.contactStage !== "none") {
+		    const stage = job.contactStage;
+		    return {
+		      source: "contact",
+		      label: CONTACT_STAGE_LABEL[stage],
+		      // "已打招呼 / 已送达 / HR 已读"都还只是"发出去了"；**回**才算有回音。
+		      variant: stage === "replied" || stage === "interview_scheduled" ? "ok" : "progress"
+		    };
+		  }
+		  return {
+		    source: "state",
+		    label: JOB_STATE_LABEL[job.state],
+		    // 处置态的类名与取值同名（.jh-state-new / -saved / -ignored / -archived），
+		    // 只有 `seen` 没有专属配色（它是最中性的"什么都没有"）→ 落到基类。
+		    variant: job.state === "seen" ? "" : job.state
+		  };
+		}
+		function jobFreshnessOf(iso, now = /* @__PURE__ */ new Date()) {
 		  const at = new Date(iso);
-		  if (Number.isNaN(at.getTime())) return iso;
-		  const pad2 = (value) => String(value).padStart(2, "0");
-		  const date = `${pad2(at.getMonth() + 1)}-${pad2(at.getDate())} ${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
-		  return at.getFullYear() === now.getFullYear() ? date : `${String(at.getFullYear())}-${date}`;
+		  if (Number.isNaN(at.getTime())) return null;
+		  const hours = Math.max(0, (now.getTime() - at.getTime()) / 36e5);
+		  const level = hours <= JOB_FRESHNESS_FRESH_DAYS * 24 ? "fresh" : hours <= JOB_FRESHNESS_COLD_DAYS * 24 ? "stale" : "cold";
+		  return { level, label: JOB_FRESHNESS_LABEL[level], hours: Math.floor(hours) };
+		}
+		function jobsToMarkdown(jobs, now = /* @__PURE__ */ new Date()) {
+		  const header = ["\u516C\u53F8", "\u5C97\u4F4D", "\u85AA\u8D44", "\u57CE\u5E02", "\u5E73\u53F0", "\u72B6\u6001", "\u6700\u8FD1\u89C1\u5230", "\u539F\u94FE\u63A5"];
+		  const cell = (value) => value.replace(/\|/g, "/").replace(/\r?\n/g, " ");
+		  const rows = jobs.map(
+		    (job) => [
+		      job.companyName ?? "",
+		      job.title,
+		      job.salaryRaw,
+		      job.district === "" ? job.city : `${job.city}\xB7${job.district}`,
+		      job.platformName ?? job.platformId,
+		      JOB_STATE_LABEL[job.state],
+		      formatLocalDateTime(job.lastSeenAt, now),
+		      job.sourceUrl
+		    ].map((value) => cell(String(value))).join(" | ")
+		  );
+		  return [
+		    `| ${header.join(" | ")} |`,
+		    `| ${header.map(() => "---").join(" | ")} |`,
+		    ...rows.map((row) => `| ${row} |`)
+		  ].join("\n");
 		}
 		var BENEFIT_KEYWORDS = [
 		  "\u4E94\u9669",
@@ -530,6 +741,9 @@ window.__ModuleLoader__.load({
 		  if (params.minSalary !== void 0 && params.minSalary !== null) {
 		    query.set("minSalary", String(params.minSalary));
 		  }
+		  if (params.minScore !== void 0 && params.minScore !== null) {
+		    query.set("minScore", String(params.minScore));
+		  }
 		  if (params.expReqs !== void 0 && params.expReqs.length > 0) {
 		    query.set("expReqs", params.expReqs.join(","));
 		  }
@@ -539,6 +753,7 @@ window.__ModuleLoader__.load({
 		  if (params.excludeFlags !== void 0 && params.excludeFlags.length > 0) {
 		    query.set("excludeFlags", params.excludeFlags.join(","));
 		  }
+		  if (params.excludeBlacklisted === true) query.set("excludeBlacklisted", "1");
 		  if (params.groupDuplicates === true) query.set("groupDuplicates", "1");
 		  if (params.firstSeenSince !== void 0 && params.firstSeenSince !== "") {
 		    query.set("firstSeenSince", params.firstSeenSince);
@@ -561,6 +776,28 @@ window.__ModuleLoader__.load({
 		    body: JSON.stringify({ state })
 		  });
 		  return result.job;
+		}
+		async function markJobs(ids, state) {
+		  const result = await request("/jobs/batch/mark", {
+		    method: "POST",
+		    body: JSON.stringify({ ids, state })
+		  });
+		  return { total: result.total, missing: result.missing };
+		}
+		async function fetchJobViews(signal) {
+		  return await request("/jobs/views", signal === void 0 ? {} : { signal });
+		}
+		async function saveJobViews(views) {
+		  return await request("/jobs/views", { method: "PUT", body: JSON.stringify({ views }) });
+		}
+		function jobsExportUrl(ids) {
+		  return `${ROUTE_PREFIX}/jobs/export?ids=${ids.join(",")}`;
+		}
+		async function recomputeStaleScores() {
+		  return await request("/intel/recompute", {
+		    method: "POST",
+		    body: JSON.stringify({ scope: "stale" })
+		  });
 		}
 		async function fetchJobHistory(jobId, signal) {
 		  return await request(`/jobs/${String(jobId)}/history`, signal === void 0 ? {} : { signal });
@@ -1043,6 +1280,30 @@ window.__ModuleLoader__.load({
 		  return result.coverLetter;
 		}
 
+		// src/client/ui/clipboard.ts
+		async function copyText(text) {
+		  try {
+		    await navigator.clipboard.writeText(text);
+		    return true;
+		  } catch {
+		  }
+		  try {
+		    const area = document.createElement("textarea");
+		    area.value = text;
+		    area.setAttribute("readonly", "");
+		    area.style.position = "fixed";
+		    area.style.top = "-1000px";
+		    area.style.opacity = "0";
+		    document.body.appendChild(area);
+		    area.select();
+		    const ok = document.execCommand("copy");
+		    document.body.removeChild(area);
+		    return ok;
+		  } catch {
+		    return false;
+		  }
+		}
+
 		// src/client/views/job-detail/overseas-panel.tsx
 		var import_react6 = require("react");
 		var import_jsx_runtime7 = require("react/jsx-runtime");
@@ -1079,22 +1340,9 @@ window.__ModuleLoader__.load({
 		      setBusy(false);
 		    }
 		  };
-		  const copyText = async (text) => {
-		    try {
-		      await navigator.clipboard.writeText(text);
-		    } catch {
-		      const area = document.createElement("textarea");
-		      area.value = text;
-		      document.body.appendChild(area);
-		      area.select();
-		      document.execCommand("copy");
-		      document.body.removeChild(area);
-		    }
-		  };
 		  const copyLetter = async () => {
 		    if (letter === null) return;
-		    await copyText(letter);
-		    setLetterCopied(true);
+		    setLetterCopied(await copyText(letter));
 		    window.setTimeout(() => setLetterCopied(false), 2e3);
 		  };
 		  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("section", { className: "jh-tailor", children: [
@@ -1502,6 +1750,7 @@ window.__ModuleLoader__.load({
 		function CompanyReview(props) {
 		  const [label, setLabel] = (0, import_react9.useState)(props.company.manualLabel ?? "");
 		  const [blacklisted, setBlacklisted] = (0, import_react9.useState)(props.company.blacklisted);
+		  const [note, setNote] = (0, import_react9.useState)(props.company.note ?? "");
 		  const [busy, setBusy] = (0, import_react9.useState)(false);
 		  const [failure, setFailure] = (0, import_react9.useState)(null);
 		  const save = async (event) => {
@@ -1510,10 +1759,12 @@ window.__ModuleLoader__.load({
 		    setFailure(null);
 		    try {
 		      const trimmed = label.trim();
+		      const trimmedNote = note.trim();
 		      await updateCompanyReview(props.company.id, {
 		        blacklisted,
 		        // 空串 = 清除标签（后端把空串收敛成 null，不会存一个空标签）
-		        manualLabel: trimmed === "" ? null : trimmed
+		        manualLabel: trimmed === "" ? null : trimmed,
+		        note: trimmedNote === "" ? null : trimmedNote
 		      });
 		      props.onSaved();
 		    } catch (error) {
@@ -1534,6 +1785,21 @@ window.__ModuleLoader__.load({
 		          placeholder: "\u5982\uFF1A\u5916\u5305 / \u5DF2\u6295\u8FC7",
 		          onChange: (event) => {
 		            setLabel(event.target.value);
+		          }
+		        }
+		      )
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "jh-review-field", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "\u5907\u6CE8" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+		        "input",
+		        {
+		          className: "jh-input jh-input-sm",
+		          value: note,
+		          maxLength: 200,
+		          placeholder: "\u5982\uFF1A\u540C\u4E00\u5C97\u4F4D\u53CD\u590D\u91CD\u53D1",
+		          onChange: (event) => {
+		            setNote(event.target.value);
 		          }
 		        }
 		      )
@@ -1563,7 +1829,10 @@ window.__ModuleLoader__.load({
 		    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h3", { className: "jh-card-title", children: "\u516C\u53F8\u753B\u50CF" }),
 		    props.company.blacklisted ? /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "jh-alert jh-alert-warn", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "jh-alert-title", children: "\u8FD9\u5BB6\u516C\u53F8\u88AB\u4F60\u6807\u8BB0\u4E3A\u300C\u62C9\u9ED1\u300D" }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "jh-alert-body", children: "\u8FD9\u662F\u4F60\u7684\u4EBA\u5DE5\u6807\u8BB0\u3002\u5B83\u4E0D\u4F1A\u81EA\u52A8\u9690\u85CF\u8BE5\u516C\u53F8\u7684\u5C97\u4F4D\uFF0C\u53EA\u662F\u5728\u8FD9\u91CC\u63D0\u793A\u4F60\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("p", { className: "jh-alert-body", children: [
+		        "\u5C97\u4F4D\u5E93\u9ED8\u8BA4\u4E0D\u518D\u663E\u793A\u8FD9\u5BB6\u516C\u53F8\u7684\u5C97\u4F4D\uFF08\u7B5B\u9009\u91CC\u7684\u300C\u6392\u9664\u5DF2\u62C9\u9ED1\u516C\u53F8\u7684\u5C97\u4F4D\u300D\u9ED8\u8BA4\u5F00\u7740\uFF09\u3002 \u88AB\u9690\u85CF\u4E86\u51E0\u6761\u4F1A\u5199\u5728\u5217\u8868\u5934\u680F\uFF0C\u70B9\u90A3\u91CC\u5C31\u80FD\u663E\u793A\u56DE\u6765\u3002",
+		        props.company.note === null ? "" : `\u5907\u6CE8\uFF1A${props.company.note}`
+		      ] })
 		    ] }) : null,
 		    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("ul", { className: "jh-kv", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("li", { children: [
@@ -1767,50 +2036,6 @@ window.__ModuleLoader__.load({
 		    ] })
 		  ] });
 		}
-
-		// src/shared/contract/enums/pipeline.ts
-		var CONTACT_STAGE_LABEL = {
-		  none: "\u672A\u63A5\u89E6",
-		  greeted: "\u5DF2\u6253\u62DB\u547C",
-		  delivered: "\u5DF2\u9001\u8FBE",
-		  read: "HR \u5DF2\u8BFB",
-		  replied: "HR \u5DF2\u56DE\u590D",
-		  interview_scheduled: "\u5DF2\u7EA6\u9762"
-		};
-		var MANUAL_CONTACT_STAGES = ["greeted", "delivered", "read", "replied", "interview_scheduled"];
-		var APPLICATION_STAGES = [
-		  "sent",
-		  "viewed",
-		  "interviewing",
-		  "interviewed",
-		  "offer",
-		  "rejected",
-		  "no_reply"
-		];
-		var APPLICATION_STAGE_LABEL = {
-		  sent: "\u5DF2\u6295\u9012",
-		  viewed: "\u5DF2\u67E5\u770B",
-		  interviewing: "\u9762\u8BD5\u4E2D",
-		  interviewed: "\u5DF2\u9762\u8BD5",
-		  offer: "Offer",
-		  rejected: "\u5DF2\u62D2\u7EDD",
-		  no_reply: "\u65E0\u56DE\u590D"
-		};
-		var STAGE_ORDER = APPLICATION_STAGES;
-		var TERMINAL_STAGES = ["offer", "rejected", "no_reply"];
-		function nextStageOf(stage) {
-		  const index = STAGE_ORDER.indexOf(stage);
-		  if (index < 0 || index >= STAGE_ORDER.length - 1) return null;
-		  const next = STAGE_ORDER[index + 1];
-		  return next === void 0 || TERMINAL_STAGES.includes(next) ? null : next;
-		}
-		var NO_PROGRESS_DAYS = 21;
-		var APPLICATION_CHANNEL_LABEL = {
-		  platform: "\u5E73\u53F0\u5185\u6295",
-		  referral: "\u5185\u63A8",
-		  website: "\u5B98\u7F51",
-		  headhunter: "\u730E\u5934"
-		};
 
 		// src/client/views/job-detail/panels/summary-panel.tsx
 		var import_jsx_runtime21 = require("react/jsx-runtime");
@@ -2201,13 +2426,15 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/jobs/index.tsx
-		var import_react15 = require("react");
+		var import_react16 = require("react");
 
 		// src/shared/config/limits.ts
 		var MAX_BODY_BYTES = 64 * 1024;
 		var ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 		var ATTACHMENT_BODY_MAX_BYTES = 8 * 1024 * 1024;
 		var PAGE_SIZE_DEFAULT = 20;
+		var MAX_SAVED_JOB_VIEWS = 20;
+		var MAX_SAVED_JOB_VIEW_NAME = 40;
 		var EXPORT_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
 
 		// src/shared/domain/job-facets.ts
@@ -2624,7 +2851,7 @@ window.__ModuleLoader__.load({
 		              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "jh-receipt-mark", children: receipt.ok ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconCheck, {}) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconCross, {}) }),
 		              receipt.company || receipt.title,
 		              "\uFF1A",
-		              receipt.ok ? `\u5DF2\u6295\u9012\uFF08${DELIVERY_STATE_LABEL[receipt.delivery ?? "missing"]}\uFF0C${receipt.sentAt === null ? "" : localDateTime(receipt.sentAt)}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
+		              receipt.ok ? `\u5DF2\u6295\u9012\uFF08${DELIVERY_STATE_LABEL[receipt.delivery ?? "missing"]}\uFF0C${receipt.sentAt === null ? "" : formatLocalDateTime(receipt.sentAt)}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
 		            ] }, receipt.jobId)) })
 		          ] })
 		        ] })
@@ -2877,7 +3104,7 @@ window.__ModuleLoader__.load({
 		              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "jh-receipt-mark", children: receipt.ok ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconCheck, {}) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconCross, {}) }),
 		              receipt.company || receipt.title,
 		              "\uFF1A",
-		              receipt.ok ? `\u5DF2\u53D1\u9001\uFF08${String(receipt.textLength ?? 0)} \u5B57\uFF0C${receipt.sentAt === null ? "" : localDateTime(receipt.sentAt)}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
+		              receipt.ok ? `\u5DF2\u53D1\u9001\uFF08${String(receipt.textLength ?? 0)} \u5B57\uFF0C${receipt.sentAt === null ? "" : formatLocalDateTime(receipt.sentAt)}\uFF09` : `${receipt.message ?? "\u5931\u8D25"}${receipt.hint === null ? "" : ` \u2014\u2014 ${receipt.hint}`}`
 		            ] }, receipt.jobId)) })
 		          ] })
 		        ] })
@@ -2889,6 +3116,7 @@ window.__ModuleLoader__.load({
 		// src/client/screens/jobs/batch-toolbar.tsx
 		var import_jsx_runtime29 = require("react/jsx-runtime");
 		function BatchToolbar(props) {
+		  const disabled = props.busy;
 		  return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "jh-picked", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("span", { children: [
 		      "\u5DF2\u9009 ",
@@ -2896,24 +3124,62 @@ window.__ModuleLoader__.load({
 		      " \u6761"
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "jh-spacer" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onGreet, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled, onClick: props.onGreet, children: [
 		      "\u6279\u91CF\u6253\u62DB\u547C\uFF08",
 		      props.count,
 		      "\uFF09"
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onDeliver, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled, onClick: props.onDeliver, children: [
 		      "\u6279\u91CF\u6295\u9012\uFF08",
 		      props.count,
 		      "\uFF09"
 		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-btn jh-btn-inline",
+		        disabled,
+		        title: "\u6807\u4E3A\u5DF2\u6536\u85CF",
+		        onClick: () => props.onMark("saved"),
+		        children: "\u6536\u85CF"
+		      }
+		    ),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-btn jh-btn-inline",
+		        disabled,
+		        title: "\u6807\u4E3A\u5DF2\u5FFD\u7565\uFF08\u7B49\u540C\u9010\u6761\u70B9 \u2715\uFF09",
+		        onClick: () => props.onMark("ignored"),
+		        children: "\u5FFD\u7565"
+		      }
+		    ),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-btn jh-btn-inline",
+		        disabled,
+		        title: "\u6807\u4E3A\u5DF2\u5F52\u6863\uFF08\u4ECE\u9ED8\u8BA4\u89C6\u56FE\u91CC\u632A\u8D70\uFF0C\u4F46\u8BB0\u5F55\u8FD8\u5728\uFF09",
+		        onClick: () => props.onMark("archived"),
+		        children: "\u5F52\u6863"
+		      }
+		    ),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", disabled, onClick: props.onCopy, children: "\u590D\u5236\u4E3A\u8868\u683C" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("a", { className: "jh-btn jh-btn-inline", href: props.exportHref, download: true, children: "\u5BFC\u51FA CSV" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline", onClick: props.onClear, children: "\u6E05\u9664\u9009\u62E9" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u6279\u91CF\u6253\u62DB\u547C\u4F1A\u5148\u505A\u4E00\u6B21**\u53EA\u8BFB\u9884\u89C8**\uFF1A\u9010\u6761\u5217\u51FA\u80FD\u4E0D\u80FD\u53D1\u3001\u4E3A\u4EC0\u4E48\u4E0D\u80FD\uFF0C\u6B63\u6587\u53EF\u4EE5\u9010\u6761\u6539\u6216\u8DF3\u8FC7\u3002\u771F\u6B63\u7684\u53D1\u9001\u8981\u4F60\u5728\u9884\u89C8\u91CC\u786E\u8BA4\u4E00\u6B21\uFF0C\u4E4B\u540E\u6309\u6BCF\u6279\u6700\u591A 5 \u6761\u4F9D\u6B21\u53D1\u51FA\uFF08\u6761\u4E0E\u6761\u4E4B\u95F4\u4F1A\u7B49 3\u20139 \u79D2 \u2014\u2014 \u8FDE\u70B9\u662F\u6700\u660E\u663E\u7684\u673A\u5668\u4FE1\u53F7\uFF0C\u6162\u662F\u6709\u610F\u7684\uFF09\u3002" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u6279\u91CF\u6295\u9012\uFF08L4\uFF09\u8D70\u7684\u662F**\u5E73\u53F0\u4E0A\u5DF2\u6709\u7684\u90A3\u4EFD**\u7B80\u5386\uFF0C\u6295\u51FA\u53BB**\u4E0D\u53EF\u9006**\u3002\u5B83\u4F1A\u5148\u505A\u4E00\u6B21\u53EA\u8BFB\u9884\u89C8\uFF1A\u9010\u6761\u5217\u51FA\u80FD\u4E0D\u80FD\u6295\u3001\u4E3A\u4EC0\u4E48\u4E0D\u80FD\uFF08\u53EA\u6709\u63A5\u4E86\u6295\u9012\u52A8\u4F5C\u7684\u5E73\u53F0\u80FD\u6295\uFF09\u3002\u9ED8\u8BA4\u5173\u95ED \u2014\u2014 \u9700\u8981\u5728\u300C\u8BBE\u7F6E \u2192 \u7CFB\u7EDF\u63A7\u5236\u4E2D\u5FC3 \u2192 \u53D1\u9001\u5206\u5C42\u300D\u91CC\u5148\u6253\u5F00 L4 \u6295\u9012\u3002" })
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u6279\u91CF\u6295\u9012\uFF08L4\uFF09\u8D70\u7684\u662F**\u5E73\u53F0\u4E0A\u5DF2\u6709\u7684\u90A3\u4EFD**\u7B80\u5386\uFF0C\u6295\u51FA\u53BB**\u4E0D\u53EF\u9006**\u3002\u5B83\u4F1A\u5148\u505A\u4E00\u6B21\u53EA\u8BFB\u9884\u89C8\uFF1A\u9010\u6761\u5217\u51FA\u80FD\u4E0D\u80FD\u6295\u3001\u4E3A\u4EC0\u4E48\u4E0D\u80FD\uFF08\u53EA\u6709\u63A5\u4E86\u6295\u9012\u52A8\u4F5C\u7684\u5E73\u53F0\u80FD\u6295\uFF09\u3002\u9ED8\u8BA4\u5173\u95ED \u2014\u2014 \u9700\u8981\u5728\u300C\u8BBE\u7F6E \u2192 \u7CFB\u7EDF\u63A7\u5236\u4E2D\u5FC3 \u2192 \u53D1\u9001\u5206\u5C42\u300D\u91CC\u5148\u6253\u5F00 L4 \u6295\u9012\u3002" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FieldHint, { text: "\u6536\u85CF / \u5FFD\u7565 / \u5F52\u6863\u53EA\u6539**\u672C\u5730\u8BB0\u5F55**\uFF0C\u4E0D\u78B0\u5E73\u53F0\u3002\u64A4\u9500\u56DE\u7684\u662F\u300C\u5DF2\u8BFB\u300D\u800C\u4E0D\u662F\u5404\u81EA\u7684\u539F\u59CB\u72B6\u6001 \u2014\u2014 \u52FE\u9009\u53EF\u4EE5\u8DE8\u9875\uFF0C\u539F\u72B6\u6001\u6CA1\u8DDF\u7740\u4E00\u8D77\u5E26\u8FC7\u6765\u3002" })
 		  ] });
 		}
 
 		// src/client/screens/jobs/filter-bar.tsx
+		var import_react15 = require("react");
 		var import_jsx_runtime30 = require("react/jsx-runtime");
+		var MULTI_CITY = "__multi_city__";
 		function FilterBar(props) {
 		  const draft = props.draft;
 		  const advancedOpen = props.advancedOpen;
@@ -2921,6 +3187,16 @@ window.__ModuleLoader__.load({
 		  const citiesAll = props.citiesAll;
 		  const eduAll = props.eduAll;
 		  const expChips = props.expChips;
+		  const [naming, setNaming] = (0, import_react15.useState)(false);
+		  const [nameDraft, setNameDraft] = (0, import_react15.useState)("");
+		  const strayCity = draft.cities.length === 1 && !citiesAll.includes(draft.cities[0] ?? "") ? draft.cities[0] ?? "" : null;
+		  const submitName = () => {
+		    const name2 = nameDraft.trim();
+		    if (name2 === "") return;
+		    props.onSaveView(name2);
+		    setNameDraft("");
+		    setNaming(false);
+		  };
 		  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("form", { className: "jh-jobs-filters", onSubmit: props.onSubmit, children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-line", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-jobs-filter-text", children: [
@@ -2938,11 +3214,23 @@ window.__ModuleLoader__.load({
 		        "select",
 		        {
 		          className: "jh-select jh-input-md",
-		          "aria-label": "\u57CE\u5E02",
-		          value: draft.cities[0] ?? "",
-		          onChange: (event) => props.onCity(event.target.value),
+		          "aria-label": "\u57CE\u5E02\uFF08\u5355\u9009\uFF1B\u591A\u9009\u5728\u9AD8\u7EA7\u7B5B\u9009\u91CC\uFF09",
+		          value: draft.cities.length > 1 ? MULTI_CITY : draft.cities[0] ?? "",
+		          onChange: (event) => {
+		            if (event.target.value === MULTI_CITY) return;
+		            props.onCity(event.target.value);
+		          },
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: "", children: "\u5168\u90E8\u57CE\u5E02" }),
+		            strayCity === null ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("option", { value: strayCity, children: [
+		              strayCity,
+		              "\uFF08\u4E0D\u5728\u5F53\u524D\u57CE\u5E02\u5217\u8868\u91CC\uFF09"
+		            ] }),
+		            draft.cities.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("option", { value: MULTI_CITY, children: [
+		              "\u5DF2\u9009 ",
+		              draft.cities.length,
+		              " \u4E2A\u57CE\u5E02"
+		            ] }) : null,
 		            citiesAll.map((city) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: city, children: city }, city))
 		          ]
 		        }
@@ -2972,9 +3260,80 @@ window.__ModuleLoader__.load({
 		          }
 		        )
 		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-jobs-filter-text jh-jobs-filter-text-narrow", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: "\u6700\u4F4E\u5206" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "input",
+		          {
+		            className: "jh-input",
+		            inputMode: "numeric",
+		            value: draft.minScore,
+		            onChange: (event) => props.onMinScore(event.target.value)
+		          }
+		        )
+		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "submit", className: "jh-btn jh-btn-inline jh-btn-primary", children: "\u7B5B\u9009" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline jh-btn-quiet", onClick: props.onReset, children: "\u91CD\u7F6E" }),
-		      props.pending ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-pending", children: "\u6761\u4EF6\u5DF2\u6539\u52A8\uFF0C\u70B9\u300C\u7B5B\u9009\u300D\u751F\u6548" }) : null
+		      props.pending ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-pending", children: "\u6761\u4EF6\u5DF2\u6539\u52A8\uFF0C\u70B9\u300C\u7B5B\u9009\u300D\u751F\u6548" }) : null,
+		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-jobs-filter-text jh-jobs-filter-text-narrow", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: "\u89C6\u56FE" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+		          "select",
+		          {
+		            className: "jh-select",
+		            "aria-label": "\u5957\u7528\u4FDD\u5B58\u7684\u89C6\u56FE",
+		            value: props.appliedViewId,
+		            onChange: (event) => props.onApplyView(event.target.value),
+		            children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: "", children: "\u4E0D\u5957\u7528" }),
+		              props.views.map((view) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("option", { value: view.id, children: view.name }, view.id))
+		            ]
+		          }
+		        )
+		      ] }),
+		      naming ? /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(import_jsx_runtime30.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "input",
+		          {
+		            className: "jh-input jh-jobs-view-name",
+		            value: nameDraft,
+		            maxLength: MAX_SAVED_JOB_VIEW_NAME,
+		            "aria-label": "\u89C6\u56FE\u540D\u5B57",
+		            placeholder: "\u7ED9\u8FD9\u7EC4\u6761\u4EF6\u8D77\u4E2A\u540D\u5B57",
+		            autoFocus: true,
+		            onChange: (event) => setNameDraft(event.target.value),
+		            onKeyDown: (event) => {
+		              if (event.key === "Enter") {
+		                event.preventDefault();
+		                submitName();
+		              }
+		              if (event.key === "Escape") setNaming(false);
+		            }
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline jh-btn-primary", onClick: submitName, children: "\u4FDD\u5B58" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "jh-btn jh-btn-inline jh-btn-quiet", onClick: () => setNaming(false), children: "\u53D6\u6D88" })
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "jh-btn jh-btn-inline jh-btn-quiet",
+		          disabled: props.views.length >= MAX_SAVED_JOB_VIEWS,
+		          title: props.views.length >= MAX_SAVED_JOB_VIEWS ? `\u6700\u591A\u4FDD\u5B58 ${String(MAX_SAVED_JOB_VIEWS)} \u4E2A\u89C6\u56FE\uFF0C\u5148\u5220\u6389\u51E0\u4E2A` : "\u628A\u5F53\u524D\u8FD9\u5957\u6761\u4EF6\u5B58\u4E0B\u6765\uFF0C\u4E0B\u6B21\u4E00\u952E\u5957\u7528",
+		          onClick: () => setNaming(true),
+		          children: "\u4FDD\u5B58\u4E3A\u89C6\u56FE"
+		        }
+		      ),
+		      props.appliedViewId === "" ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "jh-btn jh-btn-inline jh-btn-quiet",
+		          title: "\u5220\u6389\u5F53\u524D\u5957\u7528\u7684\u8FD9\u4E2A\u89C6\u56FE\uFF08\u4E0D\u5F71\u54CD\u5217\u8868\u91CC\u7684\u6761\u4EF6\uFF09",
+		          onClick: () => props.onDeleteView(props.appliedViewId),
+		          children: "\u5220\u9664\u89C6\u56FE"
+		        }
+		      )
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
 		      "button",
@@ -2987,11 +3346,28 @@ window.__ModuleLoader__.load({
 		        children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-caret", "aria-hidden": "true", children: advancedOpen ? "\u25BE" : "\u25B8" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-toggle-text", children: "\u9AD8\u7EA7\u7B5B\u9009" }),
-		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: `jh-filter-note${advancedCount > 0 ? " jh-filter-note-on" : ""}`, children: advancedCount > 0 ? `\u5DF2\u9009 ${String(advancedCount)} \u9879` : "\u7ECF\u9A8C / \u5B66\u5386 / \u65B0\u589E\u65F6\u95F4 / \u5C4F\u853D / \u8DE8\u5E73\u53F0\u6298\u53E0" })
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: `jh-filter-note${advancedCount > 0 ? " jh-filter-note-on" : ""}`, children: advancedCount > 0 ? `\u5DF2\u9009 ${String(advancedCount)} \u9879` : "\u57CE\u5E02 / \u7ECF\u9A8C / \u5B66\u5386 / \u65B0\u589E\u65F6\u95F4 / \u5C4F\u853D / \u8DE8\u5E73\u53F0\u6298\u53E0" })
 		        ]
 		      }
 		    ),
 		    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-panel", id: "jh-jobs-advanced", hidden: !advancedOpen, children: [
+		      citiesAll.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
+		          "\u57CE\u5E02",
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u53EF\u591A\u9009\uFF1A\u547D\u4E2D\u4EFB\u610F\u4E00\u4E2A\u57CE\u5E02\u7684\u5C97\u4F4D\u90FD\u4F1A\u663E\u793A\uFF08\u6DF1\u5733+\u676D\u5DDE \u8FD9\u6837\u4E00\u8D77\u770B\uFF09\u3002\u4E0A\u9762\u7684\u4E0B\u62C9\u662F\u5355\u9009\u5FEB\u6377\u5165\u53E3\uFF0C\u4E24\u5904\u5199\u7684\u662F\u540C\u4E00\u4EFD\u6761\u4EF6\uFF0C\u591A\u9009\u65F6\u4E0B\u62C9\u4F1A\u663E\u793A\u300C\u5DF2\u9009 N \u4E2A\u57CE\u5E02\u300D\u3002" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u57CE\u5E02\uFF08\u53EF\u591A\u9009\uFF09", children: citiesAll.map((city) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		          "button",
+		          {
+		            type: "button",
+		            className: `jh-chip${draft.cities.includes(city) ? " jh-chip-on" : ""}`,
+		            "aria-pressed": draft.cities.includes(city),
+		            onClick: () => props.onCityToggle(city),
+		            children: city
+		          },
+		          city
+		        )) })
+		      ] }),
 		      expChips.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
 		          "\u7ECF\u9A8C",
@@ -3046,7 +3422,7 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
 		          "\u5C4F\u853D",
-		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u547D\u4E2D\u6807\u6CE8\u7684\u5C97\u4F4D\u4E00\u5F8B\u4E0D\u663E\u793A\u3002\u6807\u6CE8\u662F\u672C\u5730\u89C4\u5219\u7B97\u51FA\u6765\u7684\uFF08\u5916\u5305/\u9AD8\u98CE\u9669/\u50F5\u5C38\u5C97/\u9ED1\u8BDD\u7B49\uFF09\uFF0C\u4E0D\u9700\u8981\u4F60\u9010\u6761\u5224\u65AD\uFF1B\u6BCF\u4E00\u9879\u90FD\u53EF\u4EE5\u5355\u72EC\u5173\u6389\u3002" })
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u547D\u4E2D\u6807\u6CE8\u7684\u5C97\u4F4D\u4E00\u5F8B\u4E0D\u663E\u793A\u3002\u6807\u6CE8\u662F\u672C\u5730\u89C4\u5219\u7B97\u51FA\u6765\u7684\uFF08\u5916\u5305/\u9AD8\u98CE\u9669/\u50F5\u5C38\u5C97/\u9ED1\u8BDD\u7B49\uFF09\uFF0C\u4E0D\u9700\u8981\u4F60\u9010\u6761\u5224\u65AD\uFF1B\u6BCF\u4E00\u9879\u90FD\u53EF\u4EE5\u5355\u72EC\u5173\u6389\u3002\u6700\u540E\u4E00\u9879\u662F\u516C\u53F8\u9ED1\u540D\u5355\uFF1A\u62C9\u9ED1\u8FC7\u7684\u516C\u53F8\u9ED8\u8BA4\u4E0D\u663E\u793A\uFF0C\u9690\u85CF\u4E86\u51E0\u6761\u4F1A\u5728\u5217\u8868\u5934\u680F\u5199\u660E\u3002" })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", role: "group", "aria-label": "\u5C4F\u853D\u6807\u6CE8", children: JOB_FLAG_TYPES.map((type) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
 		          "button",
@@ -3064,19 +3440,32 @@ window.__ModuleLoader__.load({
 		      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "jh-jobs-filter-row", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-label", children: [
 		          "\u6298\u53E0",
-		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u540C\u4E00\u6761\u5C97\u4F4D\u5728\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u53EA\u663E\u793A\u4E00\u884C\uFF08\u5C55\u5F00\u53EF\u770B\u5404\u5E73\u53F0\u5BF9\u7167\uFF09\u3002\u6761\u6570\u4E0E\u5206\u9875\u4E5F\u8DDF\u7740\u6309\u6298\u53E0\u540E\u7B97\u3002\u9ED8\u8BA4\u5173\u95ED\uFF1A\u6298\u53E0\u4F1A\u5C11\u663E\u793A\u884C\uFF0C\u300C\u9ED8\u8BA4\u5C11\u663E\u793A\u300D\u662F\u66FF\u4F60\u505A\u51B3\u5B9A\u3002" })
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(FieldHint, { text: "\u540C\u4E00\u6761\u5C97\u4F4D\u5728\u591A\u4E2A\u5E73\u53F0\u5404\u6293\u4E00\u6761\u65F6\u53EA\u663E\u793A\u4E00\u884C\uFF08\u5C55\u5F00\u53EF\u770B\u5404\u5E73\u53F0\u5BF9\u7167\uFF09\uFF0C\u7EC4\u5185\u4FDD\u7559\u7684\u90A3\u4E00\u6761\u8DDF\u7740\u5F53\u524D\u6392\u5E8F\u8D70\uFF08\u6309\u5339\u914D\u5206\u6392\u5C31\u7559\u5206\u6700\u9AD8\u7684\u90A3\u6761\uFF09\u3002\u6761\u6570\u4E0E\u5206\u9875\u4E5F\u8DDF\u7740\u6309\u6298\u53E0\u540E\u7B97\u3002\u9ED8\u8BA4\u5173\u95ED\uFF1A\u6298\u53E0\u4F1A\u5C11\u663E\u793A\u884C\uFF0C\u300C\u9ED8\u8BA4\u5C11\u663E\u793A\u300D\u662F\u66FF\u4F60\u505A\u51B3\u5B9A\u3002" })
 		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "jh-jobs-filter-body", children: /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-check", children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
-		            "input",
-		            {
-		              type: "checkbox",
-		              checked: draft.groupDuplicates,
-		              onChange: (event) => props.onGroupDuplicates(event.target.checked)
-		            }
-		          ),
-		          "\u8DE8\u5E73\u53F0\u6298\u53E0\uFF08\u540C\u4E00\u6761\u5C97\u4F4D\u53EA\u663E\u793A\u4E00\u884C\uFF09"
-		        ] }) })
+		        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "jh-jobs-filter-body", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-check", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		              "input",
+		              {
+		                type: "checkbox",
+		                checked: draft.groupDuplicates,
+		                onChange: (event) => props.onGroupDuplicates(event.target.checked)
+		              }
+		            ),
+		            "\u8DE8\u5E73\u53F0\u6298\u53E0\uFF08\u540C\u4E00\u6761\u5C97\u4F4D\u53EA\u663E\u793A\u4E00\u884C\uFF09"
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("label", { className: "jh-check", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+		              "input",
+		              {
+		                type: "checkbox",
+		                checked: draft.excludeBlacklisted,
+		                onChange: (event) => props.onExcludeBlacklisted(event.target.checked)
+		              }
+		            ),
+		            "\u6392\u9664\u5DF2\u62C9\u9ED1\u516C\u53F8\u7684\u5C97\u4F4D"
+		          ] })
+		        ] })
 		      ] })
 		    ] })
 		  ] });
@@ -3090,7 +3479,12 @@ window.__ModuleLoader__.load({
 		  eduReqs: [],
 		  state: "",
 		  minSalary: "",
+		  minScore: "",
 		  excludeFlags: [],
+		  // 「排除已拉黑公司」默认**开着**（第五轮，批次 B）：拉黑一家公司之后，
+		  // 它在岗位库里继续天天出现是显而易见的浪费。但这件事绝不静默 ——
+		  // 列表头栏会写明"已隐藏 N 条"，一键就能显示回来（见 `index.tsx`）。
+		  excludeBlacklisted: true,
 		  groupDuplicates: false,
 		  newWindow: "",
 		  orderBy: "crawled_at",
@@ -3101,7 +3495,18 @@ window.__ModuleLoader__.load({
 		}
 		function sameFilters(left, right) {
 		  const sameList = (a, b) => a.length === b.length && a.every((item) => b.includes(item));
-		  return left.q === right.q && left.state === right.state && left.minSalary === right.minSalary && left.newWindow === right.newWindow && left.groupDuplicates === right.groupDuplicates && left.orderBy === right.orderBy && left.descending === right.descending && sameList(left.cities, right.cities) && sameList(left.expBuckets, right.expBuckets) && sameList(left.eduReqs, right.eduReqs) && sameList(left.excludeFlags, right.excludeFlags);
+		  return left.q === right.q && left.state === right.state && left.minSalary === right.minSalary && left.minScore === right.minScore && left.newWindow === right.newWindow && left.groupDuplicates === right.groupDuplicates && left.excludeBlacklisted === right.excludeBlacklisted && left.orderBy === right.orderBy && left.descending === right.descending && sameList(left.cities, right.cities) && sameList(left.expBuckets, right.expBuckets) && sameList(left.eduReqs, right.eduReqs) && sameList(left.excludeFlags, right.excludeFlags);
+		}
+		function digitsOf(value) {
+		  return value.replace(/[^0-9]/g, "");
+		}
+		function clampScoreInput(value) {
+		  const digits = digitsOf(value).slice(0, 3);
+		  if (digits === "") return "";
+		  return String(Math.min(100, Number(digits)));
+		}
+		function salaryInput(value) {
+		  return digitsOf(value).slice(0, 7);
 		}
 		function expandExpBuckets(ids, chips) {
 		  const wanted = new Set(ids);
@@ -3207,6 +3612,10 @@ window.__ModuleLoader__.load({
 		  const requirements = [job.expReq, job.eduReq].filter((item) => item !== "").join("\xB7");
 		  const crawled = relativeTime(job.crawledAt) ?? job.crawledAt;
 		  const seen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt;
+		  const freshness = jobFreshnessOf(job.lastSeenAt);
+		  const badge = jobProgressBadgeOf(job);
+		  const stateMark = badge.source !== "state" && job.state !== "new" && job.state !== "seen" ? JOB_STATE_LABEL[job.state] : null;
+		  const statusText = stateMark === null ? badge.label : `${badge.label}\uFF0C${stateMark}`;
 		  const dedupGroupId = job.dedupGroupId;
 		  const signals = [
 		    job.matchScore === null ? "" : `\u7C97\u7B5B ${String(job.matchScore)}`,
@@ -3230,7 +3639,7 @@ window.__ModuleLoader__.load({
 		          className: `jh-job${active ? " jh-job-active" : ""}`,
 		          "data-job-id": job.id,
 		          "aria-current": active ? "true" : void 0,
-		          "aria-label": `\u5C97\u4F4D\uFF1A${job.title}\uFF0C${job.salaryRaw}\uFF0C${job.city}${job.district === "" ? "" : `\xB7${job.district}`}\uFF0C${JOB_STATE_LABEL[job.state]}${signals === "" ? "" : `\uFF0C${signals}`}`,
+		          "aria-label": `\u5C97\u4F4D\uFF1A${job.title}\uFF0C${job.salaryRaw}\uFF0C${job.city}${job.district === "" ? "" : `\xB7${job.district}`}\uFF0C${statusText}${signals === "" ? "" : `\uFF0C${signals}`}`,
 		          onClick: () => props.onSelect(job.id),
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { className: "jh-job-main", "aria-hidden": "true", children: [
@@ -3246,29 +3655,55 @@ window.__ModuleLoader__.load({
 		              ] }),
 		              /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { className: "jh-job-origin", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { children: job.platformName ?? job.platformId }),
-		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { title: localDateTime(job.crawledAt), children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { title: formatLocalDateTime(job.crawledAt), children: [
 		                  "\u6293\u53D6 ",
 		                  crawled
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { title: localDateTime(job.lastSeenAt), children: [
-		                  "\u6700\u8FD1\u89C1\u5230 ",
-		                  seen
-		                ] }),
+		                /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)(
+		                  "span",
+		                  {
+		                    className: freshness === null ? void 0 : freshness.level === "fresh" ? "jh-ok" : freshness.level === "stale" ? "jh-warn" : "jh-error",
+		                    title: `\u6211\u4EEC\u6700\u8FD1\u4E00\u6B21\u5728\u5E73\u53F0\u4E0A\u89C1\u5230\u5B83\uFF1A${formatLocalDateTime(job.lastSeenAt)}${freshness === null ? "" : `\uFF08${freshness.label}\uFF0C\u7EA6 ${String(freshness.hours)} \u5C0F\u65F6\u524D\uFF09`}`,
+		                    children: [
+		                      "\u6700\u8FD1\u89C1\u5230 ",
+		                      seen
+		                    ]
+		                  }
+		                ),
 		                dedupGroupId === null ? null : /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { className: "jh-dedup-badge", title: "\u4E0E\u5176\u5B83\u5E73\u53F0\u7684\u540C\u4E00\u5C97\u4F4D\u5408\u5E76\u6210\u4E86\u4E00\u7EC4", children: "\u8DE8\u5E73\u53F0" })
 		              ] }),
 		              job.tags.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { className: "jh-tags", children: job.tags.slice(0, 8).map((tag) => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { className: "jh-tag", children: tag }, tag)) }),
 		              (job.flagTypes.length > 0 || job.matchScore !== null) && /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { className: "jh-job-signals", children: [
 		                job.matchScore === null ? null : (
-		                  // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）
-		                  /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)("span", { className: "jh-score", children: [
-		                    "\u7C97\u7B5B ",
-		                    job.matchScore
-		                  ] })
+		                  // 明确写「粗筛」：L1 规则分不是完整评估（§4.5.1）。
+		                  // 分数过期（批次 A2）时**照旧显示**，但降饱和 + 加一句"按旧简历"：
+		                  // 假装配当前分数是撒谎，直接藏起来又丢掉了相对排序的信息。
+		                  /* @__PURE__ */ (0, import_jsx_runtime32.jsxs)(
+		                    "span",
+		                    {
+		                      className: `jh-score${job.scoreStale ? " jh-score-stale" : ""}`,
+		                      title: job.scoreStale ? "\u8FD9\u4E2A\u5206\u662F\u65E7\u7248\u7B80\u5386\u4E0B\u7B97\u51FA\u6765\u7684 \u2014\u2014 \u5F53\u524D\u542F\u7528\u7B80\u5386\u5DF2\u6539\u7248\u3002\u5B83\u4ECD\u80FD\u53CD\u6620\u5F53\u65F6\u7684\u76F8\u5BF9\u6392\u5E8F\uFF0C\u4F46\u8981\u4E0D\u4F5C\u6570\u3002\u7528\u5217\u8868\u5934\u680F\u7684\u300C\u91CD\u7B97\u8FC7\u671F\u5206\u6570\u300D\u5237\u65B0\u3002" : void 0,
+		                      children: [
+		                        "\u7C97\u7B5B ",
+		                        Math.round(job.matchScore),
+		                        job.scoreStale ? "\uFF08\u6309\u65E7\u7B80\u5386\uFF09" : ""
+		                      ]
+		                    }
+		                  )
 		                ),
 		                job.flagTypes.map((type) => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { className: `jh-flag jh-flag-${type}`, children: JOB_FLAG_LABEL[type] }, type))
 		              ] })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { className: `jh-state jh-state-${job.state}`, "aria-hidden": "true", children: JOB_STATE_LABEL[job.state] })
+		            /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(
+		              "span",
+		              {
+		                className: `jh-state${badge.variant === "" ? "" : ` jh-state-${badge.variant}`}`,
+		                title: badge.source === "application" ? `\u6295\u9012\u9636\u6BB5\uFF1A${badge.label}\uFF08\u6700\u8FD1\u4E00\u6B21\u6295\u9012\u7684\u72B6\u6001\uFF09` : badge.source === "contact" ? `\u63A5\u89E6\u6001\uFF1A${badge.label}\uFF08\u6700\u8FD1\u4E00\u6761\u6253\u62DB\u547C\u8BB0\u5F55\u7684\u72B6\u6001\uFF09` : `\u5C97\u4F4D\u5904\u7F6E\u6001\uFF1A${badge.label}`,
+		                "aria-hidden": "true",
+		                children: badge.label
+		              }
+		            ),
+		            stateMark === null ? null : /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("span", { className: `jh-state jh-state-${job.state}`, title: `\u5C97\u4F4D\u5904\u7F6E\u6001\uFF1A${stateMark}`, "aria-hidden": "true", children: stateMark })
 		          ]
 		        }
 		      ),
@@ -3371,22 +3806,34 @@ window.__ModuleLoader__.load({
 
 		// src/client/screens/jobs/index.tsx
 		var import_jsx_runtime34 = require("react/jsx-runtime");
+		function reasonOf3(error) {
+		  return error instanceof ApiError ? error.display : error instanceof Error ? error.message : String(error);
+		}
 		function JobsScreen(props) {
-		  const [draft, setDraft] = (0, import_react15.useState)(EMPTY_FILTERS);
-		  const [applied, setApplied] = (0, import_react15.useState)(EMPTY_FILTERS);
-		  const [page, setPage] = (0, import_react15.useState)(1);
-		  const [openGroup, setOpenGroup] = (0, import_react15.useState)(null);
-		  const [advancedOpen, setAdvancedOpen] = (0, import_react15.useState)(false);
-		  const [picked, setPicked] = (0, import_react15.useState)([]);
-		  const [greetTargets, setGreetTargets] = (0, import_react15.useState)(null);
-		  const [deliverTargets, setDeliverTargets] = (0, import_react15.useState)(null);
-		  const [batchNote, setBatchNote] = (0, import_react15.useState)(null);
+		  const [draft, setDraft] = (0, import_react16.useState)(EMPTY_FILTERS);
+		  const [applied, setApplied] = (0, import_react16.useState)(EMPTY_FILTERS);
+		  const [page, setPage] = (0, import_react16.useState)(1);
+		  const [openGroup, setOpenGroup] = (0, import_react16.useState)(null);
+		  const [advancedOpen, setAdvancedOpen] = (0, import_react16.useState)(false);
+		  const [picked, setPicked] = (0, import_react16.useState)([]);
+		  const [greetTargets, setGreetTargets] = (0, import_react16.useState)(null);
+		  const [deliverTargets, setDeliverTargets] = (0, import_react16.useState)(null);
+		  const [notice, setNotice] = (0, import_react16.useState)(null);
+		  const [views, setViews] = (0, import_react16.useState)([]);
+		  const [appliedViewId, setAppliedViewId] = (0, import_react16.useState)("");
+		  const [markingBatch, setMarkingBatch] = (0, import_react16.useState)(false);
+		  const [undoMark, setUndoMark] = (0, import_react16.useState)(null);
+		  const [recomputing, setRecomputing] = (0, import_react16.useState)(false);
 		  const facets = useAsync((signal) => fetchJobFacets(signal), []);
 		  const facetData = facets.state.status === "ok" ? facets.state.data : null;
 		  const citiesAll = facetData?.cities ?? [];
 		  const eduAll = sortEduValues(facetData?.eduReqs ?? []);
 		  const expChips = buildExpChips(facetData?.expReqs ?? []);
 		  const appliedExpReqs = expandExpBuckets(applied.expBuckets, expChips);
+		  const viewsQuery = useAsync((signal) => fetchJobViews(signal), []);
+		  (0, import_react16.useEffect)(() => {
+		    if (viewsQuery.state.status === "ok") setViews(viewsQuery.state.data.views);
+		  }, [viewsQuery.state]);
 		  const { state, reload, refreshing } = useAsync(
 		    (signal) => fetchJobs(
 		      {
@@ -3396,7 +3843,11 @@ window.__ModuleLoader__.load({
 		        eduReqs: applied.eduReqs,
 		        state: applied.state,
 		        minSalary: applied.minSalary === "" ? null : Number(applied.minSalary),
+		        // 匹配分门槛（批次 A）：空串 = 不限。未打分的岗位不会被返回（见 JobListParams）
+		        minScore: applied.minScore === "" ? null : Number(applied.minScore),
 		        excludeFlags: applied.excludeFlags,
+		        // 排除已拉黑公司（批次 B）：默认开着，隐藏了几条由服务端算好一起回传
+		        excludeBlacklisted: applied.excludeBlacklisted,
 		        groupDuplicates: applied.groupDuplicates,
 		        // 「只看新增」：把时间窗算成 ISO 再传（宿主只做比较，不猜"今天"从哪算起）
 		        firstSeenSince: firstSeenSinceOf(applied.newWindow),
@@ -3415,7 +3866,7 @@ window.__ModuleLoader__.load({
 		    // 重取期间沿用上一次结果，界面另用 refreshing 说明"这是旧数据，正在更新"。
 		    { keepPrevious: true }
 		  );
-		  (0, import_react15.useEffect)(() => {
+		  (0, import_react16.useEffect)(() => {
 		    if (state.status !== "ok") return;
 		    if (state.data.total === 0 || state.data.items.length > 0) return;
 		    const lastPage = Math.max(1, Math.ceil(state.data.total / PAGE_SIZE_DEFAULT));
@@ -3424,6 +3875,9 @@ window.__ModuleLoader__.load({
 		  const setCity = (city) => {
 		    setDraft((current) => ({ ...current, cities: city === "" ? [] : [city] }));
 		  };
+		  const toggleCity = (city) => {
+		    setDraft((current) => ({ ...current, cities: toggleValue(current.cities, city) }));
+		  };
 		  const setKeyword = (q) => {
 		    setDraft({ ...draft, q });
 		  };
@@ -3431,7 +3885,18 @@ window.__ModuleLoader__.load({
 		    setDraft({ ...draft, state: state2 });
 		  };
 		  const setMinSalary = (minSalary) => {
-		    setDraft({ ...draft, minSalary: minSalary.replace(/[^0-9]/g, "") });
+		    setDraft({ ...draft, minSalary: salaryInput(minSalary) });
+		  };
+		  const setMinScore = (minScore) => {
+		    setDraft({ ...draft, minScore: clampScoreInput(minScore) });
+		  };
+		  const setExcludeBlacklisted = (excludeBlacklisted) => {
+		    setDraft((current) => ({ ...current, excludeBlacklisted }));
+		  };
+		  const showBlacklistedJobs = () => {
+		    setDraft((current) => ({ ...current, excludeBlacklisted: false }));
+		    setApplied((current) => ({ ...current, excludeBlacklisted: false }));
+		    setPage(1);
 		  };
 		  const setNewWindow = (newWindow) => {
 		    setDraft({ ...draft, newWindow });
@@ -3458,11 +3923,14 @@ window.__ModuleLoader__.load({
 		    event.preventDefault();
 		    setApplied(draft);
 		    setPage(1);
+		    const using = views.find((item) => item.id === appliedViewId);
+		    if (using !== void 0 && !sameFilters(draft, using.filters)) setAppliedViewId("");
 		  };
 		  const reset = () => {
 		    setDraft(EMPTY_FILTERS);
 		    setApplied(EMPTY_FILTERS);
 		    setPage(1);
+		    setAppliedViewId("");
 		  };
 		  const changeOrder = (orderBy) => {
 		    setDraft((current) => ({ ...current, orderBy }));
@@ -3470,23 +3938,115 @@ window.__ModuleLoader__.load({
 		    setPage(1);
 		  };
 		  const greetOne = (id) => {
-		    setBatchNote(null);
+		    setNotice(null);
 		    setGreetTargets([id]);
 		  };
 		  const deliverOne = (id) => {
-		    setBatchNote(null);
+		    setNotice(null);
 		    setDeliverTargets([id]);
 		  };
 		  const greetPicked = () => {
-		    setBatchNote(null);
+		    setNotice(null);
 		    setGreetTargets(picked);
 		  };
 		  const deliverPicked = () => {
-		    setBatchNote(null);
+		    setNotice(null);
 		    setDeliverTargets(picked);
 		  };
 		  const clearPicked = () => {
 		    setPicked([]);
+		  };
+		  const markPicked = async (next) => {
+		    if (picked.length === 0) return;
+		    const ids = picked;
+		    setMarkingBatch(true);
+		    setNotice(null);
+		    try {
+		      const result = await markJobs(ids, next);
+		      const label = JOB_STATE_LABEL[next];
+		      setNotice({
+		        tone: result.missing.length === 0 ? "ok" : "error",
+		        text: `\u5DF2\u628A ${String(result.total)} \u6761\u6807\u4E3A\u300C${label}\u300D` + (result.missing.length === 0 ? "" : `\uFF1B\u6709 ${String(result.missing.length)} \u6761\u5DF2\u4E0D\u5B58\u5728\uFF08${result.missing.join("\u3001")}\uFF09`)
+		      });
+		      setUndoMark({ ids: result.missing.length === 0 ? ids : ids.filter((id) => !result.missing.includes(id)), count: result.total });
+		      setPicked([]);
+		      reload();
+		      props.onChanged();
+		    } catch (error) {
+		      setNotice({ tone: "error", text: `\u6279\u91CF\u6807\u8BB0\u5931\u8D25\uFF1A${reasonOf3(error)}` });
+		    } finally {
+		      setMarkingBatch(false);
+		    }
+		  };
+		  const undoLastMark = async () => {
+		    if (undoMark === null || undoMark.ids.length === 0) return;
+		    setMarkingBatch(true);
+		    try {
+		      const result = await markJobs(undoMark.ids, "seen");
+		      setNotice({ tone: "ok", text: `\u5DF2\u628A ${String(result.total)} \u6761\u6807\u56DE\u300C\u5DF2\u8BFB\u300D` });
+		      setUndoMark(null);
+		      reload();
+		      props.onChanged();
+		    } catch (error) {
+		      setNotice({ tone: "error", text: `\u64A4\u9500\u5931\u8D25\uFF1A${reasonOf3(error)}` });
+		    } finally {
+		      setMarkingBatch(false);
+		    }
+		  };
+		  const copyPicked = async () => {
+		    const rows = state.status === "ok" ? state.data.items.filter((job) => picked.includes(job.id)) : [];
+		    if (rows.length === 0) {
+		      setNotice({ tone: "error", text: "\u672C\u9875\u6CA1\u6709\u52FE\u9009\u4E2D\u7684\u5C97\u4F4D\uFF08\u52FE\u9009\u53EF\u4EE5\u8DE8\u9875\uFF0C\u4F46\u590D\u5236\u53EA\u5E26\u672C\u9875\u90A3\u51E0\u6761\uFF09" });
+		      return;
+		    }
+		    const ok = await copyText(jobsToMarkdown(rows));
+		    setNotice(
+		      ok ? { tone: "ok", text: `\u5DF2\u590D\u5236\u672C\u9875 ${String(rows.length)} \u6761\u4E3A Markdown \u8868\u683C\uFF08\u8DE8\u9875\u52FE\u9009\u7684\u5176\u4F59\u51E0\u6761\u8981\u7FFB\u5230\u90A3\u4E00\u9875\u518D\u590D\u5236\uFF09` } : { tone: "error", text: "\u590D\u5236\u5931\u8D25\uFF1A\u8FD9\u4E2A\u73AF\u5883\u91CC\u526A\u8D34\u677F\u4E0D\u53EF\u7528\uFF0C\u53EF\u4EE5\u6539\u7528\u300C\u5BFC\u51FA CSV\u300D" }
+		    );
+		  };
+		  const recomputeScores = async () => {
+		    setRecomputing(true);
+		    try {
+		      const result = await recomputeStaleScores();
+		      setNotice({ tone: "ok", text: result.note });
+		      reload();
+		    } catch (error) {
+		      setNotice({ tone: "error", text: `\u91CD\u7B97\u5931\u8D25\uFF1A${reasonOf3(error)}` });
+		    } finally {
+		      setRecomputing(false);
+		    }
+		  };
+		  const applyView = (id) => {
+		    setAppliedViewId(id);
+		    if (id === "") return;
+		    const view = views.find((item) => item.id === id);
+		    if (view === void 0) return;
+		    setDraft(view.filters);
+		    setApplied(view.filters);
+		    setPage(1);
+		  };
+		  const persistViews = async (next) => {
+		    try {
+		      const saved = await saveJobViews(next);
+		      setViews(saved.views);
+		    } catch (error) {
+		      setAppliedViewId("");
+		      setNotice({ tone: "error", text: `\u4FDD\u5B58\u89C6\u56FE\u5931\u8D25\uFF1A${reasonOf3(error)}` });
+		    }
+		  };
+		  const saveCurrentView = (name2) => {
+		    const id = `view-${String(Date.now())}`;
+		    const next = [...views, { id, name: name2, filters: applied }];
+		    setAppliedViewId(id);
+		    void persistViews(next);
+		    setNotice({ tone: "ok", text: `\u5DF2\u4FDD\u5B58\u89C6\u56FE\u300C${name2}\u300D` });
+		  };
+		  const deleteView = (id) => {
+		    const view = views.find((item) => item.id === id);
+		    if (view === void 0) return;
+		    setAppliedViewId("");
+		    void persistViews(views.filter((item) => item.id !== id));
+		    setNotice({ tone: "ok", text: `\u5DF2\u5220\u9664\u89C6\u56FE\u300C${view.name}\u300D\uFF08\u5217\u8868\u6761\u4EF6\u4FDD\u6301\u4E0D\u52A8\uFF09` });
 		  };
 		  const togglePick = (id, checked) => {
 		    setPicked(
@@ -3496,7 +4056,7 @@ window.__ModuleLoader__.load({
 		  const toggleGroup = (groupId) => {
 		    setOpenGroup(openGroup === groupId ? null : groupId);
 		  };
-		  const [marking, setMarking] = (0, import_react15.useState)(null);
+		  const [marking, setMarking] = (0, import_react16.useState)(null);
 		  const quickMark = async (id, state2) => {
 		    setMarking(id);
 		    try {
@@ -3514,7 +4074,9 @@ window.__ModuleLoader__.load({
 		  const hasFilters = !sameFilters(applied, EMPTY_FILTERS);
 		  const beyondLastPage = state.status === "ok" && state.data.items.length === 0 && total > 0 && page > pages;
 		  const appliedWindowLabel = JOB_NEW_WINDOWS.find((item) => item.value === applied.newWindow)?.label ?? null;
-		  const advancedCount = draft.expBuckets.length + draft.eduReqs.length + draft.excludeFlags.length + (draft.newWindow === "" ? 0 : 1) + (draft.groupDuplicates ? 1 : 0);
+		  const advancedCount = draft.expBuckets.length + draft.eduReqs.length + draft.excludeFlags.length + (draft.newWindow === "" ? 0 : 1) + (draft.groupDuplicates ? 1 : 0) + (draft.excludeBlacklisted ? 0 : 1);
+		  const staleScoreCount = state.status === "ok" ? state.data.items.filter((job) => job.scoreStale).length : 0;
+		  const hiddenByBlacklist = state.status === "ok" ? state.data.hiddenByBlacklist ?? 0 : 0;
 		  return /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-jobs-split", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
 		      FilterBar,
@@ -3526,18 +4088,26 @@ window.__ModuleLoader__.load({
 		        advancedOpen,
 		        advancedCount,
 		        pending: pendingChanges,
+		        views,
+		        appliedViewId,
 		        onSubmit: submit,
 		        onReset: reset,
 		        onToggleAdvanced: toggleAdvanced,
 		        onKeyword: setKeyword,
 		        onCity: setCity,
+		        onCityToggle: toggleCity,
 		        onState: setState,
 		        onMinSalary: setMinSalary,
+		        onMinScore: setMinScore,
 		        onExpBucket: toggleExpBucket,
 		        onEdu: toggleEdu,
 		        onNewWindow: setNewWindow,
 		        onExcludeFlag: toggleExclude,
-		        onGroupDuplicates: setGroupDuplicates
+		        onExcludeBlacklisted: setExcludeBlacklisted,
+		        onGroupDuplicates: setGroupDuplicates,
+		        onApplyView: applyView,
+		        onSaveView: saveCurrentView,
+		        onDeleteView: deleteView
 		      }
 		    ),
 		    /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("div", { className: "jh-jobs-cols", children: [
@@ -3557,6 +4127,16 @@ window.__ModuleLoader__.load({
 		            state.data.total,
 		            " \u6761\u3002\u6362\u4E2A\u5173\u952E\u8BCD\u6216\u653E\u5BBD\u7B5B\u9009\u6761\u4EF6\u8BD5\u8BD5\uFF1B\u4E5F\u53EF\u4EE5\u56DE\u5230\u300C\u4ECA\u65E5\u300D\u624B\u52A8\u6293\u53D6\u4E00\u6B21\u3002"
 		          ] }),
+		          hiddenByBlacklist > 0 ? /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("p", { className: "jh-muted", children: [
+		            "\u53E6\u6709 ",
+		            hiddenByBlacklist,
+		            " \u6761\u6765\u81EA\u4F60\u62C9\u9ED1\u8FC7\u7684\u516C\u53F8\uFF08\u88AB\u4F60\u8BBE\u7F6E\u7684\u300C\u6392\u9664\u5DF2\u62C9\u9ED1\u516C\u53F8\u300D\u6321\u4F4F\u4E86\uFF09\xB7",
+		            /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("button", { type: "button", className: "jh-link", onClick: showBlacklistedJobs, children: [
+		              "\u663E\u793A\u8FD9 ",
+		              hiddenByBlacklist,
+		              " \u6761"
+		            ] })
+		          ] }) : null,
 		          hasFilters ? /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("button", { type: "button", className: "jh-btn", onClick: reset, children: "\u6E05\u9664\u7B5B\u9009\u6761\u4EF6" }) : null
 		        ] }),
 		        state.status === "ok" && state.data.items.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)(import_jsx_runtime34.Fragment, { children: [
@@ -3574,7 +4154,36 @@ window.__ModuleLoader__.load({
 		              pages,
 		              " \u9875"
 		            ] }),
+		            hiddenByBlacklist === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "jh-link",
+		                title: "\u8FD9\u4E9B\u5C97\u4F4D\u6765\u81EA\u4F60\u62C9\u9ED1\u8FC7\u7684\u516C\u53F8\u3002\u70B9\u4E00\u4E0B\u663E\u793A\u56DE\u6765\uFF08\u4F1A\u5173\u6389\u300C\u6392\u9664\u5DF2\u62C9\u9ED1\u516C\u53F8\u7684\u5C97\u4F4D\u300D\u8FD9\u4E2A\u7B5B\u9009\uFF09",
+		                onClick: showBlacklistedJobs,
+		                children: [
+		                  "\u5DF2\u9690\u85CF ",
+		                  hiddenByBlacklist,
+		                  " \u6761\uFF08\u5DF2\u62C9\u9ED1\u516C\u53F8\uFF09\xB7 \u663E\u793A"
+		                ]
+		              }
+		            ),
 		            refreshing ? /* @__PURE__ */ (0, import_jsx_runtime34.jsx)("span", { className: "jh-refreshing", role: "status", children: "\u66F4\u65B0\u4E2D\u2026" }) : null,
+		            staleScoreCount === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("span", { className: "jh-refreshing", children: [
+		              "\u672C\u9875 ",
+		              staleScoreCount,
+		              " \u6761\u5206\u6570\u5DF2\u8FC7\u671F\uFF08\u6309\u65E7\u7B80\u5386\u7B97\u7684\uFF09\xB7",
+		              /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
+		                "button",
+		                {
+		                  type: "button",
+		                  className: "jh-link",
+		                  disabled: recomputing,
+		                  onClick: () => void recomputeScores(),
+		                  children: recomputing ? "\u91CD\u7B97\u4E2D\u2026" : "\u91CD\u7B97\u8FC7\u671F\u5206\u6570"
+		                }
+		              )
+		            ] }),
 		            /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("span", { className: "jh-listbar-right", children: [
 		              state.data.items.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("label", { className: "jh-check", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
@@ -3606,20 +4215,41 @@ window.__ModuleLoader__.load({
 		              /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(Pager, { page: state.data.page, pages, hasMore: state.data.hasMore, onGo: setPage })
 		            ] })
 		          ] }),
-		          batchNote === null ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
+		          notice === null ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
 		            "p",
 		            {
-		              className: batchNote.tone === "ok" ? "jh-ok" : "jh-error",
-		              role: batchNote.tone === "ok" ? "status" : "alert",
-		              children: batchNote.text
+		              className: notice.tone === "ok" ? "jh-ok" : "jh-error",
+		              role: notice.tone === "ok" ? "status" : "alert",
+		              children: notice.text
 		            }
 		          ),
+		          undoMark === null ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)("p", { className: "jh-muted", children: [
+		            "\u521A\u5904\u7F6E\u7684\u90A3\u6279\u8FD8\u53EF\u4EE5\u64A4\u9500\uFF1A",
+		            /* @__PURE__ */ (0, import_jsx_runtime34.jsxs)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "jh-link",
+		                disabled: markingBatch,
+		                onClick: () => void undoLastMark(),
+		                children: [
+		                  "\u64A4\u9500 ",
+		                  undoMark.count,
+		                  " \u6761\uFF08\u6807\u56DE\u300C\u5DF2\u8BFB\u300D\uFF09"
+		                ]
+		              }
+		            )
+		          ] }),
 		          picked.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
 		            BatchToolbar,
 		            {
 		              count: picked.length,
+		              busy: markingBatch,
+		              exportHref: jobsExportUrl(picked),
 		              onGreet: greetPicked,
 		              onDeliver: deliverPicked,
+		              onMark: (next) => void markPicked(next),
+		              onCopy: () => void copyPicked(),
 		              onClear: clearPicked
 		            }
 		          ),
@@ -3661,7 +4291,7 @@ window.__ModuleLoader__.load({
 		          reload();
 		          props.onChanged();
 		        },
-		        notify: (tone, text) => setBatchNote({ tone, text })
+		        notify: (tone, text) => setNotice({ tone, text })
 		      }
 		    ),
 		    deliverTargets === null ? null : /* @__PURE__ */ (0, import_jsx_runtime34.jsx)(
@@ -3673,7 +4303,7 @@ window.__ModuleLoader__.load({
 		          reload();
 		          props.onChanged();
 		        },
-		        notify: (tone, text) => setBatchNote({ tone, text })
+		        notify: (tone, text) => setNotice({ tone, text })
 		      }
 		    )
 		  ] });
@@ -3812,23 +4442,23 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/inbox/index.tsx
-		var import_react16 = require("react");
+		var import_react17 = require("react");
 		var import_jsx_runtime35 = require("react/jsx-runtime");
 		function InboxScreen(props) {
 		  const inbox = useAsync((signal) => fetchInbox({}, signal), [props.revision]);
-		  const [unreadOnly, setUnreadOnly] = (0, import_react16.useState)(false);
+		  const [unreadOnly, setUnreadOnly] = (0, import_react17.useState)(false);
 		  const filtered = useAsync(
 		    (signal) => fetchInbox({ unreadOnly }, signal),
 		    [props.revision, unreadOnly]
 		  );
-		  const [draft, setDraft] = (0, import_react16.useState)("");
-		  const [replyTo, setReplyTo] = (0, import_react16.useState)(null);
-		  const [replyText, setReplyText] = (0, import_react16.useState)("");
-		  const [draftingScenario, setDraftingScenario] = (0, import_react16.useState)(null);
-		  const [busy, setBusy] = (0, import_react16.useState)(false);
-		  const [syncing, setSyncing] = (0, import_react16.useState)(false);
-		  const [error, setError] = (0, import_react16.useState)(null);
-		  const [notice, setNotice] = (0, import_react16.useState)(null);
+		  const [draft, setDraft] = (0, import_react17.useState)("");
+		  const [replyTo, setReplyTo] = (0, import_react17.useState)(null);
+		  const [replyText, setReplyText] = (0, import_react17.useState)("");
+		  const [draftingScenario, setDraftingScenario] = (0, import_react17.useState)(null);
+		  const [busy, setBusy] = (0, import_react17.useState)(false);
+		  const [syncing, setSyncing] = (0, import_react17.useState)(false);
+		  const [error, setError] = (0, import_react17.useState)(null);
+		  const [notice, setNotice] = (0, import_react17.useState)(null);
 		  const syncFromPlatforms = async () => {
 		    setSyncing(true);
 		    setError(null);
@@ -3861,9 +4491,9 @@ window.__ModuleLoader__.load({
 		      setSyncing(false);
 		    }
 		  };
-		  const [extracting, setExtracting] = (0, import_react16.useState)(null);
-		  const [creating, setCreating] = (0, import_react16.useState)(false);
-		  const [extractPanel, setExtractPanel] = (0, import_react16.useState)(null);
+		  const [extracting, setExtracting] = (0, import_react17.useState)(null);
+		  const [creating, setCreating] = (0, import_react17.useState)(false);
+		  const [extractPanel, setExtractPanel] = (0, import_react17.useState)(null);
 		  const patchExtract = (patch) => {
 		    setExtractPanel((current) => current === null ? null : { ...current, ...patch });
 		  };
@@ -4223,17 +4853,17 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/interviews/index.tsx
-		var import_react17 = require("react");
+		var import_react18 = require("react");
 		var import_jsx_runtime37 = require("react/jsx-runtime");
 		function InterviewsScreen(props) {
 		  const list = useAsync((signal) => fetchInterviews(signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react17.useState)(false);
-		  const [error, setError] = (0, import_react17.useState)(null);
-		  const [notice, setNotice] = (0, import_react17.useState)(null);
-		  const [prepId, setPrepId] = (0, import_react17.useState)(null);
-		  const [at, setAt] = (0, import_react17.useState)("");
-		  const [kind, setKind] = (0, import_react17.useState)("video");
-		  const [commute, setCommute] = (0, import_react17.useState)("");
+		  const [busy, setBusy] = (0, import_react18.useState)(false);
+		  const [error, setError] = (0, import_react18.useState)(null);
+		  const [notice, setNotice] = (0, import_react18.useState)(null);
+		  const [prepId, setPrepId] = (0, import_react18.useState)(null);
+		  const [at, setAt] = (0, import_react18.useState)("");
+		  const [kind, setKind] = (0, import_react18.useState)("video");
+		  const [commute, setCommute] = (0, import_react18.useState)("");
 		  const run = async (fn, done) => {
 		    setBusy(true);
 		    setError(null);
@@ -4501,11 +5131,11 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/board/salary-box-chart.tsx
-		var import_react18 = require("react");
+		var import_react19 = require("react");
 		var import_jsx_runtime40 = require("react/jsx-runtime");
 		function SalaryBoxChart(props) {
-		  const [hot, setHot] = (0, import_react18.useState)(null);
-		  const rectRef = (0, import_react18.useRef)(null);
+		  const [hot, setHot] = (0, import_react19.useState)(null);
+		  const rectRef = (0, import_react19.useRef)(null);
 		  const { min, p25, median, p75, max, count, withinBox, basisLabel } = props.box;
 		  if (min === null || p25 === null || median === null || p75 === null || max === null) return null;
 		  const span = max - min;
@@ -4632,7 +5262,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/board/index.tsx
-		var import_react19 = require("react");
+		var import_react20 = require("react");
 		var import_jsx_runtime42 = require("react/jsx-runtime");
 		var FILTER_SCOPE_HINT = "\u65B9\u5411\u4E0E\u7B80\u5386\u7248\u672C\u53EA\u4F5C\u7528\u4E8E\u6295\u9012\u6BB5 \u2014\u2014 \u6253\u62DB\u547C\u6CA1\u6709\u8BB0\u5F55\u7528\u8FC7\u54EA\u7248\u7B80\u5386\uFF0F\u4EC0\u4E48\u65B9\u5411\uFF0C\u63A5\u89E6\u6BB5\uFF08\u6253\u62DB\u547C/\u9001\u8FBE/\u5DF2\u8BFB/\u56DE\u590D\uFF09\u4E0D\u53D7\u8FD9\u4E24\u9879\u5F71\u54CD\u3002\u85AA\u8D44\u6765\u81EA\u5C97\u4F4D\u5E93\uFF0C\u5B83\u7684\u65F6\u95F4\u7A97\u662F\u5C97\u4F4D\u6293\u53D6\u65F6\u95F4\uFF0C\u4E0D\u662F\u4F60\u7684\u6295\u9012\u65F6\u95F4\u3002";
 		function localDayStart(date) {
@@ -4659,18 +5289,18 @@ window.__ModuleLoader__.load({
 		  return Object.entries(cleanFilter(input)).sort(([a], [b]) => a < b ? -1 : 1).map(([key, value]) => `${key}=${String(value)}`).join("&");
 		}
 		function BoardScreen(props) {
-		  const [draft, setDraft] = (0, import_react19.useState)({});
-		  const [applied, setApplied] = (0, import_react19.useState)({});
-		  const [resumeOptions, setResumeOptions] = (0, import_react19.useState)([]);
-		  const [directionOptions, setDirectionOptions] = (0, import_react19.useState)([]);
-		  (0, import_react19.useEffect)(() => {
+		  const [draft, setDraft] = (0, import_react20.useState)({});
+		  const [applied, setApplied] = (0, import_react20.useState)({});
+		  const [resumeOptions, setResumeOptions] = (0, import_react20.useState)([]);
+		  const [directionOptions, setDirectionOptions] = (0, import_react20.useState)([]);
+		  (0, import_react20.useEffect)(() => {
 		    void fetchResumes().then((result) => {
 		      setResumeOptions(result.items.map((item) => ({ id: item.id, label: `${item.name} #${String(item.id)}` })));
 		      setDirectionOptions([...new Set(result.items.map((item) => item.direction).filter((d) => d !== ""))].sort());
 		    }).catch(() => {
 		    });
 		  }, [props.revision]);
-		  const [basis, setBasis] = (0, import_react19.useState)("monthly_min");
+		  const [basis, setBasis] = (0, import_react20.useState)("monthly_min");
 		  const funnel = useAsync((signal) => fetchFunnel(applied, signal), [props.revision, applied]);
 		  const attribution = useAsync((signal) => fetchAttribution(applied, signal), [props.revision, applied]);
 		  const salaryBox = useAsync((signal) => fetchSalaryBox(applied, basis, signal), [props.revision, applied, basis]);
@@ -5067,19 +5697,19 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/pipeline/index.tsx
-		var import_react20 = require("react");
+		var import_react21 = require("react");
 		var import_jsx_runtime44 = require("react/jsx-runtime");
 		function PipelineScreen(props) {
 		  const board = useAsync((signal) => fetchBoard(signal), [props.revision]);
 		  const followUps = useAsync((signal) => fetchFollowUps(signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react20.useState)(null);
-		  const [error, setError] = (0, import_react20.useState)(null);
-		  const [openJobId, setOpenJobId] = (0, import_react20.useState)(null);
+		  const [busy, setBusy] = (0, import_react21.useState)(null);
+		  const [error, setError] = (0, import_react21.useState)(null);
+		  const [openJobId, setOpenJobId] = (0, import_react21.useState)(null);
 		  const apps = useAsync(
 		    (signal) => fetchApplications(openJobId === null ? {} : { jobId: openJobId }, signal),
 		    [openJobId, props.revision]
 		  );
-		  const run = (0, import_react20.useCallback)(
+		  const run = (0, import_react21.useCallback)(
 		    async (id, fn) => {
 		      setBusy(id);
 		      setError(null);
@@ -5305,109 +5935,6 @@ window.__ModuleLoader__.load({
 		  breached: "\u8FDD\u7EA6"
 		};
 
-		// src/shared/text/time-format.ts
-		function pad(value) {
-		  return String(value).padStart(2, "0");
-		}
-		function formatClock(date) {
-		  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-		}
-		function formatDay(date) {
-		  return `${String(date.getMonth() + 1)}\u6708${String(date.getDate())}\u65E5`;
-		}
-		function isSameDay(a, b) {
-		  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-		}
-		function formatRelative(target, now) {
-		  const deltaMs = target.getTime() - now.getTime();
-		  const abs = Math.abs(deltaMs);
-		  const future = deltaMs >= 0;
-		  if (abs < 6e4) return future ? "\u9A6C\u4E0A" : "\u521A\u521A";
-		  const minutes = Math.round(abs / 6e4);
-		  const text = abs < 60 * 6e4 ? `${String(minutes)} \u5206\u949F` : abs < 24 * 60 * 6e4 ? `${String(Math.floor(abs / (60 * 6e4)))} \u5C0F\u65F6` : `${String(Math.floor(abs / (24 * 60 * 6e4)))} \u5929`;
-		  return future ? `\u8FD8\u6709 ${text}` : `${text}\u524D`;
-		}
-		function formatLocalMoment(iso, now, options = {}) {
-		  if (iso === null || iso === "") return null;
-		  const date = new Date(iso);
-		  if (Number.isNaN(date.getTime())) {
-		    return iso;
-		  }
-		  const day = isSameDay(date, now) ? "\u4ECA\u5929" : isSameDay(new Date(now.getTime() + 24 * 60 * 60 * 1e3), date) ? "\u660E\u5929" : isSameDay(new Date(now.getTime() - 24 * 60 * 60 * 1e3), date) ? "\u6628\u5929" : formatDay(date);
-		  const absolute = `${day} ${formatClock(date)}`;
-		  return options.withRelative === false ? absolute : `${absolute} \xB7 ${formatRelative(date, now)}`;
-		}
-		function formatDuration(ms) {
-		  if (!Number.isFinite(ms) || ms < 0) return null;
-		  const seconds = Math.round(ms / 1e3);
-		  if (seconds < 60) return `${String(seconds)} \u79D2`;
-		  const minutes = Math.floor(seconds / 60);
-		  if (minutes < 60) {
-		    const rest2 = seconds % 60;
-		    return rest2 === 0 ? `${String(minutes)} \u5206` : `${String(minutes)} \u5206 ${String(rest2)} \u79D2`;
-		  }
-		  const hours = Math.floor(minutes / 60);
-		  const rest = minutes % 60;
-		  return rest === 0 ? `${String(hours)} \u5C0F\u65F6` : `${String(hours)} \u5C0F\u65F6 ${String(rest)} \u5206`;
-		}
-		function formatJitter(jitterMs) {
-		  if (!Number.isFinite(jitterMs) || jitterMs <= 0) return null;
-		  const minutes = Math.round(jitterMs / 6e4);
-		  return minutes <= 0 ? "\u542B\u4E0D\u5230 1 \u5206\u949F\u6296\u52A8" : `\u542B ${String(minutes)} \u5206\u949F\u6296\u52A8`;
-		}
-		var WEEKDAY_LABEL = ["\u5468\u65E5", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D"];
-		function formatWeekdays(weekdays) {
-		  const days = [...new Set(weekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort();
-		  if (days.length === 0 || days.length === 7) return "\u6BCF\u5929";
-		  if (days.length === 5 && days.every((day, index) => day === index + 1)) return "\u5DE5\u4F5C\u65E5";
-		  return days.map((day) => WEEKDAY_LABEL[day] ?? String(day)).join("\u3001");
-		}
-		function formatHourMinute(hour, minute) {
-		  return `${pad(hour)}:${pad(minute)}`;
-		}
-		function formatWindow(startHour, startMinute, endHour, endMinute) {
-		  const start = formatHourMinute(startHour, startMinute);
-		  const end = formatHourMinute(endHour, endMinute);
-		  const overnight = endHour * 60 + endMinute <= startHour * 60 + startMinute;
-		  return overnight ? `${start}\u2013\u6B21\u65E5 ${end}` : `${start}\u2013${end}`;
-		}
-		function clockValueOf(hour, minute) {
-		  return formatHourMinute(hour, minute);
-		}
-		function parseClockValue(text) {
-		  const match = /^(\d{1,2}):(\d{1,2})$/.exec(text.trim());
-		  if (match === null) return null;
-		  const hour = Number.parseInt(match[1] ?? "", 10);
-		  const minute = Number.parseInt(match[2] ?? "", 10);
-		  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
-		  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-		  return { hour, minute };
-		}
-		function parseClockWindow(raw) {
-		  const matched = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(raw.trim());
-		  if (matched === null) return null;
-		  const startHour = Number(matched[1]);
-		  const startMinute = Number(matched[2]);
-		  const endHour = Number(matched[3]);
-		  const endMinute = Number(matched[4]);
-		  if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59) return null;
-		  return { startHour, startMinute, endHour, endMinute };
-		}
-		function parseWindow(raw) {
-		  const window2 = parseClockWindow(raw);
-		  if (window2 === null) return null;
-		  return {
-		    start: formatHourMinute(window2.startHour, window2.startMinute),
-		    end: formatHourMinute(window2.endHour, window2.endMinute)
-		  };
-		}
-		var WEEKDAY_PRESETS = [
-		  { key: "workdays", label: "\u5DE5\u4F5C\u65E5", days: [1, 2, 3, 4, 5] },
-		  { key: "weekend", label: "\u5468\u672B", days: [0, 6] },
-		  { key: "all", label: "\u6BCF\u5929", days: [0, 1, 2, 3, 4, 5, 6] },
-		  { key: "none", label: "\u6E05\u7A7A", days: [] }
-		];
-
 		// src/client/net/campus.ts
 		async function fetchCampus(signal) {
 		  return await request("/campus", signal === void 0 ? {} : { signal });
@@ -5462,20 +5989,20 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/campus/index.tsx
-		var import_react21 = require("react");
+		var import_react22 = require("react");
 		var import_jsx_runtime45 = require("react/jsx-runtime");
 		function CampusScreen(props) {
 		  const data = useAsync((signal) => fetchCampus(signal), [props.revision]);
 		  const tripartite = useAsync((signal) => fetchTripartite(signal), [props.revision]);
 		  const deadlines = useAsync((signal) => fetchDeadlines(signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react21.useState)(false);
-		  const [error, setError] = (0, import_react21.useState)(null);
-		  const [notice, setNotice] = (0, import_react21.useState)(null);
-		  const [name2, setName] = (0, import_react21.useState)("");
-		  const [batch, setBatch] = (0, import_react21.useState)("autumn");
-		  const [closeAt, setCloseAt] = (0, import_react21.useState)("");
-		  const [dueAt, setDueAt] = (0, import_react21.useState)("");
-		  const [dueFor, setDueFor] = (0, import_react21.useState)(null);
+		  const [busy, setBusy] = (0, import_react22.useState)(false);
+		  const [error, setError] = (0, import_react22.useState)(null);
+		  const [notice, setNotice] = (0, import_react22.useState)(null);
+		  const [name2, setName] = (0, import_react22.useState)("");
+		  const [batch, setBatch] = (0, import_react22.useState)("autumn");
+		  const [closeAt, setCloseAt] = (0, import_react22.useState)("");
+		  const [dueAt, setDueAt] = (0, import_react22.useState)("");
+		  const [dueFor, setDueFor] = (0, import_react22.useState)(null);
 		  const now = /* @__PURE__ */ new Date();
 		  const run = async (fn, done) => {
 		    setBusy(true);
@@ -5786,7 +6313,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/index.tsx
-		var import_react26 = require("react");
+		var import_react27 = require("react");
 
 		// src/shared/contract/enums/crawl.ts
 		var CRAWL_STATE_LABEL = {
@@ -6135,7 +6662,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/plan-editor-modal.tsx
-		var import_react22 = require("react");
+		var import_react23 = require("react");
 
 		// src/shared/contract/enums/platform.ts
 		var MATURITY_LEVEL_LABEL = {
@@ -6198,17 +6725,17 @@ window.__ModuleLoader__.load({
 		  return parts.join(" \xB7 ");
 		}
 		function PlanEditorModal(props) {
-		  const [form, setForm] = (0, import_react22.useState)(props.initial);
-		  const [localDuplicates, setLocalDuplicates] = (0, import_react22.useState)([]);
-		  const [localNotices, setLocalNotices] = (0, import_react22.useState)([]);
-		  const [step, setStep] = (0, import_react22.useState)(0);
-		  const [rulesOpen, setRulesOpen] = (0, import_react22.useState)(false);
-		  const [advancedOpen, setAdvancedOpen] = (0, import_react22.useState)(false);
-		  const [batchPages, setBatchPages] = (0, import_react22.useState)("5");
-		  const allBoxRef = (0, import_react22.useRef)(null);
-		  const [submitting, setSubmitting] = (0, import_react22.useState)(false);
-		  const [submitError, setSubmitError] = (0, import_react22.useState)(null);
-		  const [receipt, setReceipt] = (0, import_react22.useState)(null);
+		  const [form, setForm] = (0, import_react23.useState)(props.initial);
+		  const [localDuplicates, setLocalDuplicates] = (0, import_react23.useState)([]);
+		  const [localNotices, setLocalNotices] = (0, import_react23.useState)([]);
+		  const [step, setStep] = (0, import_react23.useState)(0);
+		  const [rulesOpen, setRulesOpen] = (0, import_react23.useState)(false);
+		  const [advancedOpen, setAdvancedOpen] = (0, import_react23.useState)(false);
+		  const [batchPages, setBatchPages] = (0, import_react23.useState)("5");
+		  const allBoxRef = (0, import_react23.useRef)(null);
+		  const [submitting, setSubmitting] = (0, import_react23.useState)(false);
+		  const [submitError, setSubmitError] = (0, import_react23.useState)(null);
+		  const [receipt, setReceipt] = (0, import_react23.useState)(null);
 		  const patch = (next) => setForm((current) => ({ ...current, ...next }));
 		  const duplicates = [
 		    ...new Map(
@@ -6222,7 +6749,7 @@ window.__ModuleLoader__.load({
 		  const endMissing = endClock === null;
 		  const keywordsKey = JSON.stringify(parseKeywordsText(form.keywordsText));
 		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.overrides)}\0${JSON.stringify(form.criteria)}\0${keywordsKey}`;
-		  (0, import_react22.useEffect)(() => {
+		  (0, import_react23.useEffect)(() => {
 		    const timer = window.setTimeout(() => {
 		      void props.onValidate(form).then((result) => {
 		        setLocalDuplicates(result.duplicates);
@@ -6302,11 +6829,11 @@ window.__ModuleLoader__.load({
 		    (item) => (form.criteria[item.key] ?? "") !== ""
 		  ).length;
 		  const advancedNames = advancedItems.filter((item) => item.supported).map((item) => item.label).slice(0, 4).join(" / ") || "\u6392\u5E8F\u65B9\u5F0F / \u53D1\u5E03\u65F6\u95F4 / \u5E73\u53F0\u7279\u6709\u7EF4\u5EA6";
-		  (0, import_react22.useEffect)(() => {
+		  (0, import_react23.useEffect)(() => {
 		    if (advancedActiveCount > 0) setAdvancedOpen(true);
 		  }, [advancedActiveCount]);
 		  const allIncluded = includedCount > 0 && includedCount === props.available.length;
-		  (0, import_react22.useEffect)(() => {
+		  (0, import_react23.useEffect)(() => {
 		    const box = allBoxRef.current;
 		    if (box !== null) box.indeterminate = includedCount > 0 && !allIncluded;
 		  }, [includedCount, allIncluded]);
@@ -6415,7 +6942,7 @@ window.__ModuleLoader__.load({
 		        )
 		      ] }),
 		      children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("nav", { className: "jh-steps", "aria-label": "\u65B9\u6848\u914D\u7F6E\u6B65\u9AA4", children: PLAN_STEPS.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)(import_react22.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("nav", { className: "jh-steps", "aria-label": "\u65B9\u6848\u914D\u7F6E\u6B65\u9AA4", children: PLAN_STEPS.map((label, index) => /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)(import_react23.Fragment, { children: [
 		          index === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime46.jsx)("span", { className: "jh-step-sep", "aria-hidden": "true", children: "\u203A" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime46.jsxs)(
 		            "button",
@@ -7121,7 +7648,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/platform-matrix.tsx
-		var import_react23 = require("react");
+		var import_react24 = require("react");
 
 		// src/client/screens/collect/state-tag.tsx
 		var import_jsx_runtime51 = require("react/jsx-runtime");
@@ -7160,7 +7687,7 @@ window.__ModuleLoader__.load({
 		      const lastRun = item.governance.lastRun;
 		      const open = props.expandedId === item.id;
 		      const detailId = `jh-plat-detail-${item.id}`;
-		      return /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_react23.Fragment, { children: [
+		      return /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_react24.Fragment, { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("tr", { children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("td", { className: "jh-col-sticky", children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("code", { children: item.id }),
@@ -7488,20 +8015,20 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/adapter-maintenance.tsx
-		var import_react24 = require("react");
+		var import_react25 = require("react");
 		var import_jsx_runtime54 = require("react/jsx-runtime");
 		function stamp(at) {
 		  return at.slice(0, 16).replace("T", " ");
 		}
-		function reasonOf3(error) {
+		function reasonOf4(error) {
 		  return error instanceof ApiError ? error.display : String(error);
 		}
 		function RepairQueueCard(props) {
 		  const repairs = useAsync((signal) => fetchRepairs(void 0, signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react24.useState)(null);
-		  const [error, setError] = (0, import_react24.useState)(null);
-		  const [clearing, setClearing] = (0, import_react24.useState)(null);
-		  const [filter, setFilter] = (0, import_react24.useState)("");
+		  const [busy, setBusy] = (0, import_react25.useState)(null);
+		  const [error, setError] = (0, import_react25.useState)(null);
+		  const [clearing, setClearing] = (0, import_react25.useState)(null);
+		  const [filter, setFilter] = (0, import_react25.useState)("");
 		  const all = repairs.state.status === "ok" ? repairs.state.data.items : [];
 		  const byPlatform = repairs.state.status === "ok" ? repairs.state.data.byPlatform : [];
 		  const total = repairs.state.status === "ok" ? repairs.state.data.total : 0;
@@ -7515,7 +8042,7 @@ window.__ModuleLoader__.load({
 		      await run();
 		      repairs.reload();
 		    } catch (thrown) {
-		      setError(reasonOf3(thrown));
+		      setError(reasonOf4(thrown));
 		    } finally {
 		      setBusy(null);
 		    }
@@ -7639,18 +8166,18 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function AdapterConfigCard(props) {
-		  const [selected, setSelected] = (0, import_react24.useState)("");
+		  const [selected, setSelected] = (0, import_react25.useState)("");
 		  const platformId = selected !== "" ? selected : props.platforms[0]?.id ?? "";
 		  const config = useAsync(
 		    async (signal) => platformId === "" ? null : await fetchAdapterConfig(platformId, signal),
 		    [platformId, props.revision]
 		  );
-		  const [draft, setDraft] = (0, import_react24.useState)("");
-		  const [busy, setBusy] = (0, import_react24.useState)(false);
-		  const [error, setError] = (0, import_react24.useState)(null);
-		  const [saved, setSaved] = (0, import_react24.useState)(null);
+		  const [draft, setDraft] = (0, import_react25.useState)("");
+		  const [busy, setBusy] = (0, import_react25.useState)(false);
+		  const [error, setError] = (0, import_react25.useState)(null);
+		  const [saved, setSaved] = (0, import_react25.useState)(null);
 		  const current = config.state.status === "ok" ? config.state.data : null;
-		  (0, import_react24.useEffect)(() => {
+		  (0, import_react25.useEffect)(() => {
 		    if (current === null) return;
 		    setDraft(current.override === null ? "{}" : JSON.stringify(current.override, null, 2));
 		    setSaved(null);
@@ -7667,7 +8194,7 @@ window.__ModuleLoader__.load({
 		      config.reload();
 		      props.onChanged?.();
 		    } catch (thrown) {
-		      setError(reasonOf3(thrown));
+		      setError(reasonOf4(thrown));
 		    } finally {
 		      setBusy(false);
 		    }
@@ -7939,13 +8466,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/dedup-groups-card.tsx
-		var import_react25 = require("react");
+		var import_react26 = require("react");
 		var import_jsx_runtime57 = require("react/jsx-runtime");
 		function DedupGroupsCard(props) {
 		  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision]);
-		  const [busyId, setBusyId] = (0, import_react25.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react25.useState)(null);
-		  const [error, setError] = (0, import_react25.useState)(null);
+		  const [busyId, setBusyId] = (0, import_react26.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react26.useState)(null);
+		  const [error, setError] = (0, import_react26.useState)(null);
 		  const act = async (id, fn) => {
 		    setBusyId(id);
 		    setError(null);
@@ -8304,16 +8831,16 @@ window.__ModuleLoader__.load({
 		  const plans = useAsync((signal) => fetchPlans(signal), [props.revision]);
 		  const reasons = useAsync((signal) => fetchSkipReasons(signal), [props.revision]);
 		  const dimensions = useAsync((signal) => fetchCriteriaDimensions([], signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react26.useState)(IDLE);
-		  const [editing, setEditing] = (0, import_react26.useState)(null);
-		  const [duplicates, setDuplicates] = (0, import_react26.useState)([]);
-		  const [notices, setNotices] = (0, import_react26.useState)([]);
-		  const [errorDetail, setErrorDetail] = (0, import_react26.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react26.useState)(null);
-		  const [tab, setTab] = (0, import_react26.useState)("dashboard");
-		  const [expandedPlatform, setExpandedPlatform] = (0, import_react26.useState)(null);
-		  const [focusPlanId, setFocusPlanId] = (0, import_react26.useState)(null);
-		  const [dedupRevision, setDedupRevision] = (0, import_react26.useState)(0);
+		  const [feedback, setFeedback] = (0, import_react27.useState)(IDLE);
+		  const [editing, setEditing] = (0, import_react27.useState)(null);
+		  const [duplicates, setDuplicates] = (0, import_react27.useState)([]);
+		  const [notices, setNotices] = (0, import_react27.useState)([]);
+		  const [errorDetail, setErrorDetail] = (0, import_react27.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react27.useState)(null);
+		  const [tab, setTab] = (0, import_react27.useState)("dashboard");
+		  const [expandedPlatform, setExpandedPlatform] = (0, import_react27.useState)(null);
+		  const [focusPlanId, setFocusPlanId] = (0, import_react27.useState)(null);
+		  const [dedupRevision, setDedupRevision] = (0, import_react27.useState)(0);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -8346,7 +8873,7 @@ window.__ModuleLoader__.load({
 		  const runsLoading = scheduler.state.status === "loading";
 		  const reasonText = reasons.state.status === "ok" ? reasons.state.data.items : {};
 		  const dimensionList = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
-		  const now = (0, import_react26.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const now = (0, import_react27.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
 		  const story = status === null ? null : scheduleStoryOf(status, now);
 		  const login = (platformId) => act("\u5DF2\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u8BF7\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\uFF08\u6BCF 3 \u79D2\u68C0\u6D4B\u4E00\u6B21\uFF09", async () => {
 		    const result = await startLogin(platformId);
@@ -8704,7 +9231,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/index.tsx
-		var import_react29 = require("react");
+		var import_react30 = require("react");
 
 		// src/shared/contract/enums/resume.ts
 		var RESUME_LANGUAGE_LABEL = {
@@ -8731,7 +9258,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/resume-work.tsx
-		var import_react28 = require("react");
+		var import_react29 = require("react");
 
 		// src/client/screens/resumes/english-check-panel.tsx
 		var import_jsx_runtime62 = require("react/jsx-runtime");
@@ -8753,7 +9280,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/editors.tsx
-		var import_react27 = require("react");
+		var import_react28 = require("react");
 		var import_jsx_runtime63 = require("react/jsx-runtime");
 		function move(items, index, delta) {
 		  const target = index + delta;
@@ -8848,7 +9375,7 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function ChipsEditor(props) {
-		  const [text, setText] = (0, import_react27.useState)("");
+		  const [text, setText] = (0, import_react28.useState)("");
 		  const commit = () => {
 		    const parts = text.split(/[、,，\s]+/).map((part) => part.trim()).filter((part) => part !== "");
 		    if (parts.length > 0) props.onChange([.../* @__PURE__ */ new Set([...props.values, ...parts])]);
@@ -9501,15 +10028,15 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime69 = require("react/jsx-runtime");
 		function ResumeWork(props) {
 		  const detail = useAsync((signal) => fetchResume(props.id, signal), [props.id]);
-		  const [draft, setDraft] = (0, import_react28.useState)(null);
-		  const [dirty, setDirty] = (0, import_react28.useState)(false);
-		  const [mode, setMode] = (0, import_react28.useState)("edit");
-		  const [busy, setBusy] = (0, import_react28.useState)(null);
-		  const [error, setError] = (0, import_react28.useState)(null);
-		  const [notice, setNotice] = (0, import_react28.useState)(null);
-		  const [template, setTemplate] = (0, import_react28.useState)("concise");
-		  const [split, setSplit] = (0, import_react28.useState)(55);
-		  const bodyRef = (0, import_react28.useRef)(null);
+		  const [draft, setDraft] = (0, import_react29.useState)(null);
+		  const [dirty, setDirty] = (0, import_react29.useState)(false);
+		  const [mode, setMode] = (0, import_react29.useState)("edit");
+		  const [busy, setBusy] = (0, import_react29.useState)(null);
+		  const [error, setError] = (0, import_react29.useState)(null);
+		  const [notice, setNotice] = (0, import_react29.useState)(null);
+		  const [template, setTemplate] = (0, import_react29.useState)("concise");
+		  const [split, setSplit] = (0, import_react29.useState)(55);
+		  const bodyRef = (0, import_react29.useRef)(null);
 		  const startDrag = (clientX, clientY) => {
 		    const body = bodyRef.current;
 		    if (body === null) return;
@@ -9526,14 +10053,14 @@ window.__ModuleLoader__.load({
 		    window.addEventListener("pointermove", move2);
 		    window.addEventListener("pointerup", stop);
 		  };
-		  (0, import_react28.useEffect)(() => {
+		  (0, import_react29.useEffect)(() => {
 		    if (detail.state.status === "ok") setDraft(detail.state.data);
 		  }, [detail.state]);
-		  (0, import_react28.useEffect)(() => {
+		  (0, import_react29.useEffect)(() => {
 		    props.onDirtyChange(dirty);
 		  }, [dirty, props]);
 		  const issues = detail.state.status === "ok" ? detail.state.data.issues : [];
-		  const run = (0, import_react28.useCallback)(
+		  const run = (0, import_react29.useCallback)(
 		    async (label, fn, done) => {
 		      setBusy(label);
 		      setError(null);
@@ -9818,24 +10345,24 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime70 = require("react/jsx-runtime");
 		function ResumesScreen(props) {
 		  const list = useAsync((signal) => fetchResumes(signal), [props.revision]);
-		  const [selected, setSelected] = (0, import_react29.useState)(null);
-		  const [creating, setCreating] = (0, import_react29.useState)(false);
-		  const [query, setQuery] = (0, import_react29.useState)("");
-		  const [dirty, setDirty] = (0, import_react29.useState)(false);
-		  const [issuesById, setIssuesById] = (0, import_react29.useState)({});
+		  const [selected, setSelected] = (0, import_react30.useState)(null);
+		  const [creating, setCreating] = (0, import_react30.useState)(false);
+		  const [query, setQuery] = (0, import_react30.useState)("");
+		  const [dirty, setDirty] = (0, import_react30.useState)(false);
+		  const [issuesById, setIssuesById] = (0, import_react30.useState)({});
 		  const items = list.state.status === "ok" ? list.state.data.items : [];
-		  const shown = (0, import_react29.useMemo)(() => {
+		  const shown = (0, import_react30.useMemo)(() => {
 		    const key = query.trim().toLowerCase();
 		    if (key === "") return items;
 		    return items.filter(
 		      (item) => `${item.name} ${item.direction}`.toLowerCase().includes(key)
 		    );
 		  }, [items, query]);
-		  (0, import_react29.useEffect)(() => {
+		  (0, import_react30.useEffect)(() => {
 		    if (selected !== null || items.length === 0) return;
 		    setSelected((items.find((item) => item.isDefault) ?? items[0])?.id ?? null);
 		  }, [items, selected]);
-		  const loadIssues = (0, import_react29.useCallback)(
+		  const loadIssues = (0, import_react30.useCallback)(
 		    (id) => {
 		      if (issuesById[id] !== void 0) return;
 		      void fetchResume(id).then((detail) => {
@@ -9845,7 +10372,7 @@ window.__ModuleLoader__.load({
 		    },
 		    [issuesById]
 		  );
-		  const onCreate = (0, import_react29.useCallback)(async () => {
+		  const onCreate = (0, import_react30.useCallback)(async () => {
 		    setCreating(true);
 		    try {
 		      const created = await createResume({ name: "\u65B0\u7B80\u5386", direction: "", content: emptyResumeContent() });
@@ -9980,7 +10507,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/index.tsx
-		var import_react35 = require("react");
+		var import_react36 = require("react");
 
 		// src/client/net/ops.ts
 		async function closeTodo(id) {
@@ -10081,12 +10608,12 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/ui/number-field.tsx
-		var import_react30 = require("react");
+		var import_react31 = require("react");
 		var import_jsx_runtime71 = require("react/jsx-runtime");
 		function NumberField(props) {
-		  const [draft, setDraft] = (0, import_react30.useState)(String(props.value));
-		  const focused = (0, import_react30.useRef)(false);
-		  (0, import_react30.useEffect)(() => {
+		  const [draft, setDraft] = (0, import_react31.useState)(String(props.value));
+		  const focused = (0, import_react31.useRef)(false);
+		  (0, import_react31.useEffect)(() => {
 		    if (!focused.current) setDraft(String(props.value));
 		  }, [props.value]);
 		  const commit = () => {
@@ -10689,7 +11216,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/data-panel.tsx
-		var import_react31 = require("react");
+		var import_react32 = require("react");
 
 		// src/shared/config/retention.ts
 		var RETENTION_MIN_DAYS = 0;
@@ -10712,24 +11239,24 @@ window.__ModuleLoader__.load({
 		  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 		  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 		}
-		function reasonOf4(error) {
+		function reasonOf5(error) {
 		  return error instanceof ApiError ? error.display : String(error);
 		}
 		function DataPanel(props) {
-		  const [storageRevision, setStorageRevision] = (0, import_react31.useState)(0);
+		  const [storageRevision, setStorageRevision] = (0, import_react32.useState)(0);
 		  const storage = useAsync((signal) => fetchStorage(signal), [storageRevision]);
 		  const retention = props.current?.retention ?? null;
 		  const defaults = props.current?.derived.defaults.retention ?? null;
-		  const [draft, setDraft] = (0, import_react31.useState)(null);
+		  const [draft, setDraft] = (0, import_react32.useState)(null);
 		  const shownDays = (key) => draft?.[key] ?? retention?.[key] ?? 0;
-		  const [plan, setPlan] = (0, import_react31.useState)(null);
-		  const [selected, setSelected] = (0, import_react31.useState)([]);
-		  const [planning, setPlanning] = (0, import_react31.useState)(false);
-		  const [confirming, setConfirming] = (0, import_react31.useState)(false);
-		  const [running, setRunning] = (0, import_react31.useState)(false);
-		  const [cleanupResult, setCleanupResult] = (0, import_react31.useState)(null);
-		  const [importResult, setImportResult] = (0, import_react31.useState)(null);
-		  const [importing, setImporting] = (0, import_react31.useState)(false);
+		  const [plan, setPlan] = (0, import_react32.useState)(null);
+		  const [selected, setSelected] = (0, import_react32.useState)([]);
+		  const [planning, setPlanning] = (0, import_react32.useState)(false);
+		  const [confirming, setConfirming] = (0, import_react32.useState)(false);
+		  const [running, setRunning] = (0, import_react32.useState)(false);
+		  const [cleanupResult, setCleanupResult] = (0, import_react32.useState)(null);
+		  const [importResult, setImportResult] = (0, import_react32.useState)(null);
+		  const [importing, setImporting] = (0, import_react32.useState)(false);
 		  const loadPlan = async () => {
 		    setPlanning(true);
 		    setCleanupResult(null);
@@ -10738,7 +11265,7 @@ window.__ModuleLoader__.load({
 		      setPlan(next);
 		      setSelected(next.items.filter((item) => item.willRun).map((item) => item.id));
 		    } catch (error) {
-		      props.notify("error", reasonOf4(error));
+		      props.notify("error", reasonOf5(error));
 		    } finally {
 		      setPlanning(false);
 		    }
@@ -10755,7 +11282,7 @@ window.__ModuleLoader__.load({
 		      setPlan(null);
 		      setStorageRevision((value) => value + 1);
 		    } catch (error) {
-		      props.notify("error", reasonOf4(error));
+		      props.notify("error", reasonOf5(error));
 		    } finally {
 		      setRunning(false);
 		    }
@@ -10800,7 +11327,7 @@ window.__ModuleLoader__.load({
 		      }
 		      props.notify("ok", "\u5BFC\u5165\u5B8C\u6210");
 		    } catch (error) {
-		      props.notify("error", reasonOf4(error));
+		      props.notify("error", reasonOf5(error));
 		    } finally {
 		      setImporting(false);
 		    }
@@ -11138,7 +11665,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/logs-panel.tsx
-		var import_react34 = require("react");
+		var import_react35 = require("react");
 
 		// src/client/net/overview.ts
 		async function fetchHealth(signal) {
@@ -11216,7 +11743,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/diagnostics-panel.tsx
-		var import_react32 = require("react");
+		var import_react33 = require("react");
 
 		// src/client/ui/icons.tsx
 		var import_jsx_runtime80 = require("react/jsx-runtime");
@@ -11256,22 +11783,12 @@ window.__ModuleLoader__.load({
 		  );
 		}
 
-		// src/client/screens/settings/clipboard.ts
-		async function copyToClipboard(text) {
-		  try {
-		    await navigator.clipboard.writeText(text);
-		    return true;
-		  } catch {
-		    return false;
-		  }
-		}
-
 		// src/client/screens/settings/diagnostics-panel.tsx
 		var import_jsx_runtime81 = require("react/jsx-runtime");
 		function DiagnosticsPanel(props) {
 		  const health = props.health;
 		  const copyPath = async (path) => {
-		    if (await copyToClipboard(path)) {
+		    if (await copyText(path)) {
 		      props.notify("ok", "\u5DF2\u590D\u5236\u6570\u636E\u6587\u4EF6\u8DEF\u5F84\u3002");
 		      return;
 		    }
@@ -11369,8 +11886,8 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function LiveUptimeCard(props) {
-		  const [elapsed, setElapsed] = (0, import_react32.useState)(0);
-		  (0, import_react32.useEffect)(() => {
+		  const [elapsed, setElapsed] = (0, import_react33.useState)(0);
+		  (0, import_react33.useEffect)(() => {
 		    setElapsed(0);
 		    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1e3);
 		    return () => window.clearInterval(timer);
@@ -11520,10 +12037,10 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/payload-drawer.tsx
-		var import_react33 = require("react");
+		var import_react34 = require("react");
 		var import_jsx_runtime83 = require("react/jsx-runtime");
 		function PayloadDrawer(props) {
-		  const dialogRef = (0, import_react33.useRef)(null);
+		  const dialogRef = (0, import_react34.useRef)(null);
 		  useDialogA11y(dialogRef, props.onClose);
 		  const call = props.call;
 		  const json = JSON.stringify(
@@ -11548,7 +12065,7 @@ window.__ModuleLoader__.load({
 		    2
 		  );
 		  const copyJson = async () => {
-		    if (await copyToClipboard(json)) {
+		    if (await copyText(json)) {
 		      props.notify("ok", "\u5DF2\u590D\u5236\u8FD9\u6B21\u8C03\u7528\u7684\u5B8C\u6574\u7559\u75D5\uFF08JSON\uFF09\u3002");
 		      return;
 		    }
@@ -11612,10 +12129,10 @@ window.__ModuleLoader__.load({
 		  const audit = useAsync((signal) => fetchAudit(LOG_LIMIT, {}, signal), [props.revision], {
 		    keepPrevious: true
 		  });
-		  const [purpose, setPurpose] = (0, import_react34.useState)("");
-		  const [status, setStatus] = (0, import_react34.useState)("all");
-		  const [query, setQuery] = (0, import_react34.useState)("");
-		  const [payload, setPayload] = (0, import_react34.useState)(null);
+		  const [purpose, setPurpose] = (0, import_react35.useState)("");
+		  const [status, setStatus] = (0, import_react35.useState)("all");
+		  const [query, setQuery] = (0, import_react35.useState)("");
+		  const [payload, setPayload] = (0, import_react35.useState)(null);
 		  return /* @__PURE__ */ (0, import_jsx_runtime84.jsxs)(import_jsx_runtime84.Fragment, { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime84.jsx)(DiagnosticsPanel, { health: health.state, notify: props.notify }),
 		    /* @__PURE__ */ (0, import_jsx_runtime84.jsx)(
@@ -11661,10 +12178,10 @@ window.__ModuleLoader__.load({
 		  const settings = useAsync((signal) => fetchSettings(signal), [props.revision], {
 		    keepPrevious: true
 		  });
-		  const [tab, setTab] = (0, import_react35.useState)("config");
-		  const [message, setMessage] = (0, import_react35.useState)(null);
-		  const [busy, setBusy] = (0, import_react35.useState)(false);
-		  const lastSettings = (0, import_react35.useRef)(null);
+		  const [tab, setTab] = (0, import_react36.useState)("config");
+		  const [message, setMessage] = (0, import_react36.useState)(null);
+		  const [busy, setBusy] = (0, import_react36.useState)(false);
+		  const lastSettings = (0, import_react36.useRef)(null);
 		  if (settings.state.status === "ok") lastSettings.current = settings.state.data;
 		  const current = settings.state.status === "ok" ? settings.state.data : lastSettings.current;
 		  const write = async (patch, okText) => {
@@ -11681,7 +12198,7 @@ window.__ModuleLoader__.load({
 		    }
 		  };
 		  const labelOf = (purpose) => current?.derived.purposes.find((item) => item.purpose === purpose)?.label ?? purpose;
-		  const tabRefs = (0, import_react35.useRef)([]);
+		  const tabRefs = (0, import_react36.useRef)([]);
 		  const onTabKeyDown = (event, index) => {
 		    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
 		    event.preventDefault();
@@ -11752,12 +12269,12 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/today/index.tsx
-		var import_react37 = require("react");
+		var import_react38 = require("react");
 
 		// src/client/hooks/use-sticky.ts
-		var import_react36 = require("react");
+		var import_react37 = require("react");
 		function useSticky(state) {
-		  const last = (0, import_react36.useRef)(null);
+		  const last = (0, import_react37.useRef)(null);
 		  if (state.status === "ok") last.current = state.data;
 		  return state.status === "ok" ? state.data : state.status === "loading" ? last.current : null;
 		}
@@ -11906,8 +12423,8 @@ window.__ModuleLoader__.load({
 		  const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision]);
 		  const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision]);
 		  const usage = useAsync((signal) => fetchGuardUsage(void 0, signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react37.useState)(IDLE);
-		  const now = (0, import_react37.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const [feedback, setFeedback] = (0, import_react38.useState)(IDLE);
+		  const now = (0, import_react38.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -12083,13 +12600,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/hooks/use-event-stream.ts
-		var import_react38 = require("react");
+		var import_react39 = require("react");
 		function useEventStream(onHint) {
-		  const [status, setStatus] = (0, import_react38.useState)("connecting");
-		  const [lastEventAt, setLastEventAt] = (0, import_react38.useState)(null);
-		  const hintRef = (0, import_react38.useRef)(onHint);
+		  const [status, setStatus] = (0, import_react39.useState)("connecting");
+		  const [lastEventAt, setLastEventAt] = (0, import_react39.useState)(null);
+		  const hintRef = (0, import_react39.useRef)(onHint);
 		  hintRef.current = onHint;
-		  (0, import_react38.useEffect)(() => {
+		  (0, import_react39.useEffect)(() => {
 		    const source = new EventSource(`${ROUTE_PREFIX}/events`);
 		    source.onopen = () => {
 		      setStatus("open");
@@ -12128,17 +12645,17 @@ window.__ModuleLoader__.load({
 		  return /* @__PURE__ */ (0, import_jsx_runtime89.jsx)("div", { className: "jh-body", role: "main", children: /* @__PURE__ */ (0, import_jsx_runtime89.jsx)(ScreenErrorBoundary, { name: tabLabelOf(props.screen), children: props.children }, props.screen) });
 		}
 		function JobHunterPanel() {
-		  const [screen, setScreen] = (0, import_react39.useState)("today");
-		  const [selected, setSelected] = (0, import_react39.useState)(null);
-		  const [revision, setRevision] = (0, import_react39.useState)(0);
-		  const timer = (0, import_react39.useRef)(null);
-		  (0, import_react39.useEffect)(
+		  const [screen, setScreen] = (0, import_react40.useState)("today");
+		  const [selected, setSelected] = (0, import_react40.useState)(null);
+		  const [revision, setRevision] = (0, import_react40.useState)(0);
+		  const timer = (0, import_react40.useRef)(null);
+		  (0, import_react40.useEffect)(
 		    () => () => {
 		      if (timer.current !== null) window.clearTimeout(timer.current);
 		    },
 		    []
 		  );
-		  const onHint = (0, import_react39.useCallback)((type) => {
+		  const onHint = (0, import_react40.useCallback)((type) => {
 		    if (type === "resync") {
 		      setRevision((value) => value + 1);
 		      return;
@@ -12150,7 +12667,7 @@ window.__ModuleLoader__.load({
 		    }, 250);
 		  }, []);
 		  const stream = useEventStream(onHint);
-		  (0, import_react39.useEffect)(() => {
+		  (0, import_react40.useEffect)(() => {
 		    const apply2 = (intent) => {
 		      setScreen("jobs");
 		      setSelected(intent.jobId);
@@ -12802,6 +13319,9 @@ window.__ModuleLoader__.load({
 		   \u6298\u53E0\u5F00\u5173\u4E0A\u7684\u300C\u5DF2\u9009 N \u9879\u300D\u7B97\u7684\u662F**\u8349\u7A3F**\uFF0C\u5217\u8868\u5934\u680F\u90A3\u53E5\u7B97\u7684\u662F**\u5DF2\u751F\u6548**\u7684\u6761\u4EF6 \u2014\u2014
 		   \u4E24\u8005\u53EF\u4EE5\u4E0D\u4E00\u81F4\uFF0C\u8FD9\u884C\u5B57\u628A\u5DEE\u522B\u76F4\u63A5\u8BF4\u51FA\u6765\uFF0C\u514D\u5F97\u7528\u6237\u4EE5\u4E3A"\u5DF2\u7ECF\u7B5B\u8FC7\u4E86"\u3002 */
 		.jh-jobs-filter-pending{font-size:12px;font-weight:600;color:var(--jh-warn-fg)}
+		/* \u300C\u4FDD\u5B58\u4E3A\u89C6\u56FE\u300D\u7684\u5C31\u5730\u8F93\u5165\uFF08\u6279\u6B21 B2\uFF09\uFF1A\u4E0E\u5DE5\u5177\u6761\u91CC\u5176\u5B83\u63A7\u4EF6\u540C\u9AD8\u540C\u5BBD\u6863\uFF0C
+		   150px \u591F\u5199\u300C\u6DF1\u5733 Java 20K+\u300D\u8FD9\u79CD\u540D\u5B57\uFF08\u4E0A\u9650 40 \u5B57\u7531 maxLength \u7BA1\uFF09\u3002 */
+		.jh-jobs-view-name{width:150px}
 		/* \u6298\u53E0\u5F00\u5173\uFF1A\u53EA\u6709\u4E00\u884C\u5C0F\u5B57\uFF0C\u56FE\u6807\u5728\u6700\u524D\u9762\u6307\u793A\u5C55\u5F00\u6001\u3002
 		   align-self \u8BA9\u5B83\u53EA\u5360\u6587\u5B57\u90A3\u70B9\u5BBD\u5EA6 \u2014\u2014 \u6574\u884C\u53EF\u70B9\u7684\u9690\u5F62\u5927\u6309\u94AE\u4F1A\u76D6\u4F4F\u4E0B\u9762\u7684\u9762\u677F\u8FB9\u7F18\u3002 */
 		.jh-jobs-filter-toggle{display:flex;align-items:center;gap:6px;align-self:flex-start;
@@ -12998,6 +13518,12 @@ window.__ModuleLoader__.load({
 		.jh-job-signals{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
 		.jh-score{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;
 		  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+		/* \u5206\u6570\u5DF2\u8FC7\u671F\uFF08\u7B2C\u4E94\u8F6E\uFF0C\u6279\u6B21 A2\uFF09\uFF1A\u6362\u7B80\u5386\u4E4B\u540E\u5E93\u91CC\u90A3\u4E2A\u5206\u5C31\u4E0D\u518D\u4EE3\u8868"\u5F53\u524D\u5339\u914D\u5EA6"\u3002
+		   \u5B83\u4ECD\u7136\u6709\u4FE1\u606F\u91CF\uFF08\u65E7\u7B80\u5386\u4E0B\u7684\u76F8\u5BF9\u6392\u5E8F\uFF09\uFF0C\u6240\u4EE5**\u4E0D\u9690\u85CF\u3001\u4E0D\u5220\u6389**\uFF0C\u53EA\u662F\u4E0D\u518D\u770B\u8D77\u6765
+		   \u548C\u5F53\u524D\u5206\u6570\u4E00\u6837\u53EF\u4FE1\uFF1A\u53BB\u6389\u586B\u5145\u3001\u6587\u5B57\u8F6C muted\u3002\u5F62\u72B6\u4E0D\u53D8 \u2192 \u4E0D\u4F1A\u9020\u6210\u884C\u9AD8\u8DF3\u52A8\u3002
+		   "\u4E3A\u4EC0\u4E48\u8FC7\u671F"\u7531\u6587\u5B57\u4E0E tooltip \u8BF4\u660E\uFF08\u89C1 job-row \u7684\u300C\uFF08\u6309\u65E7\u7B80\u5386\uFF09\u300D\uFF09\u3002 */
+		.jh-score-stale{background:transparent;color:var(--jh-muted-fg);
+		  box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l3)}
 		.jh-score-inline{margin-left:8px;font-size:12px}
 		.jh-flag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;
 		  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
@@ -13585,6 +14111,17 @@ window.__ModuleLoader__.load({
 		.jh-state-saved::before{content:'';display:inline-block;width:6px;height:6px;margin-right:5px;
 		  border-radius:50%;background:var(--dsw-alias-state-success-primary);vertical-align:middle}
 		.jh-state-ignored,.jh-state-archived{opacity:.75}
+		/* \u2500\u2500 \u8FDB\u7A0B\u5FBD\u7AE0\uFF1A\u5728\u6D41\u7A0B\u91CC\u7684\u4E09\u6863\uFF08\u7B2C\u4E94\u8F6E\uFF0C\u6279\u6B21 C1\uFF09\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		   \u5C97\u4F4D\u5E93\u7684\u5361\u7247\u4E0A\u53EA\u653E**\u4E00\u679A**\u72B6\u6001\u80F6\u56CA\uFF08\u54EA\u4E00\u679A\u89C1 format/job.ts \u7684 jobProgressBadgeOf\uFF09\uFF0C
+		   \u6240\u4EE5\u914D\u8272\u8981\u80FD\u8868\u8FBE"\u8D70\u5230\u54EA\u4E00\u6B65\u4E86"\uFF1A
+		     \xB7 progress\uFF08\u5DF2\u6253\u62DB\u547C / \u5DF2\u9001\u8FBE / \u5DF2\u6295\u9012 / \u5DF2\u67E5\u770B\uFF09\u2014\u2014 \u6211\u4EEC\u8FD9\u8FB9\u52A8\u8FC7\u4E86\uFF0C\u5728\u7B49\u5BF9\u65B9\uFF0C
+		       \u4E0E .jh-state-new \u5171\u7528\u540C\u4E00\u5957\uFF08business \u6D45\u5E95 + \u54C1\u724C\u8272\u6587\u5B57\uFF09\uFF1A\u90FD\u662F"\u8FD8\u6CA1\u7ED3\u679C"\uFF1B
+		     \xB7 ok\uFF08HR \u5DF2\u56DE\u590D / \u5DF2\u7EA6\u9762 / \u9762\u8BD5\u4E2D / \u5DF2\u9762\u8BD5 / Offer\uFF09\u2014\u2014 \u771F\u6B63\u6709\u56DE\u97F3\uFF0C
+		       \u4E0E .jh-fresh-fresh \u5171\u7528 --jh-ok-bg / --jh-ok-fg\uFF08\u90A3\u5BF9 token \u5DF2\u91CF\u8FC7\u5BF9\u6BD4\u5EA6\uFF09\uFF1B
+		     \xB7 closed\uFF08\u5DF2\u62D2\u7EDD / \u65E0\u56DE\u590D\uFF09\u2014\u2014 \u7EC8\u6001\u8981\u5B89\u9759\uFF0C\u7528\u4E2D\u6027\u5E95 + muted \u6587\u5B57\uFF0C\u4E0D\u62A2\u6CE8\u610F\u529B\u3002 */
+		.jh-state-progress{background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-brand-text)}
+		.jh-state-ok{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
+		.jh-state-closed{background:var(--dsw-alias-bg-overlay);color:var(--jh-muted-fg)}
 		`;
 		var LINK = `
 		/* \u552F\u4E00\u7684 .jh-link \u5B9A\u4E49\uFF08\u539F\u5148\u8FD9\u91CC\u548C\u4E0A\u9762\u5404\u5199\u4E86\u4E00\u4EFD\uFF0C\u4E0A\u9762\u90A3\u4EFD\u88AB\u8FD9\u4E00\u4EFD\u8986\u76D6 \u2014\u2014 \u5DF2\u5408\u5E76\uFF09\u3002
@@ -14215,10 +14752,10 @@ window.__ModuleLoader__.load({
 		var CSS = [ENTRY_ICON, SEMANTIC_TEXT, SHELL, SCREEN, CARD_TITLE, CONTROLS, JOBS_FILTERS, TODAY, COLLECT_BUTTONS, JOBS, JOBS_DEDUP, TAG_AND_STATE, PAGER, PAGER_CONTRAST_FIX, JOBS_SPLIT, MATCH_AND_FLAGS, DETAIL, OVERLAY, TOOLVIEW_CARD, RESUMES, TAILOR_AND_FILE, PIPELINE_GROUP, PIPELINE, MESSAGES, FUNNEL, BOARD_FILTERS, CAMPUS, FRESHNESS, TODAY_HEALTH, LINK, PLANS, COMPANY_REVIEW_AND_SIBLINGS, SALARY_BOX, COLLECT_USABILITY, MODAL_SEG_TIMERANGE, PLAN_EDITOR_MODAL, DESTRUCTIVE_BUTTONS, QUALITY_GATES, RUNS_TABLE, PLATFORM_MATRIX, EMPTY_AND_FEEDBACK, SETTINGS, SWITCH_AND_NUMBER, SETTINGS_PURPOSES_AND_USAGE, SMALL_TOP, SMALL, BOARD_V2].join("\n");
 
 		// src/client/toolviews/greeting-card.tsx
-		var import_react41 = require("react");
+		var import_react42 = require("react");
 
 		// src/client/toolviews/parts.tsx
-		var import_react40 = require("react");
+		var import_react41 = require("react");
 
 		// src/shared/text/tool-format.ts
 		var JOB_LIST_LINE = /^#(\d+)\s+(.+)$/;
@@ -14281,28 +14818,28 @@ window.__ModuleLoader__.load({
 		}
 		function CardShell(props) {
 		  const { title, subtitle, tone = "normal", actions, inspect, children } = props;
-		  return (0, import_react40.createElement)(
+		  return (0, import_react41.createElement)(
 		    "div",
 		    { className: "jh-tv", "data-tone": tone },
-		    (0, import_react40.createElement)(
+		    (0, import_react41.createElement)(
 		      "div",
 		      { className: "jh-tv-head" },
-		      (0, import_react40.createElement)("span", { className: "jh-tv-title" }, title),
-		      subtitle === void 0 || subtitle === "" ? null : (0, import_react40.createElement)("span", { className: "jh-tv-sub" }, subtitle),
-		      (0, import_react40.createElement)("span", { className: "jh-spacer" }),
-		      actions === void 0 ? null : (0, import_react40.createElement)("span", { className: "jh-tv-actions" }, actions),
-		      inspect === void 0 ? null : (0, import_react40.createElement)(
+		      (0, import_react41.createElement)("span", { className: "jh-tv-title" }, title),
+		      subtitle === void 0 || subtitle === "" ? null : (0, import_react41.createElement)("span", { className: "jh-tv-sub" }, subtitle),
+		      (0, import_react41.createElement)("span", { className: "jh-spacer" }),
+		      actions === void 0 ? null : (0, import_react41.createElement)("span", { className: "jh-tv-actions" }, actions),
+		      inspect === void 0 ? null : (0, import_react41.createElement)(
 		        "button",
 		        { type: "button", className: "jh-tv-link", onClick: inspect },
 		        "\u67E5\u770B"
 		      )
 		    ),
-		    children === void 0 ? null : (0, import_react40.createElement)("div", { className: "jh-tv-body" }, children)
+		    children === void 0 ? null : (0, import_react41.createElement)("div", { className: "jh-tv-body" }, children)
 		  );
 		}
 		function JobRow2(props) {
 		  const { job, onOpen } = props;
-		  return (0, import_react40.createElement)(
+		  return (0, import_react41.createElement)(
 		    "button",
 		    {
 		      type: "button",
@@ -14310,18 +14847,18 @@ window.__ModuleLoader__.load({
 		      onClick: () => onOpen(job.id),
 		      title: "\u5728\u4E3B\u9762\u677F\u91CC\u6253\u5F00\u8FD9\u4E2A\u5C97\u4F4D"
 		    },
-		    (0, import_react40.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
-		    (0, import_react40.createElement)("span", { className: "jh-tv-job-title" }, job.title),
-		    (0, import_react40.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
-		    (0, import_react40.createElement)("span", { className: "jh-spacer" }),
-		    (0, import_react40.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
-		    (0, import_react40.createElement)("span", { className: "jh-tv-job-score" }, job.score)
+		    (0, import_react41.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
+		    (0, import_react41.createElement)("span", { className: "jh-tv-job-title" }, job.title),
+		    (0, import_react41.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
+		    (0, import_react41.createElement)("span", { className: "jh-spacer" }),
+		    (0, import_react41.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
+		    (0, import_react41.createElement)("span", { className: "jh-tv-job-score" }, job.score)
 		  );
 		}
 		function useAction() {
-		  const [busy, setBusy] = (0, import_react40.useState)(false);
-		  const [error, setError] = (0, import_react40.useState)(null);
-		  const [result, setResult] = (0, import_react40.useState)(null);
+		  const [busy, setBusy] = (0, import_react41.useState)(false);
+		  const [error, setError] = (0, import_react41.useState)(null);
+		  const [result, setResult] = (0, import_react41.useState)(null);
 		  const run = async (fn) => {
 		    setBusy(true);
 		    setError(null);
@@ -14358,7 +14895,7 @@ window.__ModuleLoader__.load({
 		  const settled = isSettled(block);
 		  const text = textOf(block);
 		  const failed = block.isError === true;
-		  const [copied, setCopied] = (0, import_react41.useState)(false);
+		  const [copied, setCopied] = (0, import_react42.useState)(false);
 		  const parsed = splitDraft(text);
 		  const jobId = jobIdOf(props);
 		  return /* @__PURE__ */ (0, import_jsx_runtime90.jsxs)(
@@ -14428,7 +14965,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/toolviews/job-detail-card.tsx
-		var import_react42 = require("react");
+		var import_react43 = require("react");
 		var import_jsx_runtime91 = require("react/jsx-runtime");
 		function JobDetailCard(props) {
 		  const { block, inspect } = props;
@@ -14441,7 +14978,7 @@ window.__ModuleLoader__.load({
 		  const jobId = jobIdOf2(props);
 		  const mark = useAction();
 		  const draft = useAction();
-		  const [copied, setCopied] = (0, import_react42.useState)(false);
+		  const [copied, setCopied] = (0, import_react43.useState)(false);
 		  const onMark = () => {
 		    if (jobId === null) return;
 		    void mark.run(async () => {

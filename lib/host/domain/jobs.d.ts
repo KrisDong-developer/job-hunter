@@ -7,7 +7,7 @@
  * P4 起 `query` / `detail` 会带上**标注类型**与**匹配分**，
  * `detailFull` 还会带出完整依据 —— 界面上任何一个分数与徽章都要能回答「凭什么」。
  */
-import type { JobDetailDto, JobDto, JobFacetsDto } from '../../shared/contract/dto/job.js';
+import type { JobDetailDto, JobDto, JobFacetsDto, JobViewsDto } from '../../shared/contract/dto/job.js';
 import { type JobFlagType, type JobState } from '../../shared/contract/enums/job.js';
 import type { JobQuery, JobUpsertInput } from '../store/repo/jobs.js';
 import type { Store } from '../store/store.js';
@@ -42,6 +42,15 @@ export interface JobService {
         id: number;
         outcome: 'inserted' | 'updated';
     };
+    /**
+     * 保存的筛选视图（第五轮，批次 B2）：整体读。
+     *
+     * 与岗位查询无关，但它是**岗位库这个屏的偏好**，放这里是为了让入口层（路由）
+     * 只依赖一个服务；规范化与校验在 `job-views.ts` 里（读到宽容、写到严格）。
+     */
+    jobViews(): JobViewsDto;
+    /** 保存的筛选视图：整体覆盖写（幂等）；非法内容显式报错。 */
+    saveJobViews(payload: unknown, now: string): JobViewsDto;
 }
 export declare function createJobService(store: Store, options?: JobServiceOptions): JobService;
 /** 标注类型的可读名（UI 与工具共用）。 */

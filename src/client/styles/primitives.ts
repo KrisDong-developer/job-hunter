@@ -168,6 +168,17 @@ export const TAG_AND_STATE = `
 .jh-state-saved::before{content:'';display:inline-block;width:6px;height:6px;margin-right:5px;
   border-radius:50%;background:var(--dsw-alias-state-success-primary);vertical-align:middle}
 .jh-state-ignored,.jh-state-archived{opacity:.75}
+/* ── 进程徽章：在流程里的三档（第五轮，批次 C1）──────────────────────
+   岗位库的卡片上只放**一枚**状态胶囊（哪一枚见 format/job.ts 的 jobProgressBadgeOf），
+   所以配色要能表达"走到哪一步了"：
+     · progress（已打招呼 / 已送达 / 已投递 / 已查看）—— 我们这边动过了，在等对方，
+       与 .jh-state-new 共用同一套（business 浅底 + 品牌色文字）：都是"还没结果"；
+     · ok（HR 已回复 / 已约面 / 面试中 / 已面试 / Offer）—— 真正有回音，
+       与 .jh-fresh-fresh 共用 --jh-ok-bg / --jh-ok-fg（那对 token 已量过对比度）；
+     · closed（已拒绝 / 无回复）—— 终态要安静，用中性底 + muted 文字，不抢注意力。 */
+.jh-state-progress{background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-brand-text)}
+.jh-state-ok{background:var(--jh-ok-bg);color:var(--jh-ok-fg)}
+.jh-state-closed{background:var(--dsw-alias-bg-overlay);color:var(--jh-muted-fg)}
 `
 
 export const LINK = `

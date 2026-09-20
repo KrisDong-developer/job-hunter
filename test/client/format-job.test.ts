@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { JOB_ACTION_LABEL, relativeTime, salaryDetail, splitJobTags } from '../../src/client/format/job.js'
+import {
+  JOB_ACTION_LABEL,
+  jobFreshnessOf,
+  jobProgressBadgeOf,
+  jobsToMarkdown,
+  relativeTime,
+  salaryDetail,
+  splitJobTags,
+} from '../../src/client/format/job.js'
 import type { JobDto } from '../../src/shared/contract/dto/job.js'
 
 /**
@@ -57,4 +65,93 @@ test('标签分组：空数组不炸', () => {
 test('动作文案与状态文案是两套词（当年"已收藏"被写成"收藏"那件事的约束）', () => {
   assert.equal(JOB_ACTION_LABEL.saved, '收藏')
   assert.notEqual(JOB_ACTION_LABEL.saved, '已收藏')
+})
+
+// ── 第五轮：进程徽章（批次 C1）与时效档位（批次 C2）────────────────────
+
+test('进程徽章：一个位置只放一枚，按 投递阶段 > 接触态 > 岗位处置态 取', () => {
+  // 三种都有：投递阶段赢（"面试中"比"已读"更该被看见）
+  const all = jobProgressBadgeOf({
+    state: 'saved',
+    contactStage: 'read',
+    applicationStage: 'interviewing',
+  })
+  assert.equal(all.source, 'application')
+  assert.equal(all.label, '面试中')
+  assert.equal(all.variant, 'ok')
+
+  // 没有投递记录时接触态赢
+  const contacted = jobProgressBadgeOf({ state: 'new', contactStage: 'greeted', applicationStage: null })
+  assert.equal(contacted.source, 'contact')
+  assert.equal(contacted.label, '已打招呼')
+  assert.equal(contacted.variant, 'progress', '发出去了但还没回音 → 不是"有回音"那一档')
+
+  // 两者都没有 → 落到岗位处置态（类名与取值同名，`seen` 最中性、用基类）
+  assert.deepEqual(jobProgressBadgeOf({ state: 'seen', contactStage: 'none', applicationStage: null }), {
+    source: 'state',
+    label: '已读',
+    variant: '',
+  })
+  assert.equal(jobProgressBadgeOf({ state: 'saved', contactStage: 'none', applicationStage: null }).variant, 'saved')
+})
+
+test('进程徽章：终态与"有回音"分开配色（已拒绝/无回复 = 安静，Offer/面试 = 有回音）', () => {
+  const of = (applicationStage: JobDto['applicationStage']) =>
+    jobProgressBadgeOf({ state: 'new', contactStage: 'none', applicationStage })
+  assert.equal(of('sent').variant, 'progress')
+  assert.equal(of('viewed').variant, 'progress')
+  assert.equal(of('interviewing').variant, 'ok')
+  assert.equal(of('offer').variant, 'ok')
+  assert.equal(of('rejected').variant, 'closed')
+  assert.equal(of('no_reply').variant, 'closed')
+  // 接触态里"回了"才算有回音
+  assert.equal(
+    jobProgressBadgeOf({ state: 'new', contactStage: 'delivered', applicationStage: null }).variant,
+    'progress',
+  )
+  assert.equal(
+    jobProgressBadgeOf({ state: 'new', contactStage: 'replied', applicationStage: null }).variant,
+    'ok',
+  )
+})
+
+test('时效档位：固定档 3 天 / 14 天，边界值归上一档；解析不出来就是不知道（null）', () => {
+  const now = new Date('2026-09-20T12:00:00.000Z')
+  const hoursAgo = (hours: number): string => new Date(now.getTime() - hours * 3_600_000).toISOString()
+
+  assert.equal(jobFreshnessOf(hoursAgo(1), now)?.level, 'fresh')
+  assert.equal(jobFreshnessOf(hoursAgo(72), now)?.level, 'fresh', '整 3 天仍算"近来活跃"')
+  assert.equal(jobFreshnessOf(hoursAgo(73), now)?.level, 'stale')
+  assert.equal(jobFreshnessOf(hoursAgo(336), now)?.level, 'stale', '整 14 天仍算"一周多没见"')
+  assert.equal(jobFreshnessOf(hoursAgo(337), now)?.level, 'cold')
+  assert.equal(jobFreshnessOf(hoursAgo(1000), now)?.hours, 1000)
+  assert.equal(jobFreshnessOf(hoursAgo(1), now)?.label, '近来活跃')
+
+  assert.equal(jobFreshnessOf('不是时间', now), null, '解析不出来就不给档位 —— "不知道"不该被画成"陈旧"')
+
+  // 未来时间（平台给的时间异常 / 机器时钟偏差）按 0 小时算：负数小时会让人怀疑整个列表
+  assert.equal(jobFreshnessOf(new Date(now.getTime() + 3_600_000).toISOString(), now)?.hours, 0)
+})
+
+test('复制为表格：Markdown 表结构正确，竖线与换行不会把表弄坏', () => {
+  const job = {
+    companyName: '某某科技',
+    title: '后端开发 | 急招', // 标题里带竖线：不处理会把整列错开
+    salaryRaw: '20-30K',
+    city: '深圳',
+    district: '南山区',
+    platformName: 'BOSS',
+    state: 'new',
+    lastSeenAt: '2026-09-20T04:00:00.000Z',
+    sourceUrl: 'https://example.com/job/1',
+  } as unknown as JobDto
+
+  const table = jobsToMarkdown([job], new Date('2026-09-20T12:00:00.000Z'))
+  const lines = table.split('\n')
+  assert.equal(lines.length, 3, '表头 + 分隔行 + 一行数据')
+  assert.match(lines[0] ?? '', /^\| 公司 \| 岗位 \| 薪资 \|/)
+  assert.match(lines[1] ?? '', /^\| --- \| --- \|/)
+  assert.ok(lines[2]?.includes('后端开发 / 急招'), '竖线换成斜杠（Markdown 表格没有通用转义）')
+  assert.ok(lines[2]?.includes('深圳·南山区'), '城市带上区')
+  assert.equal((lines[2] ?? '').split('|').length, (lines[0] ?? '').split('|').length, '列数必须与表头一致')
 })

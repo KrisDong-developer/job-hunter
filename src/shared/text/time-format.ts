@@ -90,6 +90,29 @@ export function formatLocalMoment(
 }
 
 /**
+ * 一个时刻的**绝对本地时间**：`2026-09-20 13:33`（同一年则省去年份 → `09-20 13:33`）。
+ *
+ * ## 为什么与 `formatLocalMoment` 并存，而不是合成一个
+ *
+ * 两者回答的问题不同，排版也就必须不同：
+ *   * `formatLocalMoment` 面向**对话文本**（"今天 09:34 · 还有 1 小时"）——
+ *     "今天/明天"这类相对日期读起来最省力，因为读者知道"现在"是什么时候；
+ *   * 这个函数面向**落进文件或被拷贝走的时刻**（导出的 CSV、悬停提示、回执），
+ *     那里没有"现在"这个上下文：文件明天再打开，"今天 09:34"就变成了假话。
+ *     所以它一律给绝对日期，并且**跨年时补上年份**（去年的回执不能只写 `09-17`）。
+ *
+ * 之所以进 shared 而不是留在客户端：导出的 CSV 由宿主生成，两边必须是同一套写法 ——
+ * "同一个时刻在界面与文件里长得不一样"这种事解释不清。
+ */
+export function formatLocalDateTime(iso: string, now: Date = new Date()): string {
+  const at = new Date(iso)
+  // 解析不了就原样返回（与 `formatLocalMoment` 一致：不假装格式化成功）
+  if (Number.isNaN(at.getTime())) return iso
+  const date = `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${formatClock(at)}`
+  return at.getFullYear() === now.getFullYear() ? date : `${String(at.getFullYear())}-${date}`
+}
+
+/**
  * 把一段**时长**写成 `12 秒` / `3 分 20 秒` / `1 小时 5 分`。
  *
  * 与 `formatRelative` 分开：那个回答"距离现在多久"（带 还有/前），

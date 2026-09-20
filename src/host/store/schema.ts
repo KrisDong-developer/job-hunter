@@ -740,3 +740,24 @@ CREATE INDEX idx_offer_company ON offer(company_id);
 -- 错题本按"公司"回溯（"这家问过什么"）此前没有索引，只能全表扫
 CREATE INDEX idx_question_company ON question_note(company_id);
 `
+
+/**
+ * v11 · 岗位库新增两个筛选/排序入口所需的索引（第五轮，批次 A）。
+ *
+ * 两条都是**对着 repo 层真实 SQL 核对过**的：
+ *
+ * 1. `match_score`：`ORDER BY j.match_score` 与 `WHERE j.match_score >= ?`
+ *    此前都是全表扫描 + 临时排序。它是这一轮新增的**主排序键**（"今天最值得看的几条"），
+ *    走的是热路径，必须建索引。
+ * 2. `first_seen_at`：`WHERE j.first_seen_at >= ?`（「只看新增」）与首屏
+ *    「今日新增」（`countSince`）都在用它过滤，而它此前没有索引 ——
+ *    这两处每天都要跑，却一直靠全表扫描。
+ *
+ * 注意 `match_score` 允许为 NULL（未打分的岗位）：SQLite 的索引会收录 NULL 行，
+ * 而查询里 `ORDER BY match_score IS NULL` 的前置就是为了把 NULL 排到最后 ——
+ * 索引仍可用，不用额外写部分索引。
+ */
+export const SCHEMA_V11 = `
+CREATE INDEX idx_job_match_score ON job(match_score);
+CREATE INDEX idx_job_first_seen_at ON job(first_seen_at);
+`

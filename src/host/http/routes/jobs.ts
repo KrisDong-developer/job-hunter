@@ -6,10 +6,12 @@
  * 下面两个私有解析器（`buildJobQuery` / `parseState`）与常量 `ORDER_BY_VALUES` 只服务本域，不外传。
  */
 import { dataNotReady } from '../../runtime/contract.js'
-import { PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/config/limits.js'
+import { MAX_JOB_EXPORT_IDS, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from '../../../shared/config/limits.js'
 import type { JobDto, JobPageDto } from '../../../shared/contract/dto/job.js'
-import { JOB_FLAG_TYPES, JOB_ORDER_VALUES, JOB_STATES } from '../../../shared/contract/enums/job.js'
+import { JOB_FLAG_TYPES, JOB_ORDER_VALUES, JOB_STATES, JOB_STATE_LABEL } from '../../../shared/contract/enums/job.js'
 import type { JobFlagType, JobOrderValue, JobState } from '../../../shared/contract/enums/job.js'
+import { formatLocalDateTime } from '../../../shared/text/time-format.js'
+import { csvEncode } from '../../domain/portability.js'
 import { DomainError } from '../../util/errors.js'
 import type { JobQuery } from '../../store/repo/jobs.js'
 import { json, parsePositiveInt, readObject, requireData, type RouteContext } from './kit.js'
@@ -36,6 +38,17 @@ function buildJobQuery(query: URLSearchParams): JobQuery {
 
   const minSalaryRaw = query.get('minSalary')
   const minSalary = minSalaryRaw === null || minSalaryRaw === '' ? undefined : Number.parseInt(minSalaryRaw, 10)
+
+  // 匹配分门槛（第五轮，批次 A）：0–100 的整数。
+  // 与 `firstSeenSince` 同样的纪律：非法值**显式报错**而不是当没传 ——
+  // 静默忽略会让用户对着"看起来筛了、其实没筛"的列表做判断。
+  const minScoreRaw = query.get('minScore')
+  const minScore = minScoreRaw === null || minScoreRaw === '' ? undefined : Number.parseInt(minScoreRaw, 10)
+  if (minScore !== undefined && (!Number.isInteger(minScore) || minScore < 0 || minScore > 100)) {
+    throw new DomainError('INVALID_INPUT', `匹配分门槛必须是 0–100 的整数：${minScoreRaw ?? ''}`, {
+      hint: '匹配分是 L1 规则粗筛分，取值 0–100；不传 = 不限。',
+    })
+  }
 
   // 「只看新增」：`firstSeenSince` 是界面按时间窗算出来的 ISO 时刻。
   // 非法值**显式报错**而不是当没传 —— 静默忽略会让用户对着"看起来筛了、其实没筛"的
@@ -78,6 +91,11 @@ function buildJobQuery(query: URLSearchParams): JobQuery {
       ? {}
       : { platformId: query.get('platformId') as string }),
     ...(minSalary === undefined || !Number.isFinite(minSalary) ? {} : { minSalaryAtLeast: minSalary }),
+    ...(minScore === undefined ? {} : { minMatchScore: minScore }),
+    // 排除已拉黑公司（第五轮，批次 B）：**只在显式传 1 时生效**。
+    // 默认不过滤是刻意的 —— 拉黑是人工标记，静默隐藏数据比不隐藏更危险；
+    // 界面默认勾选这一项，并在头栏写明因此隐藏了几条。
+    ...(query.get('excludeBlacklisted') === '1' ? { excludeBlacklistedCompanies: true } : {}),
     // 「只看新增」：只留首次见到时间 ≥ 该时刻的岗位（口径与首屏「今日新增」一致）
     ...(firstSeenSince === '' ? {} : { firstSeenSince }),
     ...(expReqs.length > 0 ? { expReqs } : {}),
@@ -113,6 +131,11 @@ export async function list(ctx: RouteContext): Promise<RouteResult | undefined> 
     pageSize,
     total,
     hasMore: (page - 1) * pageSize + items.length < total,
+    // 因为「排除已拉黑公司」被隐藏了几条（批次 B）：把同条件去掉黑名单再数一次，
+    // 差额就是答案。只在这个筛选真的开着时才算 —— 否则白付一次 count。
+    ...(filters.excludeBlacklistedCompanies === true
+      ? { hiddenByBlacklist: jobService.countMatching({ ...filters, excludeBlacklistedCompanies: false }) - total }
+      : {}),
   }
   return json(200, body)
 }
@@ -171,6 +194,122 @@ export async function batchMark(ctx: RouteContext): Promise<RouteResult | undefi
     runtime.events().publish('jobs.marked', { ids: applied.map((item) => item.id), state })
   }
   return json(200, { ok: true, applied, missing, total: applied.length })
+}
+
+// ── GET/PUT /jobs/views：保存的筛选视图（第五轮，批次 B2）────────────
+// 与 `facets` 同理：`views` 是字面路径，必须排在 `/jobs/:id` 之前 ——
+// 否则 `views` 会被当成岗位 id 解析（那条守则在 `route-precedence.test.ts` 里钉着）。
+export async function views(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(segments.length === 2 && segments[0] === 'jobs' && segments[1] === 'views')) {
+    return undefined
+  }
+  requireData(runtime)
+  const jobService = runtime.jobs()
+  if (jobService === undefined) throw dataNotReady(runtime)
+
+  if (method === 'GET') return json(200, jobService.jobViews())
+  if (method === 'PUT') {
+    // 整体覆盖写（幂等）：一次 PUT 换掉全部视图，避免"改一半"的中间态。
+    const body = await readObject(req)
+    return json(200, jobService.saveJobViews(body, new Date().toISOString()))
+  }
+  throw new DomainError('INVALID_INPUT', '保存的筛选视图只支持 GET（读）与 PUT（整体覆盖写）')
+}
+
+// ── GET /jobs/export：把选中的岗位导成 CSV（第五轮，批次 D2）─────────
+//
+// 为什么用 GET + 前端 `<a download>` 直下，而不是 fetch + Blob：
+// 与 `GET /data/export` 同一个理由（见 `client/net/ops.ts` 的注释）——
+// 导出的是文件，交给浏览器原生下载更稳（不进 JS 堆、文件名与断点都归它管）。
+// 代价是 id 列表要落在 URL 上，所以有 `MAX_JOB_EXPORT_IDS` 这个上限。
+const JOB_EXPORT_HEADER = [
+  '公司',
+  '岗位',
+  '薪资',
+  '城市',
+  '经验',
+  '学历',
+  '平台',
+  '状态',
+  '匹配分',
+  '最近见到',
+  '首次见到',
+  '原链接',
+] as const
+
+export async function exportList(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (!(method === 'GET' && segments.length === 2 && segments[0] === 'jobs' && segments[1] === 'export')) {
+    return undefined
+  }
+  requireData(runtime)
+  const jobService = runtime.jobs()
+  if (jobService === undefined) throw dataNotReady(runtime)
+
+  const ids = (req.query.get('ids') ?? '')
+    .split(',')
+    .map((item) => Number.parseInt(item.trim(), 10))
+    .filter((value) => Number.isInteger(value) && value > 0)
+  if (ids.length === 0) {
+    throw new DomainError('INVALID_INPUT', 'ids 不能为空（逗号分隔的岗位 id）', {
+      hint: '界面的「导出选中」会把勾选的行 id 拼好再传。',
+    })
+  }
+  if (ids.length > MAX_JOB_EXPORT_IDS) {
+    throw new DomainError('INVALID_INPUT', `一次最多导出 ${String(MAX_JOB_EXPORT_IDS)} 条`, {
+      hint: '分批导出，或先在筛选里缩小范围。',
+    })
+  }
+
+  // `repo.query` 单次上限是 PAGE_SIZE_MAX，所以按块取；取完按**请求里的顺序**重排，
+  // 让文件里的行序等于用户勾选的顺序（而不是库里的抓取时间序）。
+  const wanted = [...new Set(ids)]
+  const byId = new Map<number, JobDto>()
+  for (let offset = 0; offset < wanted.length; offset += PAGE_SIZE_MAX) {
+    const chunk = jobService.query({ ids: wanted.slice(offset, offset + PAGE_SIZE_MAX) }, PAGE_SIZE_MAX, 0)
+    for (const job of chunk) byId.set(job.id, job)
+  }
+  const missing = wanted.filter((id) => !byId.has(id))
+  if (missing.length > 0) {
+    // 不静默少给：文件一旦落盘就没人知道"本来还有两条"，而用户可能正是为了那两条才导的。
+    // 让他刷新列表（那两条本来也已经不在列表里了）再导一次，比给一份少了行的文件好。
+    throw new DomainError('INVALID_INPUT', `有 ${String(missing.length)} 条岗位已不存在：${missing.join('、')}`, {
+      hint: '这些岗位可能已被清理。刷新列表后重新勾选再导出。',
+    })
+  }
+
+  const now = new Date()
+  const rows: unknown[][] = wanted
+    .map((id) => byId.get(id))
+    .filter((job): job is JobDto => job !== undefined)
+    .map((job) => [
+      job.companyName ?? '',
+      job.title,
+      job.salaryRaw,
+      job.district === '' ? job.city : `${job.city}·${job.district}`,
+      job.expReq,
+      job.eduReq,
+      job.platformName ?? job.platformId,
+      JOB_STATE_LABEL[job.state],
+      job.matchScore === null ? '' : Math.round(job.matchScore),
+      formatLocalDateTime(job.lastSeenAt, now),
+      formatLocalDateTime(job.firstSeenAt, now),
+      job.sourceUrl,
+    ])
+
+  const csv = csvEncode(JOB_EXPORT_HEADER, rows)
+  const day = now.toISOString().slice(0, 10)
+  // 文件名保持 ASCII：Content-Disposition 里的中文要靠 RFC 5987 编码，
+  // 而各家浏览器/下载器对它的处理并不一致 —— 一个能被所有环境稳定保存的名字更要紧。
+  return {
+    kind: 'bytes',
+    status: 200,
+    contentType: 'text/csv; charset=utf-8',
+    bytes: Buffer.from(csv, 'utf8'),
+    fileName: `jobs-${day}.csv`,
+    disposition: 'attachment',
+  }
 }
 
 // ── GET /jobs/:id ──────────────────────────────────────────────────

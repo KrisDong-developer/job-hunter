@@ -7,8 +7,9 @@
  * P4 起 `query` / `detail` 会带上**标注类型**与**匹配分**，
  * `detailFull` 还会带出完整依据 —— 界面上任何一个分数与徽章都要能回答「凭什么」。
  */
-import type { CompanyProfileDto, JobDetailDto, JobDto, JobFacetsDto, JobFlagDto } from '../../shared/contract/dto/job.js'
+import type { CompanyProfileDto, JobDetailDto, JobDto, JobFacetsDto, JobFlagDto, JobViewsDto } from '../../shared/contract/dto/job.js'
 import { JOB_STATES, type JobFlagType, type JobState } from '../../shared/contract/enums/job.js'
+import { jobViewsOf, saveJobViews } from './job-views.js'
 import type { JobQuery, JobUpsertInput, MatchStamp } from '../store/repo/jobs.js'
 import type { Store } from '../store/store.js'
 import { DomainError } from '../util/errors.js'
@@ -39,6 +40,15 @@ export interface JobService {
   facets(): JobFacetsDto
   /** 供采集层写入；重复跑按 `(platform, platformJobId)` 幂等。 */
   upsert(input: JobUpsertInput, now: string): { id: number; outcome: 'inserted' | 'updated' }
+  /**
+   * 保存的筛选视图（第五轮，批次 B2）：整体读。
+   *
+   * 与岗位查询无关，但它是**岗位库这个屏的偏好**，放这里是为了让入口层（路由）
+   * 只依赖一个服务；规范化与校验在 `job-views.ts` 里（读到宽容、写到严格）。
+   */
+  jobViews(): JobViewsDto
+  /** 保存的筛选视图：整体覆盖写（幂等）；非法内容显式报错。 */
+  saveJobViews(payload: unknown, now: string): JobViewsDto
 }
 
 export function createJobService(store: Store, options: JobServiceOptions = {}): JobService {
@@ -91,6 +101,7 @@ export function createJobService(store: Store, options: JobServiceOptions = {}):
       outsourcingScore: profile?.outsourcingScore ?? null,
       fraudScore: profile?.fraudScore ?? null,
       manualLabel: profile?.manualLabel ?? null,
+      note: company.note,
       blacklisted: company.blacklisted,
     }
   }
@@ -157,6 +168,14 @@ export function createJobService(store: Store, options: JobServiceOptions = {}):
 
     upsert(input, now): { id: number; outcome: 'inserted' | 'updated' } {
       return store.job.upsert(input, now)
+    },
+
+    jobViews(): JobViewsDto {
+      return jobViewsOf(store)
+    },
+
+    saveJobViews(payload, now): JobViewsDto {
+      return saveJobViews(store, payload, now)
     },
   }
 }
