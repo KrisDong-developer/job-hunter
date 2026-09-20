@@ -48,6 +48,7 @@
 import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
 import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
+import { humanBrowse } from '../humanize.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
@@ -372,6 +373,8 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
         if (delayMax > 0) {
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
+        // "看一眼"：留下真实的滚轮与指针轨迹（见 `humanize.ts` 的 `humanBrowse`）。
+        await humanBrowse(page)
       },
 
       async readListPage(page): Promise<RawJob[]> {

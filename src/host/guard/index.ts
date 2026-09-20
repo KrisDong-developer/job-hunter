@@ -6,13 +6,21 @@
  * 执行顺序：
  *   `runRuleChain`（禁止项 → 开关 → 隐身 → 批量 → 额度 → 冷却）
  *   → 审批（高危，或模型发起的中危）
- *   → 签发一次性令牌 → 执行 → 审计
+ *   → 签发一次性令牌
+ *   → **平台锁 + 拟人节流**（动浏览器的事一律串行，见 `withPlatformPacing`）
+ *   → 执行
+ *   → 审计（适配器自报的风控证据在这里翻成平台级暂停，见 `blockDenial`）
  */
+import { REQUEST_DELAY_MAX_MS, REQUEST_DELAY_MIN_MS } from '../../shared/config/crawl.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import { systemClock, type Clock } from '../util/time.js'
 import { summarize } from '../store/repo/audit.js'
 import type { Store } from '../store/store.js'
+import type { PlatformLocks } from '../platform/locks.js'
+import { humanDelayMs, type BurstGuardLike } from '../platform/pacing.js'
 import type { SessionService } from '../platform/session.js'
+import { setPlatformRiskPause } from '../platform/risk-pause.js'
+import { blockFailureCode, blockLabel, blockedKindOf } from '../platform/types.js'
 import type { ApprovalDecision, ApprovalPort, ApprovalRequest } from './approval.js'
 import { renderApproval } from './approval.js'
 import { runRuleChain, readGuardConfig, toDomainError, type GuardConfig, type RuleVerdict } from './rules.js'
@@ -67,6 +75,22 @@ export interface GuardDeps {
   approval: ApprovalPort
   clock?: Clock
   logger?: { info(message: string): void; warn(message: string): void }
+  /**
+   * 按平台互斥锁（与采集**共用同一把**）。
+   *
+   * 为什么动作链也要拿它：`platform/pacing.ts` 的突发惩罚窗口成立的前提是
+   * "同一平台串行"（那里注释写着"同平台串行由 platform/locks.ts 保证"）——
+   * 而在这之前，采集拿锁、动作不拿，于是"采集刚打完 3 个页面、动作立刻又发一条"
+   * 这种事完全不受窗口约束。同一个站点的两种流量必须是同一条节奏。
+   */
+  locks?: PlatformLocks
+  /**
+   * 取某个平台的突发惩罚守卫（与采集**共用同一份实例**，跨轮次连续）。
+   * 见 `crawl.ts` 的 `createBurstGuard` 与 `runtime.ts` 的按平台记忆。
+   */
+  burstOf?: (platformId: string) => BurstGuardLike | undefined
+  /** 等待函数（测试注入用；默认真实 setTimeout）。 */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export interface Guard {
@@ -89,6 +113,78 @@ export interface GuardPreview {
 export function createGuard(deps: GuardDeps): Guard {
   const clock = deps.clock ?? systemClock
   const authority = guardAuthority
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms) }))
+
+  /**
+   * 动作链的**节流与串行**（G2）：凡是会打开浏览器页面的动作，在这一层统一
+   * 先让路、再等一个拟人间隔，然后才轮到适配器去导航。
+   *
+   * 为什么放在闸门里而不是各动作实现里：
+   *   * 它是**跨动作一致**的约束（额度、冷却也在这一层），散到 5 个动作文件里必然漂移；
+   *   * 闸门是"唯一入口"这件事本来就该包含"唯一节流点"；
+   *   * 拿锁的顺序必须与采集一致，否则 `pacing.ts` 的窗口假设不成立。
+   *
+   * 顺序：拿平台锁 → 等突发惩罚 + 基础拟人间隔 → 执行 → 记账（无论成败）。
+   * 记账放在 `finally`：动作失败也真的发过请求，不记会让下一次的空窗判断偏乐观。
+   */
+  const withPlatformPacing = async <T>(platformId: string | undefined, fn: () => Promise<T>): Promise<T> => {
+    if (platformId === undefined) return await fn()
+
+    const work = async (): Promise<T> => {
+      const burst = deps.burstOf?.(platformId)
+      const penaltyMs = burst?.penaltyMs() ?? 0
+      await sleep(humanDelayMs([REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS]) + penaltyMs)
+      try {
+        return await fn()
+      } finally {
+        burst?.mark()
+      }
+    }
+
+    if (deps.locks === undefined) return await work()
+    const result = await deps.locks.tryRun(platformId, work)
+    if (result === null) {
+      throw new DomainError('CONFLICT', `${platformId} 正在采集，这次动作已让路（未执行）`, {
+        hint:
+          '同一平台的请求必须串行 —— 采集与发送同时打一个站点，是频控最容易抓到的形态。' +
+          '等这一轮采集结束再试（通常几分钟内）。',
+        detail: { platformId, reason: 'platform-busy' },
+      })
+    }
+    return result
+  }
+
+  /**
+   * 把"适配器说它看到风控了"翻译成：**平台级暂停 + 用户看得懂的错误**。
+   *
+   * 与采集链的分工：采集那边由 `scheduler` 写暂停（它持有方案上下文）；
+   * 动作链由 GUI/模型发起、不经过调度器，所以暂停必须在这里写 ——
+   * 否则"动作撞上验证码"这件事只会在一次失败的点击里消失。
+   */
+  const blockDenial = (platformId: string, action: string, error: unknown): DomainError => {
+    const kind = blockedKindOf(error)
+    if (kind === null) throw error
+    setPlatformRiskPause(
+      deps.store,
+      platformId,
+      `动作「${action}」命中风控：${blockLabel(kind)}`,
+      clock(),
+    )
+    deps.logger?.warn(`[guard] ${platformId} 动作「${action}」命中风控（${kind}）—— 已暂停该平台`)
+    return new DomainError(
+      kind === 'quota-exhausted' ? 'QUOTA_EXCEEDED' : kind === 'login-required' ? 'NOT_LOGGED_IN' : 'BLOCKED',
+      `${platformId} 命中风控（${blockLabel(kind)}）—— 这次动作**没有完成**，该平台已暂停`,
+      {
+        hint:
+          kind === 'login-required'
+            ? '登录态已失效。重新登录后再解除平台暂停。'
+            : kind === 'quota-exhausted'
+              ? '平台侧今日额度已用完 —— 退避重试没有意义，今天对这个平台停手。'
+              : '去平台上确认一下（可能要过验证码、可能要隔一会儿）。确认后手动恢复该平台的调度。',
+        detail: { platformId, action, block: kind, crawlCode: blockFailureCode(kind) },
+      },
+    )
+  }
 
   const buildRequest = (input: GuardInput): ApprovalRequest => {
     const payload = input.payload ?? {}
@@ -243,12 +339,21 @@ export function createGuard(deps: GuardDeps): Guard {
 
       // ── 执行（令牌只在此上下文可见）───────────────────────────────
       const token = authority.issue({ action: input.action, actor: input.actor, danger: input.danger })
+      const platformId = input.target?.platformId
       try {
-        const value = await authority.run(token, () => fn(token))
+        // 节流 + 同平台串行都发生在 `fn` 之前 —— 而 `fn` 里才会去 acquire 页面、导航。
+        const value = await authority.run(token, () =>
+          withPlatformPacing(platformId, () => fn(token)),
+        )
         writeAudit(input, 'ok', null, approval, Date.now() - startedAt)
         return value
       } catch (error) {
         writeAudit(input, 'error', messageOf(error), approval, Date.now() - startedAt)
+        // 适配器直接看到的平台风控（DOM 判墙或接口返回码）→ 平台级暂停 + 可操作建议。
+        // 放在审计之后：审计要留的是**原始**失败，而不是我们翻译后的文案。
+        if (platformId !== undefined && blockedKindOf(error) !== null) {
+          throw blockDenial(platformId, input.action, error)
+        }
         throw error
       }
     },

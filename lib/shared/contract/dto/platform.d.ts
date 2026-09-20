@@ -25,6 +25,31 @@ export interface LoginStatusDto {
     account: AccountStateDto;
 }
 /**
+ * `POST /platforms/:id/login/check`：一次「**只检测**、不引导登录」的结果。
+ *
+ * 与 `LoginStatusDto` 的分工：那个说的是**登录引导流程**走到哪了
+ * （`running` / `succeeded` / `failed`），这个说的是"刚刚这一下看到了什么"。
+ * 两者不能合并 —— `running` 描述的是"用户正在登录"，
+ * 而检测可能发生在根本没有引导的时候。
+ */
+export interface LoginCheckDto {
+    platformId: string;
+    /**
+     * 检测**过程本身**成功了吗。
+     *
+     * `false` = 没检测出来（页面打不开 / 适配器抛错）—— 那时 `loggedIn` 没有意义。
+     * 「没检测出来」与「确定未登录」必须分得开：前者该提示"再试一次"，
+     * 后者才是"去登录"。把两者混成一个 `loggedIn: false`，用户会为一次网络抖动去重登。
+     */
+    checked: boolean;
+    /** 结论：当前页会不会被登录墙挡住。`checked: false` 时恒为 `false`（不作为结论）。 */
+    loggedIn: boolean;
+    /** 检测时刻（ISO）。 */
+    checkedAt: string;
+    /** 给人看的一句话：结论或失败原因（界面直接显示，不再加工）。 */
+    message: string;
+}
+/**
  * 平台**客观能力**（"这个平台有什么"）。
  *
  * ⚠️ 与 `implementation` 是两件事：这里的 `supportsGreeting: true`

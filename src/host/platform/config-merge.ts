@@ -68,3 +68,27 @@ export function mergeAdapterConfig<T extends object>(base: T, override: unknown)
   }
   return out as T
 }
+
+/**
+ * 收敛一个"区间"配置项（`[min, max]` 毫秒/像素这一类）。
+ *
+ * 为什么值得共享：现在有两个适配器（zhipin 的停留三档、zhaopin 的投递停留）
+ * 都要校验同一个形状，而它的规则不显然 —— **`min < 0` 与 `max < min` 都要拒**，
+ * 否则会构造出一个永远取不到合法值的区间，表现为"停留随机地变成 0 秒"
+ * （风控上等于没设），而不是一句报错。DB 里的脏值一律退默认。
+ */
+export function numberRange(value: unknown, fallback: [number, number]): [number, number] {
+  if (!Array.isArray(value) || value.length < 2) return fallback
+  const [min, max] = value as [unknown, unknown]
+  if (
+    typeof min !== 'number' ||
+    typeof max !== 'number' ||
+    !Number.isFinite(min) ||
+    !Number.isFinite(max) ||
+    min < 0 ||
+    max < min
+  ) {
+    return fallback
+  }
+  return [min, max]
+}

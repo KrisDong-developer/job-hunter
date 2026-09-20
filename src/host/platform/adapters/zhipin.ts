@@ -162,13 +162,15 @@
  */
 import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
 import type { ContactStage } from '../../../shared/contract/enums/pipeline.js'
-import { humanClick, humanType } from '../humanize.js'
+import { dwellBeforeActMs, humanBrowse, humanClick, humanHover, humanPress, humanType } from '../humanize.js'
 import { humanDelayMs } from '../pacing.js'
 import { platformFacts } from '../platform-facts.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
-import { platformCriterion } from '../types.js'
+import { numberRange } from '../config-merge.js'
+import { actionBlockOf, PlatformBlockedError, platformCriterion } from '../types.js'
 import type {
   ActionResult,
+  AdapterLogger,
   CriteriaDimension,
   PageLike,
   RawInboxMessage,
@@ -355,6 +357,22 @@ export interface ZhipinConfig {
    * `[0, 0]` = 关闭（离线测试必须关掉，否则每个用例白等十几秒）。
    */
   dwellBeforeGreetMs: [number, number]
+  /**
+   * **回复之前**的停留区间（ms）。
+   *
+   * 比打招呼短得多：这里不是"第一次打开岗位页看一刻钟"，而是"读完对方那条消息再回"。
+   * 但**不能是 0** —— 进会话后 0ms 开始打字、打完 0ms 回车，是纯机器节奏。
+   * `[0, 0]` = 关闭（离线测试用）。
+   */
+  dwellBeforeReplyMs: [number, number]
+  /**
+   * **发简历之前**的停留区间（ms）。
+   *
+   * 比打招呼更长：`sendResume` 会走到「选中简历 → 确认发送」，是**不可逆**的一步
+   * （对方会收到简历卡片）。真人在这之前会认真看一遍。
+   * `[0, 0]` = 关闭（离线测试用）。
+   */
+  dwellBeforeResumeMs: [number, number]
   /** 动作流程里等弹窗/输入框/会话出现的时间上限（ms）。 */
   actionWaitMs: number
   /** 发送后的送达校验轮询（次数 × 间隔）。 */
@@ -661,6 +679,9 @@ export const DEFAULT_ZHIPIN_CONFIG: ZhipinConfig = {
   scrollStepTimeoutMs: 12_000,
   // BossHunter `browse_before_greet` 同款区间：打开岗位页先"看一会儿"再动手
   dwellBeforeGreetMs: [15_000, 30_000],
+  // 会话里回复前的"读完再回"（3–8s）；发简历是不可逆的一步，给得更长（8–16s）
+  dwellBeforeReplyMs: [3_000, 8_000],
+  dwellBeforeResumeMs: [8_000, 16_000],
   actionWaitMs: 15_000,
   deliveryPoll: { attempts: 12, intervalMs: 500 },
   loginSelectors: {
@@ -683,21 +704,6 @@ export function mergeZhipinConfig(override: unknown): ZhipinConfig {
     typeof value === 'string' && value !== '' ? value : fallback
   const positive = (value: unknown, fallback: number): number =>
     typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
-  const range = (value: unknown, fallback: [number, number]): [number, number] => {
-    if (!Array.isArray(value) || value.length < 2) return fallback
-    const [min, max] = value
-    if (
-      typeof min !== 'number' ||
-      typeof max !== 'number' ||
-      !Number.isFinite(min) ||
-      !Number.isFinite(max) ||
-      min < 0 ||
-      max < min
-    ) {
-      return fallback
-    }
-    return [min, max]
-  }
   const poll = (value: unknown, fallback: ZhipinDeliveryPoll): ZhipinDeliveryPoll => {
     if (value === null || typeof value !== 'object') return fallback
     const candidate = value as Partial<ZhipinDeliveryPoll>
@@ -733,7 +739,9 @@ export function mergeZhipinConfig(override: unknown): ZhipinConfig {
       patch.scrollStepTimeoutMs,
       DEFAULT_ZHIPIN_CONFIG.scrollStepTimeoutMs,
     ),
-    dwellBeforeGreetMs: range(patch.dwellBeforeGreetMs, DEFAULT_ZHIPIN_CONFIG.dwellBeforeGreetMs),
+    dwellBeforeGreetMs: numberRange(patch.dwellBeforeGreetMs, DEFAULT_ZHIPIN_CONFIG.dwellBeforeGreetMs),
+    dwellBeforeReplyMs: numberRange(patch.dwellBeforeReplyMs, DEFAULT_ZHIPIN_CONFIG.dwellBeforeReplyMs),
+    dwellBeforeResumeMs: numberRange(patch.dwellBeforeResumeMs, DEFAULT_ZHIPIN_CONFIG.dwellBeforeResumeMs),
     actionWaitMs: positive(patch.actionWaitMs, DEFAULT_ZHIPIN_CONFIG.actionWaitMs),
     deliveryPoll: poll(patch.deliveryPoll, DEFAULT_ZHIPIN_CONFIG.deliveryPoll),
     loginSelectors: { ...DEFAULT_ZHIPIN_CONFIG.loginSelectors, ...(patch.loginSelectors ?? {}) },
@@ -791,8 +799,17 @@ export async function scrollToLoadInPage(arg: {
 
   let loaded = count()
   for (let round = 0; round < arg.rounds; round += 1) {
+    // **分步滚到底**，不是一帧跳到底：`scrollTo(0, scrollHeight)` 是"整页瞬间跳完"，
+    // 真人是一段一段滚下去的（每段之间还有几十毫秒的间隔）。步数上限 10 步，
+    // 免得超长列表把每一轮的 `stepTimeoutMs` 预算全吃在滚动上。
     try {
-      window.scrollTo(0, document.body.scrollHeight)
+      const start = typeof window.scrollY === 'number' ? window.scrollY : 0
+      const target = document.body.scrollHeight
+      const steps = Math.min(10, Math.max(2, Math.ceil((target - start) / 700)))
+      for (let index = 1; index <= steps; index += 1) {
+        window.scrollTo(0, Math.round(start + ((target - start) * index) / steps))
+        await sleep(60 + Math.floor(Math.random() * 120))
+      }
     } catch {
       /* 离线夹具没有滚动（静态 DOM），靠下面的超时收手 */
     }
@@ -1597,12 +1614,15 @@ export interface ZhipinAdapterOptions {
   config?: ZhipinConfig
   delayRangeMs?: [number, number]
   waitForListMs?: number
+  /** 诊断日志：只用于上报"接口通道静默降级了"这一类**不报警的坏法**。 */
+  logger?: AdapterLogger
 }
 
 /** 构造 BOSS 直聘适配器。 */
 export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAdapter {
   const config = options.config ?? DEFAULT_ZHIPIN_CONFIG
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
+  const logger = options.logger
 
   /**
    * 记住每个页面最近一次 `gotoSearch` 的搜索条件 —— 供 `readListPage` 构造
@@ -1612,6 +1632,34 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
    * （与 liepin 的 `lastSearch` 同一模式）。
    */
   const lastSearch = new WeakMap<object, { query: string; cityCode: string }>()
+
+  /**
+   * 判墙的**唯一实现**（采集与动作链共用）。
+   *
+   * 抽出来是因为它现在有两个调用方：`guard.detectBlock`（主链在列表/详情页上判）
+   * 与 `assertActionPage`（动作在岗位页/会话页上判）。各写一遍
+   * `page.evaluate(detectBlockWithSignals, …)` 的话，改信号集时漏掉一处就会出现
+   * "采集认得这道墙、动作不认得"——而动作那边恰恰是**会真发东西**的一侧。
+   *
+   * 信号只声明 BOSS 特有的 URL 特征：滑块页 `zhipin.com/web/user/safe/verify`（get_jobs 实证）。
+   */
+  const detectBlockOf = async (page: PageLike): Promise<BlockKind | null> =>
+    await page.evaluate(detectBlockWithSignals, {
+      signals: signalsOf({ urlPatterns: ['zhipin\\.com/web/user/safe/verify'] }),
+      card: config.selectors.card,
+    })
+
+  /**
+   * 动作链上的判墙：命中就抛 `PlatformBlockedError`（由 `guard.run()` 写平台级暂停）。
+   *
+   * `blank` **不算**风控（见 `types.ts` 的 `actionBlockOf`）：会话页上 0 张岗位卡片
+   * 本来就是常态 —— 一个空收件箱（「30天内暂无联系人」）文本很短，会被判成 blank，
+   * 照单全收就等于每同步一次就白白暂停一次平台。
+   */
+  const assertActionPage = async (page: PageLike): Promise<void> => {
+    const kind = actionBlockOf(await detectBlockOf(page).catch(() => null))
+    if (kind !== null) throw new PlatformBlockedError(kind, '动作页面上看到风控页面')
+  }
 
   /**
    * 本次要滚动加载几轮（`scrollRounds` 维度，方案里配）。
@@ -1649,6 +1697,10 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     )
     const salaries = new Map<string, string>()
     for (let index = 1; index <= pages; index += 1) {
+      // 页与页之间要有**间隔**：这是同一个站点上的连续请求，而 SPA 刚刚自己发过
+      // 同一批（page=1..N）。零间隔连发正是 `pacing.ts` 突发规则要拦的形态 ——
+      // 只是那条规则只挂在采集主链上，补薪资这条支线以前完全不受它管。
+      if (index > 1 && delayMax > 0) await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
       const payload = await page
         .evaluate(fetchJoblistInPage, {
           apiPath: config.joblistApiPath,
@@ -1662,7 +1714,18 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
         .catch(() => null)
       const got = salaryMapOf(payload)
       // 一页都没解析出东西 ⇒ 视为通道不可用，保持 DOM 结果（不抛错）
-      if (got.size === 0) break
+      if (got.size === 0) {
+        // **必须留痕**：这条通道是"锦上添花"，失败不抛错是对的；但它长期失效的表现
+        // 只是"薪资永远是空"—— 而四个核心字段照常命中，字段健康度、量级基线
+        // 一个都不会报警。日志是这种静默降级唯一的出口。
+        const code = (payload as { code?: unknown } | null)?.code
+        logger?.warn(
+          `[zhipin] 薪资接口没能取到数据（第 ${String(index)} 页，` +
+            (payload === null ? '请求失败 / 未登录' : `code=${String(code)}`) +
+            '）—— 保持 DOM 结果，这一批薪资留空',
+        )
+        break
+      }
       for (const [id, salary] of got) salaries.set(id, salary)
       if (missing.every((job) => salaries.has(job.platformJobId))) break
     }
@@ -1727,7 +1790,13 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     if (mouse === undefined) return null
     const info = await locate(page, selector, textIncludes)
     if (!info.found) return null
-    await humanClick(mouse, info.x, info.y, { wait: (ms) => page.waitForTimeout(ms) })
+    const wait = (ms: number): Promise<void> => page.waitForTimeout(ms)
+    // 先悬停、再点击。两件事各有用处：
+    //   * 悬停是**必须的**——有的入口（如猎聘的「聊一聊」）要 hover 才亮出来；
+    //   * "指针到位后停一下才按下"是真人最稳定的动作特征，而 `humanClick` 本身
+    //     只有 60–80ms 级的微调间隔。
+    await humanHover(mouse, info.x, info.y, { wait })
+    await humanClick(mouse, info.x, info.y, { wait })
     return info
   }
 
@@ -1791,6 +1860,9 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     const hint = job.company !== '' ? job.company : job.title
     if (hint === '') return false
     await page.goto(config.chatUrl)
+    // 会话页被登录墙/验证码顶掉时，下面"找不到那一行"会被上层误读成
+    // 「对方还没回过话（会话不存在）」—— 那是把风控说成了业务事实。
+    await assertActionPage(page)
     if (!(await waitFor(page, config.inboxSelectors.row, config.actionWaitMs))) return false
     const row = await clickSelector(page, config.inboxSelectors.row, hint)
     if (row === null) return false
@@ -1813,11 +1885,31 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     return true
   }
 
-  /** 打招呼前在岗位页停留一段时间（BossHunter `browse_before_greet`）。 */
-  const dwellBeforeGreet = async (page: PageLike): Promise<void> => {
-    const [min, max] = config.dwellBeforeGreetMs
+  /**
+   * 动手前的停留（打招呼 / 回复 / 发简历各一档）。
+   *
+   * 数值口径走 `humanize.dwellBeforeActMs`（与其它平台**同一份实现**），
+   * 这里只负责把配置区间传进去。原先这里是自家写的
+   * `min + Math.random() * (max - min)` 均匀分布 —— 而全仓的延时口径是
+   * `pacing.ts` 的高斯 + 犹豫，同一个系统里并存两种分布本身就是可识别的统计差异。
+   * `[0, 0]` 仍然等于关闭（离线测试靠它把每个用例从十几秒压到毫秒）。
+   */
+  const dwell = async (page: PageLike, range: [number, number]): Promise<void> => {
+    const [min, max] = range
     if (max <= 0) return
-    await page.waitForTimeout(Math.round(min + Math.random() * Math.max(0, max - min)))
+    await page.waitForTimeout(dwellBeforeActMs({ minMs: min, maxMs: max }))
+  }
+
+  /**
+   * 回车发送（站点自述「按Enter键发送」，所以走回车而不是点 `.btn-send`）。
+   *
+   * 按键本身该是瞬时的，但"打完最后一个字 0ms 就回车"不是 —— `humanPress`
+   * 在按下前后各留一段停顿（看一眼自己打的字 / 等它上屏）。
+   */
+  const pressSend = async (page: PageLike): Promise<void> => {
+    const keyboard = page.keyboard
+    if (keyboard === undefined) return
+    await humanPress(keyboard, 'Enter', { wait: (ms) => page.waitForTimeout(ms) })
   }
 
   const missingInputSurface = (): ActionResult => ({
@@ -1930,6 +2022,10 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
             /* 超时由 readListPage 的 0 条与判墙逻辑共同暴露 */
           }
         }
+        // "看一眼"（真实的滚轮 + 指针事件）。之所以要放在懒加载之前：
+        // 下面的 `scrollToLoadInPage` 走的是页面内 `scrollTo`，那是**程序化滚动** ——
+        // 它产生 scroll 事件，但**没有 wheel、也没有 mousemove**。
+        await humanBrowse(page)
         // 滚动加载（`scrollRounds`，方案里配）：BOSS 的"翻页"只发生在页面内 ——
         // 第一屏已经在上面等到了，这里再滚 (rounds - 1) 次把它读厚。
         const rounds = scrollRoundsOf(criteria)
@@ -1969,15 +2065,8 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     },
 
     guard: {
-      async detectBlock(page): Promise<BlockKind | null> {
-        // 判墙的**通用那一半**（验证码选择器、限流/配额/登录墙文案、blank 阈值）
-        // 已抽到 `block-signals.ts`；这里只声明 BOSS 特有的 URL 特征：
-        // 滑块页 `https://www.zhipin.com/web/user/safe/verify-slider`（get_jobs 实证）。
-        return await page.evaluate(detectBlockWithSignals, {
-          signals: signalsOf({ urlPatterns: ['zhipin\\.com/web/user/safe/verify'] }),
-          card: config.selectors.card,
-        })
-      },
+      // 判墙的实现只有一份（`detectBlockOf`）—— 动作链与采集共用它。
+      detectBlock: detectBlockOf,
     },
 
     /**
@@ -2004,6 +2093,12 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
         if (page.mouse === undefined || page.keyboard === undefined) return missingInputSurface()
 
         await page.goto(job.sourceUrl)
+
+        // ⚠️ 判墙必须在**等元素之前**：岗位详情页被验证码/限流页顶掉时，
+        // 「立即沟通」按钮永远等不到 —— 那样失败会以"入口没出现（可能岗位已关闭、
+        // 未登录，或已被风控拦截）"结束，把"平台已经认出你了"这条关键信号咽掉。
+        await assertActionPage(page)
+
         if (!(await waitFor(page, config.chatSelectors.chatButton, config.actionWaitMs))) {
           return {
             ok: false,
@@ -2014,7 +2109,7 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
           }
         }
 
-        await dwellBeforeGreet(page)
+        await dwell(page, config.dwellBeforeGreetMs)
 
         const entry = await clickSelector(page, config.chatSelectors.chatButton)
         if (entry === null) {
@@ -2109,7 +2204,7 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
               message: '会话已打开，但没能把话术输入到输入框。',
             }
           }
-          await page.keyboard.press('Enter')
+          await pressSend(page)
         }
 
         const state = await waitForDelivery(page, text)
@@ -2177,6 +2272,11 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
           }
         }
 
+        // 同一套判墙 + 停留：回复也是"要发出去的东西"，不能因为"只是回一句"就省掉。
+        // 回复的停留比首次打招呼短（3–8s）：语义是"读完对方那条再回"，不是"第一次看这个岗位"。
+        await assertActionPage(page)
+        await dwell(page, config.dwellBeforeReplyMs)
+
         const existing = await readDelivery(page, text)
         if (existing === 'delivered') {
           return { ok: true, delivery: 'delivered', evidence: 'dom', idempotentHit: true }
@@ -2198,7 +2298,7 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
             message: '会话已打开，但没能把回复内容输入到输入框。',
           }
         }
-        await page.keyboard.press('Enter')
+        await pressSend(page)
 
         const state = await waitForDelivery(page, text)
         if (state === 'delivered') return { ok: true, delivery: 'delivered', evidence: 'dom' }
@@ -2238,6 +2338,9 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
       async detectStage(page, job): Promise<ContactStage | null> {
         await page.goto(config.chatUrl)
         await waitFor(page, config.inboxSelectors.row, config.actionWaitMs)
+        // 只读动作也要判墙：会话页被登录墙/验证码顶掉时，"找不到那一行"会被
+        // 误读成"这个岗位从没接触过"（`null` 本身是合法返回值，正好掩盖了真相）。
+        await assertActionPage(page)
         const probe = await page.evaluate(detectStageInPage, {
           selectors: config.inboxSelectors,
           company: job.company,
@@ -2266,6 +2369,8 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
             : config.inboxSelectors.row,
           config.actionWaitMs,
         )
+        // 先判墙再动手（包括切 tab）：墙页上切 tab 毫无意义，还会多留下一次点击
+        await assertActionPage(page)
         // 按 `inboxTab` 收窄（默认 all）：纯精度优化 —— 切不过去时读到的是当前展示的全量，
         // 那是**超集**，不会漏；所以这里点不上也不报错、不改变语义。
         if (config.inboxTab !== 'all') {
@@ -2319,6 +2424,11 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
             message: `没能在会话列表里找到「${job.company === '' ? job.title : job.company}」的会话，未发简历。`,
           }
         }
+
+        await assertActionPage(page)
+        // 发简历比回复重得多：对方会真收到一份简历卡片，而且平台侧**不可撤回**。
+        // 停留给到 8–16s（配置 `dwellBeforeResumeMs`），别把"点两下"做成机械连击。
+        await dwell(page, config.dwellBeforeResumeMs)
 
         // 先读按钮状态：不可用时点它毫无反应，那种"没反应"最容易被误读成投递成功
         const button = await page.evaluate(toolbarButtonStateInPage, {

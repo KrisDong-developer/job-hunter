@@ -1,7 +1,7 @@
 /**
  * 平台侧运维：平台总览、登录引导、适配器配置覆盖、待修复队列。
  */
-import type { LoginStatusDto, PlatformOverviewDto, RepairListDto } from '../../../shared/contract/dto/platform.js'
+import type { LoginCheckDto, LoginStatusDto, PlatformOverviewDto, RepairListDto } from '../../../shared/contract/dto/platform.js'
 import type { AdapterConfigDto } from '../../../shared/contract/dto/settings.js'
 import { request } from '../client.js'
 
@@ -15,6 +15,20 @@ export async function startLogin(platformId: string): Promise<LoginStatusDto> {
     { method: 'POST', body: JSON.stringify({}) },
   )
   return result.login
+}
+
+/**
+ * **只检测**登录态（打开平台页面判一次，不引导登录）。
+ *
+ * 「没检测出来」不抛错，而是回 `checked: false` —— 界面据它区分
+ * "这一下没测出来"与"确定未登录"，两者该说的话不一样。
+ */
+export async function checkLogin(platformId: string): Promise<LoginCheckDto> {
+  const result = await request<{ ok: boolean; check: LoginCheckDto }>(
+    `/platforms/${encodeURIComponent(platformId)}/login/check`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+  return result.check
 }
 
 export async function fetchRepairs(platformId?: string, signal?: AbortSignal): Promise<RepairListDto> {

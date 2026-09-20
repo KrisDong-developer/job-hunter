@@ -13,10 +13,10 @@ import { CRAWL_STATE_LABEL } from '../../../shared/contract/enums/crawl.js'
 import { FAILURE_KIND_LABEL, type FailureText } from '../../../shared/text/error-text.js'
 import type { RecentRunDto } from '../../../shared/contract/dto/crawl.js'
 import type { PlanDto, SchedulerStatusDto } from '../../../shared/contract/dto/plan.js'
-import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
+import type { LoginCheckDto, PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
 import { ApiError } from '../../net/client.js'
 import { createPlan, deletePlan, fetchCriteriaDimensions, fetchPlans, updatePlan, validatePlan, validatePlanDraft } from '../../net/collect/plans.js'
-import { fetchPlatforms, startLogin } from '../../net/collect/platforms.js'
+import { checkLogin, fetchPlatforms, startLogin } from '../../net/collect/platforms.js'
 import { fetchSkipReasons, runPlan } from '../../net/collect/runs.js'
 import { fetchSchedulerStatus, recheckLease, resumePlanRisk, setSchedulePaused, takeoverLease } from '../../net/collect/schedule.js'
 import { runDedupSweep } from '../../net/dedup.js'
@@ -28,6 +28,7 @@ import { Modal } from '../../ui/modal.js'
 import { scheduleStoryOf } from './schedule-story.js'
 import { emptyForm, formOf, writeOf, type PlanForm } from './plan-form.js'
 import { PlanEditorModal } from './plan-editor-modal.js'
+import { PlatformDetail } from './platform-matrix.js'
 import { DashboardTab } from './dashboard-tab.js'
 import { PlansTab } from './plans-tab.js'
 import { DiagnosticsTab } from './diagnostics-tab.js'
@@ -48,6 +49,14 @@ import { DiagnosticsTab } from './diagnostics-tab.js'
  *   * `diagnostics` —— 平台的静态事实与失败日志（排障时看，平时不看）
  */
 type CollectTab = 'dashboard' | 'plans' | 'diagnostics'
+
+/**
+ * 「检测登录态」弹窗的三种内容。
+ *
+ * `result.checked === false`（没检测出来）与 `result.loggedIn === false`（确定未登录）
+ * 是两件事 —— 前者只该说"再试一次"，后者才该劝人去登录。
+ */
+type CheckState = { running: boolean; result: LoginCheckDto | null; error: string | null }
 
 const COLLECT_TABS: ReadonlyArray<{ key: CollectTab; label: string }> = [
   { key: 'dashboard', label: '运行仪表盘' },
@@ -101,14 +110,20 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
   const [pendingDelete, setPendingDelete] = useState<PlanDto | null>(null)
 
   /**
-   * 三个分区与两处"跨分区的选择"。
+   * 三个分区与两处"弹窗的选择"。
    *
-   * `expandedPlatform` 放在这里而不是表格组件内部：它是**主从结构的选择**，
-   * 从「平台总览」展开的明细与「诊断与明细」里的同一平台是同一件事，
-   * 状态放在上面才不会两处各记一个。
+   * `detailTarget` 与 `checkTarget` 都存**打开那一刻的快照**，不是 id：
+   * 弹窗开着的时候，`platforms` 这个 `useAsync` 完全可能正在重取
+   * （检测完成后要 `reload()`，SSE 事件还会触发 revision 自增），
+   * 而重取期间 `platformList` 是**空数组** —— 现算成 `find(id)` 会让弹窗内容
+   * 整块消失再出现。与 `editing` 存方案快照是同一个理由。
    */
   const [tab, setTab] = useState<CollectTab>('dashboard')
-  const [expandedPlatform, setExpandedPlatform] = useState<string | null>(null)
+  /** 「明细」弹窗看的是哪一个平台（`PlatformOverviewDto` 的快照）。 */
+  const [detailTarget, setDetailTarget] = useState<PlatformOverviewDto | null>(null)
+  /** 「检测登录态」弹窗：检测哪个平台（null = 没开）。 */
+  const [checkTarget, setCheckTarget] = useState<{ id: string; displayName: string } | null>(null)
+  const [checkState, setCheckState] = useState<CheckState>({ running: false, result: null, error: null })
   /** 「当前生效方案」看的是哪一个（默认落在真正会被调度的那个上）。 */
   const [focusPlanId, setFocusPlanId] = useState<number | null>(null)
   /** 全库复核只改分组，不动 plans/scheduler —— 单独一个版本号让去重卡片重取。 */
@@ -171,6 +186,35 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
       return result.message ?? '登录引导已启动'
     })
 
+  /**
+   * 「检测」：只查登录态（打开平台页面判一次），**不引导登录**。
+   *
+   * 刻意不走 `act()`：`act` 把结果写进页面顶部那条反馈卡片，而它在弹窗遮罩
+   * **后面** —— 与方案保存失败踩过的是同一个坑（那时表现成"点了没反应"）。
+   * 所以检测的进度、结论、失败原因全部留在弹窗里，页面级反馈一个字都不动。
+   */
+  const runCheck = async (platformId: string): Promise<void> => {
+    setCheckState({ running: true, result: null, error: null })
+    try {
+      const result = await checkLogin(platformId)
+      setCheckState({ running: false, result, error: null })
+      // 检测把结论（含 `lastCheckAt`）写进了 account_state —— 徽标要跟着变，
+      // 所以重新拉一次平台列表。SSE 的 `login.checked` 也会触发一次，重复无害。
+      platforms.reload()
+    } catch (error) {
+      setCheckState({
+        running: false,
+        result: null,
+        error: error instanceof ApiError ? error.display : String(error),
+      })
+    }
+  }
+
+  const startCheck = (platformId: string, displayName: string): void => {
+    setCheckTarget({ id: platformId, displayName })
+    void runCheck(platformId)
+  }
+
   const trigger = (plan: PlanDto): Promise<void> =>
     act('正在按方案采集…（会打开一个浏览器窗口）', async () => {
       const summary = await runPlan(plan.id)
@@ -206,7 +250,9 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
       ? `本窗口没有采集权。用「接管调度」，或到另一个窗口（进程 ${String(status.lease.pid ?? '?')}）里操作。`
       : feedback.running
         ? '有另一个操作正在进行，请稍候。'
-        : '现在按这个方案采集一次（会打开浏览器窗口）。'
+        : checkState.running
+          ? '正在检测某个平台的登录态（占用同一个浏览器），等它结束再采集。'
+          : '现在按这个方案采集一次（会打开浏览器窗口）。'
 
   /* ── 三个分区里的动作 ────────────────────────────────────────────────
      它们原来内联在下面各分区的 JSX 里；抽出分区组件后，凡是要写父级 state
@@ -246,7 +292,14 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
       return `方案「${plan.name}」已恢复 —— 这一下是你确认的，系统不会自动恢复。`
     })
 
-  const runBlocked = feedback.running || (status?.readOnly ?? false)
+  /**
+   * 「立即采集」这类动作的闸门。
+   *
+   * `checkState.running` 也算在内：检测同样会打开浏览器窗口（都是同一个
+   * browser profile），两个动作叠在一起是真会互相踩的 —— 而检测进行中
+   * 用户完全可能先关掉弹窗再去点采集。
+   */
+  const runBlocked = feedback.running || checkState.running || (status?.readOnly ?? false)
 
   /* ── 顶部工具条上的三个全局动作 ────────────────────────────────────────
      它们原来散在各卡片标题右侧：「一键暂停定时」在触发与运行时、「重新检测」
@@ -428,20 +481,21 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
           reasonText={reasonText}
           reasonFor={reasonFor}
           platformNameOf={platformNameOf}
-          expandedPlatform={expandedPlatform}
-          running={feedback.running}
+          /* 检测也要开浏览器，所以它同样算"有操作在跑"：期间登录/采集/编辑
+             一律点不动 —— 两个动作抢同一个浏览器 profile 是真会互相踩的。 */
+          running={feedback.running || checkState.running}
           runBlocked={runBlocked}
           runBlockTitle={runBlockTitle}
           onFocusPlan={setFocusPlanId}
-          onTogglePlatform={(id) => setExpandedPlatform((current) => (current === id ? null : id))}
           onResume={resumeSchedule}
           onTakeover={takeover}
           onTrigger={trigger}
           onEdit={startEdit}
           onGoPlans={() => setTab('plans')}
           onLogin={login}
+          onCheck={startCheck}
+          onDetail={setDetailTarget}
           onOpenError={(run, failure) => setErrorDetail({ run, failure })}
-          onGoSettings={props.onGoSettings}
           onReload={reload}
         />
       ) : null}
@@ -481,9 +535,127 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         />
       ) : null}
 
-      {/* 平台明细已并入「平台状态总览」的行内展开（见 PlatformMatrix / PlatformDetail）；
+      {/* 平台明细挂在「平台状态总览」的「操作」列上，点开是弹窗（见 PlatformMatrix / PlatformDetail）；
           平台自身的静态事实（成熟度 / 能力 / 实现度）移到「诊断与明细」分区。
           原来那段散文式长列表与总览表格说的是同一批平台，是本页最耗注意力的一处重复。 */}
+
+      {/* 平台明细弹窗（原先是行内展开）：
+          展开会把表格撑高、之后每一行的位置都变了，而"对照两个平台"正是这张表存在的理由。
+          内容就是原来的 PlatformDetail，一个字都没改。 */}
+      {detailTarget === null ? null : (
+        <Modal
+          title={`平台明细 · ${detailTarget.displayName}`}
+          label="平台明细"
+          size="lg"
+          onClose={() => setDetailTarget(null)}
+          footer={
+            <>
+              <span className="jh-modal-foot-note jh-muted">
+                <code>{detailTarget.id}</code> · 这份诊断只讲"它现在为什么是这样"
+              </span>
+              <span className="jh-spacer" />
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline"
+                onClick={() => setDetailTarget(null)}
+              >
+                关闭
+              </button>
+            </>
+          }
+        >
+          <PlatformDetail
+            item={detailTarget}
+            reasonText={reasonText}
+            /* 跳设置前先关窗：否则用户落在设置页，而遮罩还盖在上面 */
+            onGoSettings={() => {
+              setDetailTarget(null)
+              props.onGoSettings()
+            }}
+          />
+        </Modal>
+      )}
+
+      {/* 登录态检测弹窗：「检测」按钮打开的。进度与结论都在这里 ——
+          页面级那条反馈卡片在遮罩后面，写进去用户是看不见的（见 runCheck 的注释）。 */}
+      {checkTarget === null ? null : (
+        <Modal
+          title={`检测登录态 · ${checkTarget.displayName}`}
+          label="登录态检测"
+          onClose={() => setCheckTarget(null)}
+          footer={
+            <>
+              <span className="jh-modal-foot-note jh-muted">
+                检测只查状态，不会替你登录。
+              </span>
+              <span className="jh-spacer" />
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline"
+                disabled={checkState.running || feedback.running}
+                onClick={() => void runCheck(checkTarget.id)}
+              >
+                重新检测
+              </button>
+              {/* 只在"确定未登录"时才劝人去登录：没检测出来是另一回事，那时该再试一次 */}
+              {checkState.result?.checked === true && !checkState.result.loggedIn ? (
+                <button
+                  type="button"
+                  className="jh-btn jh-btn-inline jh-btn-primary"
+                  disabled={feedback.running}
+                  title="打开登录页，在弹出的浏览器窗口里完成登录。"
+                  onClick={() => {
+                    setCheckTarget(null)
+                    void login(checkTarget.id)
+                  }}
+                >
+                  去登录
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="jh-btn jh-btn-inline jh-btn-quiet"
+                onClick={() => setCheckTarget(null)}
+              >
+                关闭
+              </button>
+            </>
+          }
+        >
+          {checkState.running ? (
+            <p className="jh-muted">
+              正在打开 {checkTarget.displayName} 的页面检测登录态…（会打开一个浏览器窗口）
+            </p>
+          ) : checkState.error !== null ? (
+            <p className="jh-error">{checkState.error}</p>
+          ) : checkState.result === null ? null : (
+            <>
+              <p>
+                <span
+                  className={`jh-tag jh-tone-${
+                    checkState.result.checked ? (checkState.result.loggedIn ? 'ok' : 'warn') : 'muted'
+                  }`}
+                >
+                  {checkState.result.checked
+                    ? checkState.result.loggedIn
+                      ? '已登录'
+                      : '未登录'
+                    : '没检测出来'}
+                </span>
+              </p>
+              <p className={checkState.result.checked ? 'jh-muted' : 'jh-warn'}>
+                <InlineMd text={checkState.result.message} />
+              </p>
+              <ul className="jh-kv">
+                <li>
+                  <span>检测时间</span>
+                  <span>{new Date(checkState.result.checkedAt).toLocaleString()}</span>
+                </li>
+              </ul>
+            </>
+          )}
+        </Modal>
+      )}
 
       {/* 方案表单：**弹窗**（原来是嵌在页面下方，导致页面过长、主次不分） */}
       {editing === null ? null : (

@@ -50,8 +50,9 @@ import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.
 import type { ContactStage } from '../../../shared/contract/enums/pipeline.js'
 import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
-import { humanClick } from '../humanize.js'
-import { signalsOf, type BlockSignalSet } from '../block-signals.js'
+import { dwellBeforeActMs, humanBrowse, humanClick, humanHover } from '../humanize.js'
+import { blockFromApiFailure, signalsOf, type BlockSignalSet } from '../block-signals.js'
+import { numberRange } from '../config-merge.js'
 import { platformFacts } from '../platform-facts.js'
 import type {
   ActionResult,
@@ -63,6 +64,7 @@ import type {
   SearchCriteria,
   SiteAdapter,
 } from '../types.js'
+import { actionBlockOf, PlatformBlockedError } from '../types.js'
 
 /** `/sou/` 列表页的选择器集。**每一项都可以在 DB 里覆盖着改**（ADR-19）。 */
 export interface ZhaopinSelectors {
@@ -325,6 +327,15 @@ export interface ZhaopinConfig {
    * 加上平台的动画，给 20 秒；等不到就如实报"没确认到"，不重试。
    */
   applyWaitMs: number
+  /**
+   * **点「立即投递」之前**的停留区间（ms）。
+   *
+   * 这里必须停：`sendResume` 是"一次点击 = 投简历 + 平台替你发一句招呼语"，
+   * 而且**不可逆**（见 `platform-facts.ts` 的 `applicationSideEffect`）。
+   * 真人在这之前会认真看一遍 JD，绝不会"页面刚渲染完就点下去"。
+   * `[0, 0]` = 关闭（离线测试用）。
+   */
+  dwellBeforeApplyMs: [number, number]
 }
 
 export const DEFAULT_ZHAOPIN_CONFIG: ZhaopinConfig = {
@@ -378,6 +389,8 @@ export const DEFAULT_ZHAOPIN_CONFIG: ZhaopinConfig = {
     successText: '已向对方发送简历',
   },
   applyWaitMs: 20_000,
+  // 不可逆动作前的停留：投递一次 = 简历 + 平台替你发的招呼语，撤不回来（15–30s）
+  dwellBeforeApplyMs: [15_000, 30_000],
 }
 
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
@@ -418,6 +431,7 @@ export function mergeZhaopinConfig(override: unknown): ZhaopinConfig {
       typeof patch.applyWaitMs === 'number' && patch.applyWaitMs > 0
         ? patch.applyWaitMs
         : DEFAULT_ZHAOPIN_CONFIG.applyWaitMs,
+    dwellBeforeApplyMs: numberRange(patch.dwellBeforeApplyMs, DEFAULT_ZHAOPIN_CONFIG.dwellBeforeApplyMs),
   }
 }
 
@@ -1390,6 +1404,33 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
   }
 
   /**
+   * 判墙的**唯一实现**（采集与动作链共用）—— 与 zhipin 同一理由：
+   * 各写一遍 `page.evaluate(detectBlockInPage, …)` 就会出现"采集认得这道墙、
+   * 动作不认得"，而动作那边恰恰是会真发东西的一侧。
+   */
+  const detectBlockOf = async (page: PageLike): Promise<BlockKind | null> =>
+    await page.evaluate(detectBlockInPage, {
+      card: config.selectors.card,
+      loginPopup: config.selectors.loginPopup,
+      noJobTip: config.selectors.noJobTip,
+      // 通用词表在**宿主侧**组装好再传进去（页面里没有这个模块）
+      signals: signalsOf(ZHAOPIN_BLOCK_SIGNALS),
+    })
+
+  /**
+   * 动作链上的判墙：命中就抛 `PlatformBlockedError`（由 `guard.run()` 写平台级暂停）。
+   *
+   * ⚠️ `blank` 必须排除：智联的判墙在"0 卡片"时会走登录墙/blank 分支，而**会话页
+   * （`i.zhaopin.com/im`）上岗位卡片本来就是 0** —— 照单全收等于每同步一次收件箱
+   * 就把平台暂停一次。登录墙那几条靠"0 卡片 + 短文本 + 登录文案"才成立，
+   * 会话页文本长，不会误判。
+   */
+  const assertActionPage = async (page: PageLike): Promise<void> => {
+    const kind = actionBlockOf(await detectBlockOf(page).catch(() => null))
+    if (kind !== null) throw new PlatformBlockedError(kind, '动作页面上看到风控页面')
+  }
+
+  /**
    * 抓会话列表（**翻页**，readInbox 与 detectStage 共用）。
    *
    * 停手条件：某页不满一页（含空页）→ 到底了；或翻到 `talkListMaxPages`。
@@ -1402,6 +1443,10 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
     const collected: ZhaopinTalkRow[] = []
     const seen = new Set<string>()
     for (let pageNo = 1; pageNo <= config.talkListMaxPages; pageNo += 1) {
+      // 页与页之间给个间隔：整条 IM 链路原先**一次等待都没有**（最多 3 页接口连发），
+      // 而同一站点的搜索/详情链路都有 1.2–3.2s 的拟人间隔 —— 一个站点并存两种节奏
+      // 本身就是可识别的特征（`domain/crawl.ts` 给详情补抓写的注释是同一件事）。
+      if (pageNo > 1 && delayMax > 0) await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
       const result = await page.evaluate(fetchTalkListInPage, {
         url: buildTalkListUrl(config, pageNo),
       })
@@ -1412,6 +1457,15 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
         )
       }
       if (result.code !== 200) {
+        // 能认出是哪一类风控就**抛风控错误**（由 guard 写平台级暂停 + 说人话）；
+        // 认不出来仍是原来的普通错误 —— 不猜（见 `blockFromApiFailure`）。
+        const block = blockFromApiFailure({ code: result.code, message: result.message })
+        if (block !== null) {
+          throw new PlatformBlockedError(
+            block,
+            `会话列表接口返回 code=${String(result.code)}：${result.message}`,
+          )
+        }
         throw new Error(
           `智联会话列表接口返回 code=${String(result.code)}（第 ${String(pageNo)} 页）：${result.message}`,
         )
@@ -1496,6 +1550,10 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
 
     auth: {
       loginUrl: 'https://passport.zhaopin.com/login',
+      // 检测判**搜索页**：`isLoggedInInPage` 只认结果页的 `-unlogin` 修饰类与
+      // `isLogged` 载荷，两者都没有时**兜底返回"已登录"** —— 而 passport 登录页上
+      // 两者都不会有，在那儿判就是恒判已登录。见 `auth.checkUrl` 的说明。
+      checkUrl: buildZhaopinSearchUrl(config, {}),
       async isLoggedIn(page): Promise<boolean> {
         return await page.evaluate(isLoggedInInPage, {
           loginPopup: config.selectors.loginPopup,
@@ -1527,6 +1585,9 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
         if (delayMax > 0) {
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
+        // 列表页是 SSR 直出，但"看一眼"这件事仍然要做：这一页如果一次滚轮、
+        // 一次指针移动都没有，访问形态就只剩"导航 + 读 DOM"（见 `humanBrowse`）。
+        await humanBrowse(page)
       },
 
       async readListPage(page): Promise<RawJob[]> {
@@ -1553,15 +1614,8 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
     },
 
     guard: {
-      async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockInPage, {
-          card: config.selectors.card,
-          loginPopup: config.selectors.loginPopup,
-          noJobTip: config.selectors.noJobTip,
-          // 通用词表在**宿主侧**组装好再传进去（页面里没有这个模块）
-          signals: signalsOf(ZHAOPIN_BLOCK_SIGNALS),
-        })
-      },
+      // 判墙的实现只有一份（`detectBlockOf`）—— 动作链与采集共用它。
+      detectBlock: detectBlockOf,
     },
 
     // 详情页解析（P2 详情抓取）。未登录即可访问详情页拿 JD 全文；薪资/DOM 层会掩码，
@@ -1589,6 +1643,9 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
        */
       async readInbox(page): Promise<RawInboxMessage[]> {
         await page.goto(config.imUrl)
+        // 先判墙：会话页被登录墙/验证码顶掉时，接口那边只会得到一句 code≠200
+        // （或者更糟：一句读不出原因的失败），而这里能直接说清是什么墙。
+        await assertActionPage(page)
         // 等**容器**而不是等行（zhipin 那边踩过的同一个坑）：空列表时容器在、行不在，
         // 等行会把"真的空"拖成一次超时。这里超时不报错 —— 数据以接口为准，
         // DOM 只是"页面确实到了会话页、没被弹去登录页"的旁证。
@@ -1609,11 +1666,15 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
        */
       async detectStage(page, job): Promise<ContactStage | null> {
         await page.goto(config.imUrl)
+        await assertActionPage(page)
         let rows: ZhaopinTalkRow[]
         try {
           rows = await fetchTalkRows(page)
-        } catch {
-          // 接口挂了 / 形状变了：这里**不猜**，如实返回"判不出来"，上层保留原值
+        } catch (error) {
+          // **风控证据不能吞**：接口挂了 / 形状变了确实可以"恰当地判不出来"（契约允许 null），
+          // 但"登录态失效 / 被限流"必须冒泡上去 —— 吞掉它等于把平台级信号咽下去。
+          if (error instanceof PlatformBlockedError) throw error
+          // 其余情况：这里**不猜**，如实返回"判不出来"，上层保留原值
           return null
         }
         // 首选**岗位号**匹配：会话行的 `jobNumber` 就是详情 URL 里那个 id
@@ -1681,6 +1742,9 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
         }
 
         await page.goto(job.sourceUrl)
+        // 判墙先于一切（**包括等入口**）：被验证码/限流页顶掉时「立即投递」永远等不到，
+        // 那次等待会白等 20 秒、最后以"找不到投递入口"收场 —— 恰好把风控信号咽掉。
+        await assertActionPage(page)
         await waitFor(page, config.applySelectors.entry, config.applyWaitMs)
 
         // 登录墙：实测（`probe:zhaopin-anon`，未登录）**详情页照样会渲染出「立即投递」按钮**，
@@ -1732,6 +1796,20 @@ export function createZhaopinAdapter(options: ZhaopinAdapterOptions = {}): SiteA
             message: '投递入口存在但不可见/不可点（可能被遮挡）—— 没有点，避免点空。',
           }
         }
+        // ── 动手之前先停下来 ──────────────────────────────────────────
+        // 这是全链路唯一**不可逆**的一步（一次点击 = 投简历 + 平台替你发一句招呼语），
+        // 而原先这里唯一的"拟人成本"是 `humanClick` 内部的 240ms —— 真人不会
+        // 页面刚渲染完就把简历投出去。停留区间走配置（`dwellBeforeApplyMs`，15–30s）。
+        if (config.dwellBeforeApplyMs[1] > 0) {
+          await page.waitForTimeout(
+            dwellBeforeActMs({
+              minMs: config.dwellBeforeApplyMs[0],
+              maxMs: config.dwellBeforeApplyMs[1],
+            }),
+          )
+        }
+        // 再悬停到按钮上停一下，然后才按下去（悬停是"看清了位置"的物理表现）
+        await humanHover(page.mouse, spot.x, spot.y, { wait: (ms) => page.waitForTimeout(ms) })
         await humanClick(page.mouse, spot.x, spot.y, { wait: (ms) => page.waitForTimeout(ms) })
 
         // 送达校验：等成功弹窗，并确认它写的是"已发送简历"那句（而不是别的弹窗）

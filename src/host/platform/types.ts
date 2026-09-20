@@ -8,6 +8,7 @@
  */
 import type { BlockKind, CoreField, HealthState } from '../../shared/contract/enums/crawl.js'
 import type { DeliveryState } from '../../shared/contract/enums/job.js'
+import type { CrawlFailureCode } from '../../shared/contract/enums/error.js'
 import type { ContactStage } from '../../shared/contract/enums/pipeline.js'
 import type { AdapterCapabilitiesDto, AdapterImplementationDto, AdapterMaturityDto, AuthRequirementDto } from '../../shared/contract/dto/platform.js'
 import type { HumanKeyboard, HumanMouse } from './humanize.js'
@@ -305,7 +306,24 @@ export interface SiteAdapter {
    *  见 `platform-facts` 的 `authRequirement`。）
    */
   auth?: {
+    /** 登录引导打开的地址 —— 用户在这里输凭据，所以它必须是**能登录的那一页**。 */
     loginUrl: string
+    /**
+     * **判登录态**（`isLoggedIn`）用哪一页。缺省 / `null` = 用 `loginUrl`。
+     *
+     * 为什么这两个 URL 必须能分开：`isLoggedIn` 只回答"**当前页**会不会被登录墙挡住"，
+     * 而各平台的判据都是按**正常页面**校准的 —— 页头的用户菜单、结果页的 `-unlogin`
+     * 修饰类、列表页的登录入口链接。登录页上这些信号往往一个都没有，
+     * 于是同一个函数在 `loginUrl` 上跑会给出两个方向的错误结论：
+     *
+     *   * 智联：判据全都不在时**兜底返回"已登录"** → 在 passport 登录页上恒判已登录；
+     *   * 51job：判据是"0 卡片 + 文本里有『登录』" → 在登录页上恒判未登录。
+     *
+     * 真实形态由 `platforms/:id/login/check`（只检测、不引导登录）使用：
+     * 它借一页判完就走，不会留在那儿等用户操作，所以它**可以**用搜索页而不是登录页。
+     * 而登录引导（`loginUrl`）必须留在能输密码的那一页上，两者不能混用。
+     */
+    checkUrl?: string | null
     isLoggedIn(page: PageLike): Promise<boolean>
   }
 
@@ -342,6 +360,20 @@ export interface SiteAdapter {
    * 形状在**实现之前**就定死，理由是多平台：10 个平台各写一套返回形状，
    * 上层就得写 10 个分支。这里先把契约固定下来（含"送达"语义），
    * 实现时只填内容不改形状。
+   *
+   * ⚠️ **每个动作实现都必须在导航之后自己判一次墙**，理由是主链的判墙
+   * （`crawl.ts` 的 `adapter.guard.detectBlock`）**只覆盖采集**：
+   * 动作链自己导航、自己点，途中撞上验证码/限流页时，主链根本看不到。
+   * 判法就一句：
+   *
+   * ```ts
+   * const kind = actionBlockOf(await detectBlockOf(page))
+   * if (kind !== null) throw new PlatformBlockedError(kind, '岗位详情页被风控接管')
+   * ```
+   *
+   * **不要**把 `blank` 当风控（见 `actionBlockOf`：会话页上 0 卡片是常态）。
+   * 抛出去之后由 `guard.run()` 写平台级暂停并翻译成可操作的建议 ——
+   * 适配器不需要知道"暂停"这件事存在。
    */
   actions?: {
     /**
@@ -405,4 +437,91 @@ export interface RawInboxMessage {
   at?: string | null
   /** 平台内岗位 id（能从会话反查到岗位时填）。 */
   platformJobId?: string
+}
+
+/* ── 风控证据的上报与翻译 ──────────────────────────────────────────────
+   以前"命中风控"这件事只有**一条**上报路径：`guard.detectBlock(page)` 在判墙时
+   读 DOM 文案。而接口型平台（waiqi / sinojobs / zhipin / zhaopin / liepin / lagou）
+   的风控证据**在接口返回值里** —— 判墙那一刻请求还没发出去，所以那类证据
+   只能表达成一句普通 Error，最后被归类成 `PARSE_FAILED`：
+   既拿不到"限流该退避"的语义，也不会触发平台级暂停。
+
+   下面这几个符号把那条路径补上：适配器**能说清自己看到了什么风控**，
+   而怎么处置（停手 / 暂停平台 / 怎么翻译给用户）由主链与闸门决定。 */
+
+/** 适配器可用的诊断日志（可选注入；离线夹具与部分调用方不传）。 */
+export interface AdapterLogger {
+  info(message: string): void
+  warn(message: string): void
+}
+
+/**
+ * 适配器**直接观察到**风控证据时抛这个。
+ *
+ * 抛它而不是抛普通 Error 的差别不在措辞，而在**后续动作**：
+ *   * 采集链：`runCrawl` 不再记成 `PARSE_FAILED`，而是按风控处理（停手 + 平台级暂停）；
+ *   * 动作链：`guard.run()` 会写平台级风控暂停，并把错误翻成用户看得懂的处置建议。
+ *
+ * 判据来源可以是 DOM（`guard.detectBlock`）、也可以是**接口返回码**
+ * （waiqi 的 `code=429`、zhaopin 的 `code!==200`）—— 后者只能由适配器自己抛出来。
+ */
+export class PlatformBlockedError extends Error {
+  readonly kind: BlockKind
+  constructor(kind: BlockKind, detail?: string) {
+    super(detail === undefined ? `命中平台风控：${kind}` : `命中平台风控：${kind}（${detail}）`)
+    this.name = 'PlatformBlockedError'
+    this.kind = kind
+  }
+}
+
+/** 这个错误是不是"我看到风控了"；是的话风控类型是什么。 */
+export function blockedKindOf(error: unknown): BlockKind | null {
+  return error instanceof PlatformBlockedError ? error.kind : null
+}
+
+/**
+ * 风控类型 → 采集失败码（`crawl_run.error_code`）。
+ *
+ * 与动作链**共用一份**：`rate-limited` / `captcha` / `blank` 统一收敛到 `BLOCKED`
+ * 是既有口径（`RATE_LIMITED` / `RISK` 只在历史库里出现，见 `enums/error.ts`），
+ * 这里不改动它 —— 只把映射从 `domain/crawl.ts` 挪到共享处，好让动作链用的也是同一份。
+ */
+export function blockFailureCode(kind: BlockKind): CrawlFailureCode {
+  if (kind === 'login-required') return 'NOT_LOGGED_IN'
+  if (kind === 'quota-exhausted') return 'PLATFORM_QUOTA'
+  return 'BLOCKED'
+}
+
+/** 风控类型 → 人话（界面与工具文本直接展示，不把 `quota-exhausted` 印给用户）。 */
+export function blockLabel(kind: BlockKind): string {
+  switch (kind) {
+    case 'captcha':
+      return '验证码/人机验证'
+    case 'login-required':
+      return '登录墙'
+    case 'rate-limited':
+      return '访问频率受限'
+    case 'quota-exhausted':
+      return '平台侧当日额度耗尽'
+    case 'blank':
+      return '页面空白或被销毁'
+    default:
+      return kind
+  }
+}
+
+/**
+ * **动作链上的判墙口径**：`blank` 不算风控。
+ *
+ * 为什么单独一条：`blank` 的判据是"0 卡片 + 文本很短"，那是**列表页**的语义
+ * （`block-signals.ts` 里它本来就被放在最后，是最弱的一条）。在会话页/详情页上
+ * 0 卡片是常态 —— 一个空收件箱（「30天内暂无联系人」）会当场被误判成 `blank`，
+ * 于是每一轮同步都把整个平台暂停掉。
+ *
+ * 反过来，真正的"页面被销毁"由 `blankOnAboutProtocol` / `expectedHost` 这些
+ * **结构性**判据表达（liepin / indeed），它们与 `blank` 同值但来源不同 ——
+ * 那两处调用点自己判断，不走这里。
+ */
+export function actionBlockOf(kind: BlockKind | null): BlockKind | null {
+  return kind === 'blank' ? null : kind
 }

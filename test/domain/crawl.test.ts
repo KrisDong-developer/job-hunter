@@ -13,6 +13,7 @@ import { createPlatformLocks } from '../../src/host/platform/locks.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
 import { readYieldSnapshot } from '../../src/host/platform/yield-baseline.js'
 import type { PageSource, SiteAdapter } from '../../src/host/platform/types.js'
+import { PlatformBlockedError } from '../../src/host/platform/types.js'
 import { DomainError } from '../../src/host/util/errors.js'
 import { CORE_FIELD_MISS_THRESHOLD } from '../../src/shared/config/crawl.js'
 import { fixturePageSource, inlinePageSource, JsdomPage } from '../support/jsdom-page.js'
@@ -646,4 +647,57 @@ test('详情补抓到点即停：列表数据照常入库，本轮记 aborted �
     h.close()
     paging.close()
   }
+})
+
+// ── 适配器自报风控（接口返回码那一类）──────────────────────────────────
+//
+// 判墙（`detectBlock`）跑在**发请求之前**，所以"接口返回 429 / 需要登录"这类证据
+// 只能由适配器在拿到应答时抛出来。以前它会被归成 `PARSE_FAILED`：
+// 既拿不到"该退避/该停手"的语义，也不会走平台级风控暂停 —— 而那正是 SR-22 要拦的。
+
+/** 造一个"解析阶段抛风控错误"的采集环境，返回这一轮的结果。 */
+async function crawlWithBlockingParse(
+  kind: 'rate-limited' | 'quota-exhausted' | 'login-required',
+): Promise<Awaited<ReturnType<typeof runCrawl>>> {
+  const store = openTestStore()
+  const registry = createAdapterRegistry()
+  const base = createFiftyOneAdapter({ config: DEFAULT_FIFTYONE_CONFIG })
+  registry.register({
+    ...base,
+    crawl: {
+      ...base.crawl,
+      readListPage: async () => {
+        throw new PlatformBlockedError(kind, `接口返回 ${kind}`)
+      },
+    },
+  })
+  const deps: CrawlDeps = {
+    store,
+    registry,
+    locks: createPlatformLocks(),
+    pageSource: fixturePageSource({ htmlPath: fixtureHtmlPath(), url: SEARCH_URL }),
+    jobs: createJobService(store),
+    companies: createCompanyService(store),
+    clock: fixedClock(),
+  }
+  try {
+    return await runCrawl(deps, { platformId: '51job', criteria: CRITERIA })
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+}
+
+test('适配器自报限流 → 记成 BLOCKED（不是 PARSE_FAILED），错误里保留平台原话', async () => {
+  const summary = await crawlWithBlockingParse('rate-limited')
+  assert.equal(summary.run.state, 'failed')
+  assert.equal(summary.run.errorCode, 'BLOCKED')
+  assert.ok(summary.run.errorMsg?.includes('rate-limited'), summary.run.errorMsg ?? '')
+})
+
+test('适配器自报额度耗尽 → PLATFORM_QUOTA；自报登录墙 → NOT_LOGGED_IN', async () => {
+  // 两者的处置完全不同：额度耗尽当天停手（退避没用），登录墙要生成登录待办
+  assert.equal((await crawlWithBlockingParse('quota-exhausted')).run.errorCode, 'PLATFORM_QUOTA')
+  assert.equal((await crawlWithBlockingParse('login-required')).run.errorCode, 'NOT_LOGGED_IN')
 })

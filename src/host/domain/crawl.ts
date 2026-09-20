@@ -16,12 +16,13 @@ import type { CrawlFailureCode } from '../../shared/contract/enums/error.js'
 import { DomainError, messageOf } from '../util/errors.js'
 import { parseSalary } from '../util/salary.js'
 import { systemClock, type Clock } from '../util/time.js'
+import { humanBrowse } from '../platform/humanize.js'
 import type { PlatformLocks } from '../platform/locks.js'
 import { BurstGuard, humanDelayMs, type BurstGuardLike } from '../platform/pacing.js'
 import { applyFieldPresence, recordRunFailure, recordRunSuccess } from '../platform/health.js'
 import { applyYieldBaseline } from '../platform/yield-baseline.js'
 import type { AdapterRegistry } from '../platform/registry.js'
-import type { PageSource, RawJob, SearchCriteria, SiteAdapter } from '../platform/types.js'
+import { blockFailureCode, blockedKindOf, type PageSource, type RawJob, type SearchCriteria, type SiteAdapter } from '../platform/types.js'
 import { partitionByRequiredFields, type FieldPresence } from '../platform/validate.js'
 import type { Store } from '../store/store.js'
 import type { CompanyService } from './companies.js'
@@ -94,19 +95,28 @@ export interface RunCrawlOptions {
   deadlineAt?: string | null
 }
 
-/** 风控类型 → 失败码。 */
-function blockToCode(kind: BlockKind): CrawlFailureCode {
-  if (kind === 'login-required') return 'NOT_LOGGED_IN'
-  if (kind === 'quota-exhausted') return 'PLATFORM_QUOTA'
-  return 'BLOCKED'
-}
-
 /** 风控类型 → 人话（落进 crawl_run.error_msg，界面直接展示）。 */
 function blockMessage(kind: BlockKind): string {
   if (kind === 'quota-exhausted') {
     return '平台侧今日额度已用完（quota-exhausted）—— 退避重试没有意义，今天对该平台停手'
   }
   return `命中风控/登录墙：${kind}`
+}
+
+/**
+ * 适配器抛错时先问一句：**它说的是"我看到风控了"吗**。
+ *
+ * 为什么必须问：接口型平台的风控证据在**返回值**里（waiqi 的 `code=429`、
+ * zhipin 的 `code!==0`），而判墙（`detectBlock`）跑在这些请求**之前** ——
+ * 不认这条通道，那些证据就只会变成一句 `PARSE_FAILED`：
+ * 既拿不到"该退避"的语义，也不会触发平台级暂停（正是 SR-22 要拦的东西）。
+ *
+ * 返回 `null` = 不是风控证据，按原来的分类走。
+ */
+function blockFromError(error: unknown): { code: CrawlFailureCode; message: string } | null {
+  const kind = blockedKindOf(error)
+  if (kind === null) return null
+  return { code: blockFailureCode(kind), message: blockMessage(kind) }
 }
 
 function requireRun(run: CrawlRunDto | undefined, runId: number): CrawlRunDto {
@@ -204,6 +214,11 @@ async function fetchNewJobDetails(
         break
       }
 
+      // 读一页 JD 是**完整的页面访问**：真人会滚一段、把指针挪一挪。
+      // 只做导航、不产生任何输入事件的访问，是这一层最容易被识别的地方
+      // （见 `humanize.ts` 的 `humanBrowse`：没有滚轮能力时它会自己跳过）。
+      await humanBrowse(page)
+
       try {
         const parsed = await detail.extract(page)
         const jdText = parsed.jdText ?? ''
@@ -212,6 +227,12 @@ async function fetchNewJobDetails(
           deps.logger?.warn(`[crawl] 详情页没解析出 JD（job ${String(jobId)}，${adapter.id}）`)
         }
       } catch (error) {
+        // 详情解析里撞上风控（接口返回码 / 页面被接管）→ 与上面判墙同等对待：整轮停手
+        const detected = blockedKindOf(error)
+        if (detected !== null) {
+          blocked = detected
+          break
+        }
         deps.logger?.warn(`[crawl] 详情解析失败（job ${String(jobId)}）：${messageOf(error)}`)
       }
 
@@ -315,13 +336,15 @@ async function executeCrawl(
       try {
         await adapter.crawl.gotoSearch(page, { ...options.criteria, page: pageNo })
       } catch (error) {
-        failure = { code: 'NAVIGATION_FAILED', message: messageOf(error) }
+        // 适配器可能**在导航里就撞上墙**（例如接口型平台先取数据再跳页）——
+        // 它自报的风控证据优先于"导航失败"这个更含糊的分类。
+        failure = blockFromError(error) ?? { code: 'NAVIGATION_FAILED', message: messageOf(error) }
         break
       }
 
       const block = await adapter.guard.detectBlock(page).catch(() => null)
       if (block !== null) {
-        failure = { code: blockToCode(block), message: blockMessage(block) }
+        failure = { code: blockFailureCode(block), message: blockMessage(block) }
         break
       }
 
@@ -329,7 +352,8 @@ async function executeCrawl(
       try {
         raw = await adapter.crawl.readListPage(page)
       } catch (error) {
-        failure = { code: 'PARSE_FAILED', message: messageOf(error) }
+        // 判墙跑在请求**之前**，所以接口返回码那一类风控证据只能在这里认（见 `blockFromError`）
+        failure = blockFromError(error) ?? { code: 'PARSE_FAILED', message: messageOf(error) }
         break
       }
 
@@ -591,7 +615,7 @@ async function executeCrawl(
       reason: options.reason ?? 'manual',
       errorCode:
         detailBlocked !== null
-          ? blockToCode(detailBlocked)
+          ? blockFailureCode(detailBlocked)
           : stoppedAtDeadline || detailStopped
             ? 'DEADLINE_REACHED'
             : suspicious

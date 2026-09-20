@@ -1,6 +1,7 @@
 /**
  * 平台与登录态路由：`GET /platforms`（已注册平台列表）、`GET /login/status`（各平台登录态）、
  * `POST /platforms/:id/login/start`（拉起登录引导）、
+ * `POST /platforms/:id/login/check`（只检测登录态、不引导登录）、
  * `GET|PUT /platforms/:id/adapter-config`（适配器配置覆盖，**热生效**）。
  *
  * 调度自身状态（/schedule/*、/scheduler/status）见 schedule.ts；触达相关
@@ -45,6 +46,31 @@ export async function loginStart(ctx: RouteContext): Promise<RouteResult | undef
     requireData(runtime)
     const platformId = segments[1] ?? ''
     return json(200, { ok: true, login: runtime.startLogin(platformId) })
+  }
+
+  return undefined
+}
+
+/**
+ * `POST /platforms/:id/login/check` —— **只检测**登录态，不引导登录。
+ *
+ * 为什么不是直接复用 `/login/start`：那条会**把登录页留在那儿等用户操作**
+ * （轮询最长 5 分钟）。而"我只是想看一眼现在登没登"是完全不同的一件事 ——
+ * 顺手开一个等用户输密码的窗口，是把一次读操作变成了一次交互。
+ *
+ * 检测**失败**（页面打不开 / 适配器抛错）走 200 + `checked: false`，
+ * 而不是错误码：那是"这一下没测出来"，界面要能把它与"确定未登录"分开。
+ */
+export async function loginCheck(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, segments, method } = ctx
+
+  if (segments.length === 4 && segments[0] === 'platforms' && segments[2] === 'login' && segments[3] === 'check') {
+    if (method !== 'POST') {
+      throw new DomainError('INVALID_INPUT', '登录态检测只支持 POST')
+    }
+    requireData(runtime)
+    const platformId = segments[1] ?? ''
+    return json(200, { ok: true, check: await runtime.checkLogin(platformId) })
   }
 
   return undefined

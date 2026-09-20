@@ -273,7 +273,24 @@ export interface SiteAdapter {
      *  见 `platform-facts` 的 `authRequirement`。）
      */
     auth?: {
+        /** 登录引导打开的地址 —— 用户在这里输凭据，所以它必须是**能登录的那一页**。 */
         loginUrl: string;
+        /**
+         * **判登录态**（`isLoggedIn`）用哪一页。缺省 / `null` = 用 `loginUrl`。
+         *
+         * 为什么这两个 URL 必须能分开：`isLoggedIn` 只回答"**当前页**会不会被登录墙挡住"，
+         * 而各平台的判据都是按**正常页面**校准的 —— 页头的用户菜单、结果页的 `-unlogin`
+         * 修饰类、列表页的登录入口链接。登录页上这些信号往往一个都没有，
+         * 于是同一个函数在 `loginUrl` 上跑会给出两个方向的错误结论：
+         *
+         *   * 智联：判据全都不在时**兜底返回"已登录"** → 在 passport 登录页上恒判已登录；
+         *   * 51job：判据是"0 卡片 + 文本里有『登录』" → 在登录页上恒判未登录。
+         *
+         * 真实形态由 `platforms/:id/login/check`（只检测、不引导登录）使用：
+         * 它借一页判完就走，不会留在那儿等用户操作，所以它**可以**用搜索页而不是登录页。
+         * 而登录引导（`loginUrl`）必须留在能输密码的那一页上，两者不能混用。
+         */
+        checkUrl?: string | null;
         isLoggedIn(page: PageLike): Promise<boolean>;
     };
     crawl: {

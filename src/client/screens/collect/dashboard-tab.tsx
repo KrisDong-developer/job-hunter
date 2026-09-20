@@ -40,20 +40,21 @@ export function DashboardTab(props: {
   reasonText: Record<string, string>
   reasonFor: (skipReason: string | null) => string | null
   platformNameOf: (platformId: string) => string | null
-  expandedPlatform: string | null
   running: boolean
   runBlocked: boolean
   runBlockTitle: string
   onFocusPlan: (planId: number) => void
-  onTogglePlatform: (platformId: string) => void
   onResume: () => void
   onTakeover: () => void
   onTrigger: (plan: PlanDto) => void
   onEdit: (plan: PlanDto) => void
   onGoPlans: () => void
   onLogin: (platformId: string) => void
+  /** 「操作」列上的「检测」：只检测登录态，结果在弹窗里。 */
+  onCheck: (platformId: string, displayName: string) => void
+  /** 「操作」列上的「明细」：打开该平台的诊断弹窗。 */
+  onDetail: (item: PlatformOverviewDto) => void
   onOpenError: (run: RecentRunDto, failure: FailureText) => void
-  onGoSettings: () => void
   onReload: () => void
 }) {
   /** 适配器维护那两块只需要 id + 显示名（下拉与筛选），不传整个概览对象。 */
@@ -258,17 +259,17 @@ export function DashboardTab(props: {
         </section>
       )}
 
-      {/* ── 平台状态总览（主从结构：明细在行内展开）────────────────────
+      {/* ── 平台状态总览（明细在「操作」列的弹窗里）──────────────────────
           原来「平台总览」表格与紧随其后的「平台明细」长列表是**两份**关于同一批
           平台的东西（表格回答横向可比的问题，长列表回答纵向的"为什么"），
           而长列表的格式还和表格高度重复。现在只留一张表：
-          「明细」在**该行下方展开**，不再另起一段把视觉注意力拉走。
+          「明细」点开是**弹窗**，表格的高度与行位置不受影响。
           「这个平台是什么」（成熟度/能力/实现度）搬去「诊断与明细」分区，
           这里只放"它现在怎么样" —— 两类信息的性质不同，见那里的注释。 */}
       <section className="jh-card">
         <div className="jh-form-head">
           <h2 className="jh-card-title">平台状态总览</h2>
-          <FieldHint text="「今天能跑」用的是与调度同一个前置条件判定 —— 这里写着「可以」的平台，到点真的会跑；写着原因的，就是它现在被什么拦住了。点某一行的「明细」看该平台的完整诊断。" />
+          <FieldHint text="「今天能跑」用的是与调度同一个前置条件判定 —— 这里写着「可以」的平台，到点真的会跑；写着原因的，就是它现在被什么拦住了。「操作」列上：检测只查登录态、登录会打开登录页、明细看完整诊断。" />
         </div>
         {props.platformsError !== null && <p className="jh-error">{props.platformsError}</p>}
         {props.platformsLoading ? (
@@ -284,11 +285,10 @@ export function DashboardTab(props: {
           <PlatformMatrix
             items={props.platformList}
             reasonText={props.reasonText}
-            expandedId={props.expandedPlatform}
-            onToggle={props.onTogglePlatform}
             running={props.running}
             onLogin={props.onLogin}
-            onGoSettings={props.onGoSettings}
+            onCheck={props.onCheck}
+            onDetail={props.onDetail}
           />
         )}
       </section>

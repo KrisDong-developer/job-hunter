@@ -39,21 +39,23 @@ import { createWaiqiAdapter, DEFAULT_WAIQI_CONFIG, mergeWaiqiConfig } from '../p
 import { createZhaopinAdapter, DEFAULT_ZHAOPIN_CONFIG, mergeZhaopinConfig } from '../platform/adapters/zhaopin.js'
 import { createZhipinAdapter, DEFAULT_ZHIPIN_CONFIG, mergeZhipinConfig } from '../platform/adapters/zhipin.js'
 import type { AdapterRegistry } from '../platform/registry.js'
-import type { SiteAdapter } from '../platform/types.js'
+import type { AdapterLogger, SiteAdapter } from '../platform/types.js'
 import type { Store } from '../store/store.js'
 import type { Clock } from '../util/time.js'
-
-/** 只用到 info —— 装配点的 logger 形状这里不需要整个。 */
-export interface AdapterLogger {
-  info(message: string): void
-}
 
 /** 一个平台的注册规格。 */
 export interface AdapterSpec {
   /** 与 `setting` 里 `adapter-config` 的作用域键、以及适配器自己声明的 `id` 必须一致。 */
   id: string
-  /** 用 DB 里那份覆盖（可能为 undefined）构造适配器。 */
-  build: (override: unknown, delayRangeMs: [number, number]) => SiteAdapter
+  /**
+   * 用 DB 里那份覆盖（可能为 undefined）构造适配器。
+   *
+   * `logger` 只给一类适配器用：**页面内调接口**的那些。它们的降级是"接口失败 →
+   * 静默回退 DOM 解析"，而 DOM 兜底往往还能解析出四个核心字段 —— 于是接口坏掉
+   * 几个月，健康度、字段计数、量级基线**一个都不会报警**，只是 `publishedAt` /
+   * `industry` 悄悄永远是空。日志是这种缺口唯一的出口。
+   */
+  build: (override: unknown, delayRangeMs: [number, number], logger?: AdapterLogger) => SiteAdapter
   /**
    * 配置的两层视图（J2 / `GET|PUT /platforms/:id/adapter-config`）。
    *
@@ -89,8 +91,12 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
   // 详见适配器文件头。
   {
     id: 'lagou',
-    build: (override, delayRangeMs) =>
-      createLagouAdapter({ config: mergeLagouConfig(override), delayRangeMs }),
+    build: (override, delayRangeMs, logger) =>
+      createLagouAdapter({
+        config: mergeLagouConfig(override),
+        delayRangeMs,
+        ...(logger === undefined ? {} : { logger }),
+      }),
     config: { defaults: DEFAULT_LAGOU_CONFIG, merge: (override) => mergeLagouConfig(override) },
   },
 
@@ -116,8 +122,12 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
   // 适配器只做 URL 导航 + 语义锚点解析 + 判墙即停；锚点待 probe:liepin 夹具校准。
   {
     id: 'liepin',
-    build: (override, delayRangeMs) =>
-      createLiepinAdapter({ config: mergeLiepinConfig(override), delayRangeMs }),
+    build: (override, delayRangeMs, logger) =>
+      createLiepinAdapter({
+        config: mergeLiepinConfig(override),
+        delayRangeMs,
+        ...(logger === undefined ? {} : { logger }),
+      }),
     config: { defaults: DEFAULT_LIEPIN_CONFIG, merge: (override) => mergeLiepinConfig(override) },
   },
 
@@ -126,8 +136,12 @@ export const ADAPTER_SPECS: readonly AdapterSpec[] = [
   // BossHunter site-patterns（2026-05-26 验证）。
   {
     id: 'zhipin',
-    build: (override, delayRangeMs) =>
-      createZhipinAdapter({ config: mergeZhipinConfig(override), delayRangeMs }),
+    build: (override, delayRangeMs, logger) =>
+      createZhipinAdapter({
+        config: mergeZhipinConfig(override),
+        delayRangeMs,
+        ...(logger === undefined ? {} : { logger }),
+      }),
     config: { defaults: DEFAULT_ZHIPIN_CONFIG, merge: (override) => mergeZhipinConfig(override) },
   },
 
@@ -209,7 +223,7 @@ export function registerAdapters(options: RegisterAdaptersOptions): void {
   for (const spec of ADAPTER_SPECS) {
     // 适配器配置以 DB 为权威（ADR-19）：DB 覆盖合并到代码默认值之上
     const override = store.setting.get<unknown>(ADAPTER_CONFIG_KEY, 'platform', spec.id)
-    const adapter = spec.build(override, delayRangeMs)
+    const adapter = spec.build(override, delayRangeMs, logger)
     // 表里的 id 要读 DB 覆盖，适配器里的 id 决定注册键 —— 两者不一致会注册到一个
     // 用错配置的平台下，而且不报错。宁可在这里断掉。
     if (adapter.id !== spec.id) {
@@ -243,8 +257,10 @@ export function rebuildAdapter(
   spec: AdapterSpec,
   override: unknown,
   registry: AdapterRegistry,
+  /** 与 `registerAdapters` 同一个 logger：热替换后适配器的降级日志不能就此消失。 */
+  logger?: AdapterLogger,
 ): SiteAdapter {
-  const adapter = spec.build(override, [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS])
+  const adapter = spec.build(override, [REQUEST_DELAY_MIN_MS, REQUEST_DELAY_MAX_MS], logger)
   if (adapter.id !== spec.id) {
     throw new Error(`适配器表 id 与实现不符：表里是 ${spec.id}，实际构造出 ${adapter.id}`)
   }

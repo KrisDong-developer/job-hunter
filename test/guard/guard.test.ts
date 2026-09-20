@@ -20,6 +20,9 @@ import { guardAuthority, type GuardToken } from '../../src/host/guard/token.js'
 import { sendGreeting, GREETING_SEND_ACTION } from '../../src/host/guard/actions/greeting.js'
 import { writeGuardSettings, SETTINGS_WRITE_ACTION } from '../../src/host/guard/actions/settings.js'
 import { createAdapterRegistry } from '../../src/host/platform/registry.js'
+import { createPlatformLocks } from '../../src/host/platform/locks.js'
+import { readPlatformRiskPause } from '../../src/host/platform/risk-pause.js'
+import { PlatformBlockedError } from '../../src/host/platform/types.js'
 import type { SessionService } from '../../src/host/platform/session.js'
 import type { Store } from '../../src/host/store/store.js'
 import type { GuardInput } from '../../src/host/guard/types.js'
@@ -748,6 +751,173 @@ test('随机休息日：确定性命中（同一天结论恒定）、概率 0/1 
     assert.equal(
       runRuleChain({ store, session: okSession, clock: fixedClock(T) }, { action: 'job.list', actor: 'gui', danger: 'low' }).ok,
       true,
+    )
+  })
+})
+
+// ── 动作链的节流 / 串行 / 风控上报（G2）────────────────────────────────
+//
+// 这三条以前**完全不存在**：动作会直接开一个浏览器页去导航，既不等突发窗口、
+// 也不与采集互斥、撞上风控页时连一条记录都不会留下。它们的语义必须被钉住 ——
+// 全都是"没做到也不会报错"的那类约束（跑起来一切正常，只是风控账单在别处结算）。
+
+test('动作链：先等拟人间隔 + 突发惩罚，做完再记账（与采集共用同一份窗口）', async () => {
+  await withStore(async (store) => {
+    const slept: number[] = []
+    let marks = 0
+    const guard = createGuard({
+      store,
+      approval: yesPort,
+      clock: fixedClock(T),
+      session: okSession,
+      locks: createPlatformLocks(),
+      burstOf: () => ({ penaltyMs: () => 5_000, mark: () => void (marks += 1) }),
+      sleep: async (ms) => void slept.push(ms),
+    })
+
+    const result = await guard.run(
+      { action: 'inbox.sync', actor: 'gui', danger: 'low', target: { platformId: '51job' } },
+      async () => 'done',
+    )
+
+    assert.equal(result, 'done')
+    assert.equal(slept.length, 1, '动手之前必须等一次')
+    // 基础拟人间隔（REQUEST_DELAY 1200–3200）+ 突发惩罚 5000
+    assert.ok(slept[0]! >= 6_200 && slept[0]! <= 8_200, `实际等待：${String(slept[0])}`)
+    assert.equal(marks, 1, '做完要记一次（无论成败）—— 不记会让下一次的空窗判断偏乐观')
+  })
+})
+
+test('动作链：同平台正在采集时立刻让路（CONFLICT），不排队、也不执行', async () => {
+  await withStore(async (store) => {
+    const locks = createPlatformLocks()
+    // 占住这个平台（模拟一轮采集正在进行）
+    void locks.tryRun('51job', () => new Promise<void>(() => undefined))
+    const guard = createGuard({
+      store,
+      approval: yesPort,
+      clock: fixedClock(T),
+      session: okSession,
+      locks,
+      sleep: async () => undefined,
+    })
+
+    let executed = false
+    await assert.rejects(
+      () =>
+        guard.run(
+          { action: 'inbox.sync', actor: 'gui', danger: 'low', target: { platformId: '51job' } },
+          async () => {
+            executed = true
+            return 1
+          },
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'CONFLICT')
+        assert.ok(error.message.includes('正在采集'))
+        return true
+      },
+    )
+    assert.equal(executed, false, '被锁挡住的动作一次都不该执行')
+  })
+})
+
+test('动作链：适配器自报风控 → 写平台级暂停，并把错误翻成可操作的建议', async () => {
+  await withStore(async (store) => {
+    const guard = createGuard({
+      store,
+      approval: yesPort,
+      clock: fixedClock(T),
+      session: okSession,
+      sleep: async () => undefined,
+    })
+
+    await assert.rejects(
+      () =>
+        guard.run(
+          { action: 'inbox.sync', actor: 'gui', danger: 'low', target: { platformId: 'zhipin' } },
+          async () => {
+            // 适配器在会话页上判到了墙（DOM 或接口返回码）—— 这是它的上报形态
+            throw new PlatformBlockedError('captcha', '会话页被滑块接管')
+          },
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'BLOCKED')
+        assert.ok(error.message.includes('验证码'), error.message)
+        assert.ok(error.hint?.includes('恢复') === true, error.hint)
+        return true
+      },
+    )
+
+    // 关键：这条信号**不能只消失在一次失败的点击里** —— 它必须落到平台级暂停上
+    const paused = readPlatformRiskPause(store, 'zhipin')
+    assert.equal(paused.paused, true)
+    assert.ok((paused.reason ?? '').includes('inbox.sync'), paused.reason ?? '')
+  })
+})
+
+test('动作链：额度耗尽单独成一类（QUOTA_EXCEEDED），不当笼统的 BLOCKED', async () => {
+  await withStore(async (store) => {
+    // 发送动作会先过发送窗口（默认 09:00–16:00）—— 这里测的是风控翻译，先把它关掉
+    writeGuardConfig(store, { sendWindow: '', dayOffProbability: 0 }, T)
+    const guard = createGuard({
+      store,
+      approval: yesPort,
+      clock: fixedClock(T),
+      session: okSession,
+      sleep: async () => undefined,
+    })
+
+    await assert.rejects(
+      () =>
+        guard.run(
+          { action: 'greeting.send', actor: 'gui', danger: 'high', guiConfirmed: true, target: { platformId: 'zhipin' } },
+          async (token: GuardToken) => {
+            void token
+            throw new PlatformBlockedError('quota-exhausted', '平台提示「今日投递太多」')
+          },
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof DomainError)
+        assert.equal(error.code, 'QUOTA_EXCEEDED')
+        assert.ok(error.hint?.includes('停手') === true, error.hint)
+        return true
+      },
+    )
+    assert.equal(readPlatformRiskPause(store, 'zhipin').paused, true)
+  })
+})
+
+test('动作链：普通异常照旧原样抛出，不会被误翻成风控', async () => {
+  await withStore(async (store) => {
+    const guard = createGuard({
+      store,
+      approval: yesPort,
+      clock: fixedClock(T),
+      session: okSession,
+      sleep: async () => undefined,
+    })
+
+    await assert.rejects(
+      () =>
+        guard.run(
+          { action: 'inbox.sync', actor: 'gui', danger: 'low', target: { platformId: 'zhipin' } },
+          async () => {
+            throw new Error('选择器烂了')
+          },
+        ),
+      (error: unknown) => {
+        assert.equal(error instanceof DomainError, false)
+        assert.ok(error instanceof Error && error.message.includes('选择器烂了'))
+        return true
+      },
+    )
+    assert.equal(
+      readPlatformRiskPause(store, 'zhipin').paused,
+      false,
+      '解析失败不是风控证据 —— 误报会把健康的平台停掉',
     )
   })
 })

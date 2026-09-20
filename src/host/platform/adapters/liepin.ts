@@ -57,9 +57,10 @@
 import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
 import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
+import { humanBrowse } from '../humanize.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
-import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
+import type { AdapterLogger, CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
 
 /** 结构锚点集（2026-09-18 由 v8 探针真实夹具校准）。每一项都可以在 DB 里覆盖着改（ADR-19）。 */
 export interface LiepinSelectors {
@@ -1192,12 +1193,15 @@ export interface LiepinAdapterOptions {
   delayRangeMs?: [number, number]
   /** 等列表渲染出来的上限（ms）。 */
   waitForListMs?: number
+  /** 诊断日志：只用于上报"接口通道静默降级了"这一类**不报警的坏法**。 */
+  logger?: AdapterLogger
 }
 
 /** 构造猎聘适配器。 */
 export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAdapter {
   const config = options.config ?? DEFAULT_LIEPIN_CONFIG
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
+  const logger = options.logger
 
   /**
    * 记住每个页面最近一次 gotoSearch 的条件（city 码 + 页码），供 readListPage
@@ -1294,6 +1298,9 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
         if (delayMax > 0) {
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
+        // 猎聘是**风控最强**的一档，而它原先在整条采集链上一次输入事件都不产生
+        // （只有导航 + 读 DOM）。"指针一次都没动过"在这种站点上是低强度但稳定可累积的信号。
+        await humanBrowse(page)
       },
 
       async readListPage(page): Promise<RawJob[]> {
@@ -1317,6 +1324,21 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
             .catch(() => null)
           const viaApi = parseSearchApiResponse(payload)
           if (viaApi.length > 0) return viaApi
+          // 走到这里 = 接口**没给出东西**。三种情况要分清，前两种必须留痕：
+          //   * `payload === null`：请求根本没通（网络 / CORS / 页面没到域上）；
+          //   * `flag ≠ 1`：服务端拒绝了这次请求（`-1400` = `x-fscp-*` 一族不全或风控收紧）；
+          //   * `flag === 1` 但列表空：**这是正常结果**（真的没搜到），不打日志。
+          //
+          // 为什么非留痕不可：静默回退 DOM 的代价是"接口坏掉几个月，表现一切正常"——
+          // 四个核心字段照常命中（DOM 兜底也给得出），只是 `publishedAt` / `industry` /
+          // `companySize` / `labels` **永远是空**。健康度、字段计数、量级基线一个都不会响。
+          const flag = (payload as { flag?: unknown } | null)?.flag
+          if (payload === null || flag !== 1) {
+            logger?.warn(
+              `[liepin] 搜索接口没给出结果（${payload === null ? '请求失败' : `flag=${String(flag)}`}）` +
+                '—— 已回退 DOM 解析；这一批的 publishedAt / industry / companySize / labels 会留空',
+            )
+          }
         }
         return await page.evaluate(extractJobsInPage, {
           selectors: config.selectors,

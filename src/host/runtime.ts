@@ -27,7 +27,7 @@ import type { DeadlineDto } from '../shared/contract/dto/campus.js'
 import type { CrawlStatusDto, CrawlSummaryDto, HealthDto } from '../shared/contract/dto/crawl.js'
 import type { GreetingDraftDto } from '../shared/contract/dto/pipeline.js'
 import type { SchedulerStatusDto } from '../shared/contract/dto/plan.js'
-import type { LoginStatusDto, PlatformOverviewDto } from '../shared/contract/dto/platform.js'
+import type { LoginCheckDto, LoginStatusDto, PlatformOverviewDto } from '../shared/contract/dto/platform.js'
 import type { AdapterConfigDto } from '../shared/contract/dto/settings.js'
 import type { CleanupPlanDto, CleanupResultDto, DataExportEntryDto, DataImportResultDto, StorageUsageDto } from '../shared/contract/dto/storage.js'
 import type { GuardUsageDto, TodayDto } from '../shared/contract/dto/today.js'
@@ -373,6 +373,13 @@ export interface HostRuntime {
   platforms(): PlatformOverviewDto[]
   loginStatuses(): LoginStatusDto[]
   startLogin(platformId: string): LoginStatusDto
+  /**
+   * **只检测**某个平台的登录态（打开平台页面 → 判一次 → 放掉页面），不引导登录。
+   *
+   * 与其他会打开浏览器的动作同一条纪律：离线模式下拒绝，只读实例拒绝 ——
+   * 它虽然只是"看一眼"，占用的仍是那个独占的浏览器 profile。
+   */
+  checkLogin(platformId: string): Promise<LoginCheckDto>
   closeTodo(id: number): boolean
   /**
    * D7 的额度读数：每个平台、每个动作今天用了几次、还剩几次。
@@ -502,6 +509,20 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
    * 见 crawl.ts 对 `createBurstGuard` 的说明 —— 那里记着为什么必须共享。
    */
   const burstGuards = new Map<string, BurstGuard>()
+  /**
+   * 取某个平台的突发惩罚守卫 —— **只有这一份实现**。
+   *
+   * 采集（`createBurstGuard`）与动作链（`guard` 的 `burstOf`）都走它：
+   * 两处各写一遍 "get-or-create" 迟早会变成"采集有一份、动作有另一份"，
+   * 而那种状态下同一个站点却在算两条互不相干的节奏 —— 窗口等于没设。
+   */
+  const burstGuardOf = (platformId: string): BurstGuard => {
+    const existing = burstGuards.get(platformId)
+    if (existing !== undefined) return existing
+    const created = new BurstGuard()
+    burstGuards.set(platformId, created)
+    return created
+  }
   const bus = createEventBus()
   const lease: LeaseManager = createLease({
     path: join(dataDir, 'lease.json'),
@@ -911,6 +932,10 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       session,
       approval: approvalPort,
       clock,
+      // 动作链与采集**共用**同一把平台锁与同一份突发窗口（见 `burstGuardOf` 的说明）：
+      // 同一个站点的采集流量与发送流量必须是同一条节奏。
+      locks: platformLocks,
+      burstOf: burstGuardOf,
       ...(logger === undefined ? {} : { logger }),
     })
 
@@ -1229,13 +1254,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
             registry,
             locks: platformLocks,
             // 突发惩罚按平台共享（跨轮次连续）—— 各平台各一份滑动窗口。
-            createBurstGuard: (platformId: string): BurstGuard => {
-              const existing = burstGuards.get(platformId)
-              if (existing !== undefined) return existing
-              const created = new BurstGuard()
-              burstGuards.set(platformId, created)
-              return created
-            },
+            createBurstGuard: burstGuardOf,
             pageSource: browserPageSource(browser),
             jobs: jobService,
             companies: companyService,
@@ -1482,6 +1501,14 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
       return need(loginFlow).start(platformId)
     },
 
+    async checkLogin(platformId): Promise<LoginCheckDto> {
+      // 检测也要真的打开招聘站页面（`auth.isLoggedIn` 判的是**当前页**），
+      // 所以离线闸门与租约约束一条都不能少 —— 与 `startLogin` 完全同级。
+      assertNetworkAllowed('打开招聘网站检测登录态')
+      requireLease(lease, readOnlyReason, '另一个实例正在运行 —— 请在那边检测，避免两个实例抢同一个浏览器 profile。')
+      return await need(loginFlow).check(platformId)
+    },
+
     closeTodo(id): boolean {
       return need(store).todo.close(id, clock())
     },
@@ -1550,7 +1577,7 @@ export function createHostRuntime(options: HostRuntimeOptions = {}): HostRuntime
         opened.setting.set(ADAPTER_CONFIG_KEY, 'platform', platformId, override, clock())
       }
       // **重建并热替换**：配置是在 build 时快照进闭包的，只写库要等下次装配才生效（J2）
-      const adapter = rebuildAdapter(spec, override ?? undefined, registry)
+      const adapter = rebuildAdapter(spec, override ?? undefined, registry, logger)
       const next = buildAdapterConfigOf(opened, platformId)
       bus.publish('adapter.config.updated', {
         platformId,

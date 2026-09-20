@@ -7,7 +7,7 @@
  *   2. 主动产生待办告警（P8：失败必须可见）；
  *   3. 登录引导：打开登录页 → 轮询 → 成功即回写状态并关掉告警。
  */
-import type { AccountStateDto, LoginStatusDto } from '../../shared/contract/dto/platform.js';
+import type { AccountStateDto, LoginCheckDto, LoginStatusDto } from '../../shared/contract/dto/platform.js';
 import type { EventBus } from '../http/sse.js';
 import type { Store } from '../store/store.js';
 import { type Clock } from '../util/time.js';
@@ -53,6 +53,18 @@ export interface LoginFlow {
     status(platformId: string): LoginStatusDto;
     /** 直接驱动一轮检测（测试与「手动再查一次」都用它）。 */
     pollOnce(platformId: string): Promise<LoginStatusDto>;
+    /**
+     * **只检测**登录态：打开平台页面 → 判一次 → 把事实落进 `account_state` → 放掉页面。
+     *
+     * 与 `start` 的区别是它**不引导登录**：不起轮询、不把页面留在那儿等用户操作。
+     * 所以它回答的是"此刻是什么状态"，而不是"正在引导的这次登录走到哪了" ——
+     * 用户想先看一眼再决定要不要去登录时，需要的正是前者。
+     *
+     * ⚠️ 检测**失败**（打不开页面 / 适配器抛错）不抛错，而是回 `checked: false`：
+     * 那是"这一下没检测出来"，不是"这个接口调用失败了"。把它们都做成异常，
+     * 界面就分不清"没测出来"与"确定未登录"了。
+     */
+    check(platformId: string): Promise<LoginCheckDto>;
     cancelAll(): void;
     /**
      * 是否有平台正在跑登录引导（轮询中）。

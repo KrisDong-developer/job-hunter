@@ -3,7 +3,7 @@ import type { DeadlineDto } from '../shared/contract/dto/campus.js';
 import type { CrawlStatusDto, CrawlSummaryDto, HealthDto } from '../shared/contract/dto/crawl.js';
 import type { GreetingDraftDto } from '../shared/contract/dto/pipeline.js';
 import type { SchedulerStatusDto } from '../shared/contract/dto/plan.js';
-import type { LoginStatusDto, PlatformOverviewDto } from '../shared/contract/dto/platform.js';
+import type { LoginCheckDto, LoginStatusDto, PlatformOverviewDto } from '../shared/contract/dto/platform.js';
 import type { AdapterConfigDto } from '../shared/contract/dto/settings.js';
 import type { CleanupPlanDto, CleanupResultDto, DataExportEntryDto, DataImportResultDto, StorageUsageDto } from '../shared/contract/dto/storage.js';
 import type { GuardUsageDto, TodayDto } from '../shared/contract/dto/today.js';
@@ -276,6 +276,13 @@ export interface HostRuntime {
     platforms(): PlatformOverviewDto[];
     loginStatuses(): LoginStatusDto[];
     startLogin(platformId: string): LoginStatusDto;
+    /**
+     * **只检测**某个平台的登录态（打开平台页面 → 判一次 → 放掉页面），不引导登录。
+     *
+     * 与其他会打开浏览器的动作同一条纪律：离线模式下拒绝，只读实例拒绝 ——
+     * 它虽然只是"看一眼"，占用的仍是那个独占的浏览器 profile。
+     */
+    checkLogin(platformId: string): Promise<LoginCheckDto>;
     closeTodo(id: number): boolean;
     /**
      * D7 的额度读数：每个平台、每个动作今天用了几次、还剩几次。

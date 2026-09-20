@@ -141,6 +141,7 @@ const ROUTES: RouteHandler[] = [
   applications.deliverBatch,
   platforms.loginStatus,
   platforms.loginStart,
+  platforms.loginCheck,
   platforms.adapterConfig,
 
   // ── 待办、留痕、配置 ───────────────────────────────────────────

@@ -17,6 +17,7 @@ import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { mergeAdapterConfig } from '../config-merge.js'
 import { humanDelayMs } from '../pacing.js'
+import { humanBrowse } from '../humanize.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
 
@@ -374,6 +375,10 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
     // 所以这里主要服务于打招呼/投递（P5）与「别把登录墙当成没有新岗位」这条要求。
     auth: {
       loginUrl: 'https://login.51job.com/login.php',
+      // 检测判**搜索页**：判据是"0 卡片 + 文本里有『登录/注册/扫码』"，
+      // 它是按结果页校准的 —— 在登录页上跑会恒判未登录（那一页本来就没有卡片、
+      // 又到处都是"登录"）。见 `auth.checkUrl` 的说明。
+      checkUrl: buildSearchUrl({}),
       async isLoggedIn(page): Promise<boolean> {
         const block = await page.evaluate(detectBlockWithSignals, {
           signals: signalsOf(FIFTYONE_BLOCK_SIGNALS),
@@ -403,6 +408,9 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
           // P5/D-17a：高斯 + 犹豫的拟人间隔（见 platform/pacing.ts），不是均匀随机。
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
+        // "看一眼"：留下真实的滚轮与指针轨迹（见 `humanize.ts` 的 `humanBrowse`）。
+        // 只读页面原先一次输入事件都不产生，而真人看列表一定会滚动。
+        await humanBrowse(page)
       },
 
       async readListPage(page): Promise<RawJob[]> {

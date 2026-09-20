@@ -1,8 +1,7 @@
 /**
- * 拟人输入层（P1 / D-17a）—— 给将来的 `actions.sayHello` / `actions.sendResume` 用。
+ * 拟人输入层（P1 / D-17a）—— 采集与高危动作**唯一**的输入通道。
  *
- * 现状：三个适配器的打招呼动作都 fail-closed（`ADAPTER_BROKEN`）。本模块是
- * 实现"怎么点 / 怎么输入"时的**唯一**输入通道，数值取自两个实战验证过的项目：
+ * 数值取自两个实战验证过的项目：
  *
  *   * **三段式 CDP 点击**（`mouseMoved` → `mousePressed` → `mouseReleased`，
  *     间隔 60ms / 80ms）与**逐字符打字**（25–70ms/字符，标点再 +70ms）：
@@ -13,10 +12,20 @@
  *     打开岗位页先"看一会儿"再动手；
  *   * **分步滚动**：一次 `scrollBy` 大跳变是非人类特征，分步 + 页间停顿。
  *
+ * 在此之上补了三件事（2026-09-20），它们各自对应一类**无法用"节奏"掩盖**的痕迹：
+ *   * `humanMoveTo` / `humanHover`：一次 `move(x,y)` 在页面上只有**一个**
+ *     mousemove 事件，而真人每秒产生几十个 —— 折线轨迹 + 落点停留；
+ *   * `humanPress`：按键本身该是瞬时的，但"打完字 0ms 就回车"不是；
+ *   * `humanBrowse`：**只读页面也要留下真实的滚动与指针行为**（八个适配器
+ *     原先一次输入事件都不产生）。
+ *
  * 为什么不走 DOM 事件（`el.click()` / `dispatchEvent`）：那些不产生
  * `Input` 域的 trusted 事件（`isTrusted=false`），是最廉价的自动化特征。
  * Playwright/patchright 的 `page.mouse` / `page.keyboard` 走 CDP `Input` 域，
  * 产生浏览器合成的 trusted 事件 —— 本模块只依赖两者的最小结构面，离线可测。
+ *
+ * ⚠️ 一条贯穿本模块的纪律：**能力缺失时宁可不做，也不换一种痕迹**。
+ * `mouse.wheel` / `keyboard.down` 缺省时调用方跳过对应步骤，绝不退回 DOM 模拟。
  */
 import type { Random } from './pacing.js'
 
@@ -25,6 +34,14 @@ export interface HumanMouse {
   move(x: number, y: number): Promise<void>
   down(): Promise<void>
   up(): Promise<void>
+  /**
+   * 可选：滚轮（Playwright `mouse.wheel(deltaX, deltaY)`）。
+   *
+   * 只为一件事存在：**滚动也要产生真实输入事件**。`window.scrollBy` 只产生 scroll 事件、
+   * 没有 wheel 事件，而真人滚页面**先有轮子**。缺省时 `humanBrowse` **直接跳过滚动**，
+   * 绝不退回 DOM 滚动 —— 与 `HumanKeyboard.down/up` 同一条纪律（宁可少做，不换一种痕迹）。
+   */
+  wheel?(deltaX: number, deltaY: number): Promise<void>
 }
 
 /** 键盘的最小结构面（`page.keyboard` 满足它）。 */
@@ -58,14 +75,79 @@ const defaultWait = (ms: number): Promise<void> =>
   })
 
 /**
- * 拟人点击：像素微调 → 三段式（move → press → release）。
+ * 落点附近的**进入点**：目标左上方一点。
+ *
+ * 为什么需要它：`mouse.move(x, y)` 一步到位，在页面上就是**一个** mousemove 事件 ——
+ * 真人移动鼠标时，浏览器每秒会产生几十个。先落在附近再移向目标，至少构成一条折线。
+ */
+function approachPoint(x: number, y: number, random: Random): { x: number; y: number } {
+  return {
+    x: Math.max(1, Math.round(x - (18 + random() * 42))),
+    y: Math.max(1, Math.round(y - (6 + random() * 20))),
+  }
+}
+
+/**
+ * 拟人移动：从进入点到目标走一条 **3–5 段的折线**，段间 12–38ms。
+ *
+ * 与 `humanClick` 的关系：点击 = 先移动到目标（本函数）+ ±2px 微调 + 三段式按下抬起。
+ * 单独导出是为了让"只移动不点击"（悬停、浏览）也有同一条轨迹，而不是各写一份。
+ */
+export async function humanMoveTo(
+  mouse: HumanMouse,
+  x: number,
+  y: number,
+  options: HumanizeOptions = {},
+): Promise<void> {
+  const random = options.random ?? Math.random
+  const wait = options.wait ?? defaultWait
+  const from = approachPoint(x, y, random)
+  const steps = 3 + Math.floor(random() * 3)
+  for (let index = 1; index <= steps; index += 1) {
+    const ratio = index / steps
+    const last = index === steps
+    // 最后一步**必须精确落在目标上**（否则点击会偏），中间几步带一点手抖。
+    const jitterX = last ? 0 : Math.round((random() - 0.5) * 7)
+    const jitterY = last ? 0 : Math.round((random() - 0.5) * 5)
+    await mouse.move(
+      Math.round(from.x + (x - from.x) * ratio) + jitterX,
+      Math.round(from.y + (y - from.y) * ratio) + jitterY,
+    )
+    await wait(12 + Math.floor(random() * 27))
+  }
+}
+
+/**
+ * 拟人悬停：移过去 + 在目标上停 150–500ms。
+ *
+ * 两个用途：
+ *   * 有的站点**必须 hover 才亮出按钮**（猎聘的「聊一聊」实测如此）；
+ *   * "动手之前先在目标上停一下"是真人最稳定的动作特征之一 —— 比点击本身更难伪装。
+ */
+export async function humanHover(
+  mouse: HumanMouse,
+  x: number,
+  y: number,
+  options: HumanizeOptions = {},
+): Promise<void> {
+  const random = options.random ?? Math.random
+  const wait = options.wait ?? defaultWait
+  await humanMoveTo(mouse, x, y, options)
+  await wait(150 + Math.floor(random() * 350))
+}
+
+/**
+ * 拟人点击：折线移动 → ±2px 微调 → 三段式（move → press → release）。
  *
  * 事件序列（间隔为 BossHunter / get_jobs 实测值的折中）：
- *   1. move(x, y) → 50ms；
+ *   1. 折线移动到 (x, y)（3–5 段，段间 12–38ms）；
  *   2. move(x+2, y) → 50ms（向右探 2px）；
  *   3. move(x−2, y) → 50ms（向左探 2px）；
  *   4. move(x, y) → 60ms（回到目标）；
  *   5. down() → 80ms → up()。
+ *
+ * 第 2–5 步是 BossHunter / get_jobs 在生产环境验证过的原序列，一字未改；
+ * 新增的只有第 1 步（把"凭空出现在目标上"换成一条轨迹）。
  */
 export async function humanClick(
   mouse: HumanMouse,
@@ -74,7 +156,7 @@ export async function humanClick(
   options: HumanizeOptions = {},
 ): Promise<void> {
   const wait = options.wait ?? defaultWait
-  await mouse.move(x, y)
+  await humanMoveTo(mouse, x, y, options)
   await wait(50)
   await mouse.move(x + 2, y)
   await wait(50)
@@ -109,10 +191,48 @@ export async function humanType(
   }
 }
 
-/** 发送前停留时长（ms）：15–30s（BossHunter `browse_before_greet` 同款区间）。 */
-export function dwellBeforeActMs(options: { random?: Random } = {}): number {
+export interface HumanPressOptions extends HumanizeOptions {
+  /** 按键之前的停顿区间（ms）。默认 [150, 600]。 */
+  beforeMs?: [number, number]
+  /** 按键之后的停顿区间（ms）。默认 [120, 480]。 */
+  afterMs?: [number, number]
+}
+
+/**
+ * 拟人按键：**按键前后各留一点时间**。
+ *
+ * 为什么需要它：一次 `press('Enter')` 本身就该是瞬时的（真人的一次按键也是），
+ * 但"打完字 0ms 就回车"不是 —— 真人在这里会停一下（看一遍自己打的字、找发送键）。
+ * 这个函数把那段停顿显式化，且**前后都要**：按下之前是"看一眼"，之后是"等它上屏"。
+ */
+export async function humanPress(
+  keyboard: HumanKeyboard,
+  key: string,
+  options: HumanPressOptions = {},
+): Promise<void> {
   const random = options.random ?? Math.random
-  return Math.round(15_000 + random() * 15_000)
+  const wait = options.wait ?? defaultWait
+  const [beforeMin, beforeMax] = options.beforeMs ?? [150, 600]
+  const [afterMin, afterMax] = options.afterMs ?? [120, 480]
+  await wait(beforeMin + Math.floor(random() * Math.max(0, beforeMax - beforeMin)))
+  await keyboard.press(key)
+  await wait(afterMin + Math.floor(random() * Math.max(0, afterMax - afterMin)))
+}
+
+/**
+ * 发送/动手之前的停留时长（ms）。默认 15–30s（BossHunter `browse_before_greet` 同款区间）。
+ *
+ * `minMs` / `maxMs` 可调：会话里的**回复**用不着"打开页面看一刻钟"（那是首次打招呼的语义），
+ * 给 3–8s 的"读完再回"即可 —— 但**绝不能是 0**（打完字立刻回车是纯机器节奏）。
+ */
+export function dwellBeforeActMs(
+  options: { random?: Random; minMs?: number; maxMs?: number } = {},
+): number {
+  const random = options.random ?? Math.random
+  const min = options.minMs ?? 15_000
+  const max = options.maxMs ?? 30_000
+  if (max <= min) return Math.max(0, min)
+  return Math.round(min + random() * (max - min))
 }
 
 /**
@@ -135,4 +255,60 @@ export async function smoothScrollBy(
     remaining -= step
     if (remaining > 0) await wait(800 + Math.round(random() * 800))
   }
+}
+
+/** `humanBrowse` 要用的最小页面面（`PageLike` 满足它）。 */
+export interface HumanBrowseSurface {
+  mouse?: HumanMouse
+  waitForTimeout(ms: number): Promise<void>
+}
+
+export interface HumanBrowseOptions extends HumanizeOptions {
+  /** 这一段最多滚多少像素。默认 520（≈ 半屏到一屏，看平台排版）。 */
+  maxPx?: number
+}
+
+/**
+ * 拟人"看一眼这一页"：滚一小段，然后把光标挪到页面中部停一下。
+ *
+ * ## 为什么必须做
+ *
+ * 采集链路上十个适配器里八个**只导航、不产生任何输入事件**：没有 mousemove、
+ * 没有 wheel、没有 scroll。而"一次页面访问里指针一次都没动过"本身就是一个
+ * 稳定、廉价、难以伪造的特征 —— 真人看列表一定会滚动。
+ *
+ * ## 为什么只滚一小段（不是滚到底）
+ *
+ * 滚动会触发懒加载：滚到底等于**主动增加对这个站点的请求量**，与节流的目的相反。
+ * 这里要的只是"有过真实的滚动与指针行为"，所以距离刻意压在 120–640px。
+ *
+ * ## 没有滚轮能力时**直接返回**
+ *
+ * 不退回 `window.scrollBy`：那是换一种痕迹（只有 scroll 没有 wheel），
+ * 而不是更少的痕迹。与 `HumanKeyboard.down/up` 缺省时跳过清空是同一条纪律。
+ */
+export async function humanBrowse(
+  page: HumanBrowseSurface,
+  options: HumanBrowseOptions = {},
+): Promise<void> {
+  const random = options.random ?? Math.random
+  const wait = options.wait ?? ((ms: number) => page.waitForTimeout(ms))
+  const mouse = page.mouse
+  if (mouse === undefined) return
+  const wheel = mouse.wheel?.bind(mouse)
+  if (wheel === undefined) return
+
+  const total = Math.round(120 + random() * Math.max(0, options.maxPx ?? 520))
+  await smoothScrollBy((deltaY) => wheel(0, deltaY), total, {
+    ...options,
+    wait,
+    stepPx: Math.round(160 + random() * 220),
+  })
+  await wait(300 + Math.floor(random() * 700))
+  // 光标落在页面中部偏上的一块**安全区**（任何 ≥560×460 的视口都不可能越界），
+  // 目的只是让这次访问留下真实的指针轨迹。
+  await humanHover(mouse, 140 + Math.round(random() * 360), 180 + Math.round(random() * 260), {
+    ...options,
+    wait,
+  })
 }

@@ -154,7 +154,7 @@ export const SETTINGS_PURPOSES_AND_USAGE = `
 .jh-plan-actions{display:flex;gap:6px;justify-content:flex-end;
   margin-top:10px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}
 /* .jh-btn-tiny 自带 margin-left:6px，这里是 flex + gap，不要叠加 */
-.jh-plan-actions .jh-btn,.jh-plat-detail-actions .jh-btn{margin-left:0}
+.jh-plan-actions .jh-btn{margin-left:0}
 .jh-plan-switch{margin:0 0 8px}
 
 /* ③ 表格：内边距 / 对齐 / 行状态。
@@ -163,28 +163,27 @@ export const SETTINGS_PURPOSES_AND_USAGE = `
 .jh-table-matrix th,.jh-table-matrix td{padding:8px 10px;vertical-align:middle}
 .jh-table-runs th,.jh-table-runs td{padding:7px 10px;vertical-align:middle}
 .jh-table th.jh-cell-status,.jh-table td.jh-cell-status{text-align:center}
-/* 操作列右对齐：与"数字右对齐"同一套语法，扫这一列时按钮在同一条竖线上 */
+/* 操作列：登录态徽标 + 几颗按钮排在同一行、右对齐。
+   与"数字右对齐"同一套语法 —— 扫这一列时，几颗按钮落在同一条竖线上。
+   表格的最后一列会吃掉剩余宽度（见 PLATFORM_MATRIX 的列宽策略），
+   所以窄面板下这一格先被压缩：允许换行，别让按钮挤成一条读不了的横线。
+   .jh-btn-tiny 自带 margin-left:6px —— 这里是 flex + gap，不要叠加。 */
 .jh-table td.jh-cell-actions{text-align:right}
-/* 展开了明细的那一行**不换底色**。
-   本来想给它 interactive-bg-active 表示"这是我展开的"，但那会引入一个**没量过**的
-   前景/背景组合：这一行里有 .jh-muted（label-secondary），而审核实测
-   "bg-overlay 上的 label-secondary 在深色下只有 3.85:1" —— 交互底色的取值不一定
-   与它相同，不值得为一个纯装饰性的底色去冒这个险。
-   "哪一行展开了"已经有两个更强的信号：按钮变成「收起」+ 明细就贴在它下面
-   （左边一条竖线，见 .jh-plat-detail）。 */
-.jh-table tbody tr.jh-row-detail:hover{background:transparent}
-.jh-table tbody tr.jh-row-detail>td{background:var(--dsw-alias-bg-base);
-  padding:10px 12px 12px 26px}
+.jh-row-actions{display:flex;align-items:center;justify-content:flex-end;
+  gap:6px;flex-wrap:wrap}
+.jh-row-actions .jh-btn{margin-left:0}
 
-/* 展开行里的诊断明细。左边一条竖线表示"属于上面那一行"
-   （与 .jh-dedup-pane 同一套语法，不再另造一种"归属"的画法）。 */
-.jh-plat-detail{display:flex;flex-direction:column;gap:4px;
-  border-left:2px solid var(--dsw-alias-border-l3);padding-left:10px}
+/* 平台诊断明细（PlatformDetail）。它现在是**弹窗内容**，所以不再有
+   "左边一条竖线表示属于上面那一行" —— 弹窗本身就是那份归属。
+   （原先它是矩阵里的行内展开；那一套规则已随展开一起删掉：死规则留着比删掉更糟，
+   下一个人会以为行内展开这种写法还在用。） */
+.jh-plat-detail{display:flex;flex-direction:column;gap:4px}
 .jh-plat-detail .jh-kv{margin:0 0 8px}
 /* 这里曾经有一条 .jh-plat-detail-row（放"登录 徽标 + 登录按钮"那一行）。
-   随着登录动作回到矩阵行里，它没有使用者了 —— 死规则留着比删掉更糟：
-   下一个人会以为明细里还有一排"行内控件"的写法可以复用。 */
+   随着登录动作回到矩阵行里，它没有使用者了。 */
 .jh-plat-detail-actions{display:flex;gap:6px;margin-top:6px}
+/* 明细弹窗里那颗按钮与 .jh-btn-tiny 的 margin-left 不叠加（同 .jh-plan-actions） */
+.jh-plat-detail-actions .jh-btn{margin-left:0}
 
 /* 能力矩阵（诊断与明细分区）：12 列，**不套用** .jh-table-matrix 的列宽策略 ——
    那一套会 nowrap 所有非末列，而这里"成熟度"格下面还挂着"已知缺口"的说明句，

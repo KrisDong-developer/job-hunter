@@ -51,10 +51,11 @@
 import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
 import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
+import { humanBrowse } from '../humanize.js'
 import { signalsOf, type BlockSignalSet } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../types.js'
-import { platformCriterion } from '../types.js'
+import { PlatformBlockedError, platformCriterion } from '../types.js'
 
 /** 页面外壳地址（人看的入口）。 */
 export const WAIQI_WEB_BASE = 'https://www.waiqi.com'
@@ -930,6 +931,9 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
 
     auth: {
       loginUrl: `${config.webBase}/login`,
+      // 检测判**搜索页**：判据是页头有没有用户头像，而登录页没有页头用户区
+      // —— 在那儿判会恒判未登录。见 `auth.checkUrl` 的说明。
+      checkUrl: buildWaiqiSearchUrl(config, {}),
       /**
        * 搜索不需要登录，所以这里**只看用户头像**这一个正向信号；
        * 「没登录」不该让采集停摆（`runtime` 那侧也只在"确实被登录墙挡过"时才拦）。
@@ -968,6 +972,9 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
         if (delayMax > 0) {
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
+        // 列表数据来自接口，DOM 只是"页面活过来了"的旁证；但**一次输入事件都不产生**
+        // 的访问本身是可识别的形态，所以仍然要留下真实的滚动与指针轨迹。
+        await humanBrowse(page)
       },
 
       async readListPage(page): Promise<RawJob[]> {
@@ -980,7 +987,25 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
         lastCode.set(page as object, request.code)
 
         if (!request.ok) {
-          // 抛错 → 主链记 `PARSE_FAILED`、按阈值把适配器置为 degraded。
+          // 风控/登录墙**在返回码里**（这是本平台的实测事实：`429` = 频控墙、
+          // `1022` = 需要登录）→ 抛风控错误，由主链停手 + 平台级暂停。
+          //
+          // 为什么不能只靠 `detectBlock`：主链顺序是 `gotoSearch → detectBlock → readListPage`，
+          // 而返回码只有**发完请求**才存在 —— 判墙那一刻它还是 `null`。
+          // 抛出去是唯一能在**当轮**生效的通道（否则要等下一轮判墙才被认出来）。
+          const block: BlockKind | null =
+            request.code === 1022
+              ? 'login-required'
+              : request.code === 429
+                ? 'rate-limited'
+                : null
+          if (block !== null) {
+            throw new PlatformBlockedError(
+              block,
+              `列表接口 code=${String(request.code)}：${request.message === '' ? '（无说明）' : request.message}`,
+            )
+          }
+          // 认不出来仍是普通失败。抛错 → 主链记 `PARSE_FAILED`、按阈值把适配器置为 degraded。
           // **绝不能静默返回空数组**：那会被当成"今天没有新岗位"（§4.2.4）。
           throw new Error(
             `神仙外企：列表接口未返回可用数据（code=${request.code === null ? '?' : String(request.code)}，` +

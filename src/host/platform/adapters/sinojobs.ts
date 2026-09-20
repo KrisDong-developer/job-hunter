@@ -47,10 +47,11 @@
 import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
 import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
-import { signalsOf, type BlockSignalSet } from '../block-signals.js'
+import { humanBrowse } from '../humanize.js'
+import { blockFromApiFailure, signalsOf, type BlockSignalSet } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
 import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
-import { platformCriterion } from '../types.js'
+import { PlatformBlockedError, platformCriterion } from '../types.js'
 
 /** 页面外壳地址（人看的入口；筛选条件不在 URL 里，见 `buildSinoJobsSearchUrl`）。 */
 export const SINOJOBS_WEB_BASE = 'https://sinojobs.com.cn'
@@ -520,6 +521,10 @@ export async function fetchListInPage(arg: {
       credentials: 'include',
       headers: {
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        // ⚠️ 站内脚本自己用的是 jQuery `$.ajax`，它会**默认带上** `X-Requested-With`。
+        // 缺了它，服务端若按"是不是 AJAX"分支处理，就会走到非 AJAX 那一支
+        // （当前实测不带也能读，属潜在隐患 —— 补上它才是"同一种请求"）。
+        'X-Requested-With': 'XMLHttpRequest',
         accept: 'application/json, text/javascript, */*; q=0.01',
       },
       body: form.toString(),
@@ -832,6 +837,9 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
 
     auth: {
       loginUrl: `${config.webBase}/Ucenter/login.html`,
+      // 检测判**列表页**：判据是"页头还有没有那个登录链接"，而登录页本身没有站内页头
+      // —— 在那儿判会恒判已登录。见 `auth.checkUrl` 的说明。
+      checkUrl: buildSinoJobsSearchUrl(config, {}),
       /**
        * 搜索不需要登录，所以这里只看**登录链接是否还在**这一个结构性信号
        * （未登录是 `a.sign-out`，已登录被用户菜单替换）。
@@ -871,6 +879,9 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
         if (delayMax > 0) {
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
+        // 列表数据来自接口，DOM 只是"页面活过来了"的旁证；但**一次输入事件都不产生**
+        // 的访问本身是可识别的形态，所以仍然要留下真实的滚动与指针轨迹。
+        await humanBrowse(page)
       },
 
       async readListPage(page): Promise<RawJob[]> {
@@ -882,7 +893,18 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
         })
 
         if (!request.ok) {
-          // 抛错 → 主链记 `PARSE_FAILED`、按阈值把适配器置为 degraded。
+          // 先看这**是不是风控/登录墙**：站点脚本走 jQuery `$.ajax`，失败时 `info` 里是
+          // 人话（「请先登录」/「操作过于频繁」这一类）。能认出来就抛**风控错误** ——
+          // 主链会因此停手并把平台置为风控暂停（SR-22），而不是把"你被挡了"
+          // 降级成一次普通的 `PARSE_FAILED`（那会一路退避重试，越撞越紧）。
+          const block = blockFromApiFailure({ code: request.statusCode, message: request.message })
+          if (block !== null) {
+            throw new PlatformBlockedError(
+              block,
+              `列表接口 status=${request.statusCode === null ? '?' : String(request.statusCode)}：${request.message}`,
+            )
+          }
+          // 认不出来仍是普通失败。抛错 → 主链记 `PARSE_FAILED`、按阈值把适配器置为 degraded。
           // **绝不能静默返回空数组**：那会被当成"今天没有新岗位"（§4.2.4）。
           throw new Error(
             `SinoJobs：列表接口未返回可用数据（status=${request.statusCode === null ? '?' : String(request.statusCode)}，` +

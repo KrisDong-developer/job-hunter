@@ -49,9 +49,11 @@
 import type { BlockKind, CoreField } from '../../../shared/contract/enums/crawl.js'
 import { CORE_FIELDS } from '../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../pacing.js'
-import { detectBlockWithSignals, signalsOf } from '../block-signals.js'
+import { humanBrowse } from '../humanize.js'
+import { blockFromApiFailure, detectBlockWithSignals, signalsOf } from '../block-signals.js'
 import { platformFacts } from '../platform-facts.js'
-import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
+import type { AdapterLogger, CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../types.js'
+import { PlatformBlockedError } from '../types.js'
 
 /** 列表页选择器（默认射到经典结构，**待 probe:lagou 夹具校准**，DB 可覆盖）。 */
 export interface LagouSelectors {
@@ -305,17 +307,24 @@ export function fetchListInPage(arg: { apiPath: string; form: Record<string, str
   } catch {
     body = ''
   }
-  const referer = typeof location !== 'undefined' ? location.href : ''
   return fetchImpl(arg.apiPath, {
     method: 'POST',
     credentials: 'include',
-    // 拉勾 positionAjax 是表单编码；anti-force 头来自经典爬虫 + 页面会话 cookie 配套。
+    // 拉勾 positionAjax 是表单编码。X-Requested-With 是 jQuery `$.ajax` 的默认头
+    // （站点自己也带），加上它才是"同一种请求"。
+    //
+    // ⚠️ 两个 `X-Anit-Forge-*` 是**未经实测验证的占位值**（`0` / `None`）：真实站点上它们
+    // 是会话级动态 token，这里的常量是"经典爬虫写法 + 配套 cookie"那一路。**不删**的原因是
+    // 删掉只会让这条通道更容易被拒，而当前没有证据说它被校验；但也不能当它已经过了校准 ——
+    // 这条通道一旦失败就是静默回退 DOM，而本适配器的 DOM 选择器还是 `experimental`。
+    //
+    // ⚠️ 原先这里还手写了一个 `Referer` —— 那是 **fetch 规范的禁止头**（forbidden header name），
+    // 浏览器会直接忽略它。"以为设了其实没设"比不设更糟：它会让人误以为 Referer 已经复刻了。
     headers: {
       'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
       'X-Requested-With': 'XMLHttpRequest',
       'X-Anit-Forge-Code': '0',
       'X-Anit-Forge-Token': 'None',
-      ...(referer === '' ? {} : { Referer: referer }),
     },
     body,
   })
@@ -708,12 +717,15 @@ export interface LagouAdapterOptions {
   delayRangeMs?: [number, number]
   /** 等列表渲染出来的上限（ms）。 */
   waitForListMs?: number
+  /** 诊断日志：只用于上报"接口通道静默降级了"这一类**不报警的坏法**。 */
+  logger?: AdapterLogger
 }
 
 /** 构造拉勾网适配器。 */
 export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapter {
   const config = options.config ?? DEFAULT_LAGOU_CONFIG
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
+  const logger = options.logger
 
   /**
    * 记住每个页面「上一页读到的下一页真实 URL」，供 gotoSearch 在 page>1 时导航。
@@ -790,6 +802,10 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
 
     auth: {
       loginUrl: 'https://www.lagou.com/login',
+      // 检测判**搜索页**：`isLoggedInInPage` 认的是页头的用户入口/头像，
+      // 而登录页是登录表单（没有页头用户区）—— 在那儿判会得到"未登录"。
+      // 见 `auth.checkUrl` 的说明。
+      checkUrl: buildLagouSearchUrl(config, {}),
       // 结构性信号（待含登录夹具校准）。搜索不需要登录，这个入口只服务登录引导与后续高危动作。
       async isLoggedIn(page): Promise<boolean> {
         return await page.evaluate(isLoggedInInPage, undefined as never)
@@ -812,6 +828,8 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
         if (delayMax > 0) {
           await page.waitForTimeout(humanDelayMs([delayMin, delayMax]))
         }
+        // 拉勾是 WAF 滑块挡门（`antiBot: high`），而它原先一次输入事件都不产生。
+        await humanBrowse(page)
       },
 
       async readListPage(page): Promise<RawJob[]> {
@@ -827,6 +845,22 @@ export function createLagouAdapter(options: LagouAdapterOptions = {}): SiteAdapt
             .catch(() => null)
           const viaApi = parseSearchApiResponse(payload)
           if (viaApi.length > 0) return viaApi
+          // 走到这里 = 接口**没给出东西**。拉勾被限流时的典型返回是
+          // `{"status":false,"msg":"您操作太频繁，请稍后再访问"}` —— 这一类**必须抛出去**：
+          // 它是"平台已经认出你了"的证据，而回退 DOM 只会把这条信号咽成一次普通解析。
+          const record = payload as { msg?: unknown; status?: unknown; success?: unknown } | null
+          const message = typeof record?.msg === 'string' ? record.msg : ''
+          const block = blockFromApiFailure({ message })
+          if (block !== null) throw new PlatformBlockedError(block, `搜索接口：${message}`)
+          // 其余失败**留痕后**继续回退 DOM（原先连痕迹都没有）：接口长期失效的表现是
+          // "一切正常，只是 createTime / companySize / financeStage / industryField 永远空"。
+          if (payload === null || message !== '' || record?.status === false || record?.success === false) {
+            logger?.warn(
+              `[lagou] 搜索接口没给出结果（${
+                payload === null ? '请求失败' : message === '' ? '结构与预期不符' : message
+              }）—— 已回退 DOM；这一批的 createTime / companySize / financeStage / industryField 会留空`,
+            )
+          }
         }
 
         const raw = await page.evaluate(extractJobsInPage, {

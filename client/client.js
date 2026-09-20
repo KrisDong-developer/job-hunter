@@ -129,7 +129,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/app/panel.tsx
-		var import_react40 = require("react");
+		var import_react39 = require("react");
 
 		// src/client/app/error-boundary.tsx
 		var import_react2 = require("react");
@@ -4347,6 +4347,13 @@ window.__ModuleLoader__.load({
 		  );
 		  return result.login;
 		}
+		async function checkLogin(platformId) {
+		  const result = await request(
+		    `/platforms/${encodeURIComponent(platformId)}/login/check`,
+		    { method: "POST", body: JSON.stringify({}) }
+		  );
+		  return result.check;
+		}
 		async function fetchRepairs(platformId, signal) {
 		  const suffix = platformId === void 0 || platformId === "" ? "" : `?platformId=${encodeURIComponent(platformId)}`;
 		  return await request(`/repairs${suffix}`, signal === void 0 ? {} : { signal });
@@ -6313,7 +6320,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/index.tsx
-		var import_react27 = require("react");
+		var import_react26 = require("react");
 
 		// src/shared/contract/enums/crawl.ts
 		var CRAWL_STATE_LABEL = {
@@ -7494,15 +7501,230 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 
-		// src/client/screens/collect/status-alert.tsx
+		// src/client/screens/collect/state-tag.tsx
 		var import_jsx_runtime48 = require("react/jsx-runtime");
+		function StateTag(props) {
+		  const label = props.kind === "run" ? CRAWL_STATE_LABEL[props.state] : HEALTH_STATE_LABEL[props.state];
+		  const tone = props.kind === "run" ? CRAWL_STATE_TONE[props.state] : HEALTH_STATE_TONE[props.state];
+		  return /* @__PURE__ */ (0, import_jsx_runtime48.jsx)("span", { className: `jh-tag jh-tone-${tone}`, children: label });
+		}
+
+		// src/client/screens/collect/platform-matrix.tsx
+		var import_jsx_runtime49 = require("react/jsx-runtime");
+		function cooldownActive(until, now) {
+		  if (until === null) return null;
+		  const at = new Date(until);
+		  return Number.isNaN(at.getTime()) || at.getTime() <= now.getTime() ? null : at;
+		}
+		var MATRIX_COLUMNS = [
+		  { key: "platform", label: "\u5E73\u53F0", className: "jh-col-sticky" },
+		  { key: "runnable", label: "\u4ECA\u5929\u80FD\u8DD1" },
+		  { key: "health", label: "\u5065\u5EB7", className: "jh-cell-status" },
+		  { key: "maturity", label: "\u6210\u719F\u5EA6", className: "jh-col-hide-sm" },
+		  { key: "quota", label: "\u4ECA\u65E5\u989D\u5EA6", className: "jh-num" },
+		  { key: "yield", label: "\u4EA7\u91CF", className: "jh-num jh-col-hide-sm" },
+		  { key: "lastRun", label: "\u6700\u8FD1\u4E00\u8F6E" },
+		  /* 「操作」列**必须在最后**：这一列放的是"对这一个平台做什么"，
+		     而做完之后要看的（能不能跑 / 健康 / 额度）都在它左边 —— 扫一行是
+		     从左到右"看事实"，最后落到"动手"。放在中间会把这条读序打断。 */
+		  { key: "actions", label: "\u64CD\u4F5C" }
+		];
+		function PlatformMatrix(props) {
+		  const now = /* @__PURE__ */ new Date();
+		  return /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("tr", { children: MATRIX_COLUMNS.map((column) => /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("th", { scope: "col", className: column.className, children: column.label }, column.key)) }) }),
+		    /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("tbody", { children: props.items.map((item) => {
+		      const blocked = item.governance.blocked === null ? null : props.reasonText[item.governance.blocked] ?? item.governance.blocked;
+		      const cooldown = cooldownActive(item.governance.cooldownUntil, now);
+		      const quotaFull = item.governance.todayRuns >= item.governance.dailyLimit;
+		      const lastRun = item.governance.lastRun;
+		      const loginRunning = item.login.state === "running";
+		      return /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("td", { className: "jh-col-sticky", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("code", { children: item.id }),
+		          item.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u672A\u542F\u7528" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("div", { className: "jh-muted", children: item.displayName })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("td", { className: blocked === null ? "jh-ok" : "jh-warn", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("div", { children: blocked === null ? "\u53EF\u4EE5" : /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: "jh-clip", title: blocked, children: blocked }) }),
+		          cooldown === null ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: "jh-muted", children: [
+		            "\u51B7\u5374\u81F3 ",
+		            formatClock(cooldown)
+		          ] })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("td", { className: "jh-cell-status", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(StateTag, { state: item.health, kind: "health" }),
+		          item.failStreak > 0 ? /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("span", { className: "jh-muted", children: [
+		            " \xD7",
+		            item.failStreak
+		          ] }) : null
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("td", { className: "jh-col-hide-sm", children: /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(
+		          "span",
+		          {
+		            className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`,
+		            title: item.maturity.notes === void 0 || item.maturity.notes === "" ? MATURITY_LEVEL_LABEL[item.maturity.level] : `${MATURITY_LEVEL_LABEL[item.maturity.level]}\uFF1A${item.maturity.notes}`,
+		            children: MATURITY_LEVEL_SHORT[item.maturity.level]
+		          }
+		        ) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("td", { className: `jh-num${quotaFull ? " jh-warn" : ""}`, children: [
+		          item.governance.todayRuns,
+		          "/",
+		          item.governance.dailyLimit
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("td", { className: "jh-num jh-col-hide-sm", children: item.yield.baseline === null ? /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("span", { className: item.yield.level === "dropped" ? "jh-warn" : void 0, children: [
+		          item.yield.lastFound ?? "\u2014",
+		          "/",
+		          item.yield.baseline
+		        ] }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("td", { children: lastRun === null ? /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: "jh-muted", children: "\u6CA1\u8DD1\u8FC7" }) : /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)(import_jsx_runtime49.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: "jh-muted", children: formatClock(new Date(lastRun.startedAt)) }),
+		          " ",
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(StateTag, { state: lastRun.state, kind: "run" })
+		        ] }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("td", { className: "jh-cell-actions", children: /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: "jh-row-actions", children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(
+		            "span",
+		            {
+		              className: `jh-tag jh-tone-${item.account.loggedIn ? "ok" : item.account.lastCheckAt === null ? "muted" : "warn"}`,
+		              children: item.account.loggedIn ? "\u5DF2\u767B\u5F55" : item.account.lastCheckAt === null ? "\u672A\u68C0\u6D4B" : "\u672A\u767B\u5F55"
+		            }
+		          ),
+		          loginRunning ? /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: "jh-warn", children: "\u5F15\u5BFC\u4E2D\u2026" }) : item.account.loggedIn ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-tiny",
+		              disabled: props.running,
+		              title: props.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\u3002",
+		              onClick: () => props.onLogin(item.id),
+		              children: "\u767B\u5F55"
+		            }
+		          ),
+		          item.implementation.loginCheck ? /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-tiny",
+		              disabled: props.running,
+		              title: props.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u6253\u5F00\u8FD9\u4E2A\u5E73\u53F0\u7684\u9875\u9762\u68C0\u6D4B\u4E00\u6B21\u767B\u5F55\u6001\uFF08\u4E0D\u4F1A\u66FF\u4F60\u767B\u5F55\uFF09\uFF0C\u7ED3\u679C\u5728\u5F39\u7A97\u91CC\u3002",
+		              onClick: () => props.onCheck(item.id, item.displayName),
+		              children: "\u68C0\u6D4B"
+		            }
+		          ) : null,
+		          /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-tiny",
+		              title: "\u770B\u8FD9\u4E2A\u5E73\u53F0\u7684\u5B8C\u6574\u8BCA\u65AD\uFF08\u80FD\u4E0D\u80FD\u8DD1\u3001\u88AB\u4EC0\u4E48\u6321\u4F4F\u3001\u767B\u5F55\u6001\u3001\u4EA7\u91CF\uFF09\u3002",
+		              onClick: () => props.onDetail(item),
+		              children: "\u660E\u7EC6"
+		            }
+		          )
+		        ] }) })
+		      ] }, item.id);
+		    }) })
+		  ] }) });
+		}
+		function PlatformDetail(props) {
+		  const { item } = props;
+		  const blocked = item.governance.blocked === null ? null : props.reasonText[item.governance.blocked] ?? item.governance.blocked;
+		  const cooldown = cooldownActive(item.governance.cooldownUntil, /* @__PURE__ */ new Date());
+		  const missing = item.fields.filter((field) => field.consecutiveMiss > 0);
+		  const lastRun = item.governance.lastRun;
+		  const needsLoginCheck = !item.implementation.loginCheck && Object.values(item.authRequirement).includes("required");
+		  return /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: "jh-plat-detail", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("ul", { className: "jh-kv", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: "\u73B0\u5728\u80FD\u8DD1\u5417" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: blocked === null ? "jh-ok" : "jh-warn", children: blocked ?? "\u53EF\u4EE5 \u2014\u2014 \u5230\u70B9\u771F\u7684\u4F1A\u8DD1" })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: "\u4ECA\u65E5\u989D\u5EA6" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)(
+		          "span",
+		          {
+		            className: item.governance.todayRuns >= item.governance.dailyLimit ? "jh-warn" : void 0,
+		            children: [
+		              item.governance.todayRuns,
+		              " / ",
+		              item.governance.dailyLimit,
+		              " \u8F6E"
+		            ]
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: "\u51B7\u5374" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: cooldown === null ? "\u6CA1\u5728\u51B7\u5374" : `\u81F3 ${formatClock(cooldown)}` })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: "\u6700\u8FD1\u4E00\u8F6E" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: lastRun === null ? "\u6CA1\u8DD1\u8FC7" : `${new Date(lastRun.startedAt).toLocaleString()} \xB7 ${CRAWL_STATE_LABEL[lastRun.state]}` })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("li", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: "\u4E0A\u6B21\u6210\u529F" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { children: item.lastOkAt === null ? "\u4ECE\u6765\u6CA1\u6709" : new Date(item.lastOkAt).toLocaleString() })
+		      ] })
+		    ] }),
+		    item.governance.riskPaused ? /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: "jh-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(Term, { term: "\u98CE\u9669\u6682\u505C", children: "\u5DF2\u88AB\u6682\u505C\u81EA\u52A8\u91C7\u96C6" }),
+		      item.governance.riskReason === null ? "" : `\uFF1A${item.governance.riskReason}`,
+		      " ",
+		      "\u2014\u2014 \u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\uFF0C\u786E\u8BA4\u73AF\u5883\u6B63\u5E38\u540E\u5728\u65B9\u6848\u5361\u4E0A\u70B9\u300C\u786E\u8BA4\u6062\u590D\u300D\u3002"
+		    ] }) : null,
+		    item.login.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("div", { className: "jh-muted", children: item.login.message }),
+		    item.account.hint === null ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("div", { className: "jh-muted", children: item.account.hint }),
+		    item.healthReason === null && item.failStreak === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: "jh-warn", children: [
+		      "\u5065\u5EB7\uFF1A",
+		      HEALTH_STATE_LABEL[item.health],
+		      item.failStreak > 0 ? `\uFF08\u8FDE\u7EED\u5931\u8D25 ${item.failStreak} \u6B21\uFF09` : "",
+		      item.healthReason === null ? "" : ` \u2014\u2014 ${item.healthReason}`
+		    ] }),
+		    maturityNeedsWarning(item.maturity.level) ? /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: "jh-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(Term, { term: "\u6210\u719F\u5EA6", children: MATURITY_LEVEL_LABEL[item.maturity.level] }),
+		      item.maturity.notes === void 0 || item.maturity.notes === "" ? null : `\uFF1A${item.maturity.notes}`
+		    ] }) : null,
+		    needsLoginCheck ? /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("div", { className: "jh-warn", children: "\u8BE5\u5E73\u53F0\u9700\u8981\u767B\u5F55\uFF0C\u4F46\u672C\u673A\u8FD8\u6CA1\u6709\u767B\u5F55\u6001\u68C0\u6D4B \u2014\u2014 \u672A\u767B\u5F55\u65F6\u53EF\u80FD\u9759\u9ED8\u6293\u5230\u7A7A\u7ED3\u679C\u3002" }) : null,
+		    item.yield.baseline === null ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: item.yield.level === "dropped" ? "jh-warn" : "jh-muted", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(Term, { term: "\u91CF\u7EA7", children: "\u4EA7\u91CF" }),
+		      "\uFF1A\u8FD1 ",
+		      item.yield.samples,
+		      " \u8F6E\u7684\u5E38\u6001\u7EA6 ",
+		      item.yield.baseline,
+		      " \u6761\uFF0C \u6700\u8FD1\u4E00\u8F6E ",
+		      item.yield.lastFound ?? "\u2014",
+		      " \u6761",
+		      item.yield.level === "dropped" ? " \u2014\u2014 \u660E\u663E\u504F\u4F4E\u3002\u5B57\u6BB5\u5065\u5EB7\u53EF\u80FD\u662F\u5168\u7EFF\u7684\uFF0C\u5148\u67E5\u7FFB\u9875\u4E0E\u61D2\u52A0\u8F7D\u3002" : ""
+		    ] }),
+		    missing.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("div", { className: "jh-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(Term, { term: "\u9010\u5B57\u6BB5\u5065\u5EB7", children: "\u8FDE\u7EED\u7F3A\u5931" }),
+		      "\uFF1A",
+		      missing.map((field) => `${field.field}\xD7${String(field.consecutiveMiss)}`).join(" \xB7 ")
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("div", { className: "jh-plat-detail-actions", children: /* @__PURE__ */ (0, import_jsx_runtime49.jsx)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "jh-btn jh-btn-inline jh-btn-tiny",
+		        onClick: props.onGoSettings,
+		        title: "\u770B\u8BCA\u65AD\u4FE1\u606F\uFF08\u7248\u672C\u3001\u6570\u636E\u8DEF\u5F84\u3001\u8BA1\u6570\u3001\u5DE5\u5177\u6CE8\u518C\u7ED3\u679C\uFF09",
+		        children: "\u53BB\u8BBE\u7F6E\u770B\u8BCA\u65AD"
+		      }
+		    ) })
+		  ] });
+		}
+
+		// src/client/screens/collect/status-alert.tsx
+		var import_jsx_runtime50 = require("react/jsx-runtime");
 		function StatusAlert(props) {
 		  if (props.status.paused) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime48.jsxs)("div", { className: "jh-alert jh-alert-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime48.jsxs)("div", { className: "jh-alert-head", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime48.jsx)("span", { className: "jh-alert-title", children: "\u5B9A\u65F6\u5DF2\u624B\u52A8\u6682\u505C" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime48.jsx)("span", { className: "jh-spacer" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime48.jsx)(
+		    return /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)("div", { className: "jh-alert jh-alert-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)("div", { className: "jh-alert-head", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("span", { className: "jh-alert-title", children: "\u5B9A\u65F6\u5DF2\u624B\u52A8\u6682\u505C" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("span", { className: "jh-spacer" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime50.jsx)(
 		          "button",
 		          {
 		            type: "button",
@@ -7514,7 +7736,7 @@ window.__ModuleLoader__.load({
 		          }
 		        )
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime48.jsxs)("p", { className: "jh-alert-body", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)("p", { className: "jh-alert-body", children: [
 		        props.status.pausedReason === null ? "" : `${props.status.pausedReason}\u3002`,
 		        props.planName === null ? "\u6062\u590D\u540E\u4F1A\u6309\u5404\u65B9\u6848\u914D\u7F6E\u7684\u65F6\u6BB5\u81EA\u52A8\u91C7\u96C6\u3002" : `\u6062\u590D\u540E\u5C06\u81EA\u52A8\u6309\u300C${props.planName}\u300D\u65B9\u6848\u8FD0\u884C\u3002`,
 		        "\u624B\u52A8\u300C\u7ACB\u5373\u91C7\u96C6\u300D\u4E0D\u53D7\u5F71\u54CD\u3002"
@@ -7522,10 +7744,10 @@ window.__ModuleLoader__.load({
 		    ] });
 		  }
 		  if (props.status.refreshSuggested && props.status.refreshHint !== null) {
-		    return /* @__PURE__ */ (0, import_jsx_runtime48.jsxs)("div", { className: "jh-alert jh-alert-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime48.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime48.jsx)("span", { className: "jh-alert-title", children: "\u6570\u636E\u504F\u65E7\uFF0C\u5EFA\u8BAE\u624B\u52A8\u5237\u65B0\u4E00\u6B21" }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime48.jsx)("p", { className: "jh-alert-body", children: /* @__PURE__ */ (0, import_jsx_runtime48.jsx)(InlineMd, { text: props.status.refreshHint }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime48.jsx)("p", { className: "jh-note", children: "\u4E0D\u4F1A\u81EA\u52A8\u8DD1 \u2014\u2014 \u7A0B\u5E8F\u53EA\u5728\u4F60\u5728\u573A\u65F6\u6D3B\u7740\uFF0C\u6240\u4EE5\u8FD9\u91CC\u53EA\u63D0\u793A\uFF0C\u7531\u4F60\u51B3\u5B9A\u3002" })
+		    return /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)("div", { className: "jh-alert jh-alert-warn", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("div", { className: "jh-alert-head", children: /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("span", { className: "jh-alert-title", children: "\u6570\u636E\u504F\u65E7\uFF0C\u5EFA\u8BAE\u624B\u52A8\u5237\u65B0\u4E00\u6B21" }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("p", { className: "jh-alert-body", children: /* @__PURE__ */ (0, import_jsx_runtime50.jsx)(InlineMd, { text: props.status.refreshHint }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("p", { className: "jh-note", children: "\u4E0D\u4F1A\u81EA\u52A8\u8DD1 \u2014\u2014 \u7A0B\u5E8F\u53EA\u5728\u4F60\u5728\u573A\u65F6\u6D3B\u7740\uFF0C\u6240\u4EE5\u8FD9\u91CC\u53EA\u63D0\u793A\uFF0C\u7531\u4F60\u51B3\u5B9A\u3002" })
 		    ] });
 		  }
 		  return null;
@@ -7578,54 +7800,54 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/criteria-line.tsx
-		var import_jsx_runtime49 = require("react/jsx-runtime");
+		var import_jsx_runtime51 = require("react/jsx-runtime");
 		function CriteriaLine(props) {
 		  const scoped = props.dimensions.filter(
 		    (dimension) => dimension.key !== "keyword" && props.plan.criteria[dimension.key] !== void 0
 		  );
 		  const items = describeCriteria(props.plan.criteria, scoped);
 		  const keywords = props.plan.keywords.length > 0 ? props.plan.keywords : props.plan.criteria["keyword"] !== void 0 && props.plan.criteria["keyword"] !== "" ? [props.plan.criteria["keyword"] ?? ""] : [];
-		  if (items.length === 0 && keywords.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("span", { className: "jh-muted", children: "\u6761\u4EF6\uFF1A\u4E0D\u9650" });
-		  return /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("span", { children: [
-		    keywords.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("span", { children: [
+		  if (items.length === 0 && keywords.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime51.jsx)("span", { className: "jh-muted", children: "\u6761\u4EF6\uFF1A\u4E0D\u9650" });
+		  return /* @__PURE__ */ (0, import_jsx_runtime51.jsxs)("span", { children: [
+		    keywords.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime51.jsxs)("span", { children: [
 		      "\u5173\u952E\u8BCD\uFF1A",
-		      /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("b", { children: keywords.join("\u3001") }),
+		      /* @__PURE__ */ (0, import_jsx_runtime51.jsx)("b", { children: keywords.join("\u3001") }),
 		      items.length > 0 ? " \xB7 " : ""
 		    ] }),
-		    items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime49.jsxs)("span", { children: [
+		    items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime51.jsxs)("span", { children: [
 		      item.label,
 		      "\uFF1A",
-		      /* @__PURE__ */ (0, import_jsx_runtime49.jsx)("b", { children: item.display })
+		      /* @__PURE__ */ (0, import_jsx_runtime51.jsx)("b", { children: item.display })
 		    ] }, item.key)).reduce((acc, node) => acc.length === 0 ? [node] : [...acc, " \xB7 ", node], [])
 		  ] });
 		}
 
 		// src/client/screens/collect/lease-panel.tsx
-		var import_jsx_runtime50 = require("react/jsx-runtime");
+		var import_jsx_runtime52 = require("react/jsx-runtime");
 		function LeasePanel(props) {
 		  const { lease } = props.status;
 		  const heartbeat = lease.heartbeatAt === null ? null : new Date(lease.heartbeatAt);
 		  const takeoverPossible = !lease.held && lease.stale;
-		  return /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)("div", { className: `jh-lease${lease.held ? " jh-lease-ok" : " jh-lease-warn"}`, children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)("div", { className: "jh-lease-head", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("b", { children: lease.held ? "\u672C\u7A97\u53E3\u8D1F\u8D23\u91C7\u96C6" : "\u672C\u7A97\u53E3\u53EA\u8BFB" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("span", { className: "jh-muted", children: lease.held ? /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)(import_jsx_runtime50.Fragment, { children: [
+		  return /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: `jh-lease${lease.held ? " jh-lease-ok" : " jh-lease-warn"}`, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: "jh-lease-head", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("b", { children: lease.held ? "\u672C\u7A97\u53E3\u8D1F\u8D23\u91C7\u96C6" : "\u672C\u7A97\u53E3\u53EA\u8BFB" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-muted", children: lease.held ? /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_jsx_runtime52.Fragment, { children: [
 		        "\uFF08\u672C\u7A97\u53E3 ",
-		        /* @__PURE__ */ (0, import_jsx_runtime50.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
 		        " ",
 		        String(lease.pid ?? "?"),
 		        "\uFF09"
-		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime50.jsxs)(import_jsx_runtime50.Fragment, { children: [
+		      ] }) : /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_jsx_runtime52.Fragment, { children: [
 		        "\uFF08\u53E6\u4E00\u4E2A\u7A97\u53E3 ",
-		        /* @__PURE__ */ (0, import_jsx_runtime50.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(Term, { term: "pid", children: "\u8FDB\u7A0B" }),
 		        " ",
 		        String(lease.pid ?? "?"),
 		        " \u6B63\u5728\u8FD0\u884C",
 		        heartbeat === null ? "" : `\uFF0C${formatRelative(heartbeat, props.now)}\u8FD8\u6709\u5FC3\u8DF3`,
 		        "\uFF09"
 		      ] }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("span", { className: "jh-spacer" }),
-		      lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime50.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-spacer" }),
+		      lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
 		        "button",
 		        {
 		          type: "button",
@@ -7643,225 +7865,7 @@ window.__ModuleLoader__.load({
 		        }
 		      )
 		    ] }),
-		    lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime50.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime50.jsx)(InlineMd, { text: "\u600E\u4E48\u89E3\u51B3\uFF1A\u2460 \u5230\u90A3\u4E2A\u7A97\u53E3\u91CC\u64CD\u4F5C\uFF08\u6700\u7A33\uFF09\uFF1B\u2461 \u5173\u6389\u90A3\u4E2A\u7A97\u53E3 \u2014\u2014 \u5173\u6389\u4E4B\u540E\u8FD9\u91CC\u4F1A**\u81EA\u52A8**\u63A5\u7BA1\uFF0C\u4E0D\u7528\u91CD\u542F\uFF0C\u4E5F\u53EF\u4EE5\u70B9\u4E0A\u9762\u7684\u300C\u91CD\u65B0\u68C0\u6D4B\u7CFB\u7EDF\u300D\u7ACB\u523B\u8BD5\u4E00\u6B21\u3002" }) })
-		  ] });
-		}
-
-		// src/client/screens/collect/platform-matrix.tsx
-		var import_react24 = require("react");
-
-		// src/client/screens/collect/state-tag.tsx
-		var import_jsx_runtime51 = require("react/jsx-runtime");
-		function StateTag(props) {
-		  const label = props.kind === "run" ? CRAWL_STATE_LABEL[props.state] : HEALTH_STATE_LABEL[props.state];
-		  const tone = props.kind === "run" ? CRAWL_STATE_TONE[props.state] : HEALTH_STATE_TONE[props.state];
-		  return /* @__PURE__ */ (0, import_jsx_runtime51.jsx)("span", { className: `jh-tag jh-tone-${tone}`, children: label });
-		}
-
-		// src/client/screens/collect/platform-matrix.tsx
-		var import_jsx_runtime52 = require("react/jsx-runtime");
-		function cooldownActive(until, now) {
-		  if (until === null) return null;
-		  const at = new Date(until);
-		  return Number.isNaN(at.getTime()) || at.getTime() <= now.getTime() ? null : at;
-		}
-		var MATRIX_COLUMNS = [
-		  { key: "platform", label: "\u5E73\u53F0", className: "jh-col-sticky" },
-		  { key: "runnable", label: "\u4ECA\u5929\u80FD\u8DD1" },
-		  { key: "login", label: "\u767B\u5F55" },
-		  { key: "health", label: "\u5065\u5EB7", className: "jh-cell-status" },
-		  { key: "maturity", label: "\u6210\u719F\u5EA6", className: "jh-col-hide-sm" },
-		  { key: "quota", label: "\u4ECA\u65E5\u989D\u5EA6", className: "jh-num" },
-		  { key: "yield", label: "\u4EA7\u91CF", className: "jh-num jh-col-hide-sm" },
-		  { key: "lastRun", label: "\u6700\u8FD1\u4E00\u8F6E" },
-		  { key: "detail", label: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-sr-only", children: "\u660E\u7EC6" }) }
-		];
-		function PlatformMatrix(props) {
-		  const now = /* @__PURE__ */ new Date();
-		  return /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("table", { className: "jh-table jh-table-matrix", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("tr", { children: MATRIX_COLUMNS.map((column) => /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("th", { scope: "col", className: column.className, children: column.label }, column.key)) }) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("tbody", { children: props.items.map((item) => {
-		      const blocked = item.governance.blocked === null ? null : props.reasonText[item.governance.blocked] ?? item.governance.blocked;
-		      const cooldown = cooldownActive(item.governance.cooldownUntil, now);
-		      const quotaFull = item.governance.todayRuns >= item.governance.dailyLimit;
-		      const lastRun = item.governance.lastRun;
-		      const open = props.expandedId === item.id;
-		      const detailId = `jh-plat-detail-${item.id}`;
-		      return /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_react24.Fragment, { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("tr", { children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("td", { className: "jh-col-sticky", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("code", { children: item.id }),
-		            item.enabled ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u672A\u542F\u7528" }),
-		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { className: "jh-muted", children: item.displayName })
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("td", { className: blocked === null ? "jh-ok" : "jh-warn", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { children: blocked === null ? "\u53EF\u4EE5" : /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-clip", title: blocked, children: blocked }) }),
-		            cooldown === null ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: "jh-muted", children: [
-		              "\u51B7\u5374\u81F3 ",
-		              formatClock(cooldown)
-		            ] })
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("td", { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
-		              "span",
-		              {
-		                className: `jh-tag jh-tone-${item.account.loggedIn ? "ok" : item.account.lastCheckAt === null ? "muted" : "warn"}`,
-		                children: item.account.loggedIn ? "\u5DF2\u767B\u5F55" : item.account.lastCheckAt === null ? "\u672A\u68C0\u6D4B" : "\u672A\u767B\u5F55"
-		              }
-		            ),
-		            item.login.state === "running" ? /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-warn", children: " \u68C0\u6D4B\u4E2D\u2026" }) : item.account.loggedIn ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
-		              "button",
-		              {
-		                type: "button",
-		                className: "jh-btn jh-btn-inline jh-btn-tiny",
-		                disabled: props.running,
-		                title: props.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\u3002",
-		                onClick: () => props.onLogin(item.id),
-		                children: "\u767B\u5F55"
-		              }
-		            )
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("td", { className: "jh-cell-status", children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(StateTag, { state: item.health, kind: "health" }),
-		            item.failStreak > 0 ? /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("span", { className: "jh-muted", children: [
-		              " \xD7",
-		              item.failStreak
-		            ] }) : null
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("td", { className: "jh-col-hide-sm", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
-		            "span",
-		            {
-		              className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`,
-		              title: item.maturity.notes === void 0 || item.maturity.notes === "" ? MATURITY_LEVEL_LABEL[item.maturity.level] : `${MATURITY_LEVEL_LABEL[item.maturity.level]}\uFF1A${item.maturity.notes}`,
-		              children: MATURITY_LEVEL_SHORT[item.maturity.level]
-		            }
-		          ) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("td", { className: `jh-num${quotaFull ? " jh-warn" : ""}`, children: [
-		            item.governance.todayRuns,
-		            "/",
-		            item.governance.dailyLimit
-		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("td", { className: "jh-num jh-col-hide-sm", children: item.yield.baseline === null ? /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("span", { className: item.yield.level === "dropped" ? "jh-warn" : void 0, children: [
-		            item.yield.lastFound ?? "\u2014",
-		            "/",
-		            item.yield.baseline
-		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("td", { children: lastRun === null ? /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-muted", children: "\u6CA1\u8DD1\u8FC7" }) : /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(import_jsx_runtime52.Fragment, { children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: "jh-muted", children: formatClock(new Date(lastRun.startedAt)) }),
-		            " ",
-		            /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(StateTag, { state: lastRun.state, kind: "run" })
-		          ] }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("td", { className: "jh-cell-actions", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
-		            "button",
-		            {
-		              type: "button",
-		              className: "jh-btn jh-btn-inline jh-btn-tiny",
-		              "aria-expanded": open,
-		              ...open ? { "aria-controls": detailId } : {},
-		              title: open ? "\u6536\u8D77\u8FD9\u4E2A\u5E73\u53F0\u7684\u8BCA\u65AD" : "\u5C55\u5F00\u8FD9\u4E2A\u5E73\u53F0\u7684\u8BCA\u65AD\uFF08\u80FD\u4E0D\u80FD\u8DD1\u3001\u88AB\u4EC0\u4E48\u6321\u4F4F\u3001\u767B\u5F55\u6001\u3001\u4EA7\u91CF\uFF09",
-		              onClick: () => props.onToggle(item.id),
-		              children: open ? "\u6536\u8D77" : "\u660E\u7EC6"
-		            }
-		          ) })
-		        ] }),
-		        open ? /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("tr", { className: "jh-row-detail", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("td", { colSpan: MATRIX_COLUMNS.length, id: detailId, children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
-		          PlatformDetail,
-		          {
-		            item,
-		            reasonText: props.reasonText,
-		            onGoSettings: props.onGoSettings
-		          }
-		        ) }) }) : null
-		      ] }, item.id);
-		    }) })
-		  ] }) });
-		}
-		function PlatformDetail(props) {
-		  const { item } = props;
-		  const blocked = item.governance.blocked === null ? null : props.reasonText[item.governance.blocked] ?? item.governance.blocked;
-		  const cooldown = cooldownActive(item.governance.cooldownUntil, /* @__PURE__ */ new Date());
-		  const missing = item.fields.filter((field) => field.consecutiveMiss > 0);
-		  const lastRun = item.governance.lastRun;
-		  const needsLoginCheck = !item.implementation.loginCheck && Object.values(item.authRequirement).includes("required");
-		  return /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: "jh-plat-detail", children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("ul", { className: "jh-kv", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: "\u73B0\u5728\u80FD\u8DD1\u5417" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { className: blocked === null ? "jh-ok" : "jh-warn", children: blocked ?? "\u53EF\u4EE5 \u2014\u2014 \u5230\u70B9\u771F\u7684\u4F1A\u8DD1" })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: "\u4ECA\u65E5\u989D\u5EA6" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)(
-		          "span",
-		          {
-		            className: item.governance.todayRuns >= item.governance.dailyLimit ? "jh-warn" : void 0,
-		            children: [
-		              item.governance.todayRuns,
-		              " / ",
-		              item.governance.dailyLimit,
-		              " \u8F6E"
-		            ]
-		          }
-		        )
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: "\u51B7\u5374" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: cooldown === null ? "\u6CA1\u5728\u51B7\u5374" : `\u81F3 ${formatClock(cooldown)}` })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: "\u6700\u8FD1\u4E00\u8F6E" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: lastRun === null ? "\u6CA1\u8DD1\u8FC7" : `${new Date(lastRun.startedAt).toLocaleString()} \xB7 ${CRAWL_STATE_LABEL[lastRun.state]}` })
-		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("li", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: "\u4E0A\u6B21\u6210\u529F" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("span", { children: item.lastOkAt === null ? "\u4ECE\u6765\u6CA1\u6709" : new Date(item.lastOkAt).toLocaleString() })
-		      ] })
-		    ] }),
-		    item.governance.riskPaused ? /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: "jh-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(Term, { term: "\u98CE\u9669\u6682\u505C", children: "\u5DF2\u88AB\u6682\u505C\u81EA\u52A8\u91C7\u96C6" }),
-		      item.governance.riskReason === null ? "" : `\uFF1A${item.governance.riskReason}`,
-		      " ",
-		      "\u2014\u2014 \u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\uFF0C\u786E\u8BA4\u73AF\u5883\u6B63\u5E38\u540E\u5728\u65B9\u6848\u5361\u4E0A\u70B9\u300C\u786E\u8BA4\u6062\u590D\u300D\u3002"
-		    ] }) : null,
-		    item.login.message === null ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { className: "jh-muted", children: item.login.message }),
-		    item.account.hint === null ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { className: "jh-muted", children: item.account.hint }),
-		    item.healthReason === null && item.failStreak === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: "jh-warn", children: [
-		      "\u5065\u5EB7\uFF1A",
-		      HEALTH_STATE_LABEL[item.health],
-		      item.failStreak > 0 ? `\uFF08\u8FDE\u7EED\u5931\u8D25 ${item.failStreak} \u6B21\uFF09` : "",
-		      item.healthReason === null ? "" : ` \u2014\u2014 ${item.healthReason}`
-		    ] }),
-		    maturityNeedsWarning(item.maturity.level) ? /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: "jh-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(Term, { term: "\u6210\u719F\u5EA6", children: MATURITY_LEVEL_LABEL[item.maturity.level] }),
-		      item.maturity.notes === void 0 || item.maturity.notes === "" ? null : `\uFF1A${item.maturity.notes}`
-		    ] }) : null,
-		    needsLoginCheck ? /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { className: "jh-warn", children: "\u8BE5\u5E73\u53F0\u9700\u8981\u767B\u5F55\uFF0C\u4F46\u672C\u673A\u8FD8\u6CA1\u6709\u767B\u5F55\u6001\u68C0\u6D4B \u2014\u2014 \u672A\u767B\u5F55\u65F6\u53EF\u80FD\u9759\u9ED8\u6293\u5230\u7A7A\u7ED3\u679C\u3002" }) : null,
-		    item.yield.baseline === null ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: item.yield.level === "dropped" ? "jh-warn" : "jh-muted", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(Term, { term: "\u91CF\u7EA7", children: "\u4EA7\u91CF" }),
-		      "\uFF1A\u8FD1 ",
-		      item.yield.samples,
-		      " \u8F6E\u7684\u5E38\u6001\u7EA6 ",
-		      item.yield.baseline,
-		      " \u6761\uFF0C \u6700\u8FD1\u4E00\u8F6E ",
-		      item.yield.lastFound ?? "\u2014",
-		      " \u6761",
-		      item.yield.level === "dropped" ? " \u2014\u2014 \u660E\u663E\u504F\u4F4E\u3002\u5B57\u6BB5\u5065\u5EB7\u53EF\u80FD\u662F\u5168\u7EFF\u7684\uFF0C\u5148\u67E5\u7FFB\u9875\u4E0E\u61D2\u52A0\u8F7D\u3002" : ""
-		    ] }),
-		    missing.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsxs)("div", { className: "jh-warn", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(Term, { term: "\u9010\u5B57\u6BB5\u5065\u5EB7", children: "\u8FDE\u7EED\u7F3A\u5931" }),
-		      "\uFF1A",
-		      missing.map((field) => `${field.field}\xD7${String(field.consecutiveMiss)}`).join(" \xB7 ")
-		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("div", { className: "jh-plat-detail-actions", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(
-		      "button",
-		      {
-		        type: "button",
-		        className: "jh-btn jh-btn-inline jh-btn-tiny",
-		        onClick: props.onGoSettings,
-		        title: "\u770B\u8BCA\u65AD\u4FE1\u606F\uFF08\u7248\u672C\u3001\u6570\u636E\u8DEF\u5F84\u3001\u8BA1\u6570\u3001\u5DE5\u5177\u6CE8\u518C\u7ED3\u679C\uFF09",
-		        children: "\u53BB\u8BBE\u7F6E\u770B\u8BCA\u65AD"
-		      }
-		    ) })
+		    lease.held ? null : /* @__PURE__ */ (0, import_jsx_runtime52.jsx)("p", { className: "jh-note", children: /* @__PURE__ */ (0, import_jsx_runtime52.jsx)(InlineMd, { text: "\u600E\u4E48\u89E3\u51B3\uFF1A\u2460 \u5230\u90A3\u4E2A\u7A97\u53E3\u91CC\u64CD\u4F5C\uFF08\u6700\u7A33\uFF09\uFF1B\u2461 \u5173\u6389\u90A3\u4E2A\u7A97\u53E3 \u2014\u2014 \u5173\u6389\u4E4B\u540E\u8FD9\u91CC\u4F1A**\u81EA\u52A8**\u63A5\u7BA1\uFF0C\u4E0D\u7528\u91CD\u542F\uFF0C\u4E5F\u53EF\u4EE5\u70B9\u4E0A\u9762\u7684\u300C\u91CD\u65B0\u68C0\u6D4B\u7CFB\u7EDF\u300D\u7ACB\u523B\u8BD5\u4E00\u6B21\u3002" }) })
 		  ] });
 		}
 
@@ -8015,7 +8019,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/adapter-maintenance.tsx
-		var import_react25 = require("react");
+		var import_react24 = require("react");
 		var import_jsx_runtime54 = require("react/jsx-runtime");
 		function stamp(at) {
 		  return at.slice(0, 16).replace("T", " ");
@@ -8025,10 +8029,10 @@ window.__ModuleLoader__.load({
 		}
 		function RepairQueueCard(props) {
 		  const repairs = useAsync((signal) => fetchRepairs(void 0, signal), [props.revision]);
-		  const [busy, setBusy] = (0, import_react25.useState)(null);
-		  const [error, setError] = (0, import_react25.useState)(null);
-		  const [clearing, setClearing] = (0, import_react25.useState)(null);
-		  const [filter, setFilter] = (0, import_react25.useState)("");
+		  const [busy, setBusy] = (0, import_react24.useState)(null);
+		  const [error, setError] = (0, import_react24.useState)(null);
+		  const [clearing, setClearing] = (0, import_react24.useState)(null);
+		  const [filter, setFilter] = (0, import_react24.useState)("");
 		  const all = repairs.state.status === "ok" ? repairs.state.data.items : [];
 		  const byPlatform = repairs.state.status === "ok" ? repairs.state.data.byPlatform : [];
 		  const total = repairs.state.status === "ok" ? repairs.state.data.total : 0;
@@ -8166,18 +8170,18 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function AdapterConfigCard(props) {
-		  const [selected, setSelected] = (0, import_react25.useState)("");
+		  const [selected, setSelected] = (0, import_react24.useState)("");
 		  const platformId = selected !== "" ? selected : props.platforms[0]?.id ?? "";
 		  const config = useAsync(
 		    async (signal) => platformId === "" ? null : await fetchAdapterConfig(platformId, signal),
 		    [platformId, props.revision]
 		  );
-		  const [draft, setDraft] = (0, import_react25.useState)("");
-		  const [busy, setBusy] = (0, import_react25.useState)(false);
-		  const [error, setError] = (0, import_react25.useState)(null);
-		  const [saved, setSaved] = (0, import_react25.useState)(null);
+		  const [draft, setDraft] = (0, import_react24.useState)("");
+		  const [busy, setBusy] = (0, import_react24.useState)(false);
+		  const [error, setError] = (0, import_react24.useState)(null);
+		  const [saved, setSaved] = (0, import_react24.useState)(null);
 		  const current = config.state.status === "ok" ? config.state.data : null;
-		  (0, import_react25.useEffect)(() => {
+		  (0, import_react24.useEffect)(() => {
 		    if (current === null) return;
 		    setDraft(current.override === null ? "{}" : JSON.stringify(current.override, null, 2));
 		    setSaved(null);
@@ -8423,7 +8427,7 @@ window.__ModuleLoader__.load({
 		    /* @__PURE__ */ (0, import_jsx_runtime55.jsxs)("section", { className: "jh-card", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime55.jsxs)("div", { className: "jh-form-head", children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime55.jsx)("h2", { className: "jh-card-title", children: "\u5E73\u53F0\u72B6\u6001\u603B\u89C8" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime55.jsx)(FieldHint, { text: "\u300C\u4ECA\u5929\u80FD\u8DD1\u300D\u7528\u7684\u662F\u4E0E\u8C03\u5EA6\u540C\u4E00\u4E2A\u524D\u7F6E\u6761\u4EF6\u5224\u5B9A \u2014\u2014 \u8FD9\u91CC\u5199\u7740\u300C\u53EF\u4EE5\u300D\u7684\u5E73\u53F0\uFF0C\u5230\u70B9\u771F\u7684\u4F1A\u8DD1\uFF1B\u5199\u7740\u539F\u56E0\u7684\uFF0C\u5C31\u662F\u5B83\u73B0\u5728\u88AB\u4EC0\u4E48\u62E6\u4F4F\u4E86\u3002\u70B9\u67D0\u4E00\u884C\u7684\u300C\u660E\u7EC6\u300D\u770B\u8BE5\u5E73\u53F0\u7684\u5B8C\u6574\u8BCA\u65AD\u3002" })
+		        /* @__PURE__ */ (0, import_jsx_runtime55.jsx)(FieldHint, { text: "\u300C\u4ECA\u5929\u80FD\u8DD1\u300D\u7528\u7684\u662F\u4E0E\u8C03\u5EA6\u540C\u4E00\u4E2A\u524D\u7F6E\u6761\u4EF6\u5224\u5B9A \u2014\u2014 \u8FD9\u91CC\u5199\u7740\u300C\u53EF\u4EE5\u300D\u7684\u5E73\u53F0\uFF0C\u5230\u70B9\u771F\u7684\u4F1A\u8DD1\uFF1B\u5199\u7740\u539F\u56E0\u7684\uFF0C\u5C31\u662F\u5B83\u73B0\u5728\u88AB\u4EC0\u4E48\u62E6\u4F4F\u4E86\u3002\u300C\u64CD\u4F5C\u300D\u5217\u4E0A\uFF1A\u68C0\u6D4B\u53EA\u67E5\u767B\u5F55\u6001\u3001\u767B\u5F55\u4F1A\u6253\u5F00\u767B\u5F55\u9875\u3001\u660E\u7EC6\u770B\u5B8C\u6574\u8BCA\u65AD\u3002" })
 		      ] }),
 		      props.platformsError !== null && /* @__PURE__ */ (0, import_jsx_runtime55.jsx)("p", { className: "jh-error", children: props.platformsError }),
 		      props.platformsLoading ? /* @__PURE__ */ (0, import_jsx_runtime55.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u8BFB\u53D6\u5E73\u53F0\u72B6\u6001\u2026" }) : props.platformList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime55.jsxs)("div", { className: "jh-empty", children: [
@@ -8434,11 +8438,10 @@ window.__ModuleLoader__.load({
 		        {
 		          items: props.platformList,
 		          reasonText: props.reasonText,
-		          expandedId: props.expandedPlatform,
-		          onToggle: props.onTogglePlatform,
 		          running: props.running,
 		          onLogin: props.onLogin,
-		          onGoSettings: props.onGoSettings
+		          onCheck: props.onCheck,
+		          onDetail: props.onDetail
 		        }
 		      )
 		    ] }),
@@ -8466,13 +8469,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/dedup-groups-card.tsx
-		var import_react26 = require("react");
+		var import_react25 = require("react");
 		var import_jsx_runtime57 = require("react/jsx-runtime");
 		function DedupGroupsCard(props) {
 		  const groups = useAsync((signal) => fetchDedupGroups(signal), [props.revision]);
-		  const [busyId, setBusyId] = (0, import_react26.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react26.useState)(null);
-		  const [error, setError] = (0, import_react26.useState)(null);
+		  const [busyId, setBusyId] = (0, import_react25.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react25.useState)(null);
+		  const [error, setError] = (0, import_react25.useState)(null);
 		  const act = async (id, fn) => {
 		    setBusyId(id);
 		    setError(null);
@@ -8831,16 +8834,18 @@ window.__ModuleLoader__.load({
 		  const plans = useAsync((signal) => fetchPlans(signal), [props.revision]);
 		  const reasons = useAsync((signal) => fetchSkipReasons(signal), [props.revision]);
 		  const dimensions = useAsync((signal) => fetchCriteriaDimensions([], signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react27.useState)(IDLE);
-		  const [editing, setEditing] = (0, import_react27.useState)(null);
-		  const [duplicates, setDuplicates] = (0, import_react27.useState)([]);
-		  const [notices, setNotices] = (0, import_react27.useState)([]);
-		  const [errorDetail, setErrorDetail] = (0, import_react27.useState)(null);
-		  const [pendingDelete, setPendingDelete] = (0, import_react27.useState)(null);
-		  const [tab, setTab] = (0, import_react27.useState)("dashboard");
-		  const [expandedPlatform, setExpandedPlatform] = (0, import_react27.useState)(null);
-		  const [focusPlanId, setFocusPlanId] = (0, import_react27.useState)(null);
-		  const [dedupRevision, setDedupRevision] = (0, import_react27.useState)(0);
+		  const [feedback, setFeedback] = (0, import_react26.useState)(IDLE);
+		  const [editing, setEditing] = (0, import_react26.useState)(null);
+		  const [duplicates, setDuplicates] = (0, import_react26.useState)([]);
+		  const [notices, setNotices] = (0, import_react26.useState)([]);
+		  const [errorDetail, setErrorDetail] = (0, import_react26.useState)(null);
+		  const [pendingDelete, setPendingDelete] = (0, import_react26.useState)(null);
+		  const [tab, setTab] = (0, import_react26.useState)("dashboard");
+		  const [detailTarget, setDetailTarget] = (0, import_react26.useState)(null);
+		  const [checkTarget, setCheckTarget] = (0, import_react26.useState)(null);
+		  const [checkState, setCheckState] = (0, import_react26.useState)({ running: false, result: null, error: null });
+		  const [focusPlanId, setFocusPlanId] = (0, import_react26.useState)(null);
+		  const [dedupRevision, setDedupRevision] = (0, import_react26.useState)(0);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -8873,12 +8878,30 @@ window.__ModuleLoader__.load({
 		  const runsLoading = scheduler.state.status === "loading";
 		  const reasonText = reasons.state.status === "ok" ? reasons.state.data.items : {};
 		  const dimensionList = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
-		  const now = (0, import_react27.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const now = (0, import_react26.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
 		  const story = status === null ? null : scheduleStoryOf(status, now);
 		  const login = (platformId) => act("\u5DF2\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u8BF7\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\uFF08\u6BCF 3 \u79D2\u68C0\u6D4B\u4E00\u6B21\uFF09", async () => {
 		    const result = await startLogin(platformId);
 		    return result.message ?? "\u767B\u5F55\u5F15\u5BFC\u5DF2\u542F\u52A8";
 		  });
+		  const runCheck = async (platformId) => {
+		    setCheckState({ running: true, result: null, error: null });
+		    try {
+		      const result = await checkLogin(platformId);
+		      setCheckState({ running: false, result, error: null });
+		      platforms.reload();
+		    } catch (error) {
+		      setCheckState({
+		        running: false,
+		        result: null,
+		        error: error instanceof ApiError ? error.display : String(error)
+		      });
+		    }
+		  };
+		  const startCheck = (platformId, displayName) => {
+		    setCheckTarget({ id: platformId, displayName });
+		    void runCheck(platformId);
+		  };
 		  const trigger = (plan) => act("\u6B63\u5728\u6309\u65B9\u6848\u91C7\u96C6\u2026\uFF08\u4F1A\u6253\u5F00\u4E00\u4E2A\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09", async () => {
 		    const summary = await runPlan(plan.id);
 		    return `\u65B9\u6848\u300C${plan.name}\u300D\u672C\u8F6E ${CRAWL_STATE_LABEL[summary.run.state]}\uFF1A\u547D\u4E2D ${String(summary.run.found)} \xB7 \u65B0\u589E ${String(summary.run.inserted)} \xB7 \u66F4\u65B0 ${String(summary.run.updated)} \xB7 \u9694\u79BB ${String(summary.run.quarantined)}`;
@@ -8892,7 +8915,7 @@ window.__ModuleLoader__.load({
 		      return `\u5DF2\u5220\u9664\u65B9\u6848\u300C${plan.name}\u300D\u3002\u5DF2\u7ECF\u6293\u5230\u7684\u5C97\u4F4D\u4E0D\u53D7\u5F71\u54CD\u3002`;
 		    });
 		  };
-		  const runBlockTitle = status?.readOnly === true ? `\u672C\u7A97\u53E3\u6CA1\u6709\u91C7\u96C6\u6743\u3002\u7528\u300C\u63A5\u7BA1\u8C03\u5EA6\u300D\uFF0C\u6216\u5230\u53E6\u4E00\u4E2A\u7A97\u53E3\uFF08\u8FDB\u7A0B ${String(status.lease.pid ?? "?")}\uFF09\u91CC\u64CD\u4F5C\u3002` : feedback.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u73B0\u5728\u6309\u8FD9\u4E2A\u65B9\u6848\u91C7\u96C6\u4E00\u6B21\uFF08\u4F1A\u6253\u5F00\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09\u3002";
+		  const runBlockTitle = status?.readOnly === true ? `\u672C\u7A97\u53E3\u6CA1\u6709\u91C7\u96C6\u6743\u3002\u7528\u300C\u63A5\u7BA1\u8C03\u5EA6\u300D\uFF0C\u6216\u5230\u53E6\u4E00\u4E2A\u7A97\u53E3\uFF08\u8FDB\u7A0B ${String(status.lease.pid ?? "?")}\uFF09\u91CC\u64CD\u4F5C\u3002` : feedback.running ? "\u6709\u53E6\u4E00\u4E2A\u64CD\u4F5C\u6B63\u5728\u8FDB\u884C\uFF0C\u8BF7\u7A0D\u5019\u3002" : checkState.running ? "\u6B63\u5728\u68C0\u6D4B\u67D0\u4E2A\u5E73\u53F0\u7684\u767B\u5F55\u6001\uFF08\u5360\u7528\u540C\u4E00\u4E2A\u6D4F\u89C8\u5668\uFF09\uFF0C\u7B49\u5B83\u7ED3\u675F\u518D\u91C7\u96C6\u3002" : "\u73B0\u5728\u6309\u8FD9\u4E2A\u65B9\u6848\u91C7\u96C6\u4E00\u6B21\uFF08\u4F1A\u6253\u5F00\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09\u3002";
 		  const startCreate = () => {
 		    setDuplicates([]);
 		    setEditing({ id: "new", form: emptyForm() });
@@ -8913,7 +8936,7 @@ window.__ModuleLoader__.load({
 		    await resumePlanRisk(plan.id);
 		    return `\u65B9\u6848\u300C${plan.name}\u300D\u5DF2\u6062\u590D \u2014\u2014 \u8FD9\u4E00\u4E0B\u662F\u4F60\u786E\u8BA4\u7684\uFF0C\u7CFB\u7EDF\u4E0D\u4F1A\u81EA\u52A8\u6062\u590D\u3002`;
 		  });
-		  const runBlocked = feedback.running || (status?.readOnly ?? false);
+		  const runBlocked = feedback.running || checkState.running || (status?.readOnly ?? false);
 		  const toggleSchedule = () => {
 		    if (status === null) return;
 		    const next = !status.paused;
@@ -9034,20 +9057,19 @@ window.__ModuleLoader__.load({
 		        reasonText,
 		        reasonFor,
 		        platformNameOf,
-		        expandedPlatform,
-		        running: feedback.running,
+		        running: feedback.running || checkState.running,
 		        runBlocked,
 		        runBlockTitle,
 		        onFocusPlan: setFocusPlanId,
-		        onTogglePlatform: (id) => setExpandedPlatform((current) => current === id ? null : id),
 		        onResume: resumeSchedule,
 		        onTakeover: takeover,
 		        onTrigger: trigger,
 		        onEdit: startEdit,
 		        onGoPlans: () => setTab("plans"),
 		        onLogin: login,
+		        onCheck: startCheck,
+		        onDetail: setDetailTarget,
 		        onOpenError: (run, failure) => setErrorDetail({ run, failure }),
-		        onGoSettings: props.onGoSettings,
 		        onReload: reload
 		      }
 		    ) : null,
@@ -9084,6 +9106,105 @@ window.__ModuleLoader__.load({
 		        onOpenError: (run, failure) => setErrorDetail({ run, failure })
 		      }
 		    ) : null,
+		    detailTarget === null ? null : /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		      Modal,
+		      {
+		        title: `\u5E73\u53F0\u660E\u7EC6 \xB7 ${detailTarget.displayName}`,
+		        label: "\u5E73\u53F0\u660E\u7EC6",
+		        size: "lg",
+		        onClose: () => setDetailTarget(null),
+		        footer: /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)(import_jsx_runtime61.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)("span", { className: "jh-modal-foot-note jh-muted", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("code", { children: detailTarget.id }),
+		            ' \xB7 \u8FD9\u4EFD\u8BCA\u65AD\u53EA\u8BB2"\u5B83\u73B0\u5728\u4E3A\u4EC0\u4E48\u662F\u8FD9\u6837"'
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline",
+		              onClick: () => setDetailTarget(null),
+		              children: "\u5173\u95ED"
+		            }
+		          )
+		        ] }),
+		        children: /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		          PlatformDetail,
+		          {
+		            item: detailTarget,
+		            reasonText,
+		            onGoSettings: () => {
+		              setDetailTarget(null);
+		              props.onGoSettings();
+		            }
+		          }
+		        )
+		      }
+		    ),
+		    checkTarget === null ? null : /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		      Modal,
+		      {
+		        title: `\u68C0\u6D4B\u767B\u5F55\u6001 \xB7 ${checkTarget.displayName}`,
+		        label: "\u767B\u5F55\u6001\u68C0\u6D4B",
+		        onClose: () => setCheckTarget(null),
+		        footer: /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)(import_jsx_runtime61.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { className: "jh-modal-foot-note jh-muted", children: "\u68C0\u6D4B\u53EA\u67E5\u72B6\u6001\uFF0C\u4E0D\u4F1A\u66FF\u4F60\u767B\u5F55\u3002" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { className: "jh-spacer" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline",
+		              disabled: checkState.running || feedback.running,
+		              onClick: () => void runCheck(checkTarget.id),
+		              children: "\u91CD\u65B0\u68C0\u6D4B"
+		            }
+		          ),
+		          checkState.result?.checked === true && !checkState.result.loggedIn ? /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-primary",
+		              disabled: feedback.running,
+		              title: "\u6253\u5F00\u767B\u5F55\u9875\uFF0C\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\u3002",
+		              onClick: () => {
+		                setCheckTarget(null);
+		                void login(checkTarget.id);
+		              },
+		              children: "\u53BB\u767B\u5F55"
+		            }
+		          ) : null,
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "jh-btn jh-btn-inline jh-btn-quiet",
+		              onClick: () => setCheckTarget(null),
+		              children: "\u5173\u95ED"
+		            }
+		          )
+		        ] }),
+		        children: checkState.running ? /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)("p", { className: "jh-muted", children: [
+		          "\u6B63\u5728\u6253\u5F00 ",
+		          checkTarget.displayName,
+		          " \u7684\u9875\u9762\u68C0\u6D4B\u767B\u5F55\u6001\u2026\uFF08\u4F1A\u6253\u5F00\u4E00\u4E2A\u6D4F\u89C8\u5668\u7A97\u53E3\uFF09"
+		        ] }) : checkState.error !== null ? /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("p", { className: "jh-error", children: checkState.error }) : checkState.result === null ? null : /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)(import_jsx_runtime61.Fragment, { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("p", { children: /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
+		            "span",
+		            {
+		              className: `jh-tag jh-tone-${checkState.result.checked ? checkState.result.loggedIn ? "ok" : "warn" : "muted"}`,
+		              children: checkState.result.checked ? checkState.result.loggedIn ? "\u5DF2\u767B\u5F55" : "\u672A\u767B\u5F55" : "\u6CA1\u68C0\u6D4B\u51FA\u6765"
+		            }
+		          ) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("p", { className: checkState.result.checked ? "jh-muted" : "jh-warn", children: /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(InlineMd, { text: checkState.result.message }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("ul", { className: "jh-kv", children: /* @__PURE__ */ (0, import_jsx_runtime61.jsxs)("li", { children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { children: "\u68C0\u6D4B\u65F6\u95F4" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime61.jsx)("span", { children: new Date(checkState.result.checkedAt).toLocaleString() })
+		          ] }) })
+		        ] })
+		      }
+		    ),
 		    editing === null ? null : /* @__PURE__ */ (0, import_jsx_runtime61.jsx)(
 		      PlanEditorModal,
 		      {
@@ -9231,7 +9352,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/index.tsx
-		var import_react30 = require("react");
+		var import_react29 = require("react");
 
 		// src/shared/contract/enums/resume.ts
 		var RESUME_LANGUAGE_LABEL = {
@@ -9258,7 +9379,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/resume-work.tsx
-		var import_react29 = require("react");
+		var import_react28 = require("react");
 
 		// src/client/screens/resumes/english-check-panel.tsx
 		var import_jsx_runtime62 = require("react/jsx-runtime");
@@ -9280,7 +9401,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/resumes/editors.tsx
-		var import_react28 = require("react");
+		var import_react27 = require("react");
 		var import_jsx_runtime63 = require("react/jsx-runtime");
 		function move(items, index, delta) {
 		  const target = index + delta;
@@ -9375,7 +9496,7 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function ChipsEditor(props) {
-		  const [text, setText] = (0, import_react28.useState)("");
+		  const [text, setText] = (0, import_react27.useState)("");
 		  const commit = () => {
 		    const parts = text.split(/[、,，\s]+/).map((part) => part.trim()).filter((part) => part !== "");
 		    if (parts.length > 0) props.onChange([.../* @__PURE__ */ new Set([...props.values, ...parts])]);
@@ -10028,15 +10149,15 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime69 = require("react/jsx-runtime");
 		function ResumeWork(props) {
 		  const detail = useAsync((signal) => fetchResume(props.id, signal), [props.id]);
-		  const [draft, setDraft] = (0, import_react29.useState)(null);
-		  const [dirty, setDirty] = (0, import_react29.useState)(false);
-		  const [mode, setMode] = (0, import_react29.useState)("edit");
-		  const [busy, setBusy] = (0, import_react29.useState)(null);
-		  const [error, setError] = (0, import_react29.useState)(null);
-		  const [notice, setNotice] = (0, import_react29.useState)(null);
-		  const [template, setTemplate] = (0, import_react29.useState)("concise");
-		  const [split, setSplit] = (0, import_react29.useState)(55);
-		  const bodyRef = (0, import_react29.useRef)(null);
+		  const [draft, setDraft] = (0, import_react28.useState)(null);
+		  const [dirty, setDirty] = (0, import_react28.useState)(false);
+		  const [mode, setMode] = (0, import_react28.useState)("edit");
+		  const [busy, setBusy] = (0, import_react28.useState)(null);
+		  const [error, setError] = (0, import_react28.useState)(null);
+		  const [notice, setNotice] = (0, import_react28.useState)(null);
+		  const [template, setTemplate] = (0, import_react28.useState)("concise");
+		  const [split, setSplit] = (0, import_react28.useState)(55);
+		  const bodyRef = (0, import_react28.useRef)(null);
 		  const startDrag = (clientX, clientY) => {
 		    const body = bodyRef.current;
 		    if (body === null) return;
@@ -10053,14 +10174,14 @@ window.__ModuleLoader__.load({
 		    window.addEventListener("pointermove", move2);
 		    window.addEventListener("pointerup", stop);
 		  };
-		  (0, import_react29.useEffect)(() => {
+		  (0, import_react28.useEffect)(() => {
 		    if (detail.state.status === "ok") setDraft(detail.state.data);
 		  }, [detail.state]);
-		  (0, import_react29.useEffect)(() => {
+		  (0, import_react28.useEffect)(() => {
 		    props.onDirtyChange(dirty);
 		  }, [dirty, props]);
 		  const issues = detail.state.status === "ok" ? detail.state.data.issues : [];
-		  const run = (0, import_react29.useCallback)(
+		  const run = (0, import_react28.useCallback)(
 		    async (label, fn, done) => {
 		      setBusy(label);
 		      setError(null);
@@ -10345,24 +10466,24 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime70 = require("react/jsx-runtime");
 		function ResumesScreen(props) {
 		  const list = useAsync((signal) => fetchResumes(signal), [props.revision]);
-		  const [selected, setSelected] = (0, import_react30.useState)(null);
-		  const [creating, setCreating] = (0, import_react30.useState)(false);
-		  const [query, setQuery] = (0, import_react30.useState)("");
-		  const [dirty, setDirty] = (0, import_react30.useState)(false);
-		  const [issuesById, setIssuesById] = (0, import_react30.useState)({});
+		  const [selected, setSelected] = (0, import_react29.useState)(null);
+		  const [creating, setCreating] = (0, import_react29.useState)(false);
+		  const [query, setQuery] = (0, import_react29.useState)("");
+		  const [dirty, setDirty] = (0, import_react29.useState)(false);
+		  const [issuesById, setIssuesById] = (0, import_react29.useState)({});
 		  const items = list.state.status === "ok" ? list.state.data.items : [];
-		  const shown = (0, import_react30.useMemo)(() => {
+		  const shown = (0, import_react29.useMemo)(() => {
 		    const key = query.trim().toLowerCase();
 		    if (key === "") return items;
 		    return items.filter(
 		      (item) => `${item.name} ${item.direction}`.toLowerCase().includes(key)
 		    );
 		  }, [items, query]);
-		  (0, import_react30.useEffect)(() => {
+		  (0, import_react29.useEffect)(() => {
 		    if (selected !== null || items.length === 0) return;
 		    setSelected((items.find((item) => item.isDefault) ?? items[0])?.id ?? null);
 		  }, [items, selected]);
-		  const loadIssues = (0, import_react30.useCallback)(
+		  const loadIssues = (0, import_react29.useCallback)(
 		    (id) => {
 		      if (issuesById[id] !== void 0) return;
 		      void fetchResume(id).then((detail) => {
@@ -10372,7 +10493,7 @@ window.__ModuleLoader__.load({
 		    },
 		    [issuesById]
 		  );
-		  const onCreate = (0, import_react30.useCallback)(async () => {
+		  const onCreate = (0, import_react29.useCallback)(async () => {
 		    setCreating(true);
 		    try {
 		      const created = await createResume({ name: "\u65B0\u7B80\u5386", direction: "", content: emptyResumeContent() });
@@ -10507,7 +10628,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/index.tsx
-		var import_react36 = require("react");
+		var import_react35 = require("react");
 
 		// src/client/net/ops.ts
 		async function closeTodo(id) {
@@ -10608,12 +10729,12 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/ui/number-field.tsx
-		var import_react31 = require("react");
+		var import_react30 = require("react");
 		var import_jsx_runtime71 = require("react/jsx-runtime");
 		function NumberField(props) {
-		  const [draft, setDraft] = (0, import_react31.useState)(String(props.value));
-		  const focused = (0, import_react31.useRef)(false);
-		  (0, import_react31.useEffect)(() => {
+		  const [draft, setDraft] = (0, import_react30.useState)(String(props.value));
+		  const focused = (0, import_react30.useRef)(false);
+		  (0, import_react30.useEffect)(() => {
 		    if (!focused.current) setDraft(String(props.value));
 		  }, [props.value]);
 		  const commit = () => {
@@ -11216,7 +11337,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/data-panel.tsx
-		var import_react32 = require("react");
+		var import_react31 = require("react");
 
 		// src/shared/config/retention.ts
 		var RETENTION_MIN_DAYS = 0;
@@ -11243,20 +11364,20 @@ window.__ModuleLoader__.load({
 		  return error instanceof ApiError ? error.display : String(error);
 		}
 		function DataPanel(props) {
-		  const [storageRevision, setStorageRevision] = (0, import_react32.useState)(0);
+		  const [storageRevision, setStorageRevision] = (0, import_react31.useState)(0);
 		  const storage = useAsync((signal) => fetchStorage(signal), [storageRevision]);
 		  const retention = props.current?.retention ?? null;
 		  const defaults = props.current?.derived.defaults.retention ?? null;
-		  const [draft, setDraft] = (0, import_react32.useState)(null);
+		  const [draft, setDraft] = (0, import_react31.useState)(null);
 		  const shownDays = (key) => draft?.[key] ?? retention?.[key] ?? 0;
-		  const [plan, setPlan] = (0, import_react32.useState)(null);
-		  const [selected, setSelected] = (0, import_react32.useState)([]);
-		  const [planning, setPlanning] = (0, import_react32.useState)(false);
-		  const [confirming, setConfirming] = (0, import_react32.useState)(false);
-		  const [running, setRunning] = (0, import_react32.useState)(false);
-		  const [cleanupResult, setCleanupResult] = (0, import_react32.useState)(null);
-		  const [importResult, setImportResult] = (0, import_react32.useState)(null);
-		  const [importing, setImporting] = (0, import_react32.useState)(false);
+		  const [plan, setPlan] = (0, import_react31.useState)(null);
+		  const [selected, setSelected] = (0, import_react31.useState)([]);
+		  const [planning, setPlanning] = (0, import_react31.useState)(false);
+		  const [confirming, setConfirming] = (0, import_react31.useState)(false);
+		  const [running, setRunning] = (0, import_react31.useState)(false);
+		  const [cleanupResult, setCleanupResult] = (0, import_react31.useState)(null);
+		  const [importResult, setImportResult] = (0, import_react31.useState)(null);
+		  const [importing, setImporting] = (0, import_react31.useState)(false);
 		  const loadPlan = async () => {
 		    setPlanning(true);
 		    setCleanupResult(null);
@@ -11665,7 +11786,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/logs-panel.tsx
-		var import_react35 = require("react");
+		var import_react34 = require("react");
 
 		// src/client/net/overview.ts
 		async function fetchHealth(signal) {
@@ -11743,7 +11864,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/diagnostics-panel.tsx
-		var import_react33 = require("react");
+		var import_react32 = require("react");
 
 		// src/client/ui/icons.tsx
 		var import_jsx_runtime80 = require("react/jsx-runtime");
@@ -11886,8 +12007,8 @@ window.__ModuleLoader__.load({
 		  ] });
 		}
 		function LiveUptimeCard(props) {
-		  const [elapsed, setElapsed] = (0, import_react33.useState)(0);
-		  (0, import_react33.useEffect)(() => {
+		  const [elapsed, setElapsed] = (0, import_react32.useState)(0);
+		  (0, import_react32.useEffect)(() => {
 		    setElapsed(0);
 		    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1e3);
 		    return () => window.clearInterval(timer);
@@ -12037,10 +12158,10 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/settings/payload-drawer.tsx
-		var import_react34 = require("react");
+		var import_react33 = require("react");
 		var import_jsx_runtime83 = require("react/jsx-runtime");
 		function PayloadDrawer(props) {
-		  const dialogRef = (0, import_react34.useRef)(null);
+		  const dialogRef = (0, import_react33.useRef)(null);
 		  useDialogA11y(dialogRef, props.onClose);
 		  const call = props.call;
 		  const json = JSON.stringify(
@@ -12129,10 +12250,10 @@ window.__ModuleLoader__.load({
 		  const audit = useAsync((signal) => fetchAudit(LOG_LIMIT, {}, signal), [props.revision], {
 		    keepPrevious: true
 		  });
-		  const [purpose, setPurpose] = (0, import_react35.useState)("");
-		  const [status, setStatus] = (0, import_react35.useState)("all");
-		  const [query, setQuery] = (0, import_react35.useState)("");
-		  const [payload, setPayload] = (0, import_react35.useState)(null);
+		  const [purpose, setPurpose] = (0, import_react34.useState)("");
+		  const [status, setStatus] = (0, import_react34.useState)("all");
+		  const [query, setQuery] = (0, import_react34.useState)("");
+		  const [payload, setPayload] = (0, import_react34.useState)(null);
 		  return /* @__PURE__ */ (0, import_jsx_runtime84.jsxs)(import_jsx_runtime84.Fragment, { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime84.jsx)(DiagnosticsPanel, { health: health.state, notify: props.notify }),
 		    /* @__PURE__ */ (0, import_jsx_runtime84.jsx)(
@@ -12178,10 +12299,10 @@ window.__ModuleLoader__.load({
 		  const settings = useAsync((signal) => fetchSettings(signal), [props.revision], {
 		    keepPrevious: true
 		  });
-		  const [tab, setTab] = (0, import_react36.useState)("config");
-		  const [message, setMessage] = (0, import_react36.useState)(null);
-		  const [busy, setBusy] = (0, import_react36.useState)(false);
-		  const lastSettings = (0, import_react36.useRef)(null);
+		  const [tab, setTab] = (0, import_react35.useState)("config");
+		  const [message, setMessage] = (0, import_react35.useState)(null);
+		  const [busy, setBusy] = (0, import_react35.useState)(false);
+		  const lastSettings = (0, import_react35.useRef)(null);
 		  if (settings.state.status === "ok") lastSettings.current = settings.state.data;
 		  const current = settings.state.status === "ok" ? settings.state.data : lastSettings.current;
 		  const write = async (patch, okText) => {
@@ -12198,7 +12319,7 @@ window.__ModuleLoader__.load({
 		    }
 		  };
 		  const labelOf = (purpose) => current?.derived.purposes.find((item) => item.purpose === purpose)?.label ?? purpose;
-		  const tabRefs = (0, import_react36.useRef)([]);
+		  const tabRefs = (0, import_react35.useRef)([]);
 		  const onTabKeyDown = (event, index) => {
 		    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
 		    event.preventDefault();
@@ -12269,12 +12390,12 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/today/index.tsx
-		var import_react38 = require("react");
+		var import_react37 = require("react");
 
 		// src/client/hooks/use-sticky.ts
-		var import_react37 = require("react");
+		var import_react36 = require("react");
 		function useSticky(state) {
-		  const last = (0, import_react37.useRef)(null);
+		  const last = (0, import_react36.useRef)(null);
 		  if (state.status === "ok") last.current = state.data;
 		  return state.status === "ok" ? state.data : state.status === "loading" ? last.current : null;
 		}
@@ -12423,8 +12544,8 @@ window.__ModuleLoader__.load({
 		  const scheduler = useAsync((signal) => fetchSchedulerStatus(signal), [props.revision]);
 		  const platforms = useAsync((signal) => fetchPlatforms(signal), [props.revision]);
 		  const usage = useAsync((signal) => fetchGuardUsage(void 0, signal), [props.revision]);
-		  const [feedback, setFeedback] = (0, import_react38.useState)(IDLE);
-		  const now = (0, import_react38.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
+		  const [feedback, setFeedback] = (0, import_react37.useState)(IDLE);
+		  const now = (0, import_react37.useMemo)(() => /* @__PURE__ */ new Date(), [props.revision]);
 		  const report = (error) => {
 		    setFeedback({
 		      running: false,
@@ -12600,13 +12721,13 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/hooks/use-event-stream.ts
-		var import_react39 = require("react");
+		var import_react38 = require("react");
 		function useEventStream(onHint) {
-		  const [status, setStatus] = (0, import_react39.useState)("connecting");
-		  const [lastEventAt, setLastEventAt] = (0, import_react39.useState)(null);
-		  const hintRef = (0, import_react39.useRef)(onHint);
+		  const [status, setStatus] = (0, import_react38.useState)("connecting");
+		  const [lastEventAt, setLastEventAt] = (0, import_react38.useState)(null);
+		  const hintRef = (0, import_react38.useRef)(onHint);
 		  hintRef.current = onHint;
-		  (0, import_react39.useEffect)(() => {
+		  (0, import_react38.useEffect)(() => {
 		    const source = new EventSource(`${ROUTE_PREFIX}/events`);
 		    source.onopen = () => {
 		      setStatus("open");
@@ -12645,17 +12766,17 @@ window.__ModuleLoader__.load({
 		  return /* @__PURE__ */ (0, import_jsx_runtime89.jsx)("div", { className: "jh-body", role: "main", children: /* @__PURE__ */ (0, import_jsx_runtime89.jsx)(ScreenErrorBoundary, { name: tabLabelOf(props.screen), children: props.children }, props.screen) });
 		}
 		function JobHunterPanel() {
-		  const [screen, setScreen] = (0, import_react40.useState)("today");
-		  const [selected, setSelected] = (0, import_react40.useState)(null);
-		  const [revision, setRevision] = (0, import_react40.useState)(0);
-		  const timer = (0, import_react40.useRef)(null);
-		  (0, import_react40.useEffect)(
+		  const [screen, setScreen] = (0, import_react39.useState)("today");
+		  const [selected, setSelected] = (0, import_react39.useState)(null);
+		  const [revision, setRevision] = (0, import_react39.useState)(0);
+		  const timer = (0, import_react39.useRef)(null);
+		  (0, import_react39.useEffect)(
 		    () => () => {
 		      if (timer.current !== null) window.clearTimeout(timer.current);
 		    },
 		    []
 		  );
-		  const onHint = (0, import_react40.useCallback)((type) => {
+		  const onHint = (0, import_react39.useCallback)((type) => {
 		    if (type === "resync") {
 		      setRevision((value) => value + 1);
 		      return;
@@ -12667,7 +12788,7 @@ window.__ModuleLoader__.load({
 		    }, 250);
 		  }, []);
 		  const stream = useEventStream(onHint);
-		  (0, import_react40.useEffect)(() => {
+		  (0, import_react39.useEffect)(() => {
 		    const apply2 = (intent) => {
 		      setScreen("jobs");
 		      setSelected(intent.jobId);
@@ -14559,7 +14680,7 @@ window.__ModuleLoader__.load({
 		.jh-plan-actions{display:flex;gap:6px;justify-content:flex-end;
 		  margin-top:10px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}
 		/* .jh-btn-tiny \u81EA\u5E26 margin-left:6px\uFF0C\u8FD9\u91CC\u662F flex + gap\uFF0C\u4E0D\u8981\u53E0\u52A0 */
-		.jh-plan-actions .jh-btn,.jh-plat-detail-actions .jh-btn{margin-left:0}
+		.jh-plan-actions .jh-btn{margin-left:0}
 		.jh-plan-switch{margin:0 0 8px}
 
 		/* \u2462 \u8868\u683C\uFF1A\u5185\u8FB9\u8DDD / \u5BF9\u9F50 / \u884C\u72B6\u6001\u3002
@@ -14568,28 +14689,27 @@ window.__ModuleLoader__.load({
 		.jh-table-matrix th,.jh-table-matrix td{padding:8px 10px;vertical-align:middle}
 		.jh-table-runs th,.jh-table-runs td{padding:7px 10px;vertical-align:middle}
 		.jh-table th.jh-cell-status,.jh-table td.jh-cell-status{text-align:center}
-		/* \u64CD\u4F5C\u5217\u53F3\u5BF9\u9F50\uFF1A\u4E0E"\u6570\u5B57\u53F3\u5BF9\u9F50"\u540C\u4E00\u5957\u8BED\u6CD5\uFF0C\u626B\u8FD9\u4E00\u5217\u65F6\u6309\u94AE\u5728\u540C\u4E00\u6761\u7AD6\u7EBF\u4E0A */
+		/* \u64CD\u4F5C\u5217\uFF1A\u767B\u5F55\u6001\u5FBD\u6807 + \u51E0\u9897\u6309\u94AE\u6392\u5728\u540C\u4E00\u884C\u3001\u53F3\u5BF9\u9F50\u3002
+		   \u4E0E"\u6570\u5B57\u53F3\u5BF9\u9F50"\u540C\u4E00\u5957\u8BED\u6CD5 \u2014\u2014 \u626B\u8FD9\u4E00\u5217\u65F6\uFF0C\u51E0\u9897\u6309\u94AE\u843D\u5728\u540C\u4E00\u6761\u7AD6\u7EBF\u4E0A\u3002
+		   \u8868\u683C\u7684\u6700\u540E\u4E00\u5217\u4F1A\u5403\u6389\u5269\u4F59\u5BBD\u5EA6\uFF08\u89C1 PLATFORM_MATRIX \u7684\u5217\u5BBD\u7B56\u7565\uFF09\uFF0C
+		   \u6240\u4EE5\u7A84\u9762\u677F\u4E0B\u8FD9\u4E00\u683C\u5148\u88AB\u538B\u7F29\uFF1A\u5141\u8BB8\u6362\u884C\uFF0C\u522B\u8BA9\u6309\u94AE\u6324\u6210\u4E00\u6761\u8BFB\u4E0D\u4E86\u7684\u6A2A\u7EBF\u3002
+		   .jh-btn-tiny \u81EA\u5E26 margin-left:6px \u2014\u2014 \u8FD9\u91CC\u662F flex + gap\uFF0C\u4E0D\u8981\u53E0\u52A0\u3002 */
 		.jh-table td.jh-cell-actions{text-align:right}
-		/* \u5C55\u5F00\u4E86\u660E\u7EC6\u7684\u90A3\u4E00\u884C**\u4E0D\u6362\u5E95\u8272**\u3002
-		   \u672C\u6765\u60F3\u7ED9\u5B83 interactive-bg-active \u8868\u793A"\u8FD9\u662F\u6211\u5C55\u5F00\u7684"\uFF0C\u4F46\u90A3\u4F1A\u5F15\u5165\u4E00\u4E2A**\u6CA1\u91CF\u8FC7**\u7684
-		   \u524D\u666F/\u80CC\u666F\u7EC4\u5408\uFF1A\u8FD9\u4E00\u884C\u91CC\u6709 .jh-muted\uFF08label-secondary\uFF09\uFF0C\u800C\u5BA1\u6838\u5B9E\u6D4B
-		   "bg-overlay \u4E0A\u7684 label-secondary \u5728\u6DF1\u8272\u4E0B\u53EA\u6709 3.85:1" \u2014\u2014 \u4EA4\u4E92\u5E95\u8272\u7684\u53D6\u503C\u4E0D\u4E00\u5B9A
-		   \u4E0E\u5B83\u76F8\u540C\uFF0C\u4E0D\u503C\u5F97\u4E3A\u4E00\u4E2A\u7EAF\u88C5\u9970\u6027\u7684\u5E95\u8272\u53BB\u5192\u8FD9\u4E2A\u9669\u3002
-		   "\u54EA\u4E00\u884C\u5C55\u5F00\u4E86"\u5DF2\u7ECF\u6709\u4E24\u4E2A\u66F4\u5F3A\u7684\u4FE1\u53F7\uFF1A\u6309\u94AE\u53D8\u6210\u300C\u6536\u8D77\u300D+ \u660E\u7EC6\u5C31\u8D34\u5728\u5B83\u4E0B\u9762
-		   \uFF08\u5DE6\u8FB9\u4E00\u6761\u7AD6\u7EBF\uFF0C\u89C1 .jh-plat-detail\uFF09\u3002 */
-		.jh-table tbody tr.jh-row-detail:hover{background:transparent}
-		.jh-table tbody tr.jh-row-detail>td{background:var(--dsw-alias-bg-base);
-		  padding:10px 12px 12px 26px}
+		.jh-row-actions{display:flex;align-items:center;justify-content:flex-end;
+		  gap:6px;flex-wrap:wrap}
+		.jh-row-actions .jh-btn{margin-left:0}
 
-		/* \u5C55\u5F00\u884C\u91CC\u7684\u8BCA\u65AD\u660E\u7EC6\u3002\u5DE6\u8FB9\u4E00\u6761\u7AD6\u7EBF\u8868\u793A"\u5C5E\u4E8E\u4E0A\u9762\u90A3\u4E00\u884C"
-		   \uFF08\u4E0E .jh-dedup-pane \u540C\u4E00\u5957\u8BED\u6CD5\uFF0C\u4E0D\u518D\u53E6\u9020\u4E00\u79CD"\u5F52\u5C5E"\u7684\u753B\u6CD5\uFF09\u3002 */
-		.jh-plat-detail{display:flex;flex-direction:column;gap:4px;
-		  border-left:2px solid var(--dsw-alias-border-l3);padding-left:10px}
+		/* \u5E73\u53F0\u8BCA\u65AD\u660E\u7EC6\uFF08PlatformDetail\uFF09\u3002\u5B83\u73B0\u5728\u662F**\u5F39\u7A97\u5185\u5BB9**\uFF0C\u6240\u4EE5\u4E0D\u518D\u6709
+		   "\u5DE6\u8FB9\u4E00\u6761\u7AD6\u7EBF\u8868\u793A\u5C5E\u4E8E\u4E0A\u9762\u90A3\u4E00\u884C" \u2014\u2014 \u5F39\u7A97\u672C\u8EAB\u5C31\u662F\u90A3\u4EFD\u5F52\u5C5E\u3002
+		   \uFF08\u539F\u5148\u5B83\u662F\u77E9\u9635\u91CC\u7684\u884C\u5185\u5C55\u5F00\uFF1B\u90A3\u4E00\u5957\u89C4\u5219\u5DF2\u968F\u5C55\u5F00\u4E00\u8D77\u5220\u6389\uFF1A\u6B7B\u89C4\u5219\u7559\u7740\u6BD4\u5220\u6389\u66F4\u7CDF\uFF0C
+		   \u4E0B\u4E00\u4E2A\u4EBA\u4F1A\u4EE5\u4E3A\u884C\u5185\u5C55\u5F00\u8FD9\u79CD\u5199\u6CD5\u8FD8\u5728\u7528\u3002\uFF09 */
+		.jh-plat-detail{display:flex;flex-direction:column;gap:4px}
 		.jh-plat-detail .jh-kv{margin:0 0 8px}
 		/* \u8FD9\u91CC\u66FE\u7ECF\u6709\u4E00\u6761 .jh-plat-detail-row\uFF08\u653E"\u767B\u5F55 \u5FBD\u6807 + \u767B\u5F55\u6309\u94AE"\u90A3\u4E00\u884C\uFF09\u3002
-		   \u968F\u7740\u767B\u5F55\u52A8\u4F5C\u56DE\u5230\u77E9\u9635\u884C\u91CC\uFF0C\u5B83\u6CA1\u6709\u4F7F\u7528\u8005\u4E86 \u2014\u2014 \u6B7B\u89C4\u5219\u7559\u7740\u6BD4\u5220\u6389\u66F4\u7CDF\uFF1A
-		   \u4E0B\u4E00\u4E2A\u4EBA\u4F1A\u4EE5\u4E3A\u660E\u7EC6\u91CC\u8FD8\u6709\u4E00\u6392"\u884C\u5185\u63A7\u4EF6"\u7684\u5199\u6CD5\u53EF\u4EE5\u590D\u7528\u3002 */
+		   \u968F\u7740\u767B\u5F55\u52A8\u4F5C\u56DE\u5230\u77E9\u9635\u884C\u91CC\uFF0C\u5B83\u6CA1\u6709\u4F7F\u7528\u8005\u4E86\u3002 */
 		.jh-plat-detail-actions{display:flex;gap:6px;margin-top:6px}
+		/* \u660E\u7EC6\u5F39\u7A97\u91CC\u90A3\u9897\u6309\u94AE\u4E0E .jh-btn-tiny \u7684 margin-left \u4E0D\u53E0\u52A0\uFF08\u540C .jh-plan-actions\uFF09 */
+		.jh-plat-detail-actions .jh-btn{margin-left:0}
 
 		/* \u80FD\u529B\u77E9\u9635\uFF08\u8BCA\u65AD\u4E0E\u660E\u7EC6\u5206\u533A\uFF09\uFF1A12 \u5217\uFF0C**\u4E0D\u5957\u7528** .jh-table-matrix \u7684\u5217\u5BBD\u7B56\u7565 \u2014\u2014
 		   \u90A3\u4E00\u5957\u4F1A nowrap \u6240\u6709\u975E\u672B\u5217\uFF0C\u800C\u8FD9\u91CC"\u6210\u719F\u5EA6"\u683C\u4E0B\u9762\u8FD8\u6302\u7740"\u5DF2\u77E5\u7F3A\u53E3"\u7684\u8BF4\u660E\u53E5\uFF0C
@@ -14752,10 +14872,10 @@ window.__ModuleLoader__.load({
 		var CSS = [ENTRY_ICON, SEMANTIC_TEXT, SHELL, SCREEN, CARD_TITLE, CONTROLS, JOBS_FILTERS, TODAY, COLLECT_BUTTONS, JOBS, JOBS_DEDUP, TAG_AND_STATE, PAGER, PAGER_CONTRAST_FIX, JOBS_SPLIT, MATCH_AND_FLAGS, DETAIL, OVERLAY, TOOLVIEW_CARD, RESUMES, TAILOR_AND_FILE, PIPELINE_GROUP, PIPELINE, MESSAGES, FUNNEL, BOARD_FILTERS, CAMPUS, FRESHNESS, TODAY_HEALTH, LINK, PLANS, COMPANY_REVIEW_AND_SIBLINGS, SALARY_BOX, COLLECT_USABILITY, MODAL_SEG_TIMERANGE, PLAN_EDITOR_MODAL, DESTRUCTIVE_BUTTONS, QUALITY_GATES, RUNS_TABLE, PLATFORM_MATRIX, EMPTY_AND_FEEDBACK, SETTINGS, SWITCH_AND_NUMBER, SETTINGS_PURPOSES_AND_USAGE, SMALL_TOP, SMALL, BOARD_V2].join("\n");
 
 		// src/client/toolviews/greeting-card.tsx
-		var import_react42 = require("react");
+		var import_react41 = require("react");
 
 		// src/client/toolviews/parts.tsx
-		var import_react41 = require("react");
+		var import_react40 = require("react");
 
 		// src/shared/text/tool-format.ts
 		var JOB_LIST_LINE = /^#(\d+)\s+(.+)$/;
@@ -14818,28 +14938,28 @@ window.__ModuleLoader__.load({
 		}
 		function CardShell(props) {
 		  const { title, subtitle, tone = "normal", actions, inspect, children } = props;
-		  return (0, import_react41.createElement)(
+		  return (0, import_react40.createElement)(
 		    "div",
 		    { className: "jh-tv", "data-tone": tone },
-		    (0, import_react41.createElement)(
+		    (0, import_react40.createElement)(
 		      "div",
 		      { className: "jh-tv-head" },
-		      (0, import_react41.createElement)("span", { className: "jh-tv-title" }, title),
-		      subtitle === void 0 || subtitle === "" ? null : (0, import_react41.createElement)("span", { className: "jh-tv-sub" }, subtitle),
-		      (0, import_react41.createElement)("span", { className: "jh-spacer" }),
-		      actions === void 0 ? null : (0, import_react41.createElement)("span", { className: "jh-tv-actions" }, actions),
-		      inspect === void 0 ? null : (0, import_react41.createElement)(
+		      (0, import_react40.createElement)("span", { className: "jh-tv-title" }, title),
+		      subtitle === void 0 || subtitle === "" ? null : (0, import_react40.createElement)("span", { className: "jh-tv-sub" }, subtitle),
+		      (0, import_react40.createElement)("span", { className: "jh-spacer" }),
+		      actions === void 0 ? null : (0, import_react40.createElement)("span", { className: "jh-tv-actions" }, actions),
+		      inspect === void 0 ? null : (0, import_react40.createElement)(
 		        "button",
 		        { type: "button", className: "jh-tv-link", onClick: inspect },
 		        "\u67E5\u770B"
 		      )
 		    ),
-		    children === void 0 ? null : (0, import_react41.createElement)("div", { className: "jh-tv-body" }, children)
+		    children === void 0 ? null : (0, import_react40.createElement)("div", { className: "jh-tv-body" }, children)
 		  );
 		}
 		function JobRow2(props) {
 		  const { job, onOpen } = props;
-		  return (0, import_react41.createElement)(
+		  return (0, import_react40.createElement)(
 		    "button",
 		    {
 		      type: "button",
@@ -14847,18 +14967,18 @@ window.__ModuleLoader__.load({
 		      onClick: () => onOpen(job.id),
 		      title: "\u5728\u4E3B\u9762\u677F\u91CC\u6253\u5F00\u8FD9\u4E2A\u5C97\u4F4D"
 		    },
-		    (0, import_react41.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
-		    (0, import_react41.createElement)("span", { className: "jh-tv-job-title" }, job.title),
-		    (0, import_react41.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
-		    (0, import_react41.createElement)("span", { className: "jh-spacer" }),
-		    (0, import_react41.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
-		    (0, import_react41.createElement)("span", { className: "jh-tv-job-score" }, job.score)
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-id" }, `#${String(job.id)}`),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-title" }, job.title),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-meta" }, [job.company, job.city].filter((p) => p !== "").join(" \xB7 ")),
+		    (0, import_react40.createElement)("span", { className: "jh-spacer" }),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-salary" }, job.salary),
+		    (0, import_react40.createElement)("span", { className: "jh-tv-job-score" }, job.score)
 		  );
 		}
 		function useAction() {
-		  const [busy, setBusy] = (0, import_react41.useState)(false);
-		  const [error, setError] = (0, import_react41.useState)(null);
-		  const [result, setResult] = (0, import_react41.useState)(null);
+		  const [busy, setBusy] = (0, import_react40.useState)(false);
+		  const [error, setError] = (0, import_react40.useState)(null);
+		  const [result, setResult] = (0, import_react40.useState)(null);
 		  const run = async (fn) => {
 		    setBusy(true);
 		    setError(null);
@@ -14895,7 +15015,7 @@ window.__ModuleLoader__.load({
 		  const settled = isSettled(block);
 		  const text = textOf(block);
 		  const failed = block.isError === true;
-		  const [copied, setCopied] = (0, import_react42.useState)(false);
+		  const [copied, setCopied] = (0, import_react41.useState)(false);
 		  const parsed = splitDraft(text);
 		  const jobId = jobIdOf(props);
 		  return /* @__PURE__ */ (0, import_jsx_runtime90.jsxs)(
@@ -14965,7 +15085,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/toolviews/job-detail-card.tsx
-		var import_react43 = require("react");
+		var import_react42 = require("react");
 		var import_jsx_runtime91 = require("react/jsx-runtime");
 		function JobDetailCard(props) {
 		  const { block, inspect } = props;
@@ -14978,7 +15098,7 @@ window.__ModuleLoader__.load({
 		  const jobId = jobIdOf2(props);
 		  const mark = useAction();
 		  const draft = useAction();
-		  const [copied, setCopied] = (0, import_react43.useState)(false);
+		  const [copied, setCopied] = (0, import_react42.useState)(false);
 		  const onMark = () => {
 		    if (jobId === null) return;
 		    void mark.run(async () => {

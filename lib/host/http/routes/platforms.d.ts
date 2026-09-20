@@ -7,6 +7,17 @@ export declare function loginStatus(ctx: RouteContext): Promise<RouteResult | un
 /** 原 router.ts L1222-1229。 */
 export declare function loginStart(ctx: RouteContext): Promise<RouteResult | undefined>;
 /**
+ * `POST /platforms/:id/login/check` —— **只检测**登录态，不引导登录。
+ *
+ * 为什么不是直接复用 `/login/start`：那条会**把登录页留在那儿等用户操作**
+ * （轮询最长 5 分钟）。而"我只是想看一眼现在登没登"是完全不同的一件事 ——
+ * 顺手开一个等用户输密码的窗口，是把一次读操作变成了一次交互。
+ *
+ * 检测**失败**（页面打不开 / 适配器抛错）走 200 + `checked: false`，
+ * 而不是错误码：那是"这一下没测出来"，界面要能把它与"确定未登录"分开。
+ */
+export declare function loginCheck(ctx: RouteContext): Promise<RouteResult | undefined>;
+/**
  * `GET|PUT /platforms/:id/adapter-config` —— 适配器配置覆盖（J2 / ADAPTERS.md §4）。
  *
  * 修一个坏掉的选择器，此前**只能直接写 sqlite**（ADAPTERS.md §1 的"实测与源码注释不一致"

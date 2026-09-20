@@ -7,7 +7,7 @@
  *   2. 主动产生待办告警（P8：失败必须可见）；
  *   3. 登录引导：打开登录页 → 轮询 → 成功即回写状态并关掉告警。
  */
-import type { AccountStateDto, LoginStatusDto } from '../../shared/contract/dto/platform.js'
+import type { AccountStateDto, LoginCheckDto, LoginStatusDto } from '../../shared/contract/dto/platform.js'
 import type { EventBus } from '../http/sse.js'
 import type { Store } from '../store/store.js'
 import { DomainError, messageOf } from '../util/errors.js'
@@ -144,6 +144,18 @@ export interface LoginFlow {
   status(platformId: string): LoginStatusDto
   /** 直接驱动一轮检测（测试与「手动再查一次」都用它）。 */
   pollOnce(platformId: string): Promise<LoginStatusDto>
+  /**
+   * **只检测**登录态：打开平台页面 → 判一次 → 把事实落进 `account_state` → 放掉页面。
+   *
+   * 与 `start` 的区别是它**不引导登录**：不起轮询、不把页面留在那儿等用户操作。
+   * 所以它回答的是"此刻是什么状态"，而不是"正在引导的这次登录走到哪了" ——
+   * 用户想先看一眼再决定要不要去登录时，需要的正是前者。
+   *
+   * ⚠️ 检测**失败**（打不开页面 / 适配器抛错）不抛错，而是回 `checked: false`：
+   * 那是"这一下没检测出来"，不是"这个接口调用失败了"。把它们都做成异常，
+   * 界面就分不清"没测出来"与"确定未登录"了。
+   */
+  check(platformId: string): Promise<LoginCheckDto>
   cancelAll(): void
   /**
    * 是否有平台正在跑登录引导（轮询中）。
@@ -247,6 +259,69 @@ export function createLoginFlow(deps: LoginFlowDeps): LoginFlow {
     }
   }
 
+  /**
+   * 检测一次登录态时导航到哪一页。
+   *
+   * 优先用适配器声明的 `checkUrl`（"判据是在哪一页校准的"），缺省才是 `loginUrl`。
+   * 为什么不是直接用 `loginUrl`：那是**登录引导**要打开的页面（用户得在上面输密码），
+   * 而多数平台的 `isLoggedIn` 是按正常页面校准的 —— 登录页上判会给出相反的结论。
+   * 详见 `auth.checkUrl` 的说明。
+   */
+  const checkPageUrlOf = (auth: NonNullable<SiteAdapter['auth']>): string => {
+    const declared = auth.checkUrl
+    return declared === undefined || declared === null || declared === '' ? auth.loginUrl : declared
+  }
+
+  /**
+   * 只检测一次登录态。
+   *
+   * 页面**借了就要还**（`finally` 里 release）：检测是"看一眼"，不是"留在那儿等你操作"——
+   * 留在那儿的是 `start()` 的登录引导，它自己管着自己的页面生命周期。
+   * 不还的代价是页面池里少一页、且下一次采集可能复用到它上面残留的导航。
+   */
+  const check = async (platformId: string): Promise<LoginCheckDto> => {
+    const auth = requireAuth(platformId)
+    const checkedAt = clock()
+    let page: PageLike | null = null
+    try {
+      page = await deps.pageSource.acquire()
+      await page.goto(checkPageUrlOf(auth))
+      const loggedIn = await auth.isLoggedIn(page)
+      // 与轮询同一条纪律（§7）：把**看到的事实**落库并产生/关掉待办 ——
+      // 只测不记的话，"检测过了"这件事对后续调度毫无影响，用户白点一次。
+      if (loggedIn) {
+        deps.session.markLoggedIn(platformId)
+      } else {
+        /* 提示语刻意**不写**"在弹出的浏览器窗口里完成登录"（登录引导那句）：
+           检测借的页面在 `finally` 里就还回去了，那个窗口可能已经不在了。
+           hint 会落库并出现在平台明细与待办里，写一句做不到的事比不写更糟。 */
+        deps.session.markLoginRequired(platformId, '检测显示尚未登录 —— 未登录时抓取可能静默返回 0 条')
+      }
+      deps.events.publish('login.checked', { platformId, loggedIn })
+      return {
+        platformId,
+        checked: true,
+        loggedIn,
+        checkedAt,
+        message: loggedIn
+          ? '已登录 —— 账号态正常，可以照常采集。'
+          : '未登录 —— 当前页面会被登录墙挡住，抓取可能静默返回空结果。',
+      }
+    } catch (error) {
+      const message = messageOf(error)
+      deps.logger?.warn(`[session] ${platformId} 登录态检测失败：${message}`)
+      return {
+        platformId,
+        checked: false,
+        loggedIn: false,
+        checkedAt,
+        message: `没检测出来：${message}`,
+      }
+    } finally {
+      if (page !== null) await deps.pageSource.release(page).catch(() => undefined)
+    }
+  }
+
   /** 后台循环：不阻塞路由。 */
   const runLoop = async (platformId: string, deadlineMs: number): Promise<void> => {
     while (flowOf(platformId).state === 'running' && !flowOf(platformId).cancelled) {
@@ -313,6 +388,8 @@ export function createLoginFlow(deps: LoginFlowDeps): LoginFlow {
     },
 
     pollOnce,
+
+    check,
 
     cancelAll(): void {
       for (const [platformId, flow] of flows) {
