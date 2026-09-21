@@ -8,9 +8,10 @@
 import { dataNotReady } from '../../runtime/contract.js'
 import type { CrawlSummaryDto } from '../../../shared/contract/dto/crawl.js'
 import { DomainError } from '../../util/errors.js'
-import { criteriaDimensionsFor } from '../../domain/plan-config.js'
+import { criteriaDimensionsFor, criteriaToSearchCriteria } from '../../domain/plan-config.js'
+import { previewOf } from '../../platform/preview.js'
 import type { SearchCriteria } from '../../platform/types.js'
-import { json, parsePositiveInt, requireData, type RouteContext } from './kit.js'
+import { json, parsePositiveInt, readObject, requireData, type RouteContext } from './kit.js'
 import type { RouteResult } from './types.js'
 
 // ── GET /crawl/status ──────────────────────────────────────────────
@@ -103,5 +104,78 @@ export async function dimensions(ctx: RouteContext): Promise<RouteResult | undef
       .registry()
       .list()
       .map((adapter) => ({ id: adapter.id, displayName: adapter.displayName })),
+  })
+}
+
+// ── POST /criteria/preview：干跑，看这份条件对每个平台会请求什么 ──────────
+/**
+ * 把方案条件翻成"每个平台**实际会发出的请求**"。**不发任何请求**：走的是采集主链
+ * 用来拼 URL / body 的同一批纯函数（`platform/preview.ts`）。
+ *
+ * 为什么值得一条接口：界面上写的条件、校验放行的条件、真正发出去的请求是三件事，
+ * 而它们分叉时用户什么都看不到 —— "筛了没结果"与"根本没筛"长得一模一样。
+ * 这条接口把那第三件事变成可读的数据，方案表单在保存前就能显示
+ * "这个条件落到哪个参数上、哪个条件根本没有平台会用"。
+ *
+ * 低危：只读注册表、不写库、不开浏览器。
+ */
+export async function previewCriteria(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, req, segments, method } = ctx
+  if (
+    !(method === 'POST' && segments.length === 2 && segments[0] === 'criteria' && segments[1] === 'preview')
+  ) {
+    return undefined
+  }
+  requireData(runtime)
+  const body = await readObject(req)
+  const platforms = Array.isArray(body['platforms'])
+    ? (body['platforms'] as unknown[]).filter(
+        (value): value is string => typeof value === 'string' && value !== '',
+      )
+    : runtime
+        .registry()
+        .list()
+        .map((adapter) => adapter.id)
+
+  const criteria: Record<string, string> = {}
+  const raw = body['criteria']
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof value === 'string') criteria[key] = value
+      else if (typeof value === 'number' && Number.isFinite(value)) criteria[key] = String(value)
+    }
+  }
+
+  // 与采集主链**同一个**转换：预览与真实请求的分叉点只允许有一处。
+  const search = criteriaToSearchCriteria(criteria)
+  return json(200, {
+    criteria: search,
+    items: platforms.map((platformId) => {
+      const adapter = runtime.registry().get(platformId)
+      if (adapter === undefined) {
+        return { platformId, displayName: platformId, request: null, error: '未注册的平台' }
+      }
+      try {
+        const request = previewOf(adapter, search)
+        return {
+          platformId,
+          displayName: adapter.displayName,
+          request,
+          // 构造不出请求不是"没条件"，而是**这个平台这一轮会被跳过**（如城市码未配置）——
+          // 必须说出来，否则界面上它看起来和"什么都没配"一样。
+          error:
+            request === null
+              ? '这份条件构造不出请求（例如城市码未配置）—— 这一轮这个平台会被跳过'
+              : null,
+        }
+      } catch (error) {
+        return {
+          platformId,
+          displayName: adapter.displayName,
+          request: null,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }),
   })
 }

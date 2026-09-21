@@ -14,6 +14,18 @@ import type { SinoJobsConfig } from './config.js';
  * 表里没有的城市直接返回 `null`（**不猜**，否则"城市没配"会变成一次静默的全国搜索）。
  */
 export declare function buildSinoJobsSearchUrl(config: SinoJobsConfig, criteria: SearchCriteria): string | null;
+/**
+ * 请求体字段名 —— **声明与构造共用这一份**（理由同 waiqi：声明里的 `wire.param`
+ * 直接引用这里，于是"声明落到哪个参数"与"实际写哪个字段"不会各写一份字面量）。
+ */
+export declare const SINOJOBS_BODY_FIELDS: {
+    readonly keyword: "keywords";
+    readonly city: "address_id";
+    readonly jobType: "job_type";
+    readonly workNature: "work_nature";
+    readonly salaryRange: "salary_range";
+    readonly experience: "experience";
+};
 /** 接口请求体（表单字段，与站点 `onloadPage(page, limit)` 发送的完全一致）。 */
 export declare function buildSinoJobsRequestBody(config: SinoJobsConfig, criteria: SearchCriteria, page: number): Record<string, string>;
 //# sourceMappingURL=urls.d.ts.map

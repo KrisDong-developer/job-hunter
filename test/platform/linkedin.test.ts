@@ -316,6 +316,168 @@ test('登录检测：已登录页（global-nav 我区头像）→ true；未登�
   assert.equal(await adapter.auth?.isLoggedIn(anonymous), false, '未登录侧：me 锚点 0 命中（真机两侧定案）')
 })
 
+// ── 薪资回填通道（2026-09-21 第三轮探针发现；默认关，DB 可开） ────────────
+
+/** 登录态搜索页列表卡文档（按真机 actions-search-panel 快照的类名合成）：occludable 卡 + ¥ 薪资。 */
+const PANEL_DOC = `<html><body><div class="jobs-search-results-list">
+  <div class="job-card-container" data-occludable-job-id="4098000111">
+    <a class="job-card-list__title--link" href="/jobs/view/4098000111">Data Analyst</a>
+    <ul><li class="jVDYikdkEUKpihBiaAiheLNfuBZXssxrtmqk"><span dir="ltr">¥20K/月 - ¥27K/月</span></li></ul>
+  </div>
+  <div class="job-card-container" data-occludable-job-id="9999999999">
+    <a class="job-card-list__title--link" href="/jobs/view/9999999999">别的岗位（无薪资节点）</a>
+  </div>
+</div></body></html>`
+
+test('薪资回填（开启）：导航登录态搜索页、按 occludable id 只回填空薪资、自有薪资不覆盖', async () => {
+  const adapter = createLinkedInAdapter({
+    config: { ...DEFAULT_LINKEDIN_CONFIG, salaryPanelEnabled: true },
+  })
+  const visited: string[] = []
+  const page = browserLikePage('<html><body></body></html>', 'about:blank', (url) => {
+    visited.push(url)
+    // guest 端点 → guest 文档；搜索页（回填通道）→ 登录态列表卡文档
+    return url.includes('/jobs-guest/') ? SYNTHETIC_DOC : PANEL_DOC
+  })
+  await adapter.crawl.gotoSearch(page, { keyword: 'Java' })
+  const jobs = await adapter.crawl.readListPage(page)
+
+  assert.ok(
+    visited.some((v) => v.includes('/jobs/search/')),
+    `开启回填后应额外导航登录态搜索页：${visited.join(' ')}`,
+  )
+  // 第三卡（Data Analyst）guest 文档里无薪资 → 按 occludable id 回填命中
+  const analyst = jobs.find((job) => job.platformJobId === '4098000111')
+  assert.ok(analyst !== undefined)
+  assert.equal(analyst.salaryRaw, '¥20K/月 - ¥27K/月', 'guest 通道无薪资，按 occludable id 回填')
+  // 第一卡 guest 文档自带 $ 薪资 → 回填**不覆盖**（只回填空值）
+  const senior = jobs.find((job) => job.platformJobId === '4098276354')
+  assert.ok(senior !== undefined)
+  assert.equal(senior.salaryRaw, '$120,000.00/yr - $150,000.00/yr', '自有薪资优先，回填不覆盖')
+
+  // 翻页判据不受回填影响（仍按 guest 文档的条数）
+  assert.equal(jobs.length, 3)
+  assert.equal(await adapter.crawl.hasNextPage(page), false, '不满页（3 < 10）')
+})
+
+test('薪资回填（默认关）：不额外导航搜索页，guest 文档行为不变', async () => {
+  const adapter = createLinkedInAdapter()
+  const visited: string[] = []
+  const page = browserLikePage('<html><body></body></html>', 'about:blank', (url) => {
+    visited.push(url)
+    return url.includes('/jobs-guest/') ? SYNTHETIC_DOC : PANEL_DOC
+  })
+  await adapter.crawl.gotoSearch(page, { keyword: 'Java' })
+  const jobs = await adapter.crawl.readListPage(page)
+  assert.ok(
+    visited.every((v) => v.includes('/jobs-guest/')),
+    `默认关闭时只应有 guest 导航：${visited.join(' ')}`,
+  )
+  const analyst = jobs.find((job) => job.platformJobId === '4098000111')
+  assert.ok(analyst !== undefined)
+  assert.equal(analyst.salaryRaw, '', '通道关闭：guest 无薪资就留空，不多导航一次')
+})
+
+// ── 收件箱（2026-09-21 actions 探针登录态真机结构） ──────────────────────
+
+/** 按真机快照（actions-messaging-*.html）的会话卡结构合成 —— 字段名与真实 DOM 一致。 */
+const MESSAGING_DOC = `<html><body>
+  <ul class="list-style-none msg-conversations-container__conversations-list" aria-label="对话列表">
+    <li class="ember-view scaffold-layout__list-item msg-conversation-listitem msg-conversations-container__convo-item">
+      <div class="msg-conversation-card msg-conversations-container__pillar" id="conversation-card-ember48">
+        <h3 class="msg-conversation-listitem__participant-names msg-conversation-card__participant-names">
+          <div class="display-flex"><span class="truncate"> Zaira Bhatti </span></div>
+        </h3>
+        <time class="msg-conversation-listitem__time-stamp msg-conversation-card__time-stamp"> 3月19日 </time>
+        <p class="msg-conversation-card__message-snippet"> Zaira发送了一个附件 </p>
+      </div>
+    </li>
+    <li class="ember-view msg-conversation-listitem msg-conversations-container__convo-item">
+      <div class="msg-conversation-card" id="conversation-card-ember77">
+        <h3 class="msg-conversation-card__participant-names"><span> 李四 </span></h3>
+        <p class="msg-conversation-card__message-snippet"> 谢谢你的关注 </p>
+      </div>
+    </li>
+  </ul>
+</body></html>`
+
+test('readInbox：自导航到 Messaging、按真机会话卡结构解析、无 id 时兜底 name#index', async () => {
+  const adapter = createLinkedInAdapter()
+  assert.ok(adapter.actions?.readInbox !== undefined, 'readInbox 已按 2026-09-21 真机证据落地')
+
+  const visited: string[] = []
+  const page = browserLikePage('<html><body></body></html>', 'about:blank', (url) => {
+    visited.push(url)
+    return MESSAGING_DOC
+  })
+  const messages = await adapter.actions?.readInbox?.(page)
+
+  assert.ok(visited.some((v) => v.includes('/messaging/')), `readInbox 应自导航到 Messaging：${visited.join(' ')}`)
+  assert.equal(messages?.length, 2)
+  const first = messages?.[0]
+  assert.ok(first !== undefined)
+  assert.equal(first?.hrName, 'Zaira Bhatti')
+  assert.equal(first?.lastMessage, 'Zaira发送了一个附件')
+  assert.equal(first?.at, '3月19日', '相对时间格式原样带出，由上层解释')
+  assert.equal(first?.conversationId, 'conversation-card-ember48', 'conversationId 首选卡片自己的 id')
+  assert.equal(first?.direction, 'hr', 'DOM 无方向标记 → 按「漏报比误报贵」记 hr（真机证据边界）')
+  assert.equal(first?.unread, false, 'DOM 无未读标记（唯一的 notification-badge 是全局导航的）')
+  assert.equal(first?.company, '', '会话卡是「人」维度，无公司字段')
+
+  const second = messages?.[1]
+  assert.ok(second !== undefined)
+  assert.equal(second?.hrName, '李四')
+  assert.equal(second?.conversationId, 'conversation-card-ember77')
+  assert.equal(second?.at, null, '无 time 节点就给 null，不编')
+})
+
+test('readInbox（真实夹具）：登录态快照两卡逐字段钉住（2026-09-21 真机读数）', async () => {
+  const adapter = createLinkedInAdapter()
+  const fixture = readFileSync(join(process.cwd(), 'test', 'fixtures', 'linkedin-messaging.html'), 'utf8')
+  const page = browserLikePage(fixture, 'about:blank', () => fixture)
+  const messages = await adapter.actions?.readInbox?.(page)
+
+  assert.equal(messages?.length, 2, '真机快照：2 条会话')
+  const first = messages?.[0]
+  assert.ok(first !== undefined)
+  assert.equal(first?.hrName, 'Zaira Bhatti')
+  assert.equal(first?.conversationId, 'conversation-card-ember48')
+  assert.equal(first?.lastMessage, 'Zaira发送了一个附件')
+  assert.equal(first?.at, '3月19日')
+  assert.equal(first?.direction, 'hr')
+  assert.equal(first?.unread, false)
+
+  const second = messages?.[1]
+  assert.ok(second !== undefined)
+  assert.equal(second?.hrName, 'The LinkedIn Team')
+  assert.equal(second?.conversationId, 'conversation-card-ember56')
+  // 系统会话带「发自领英」pill —— textContent 原样带出（真实解析行为，如实钉住）
+  assert.ok((second?.lastMessage ?? '').includes('欢迎使用领英'), `摘要应含正文：${String(second?.lastMessage)}`)
+  assert.ok((second?.lastMessage ?? '').includes('发自领英'), 'pill 前缀也在 textContent 里 —— 真实形态')
+  assert.equal(second?.at, '2025年12月14日')
+})
+
+test('readInbox：被弹到 authwall → 抛 login-required（0 条必须可信，绝不静默）', async () => {
+  const adapter = createLinkedInAdapter()
+  // goto 后夹具落点保持在 authwall（真机上未登录访问 /messaging/ 就是被弹到这里）
+  const walled = browserLikePage('<html><body><h1>Sign in</h1></body></html>', 'https://www.linkedin.com/authwall?trk=x')
+  await assert.rejects(
+    adapter.actions?.readInbox?.(walled) ?? Promise.resolve([]),
+    (error: unknown) => error instanceof Error && /登录墙/.test(error.message),
+    'authwall 上 readInbox 应抛 PlatformBlockedError(login-required)，而不是返回 []',
+  )
+})
+
+test('readInbox：容器缺失（不是 Messaging 页/选择器腐烂）→ 抛错而不是返回空数组', async () => {
+  const adapter = createLinkedInAdapter()
+  const page = browserLikePage('<html><body><div>别的页面</div></body></html>', 'about:blank', () => '<html><body><div>别的页面</div></body></html>')
+  await assert.rejects(
+    adapter.actions?.readInbox?.(page) ?? Promise.resolve([]),
+    (error: unknown) => error instanceof Error && /容器未找到/.test(error.message),
+    '容器缺失必须抛错 —— 空数组会被上层读成「今天没人回我」',
+  )
+})
+
 // ── 自包含护栏与契约声明 ────────────────────────────────────────────────
 
 test('护栏本身有效：引用闭包的函数重建后必然 ReferenceError', () => {
@@ -324,7 +486,7 @@ test('护栏本身有效：引用闭包的函数重建后必然 ReferenceError',
   assert.throws(() => asSerialized(leaky)(), ReferenceError)
 })
 
-test('适配器声明符合平台事实：antiBot=high、免登录可搜、fieldCompleteness=medium、无动作', () => {
+test('适配器声明符合平台事实：antiBot=high、免登录可搜、fieldCompleteness=medium、readInbox 落地', () => {
   const adapter = createLinkedInAdapter()
   assert.equal(adapter.id, 'linkedin')
   assert.equal(adapter.displayName, 'LinkedIn 领英')
@@ -332,7 +494,11 @@ test('适配器声明符合平台事实：antiBot=high、免登录可搜、field
   assert.equal(adapter.capabilities.antiBot, 'high', '风控业内最强一档，界面要如实展示')
   assert.equal(adapter.capabilities.fieldCompleteness, 'medium', '真机 10/10 核心字段；薪资无源')
   assert.equal(adapter.capabilities.supportsGreeting, false)
-  assert.equal(adapter.actions, undefined, '登录态动作链路未调研 → fail-closed')
+  assert.equal(adapter.capabilities.supportsInbox, true, 'readInbox 已落地（2026-09-21 真机证据）—— 三轴一致性要求声明')
+  assert.ok(adapter.actions !== undefined, 'actions 已落地 readInbox')
+  assert.equal(adapter.actions?.sayHello, undefined, '不可逆动作无实测链路 → fail-closed')
+  assert.equal(adapter.actions?.sendResume, undefined, 'Easy Apply 多步表单未取证 → fail-closed')
+  assert.equal(adapter.actions?.readInbox !== undefined, true)
   assert.ok(adapter.auth !== undefined, '登录检测已按两侧真机证据落地')
   assert.ok(adapter.detail !== undefined, '详情解析已按 v2 真机锚点落地（游客 SSR 直出）')
   assert.equal(adapter.maxPages, 5)

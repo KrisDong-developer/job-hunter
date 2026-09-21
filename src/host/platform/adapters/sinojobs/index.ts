@@ -66,12 +66,13 @@ import {
   DEFAULT_SINOJOBS_CONFIG,
   SINOJOBS_BLOCK_SIGNALS,
   SINOJOBS_EXPERIENCE_OPTIONS,
+  SINOJOBS_LIST_URL,
   SINOJOBS_MAX_PAGES,
   SINOJOBS_SALARY_OPTIONS,
   SINOJOBS_WORK_NATURE_OPTIONS,
 } from './config.js'
 import type { SinoJobsConfig } from './config.js'
-import { buildSinoJobsRequestBody, buildSinoJobsSearchUrl } from './urls.js'
+import { SINOJOBS_BODY_FIELDS, buildSinoJobsRequestBody, buildSinoJobsSearchUrl } from './urls.js'
 import {
   countCardsInPage,
   detectBlockInPage,
@@ -120,6 +121,7 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
       label: '关键词',
       values: [],
       hint: '自由文本，对应接口的 keywords 字段（实测生效：工程师 → 78→17 条）',
+      wire: { target: 'body', param: SINOJOBS_BODY_FIELDS.keyword },
     },
     {
       key: 'city',
@@ -128,24 +130,28 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
       hint:
         '对应接口 address_id。取值来自平台级联接口（10000=国内/10001=国外/省级 id，实测 address_id=3 → 只回上海岗）；' +
         '城市级 id 未内置，需要时在 DB 覆盖 config.addressCodes 补',
+      wire: { target: 'body', param: SINOJOBS_BODY_FIELDS.city },
     },
     {
       key: 'salaryRange',
       label: '薪资',
       values: SINOJOBS_SALARY_OPTIONS,
       hint: '对应接口 salary_range，值域来自页面筛选项（#work-salary strong[rel]）',
+      wire: { target: 'body', param: SINOJOBS_BODY_FIELDS.salaryRange },
     },
     {
       key: 'experience',
       label: '经验',
       values: SINOJOBS_EXPERIENCE_OPTIONS,
       hint: '对应接口 experience，值域来自页面筛选项（#work-year strong[rel]）',
+      wire: { target: 'body', param: SINOJOBS_BODY_FIELDS.experience },
     },
     {
       key: 'workNature',
       label: '工作性质',
       values: SINOJOBS_WORK_NATURE_OPTIONS,
       hint: '对应接口 work_nature（全职/兼职/实习）',
+      wire: { target: 'body', param: SINOJOBS_BODY_FIELDS.workNature },
     },
     {
       key: 'jobType',
@@ -154,6 +160,7 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
       hint:
         '对应接口 job_type，内置为页面 #job_type 全部 43 项的实测 seed；' +
         '站点增删行业时在 DB 覆盖 config.jobTypeList 即可',
+      wire: { target: 'body', param: SINOJOBS_BODY_FIELDS.jobType },
     },
     {
       key: 'maxPages',
@@ -209,6 +216,24 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {
         return buildSinoJobsSearchUrl(config, criteria)
+      },
+      /**
+       * 预览：SinoJobs 的筛选**不在 URL 里**（URL 只承载页面自己的 `keywords`），
+       * 真正的条件全在 POST body。所以预览必须给出那个请求 —— 否则界面上会显示
+       * "这个方案什么都没筛"。与采集走**同一个** `buildSinoJobsRequestBody`。
+       */
+      preview(criteria: SearchCriteria) {
+        const url = buildSinoJobsSearchUrl(config, criteria)
+        const body = buildSinoJobsRequestBody(config, criteria, 1)
+        const params: Record<string, string> = {}
+        for (const [key, value] of new URLSearchParams(body)) params[key] = value
+        return {
+          url: url ?? SINOJOBS_LIST_URL,
+          method: 'POST' as const,
+          params,
+          body: new URLSearchParams(body).toString(),
+          crawlOnly: [],
+        }
       },
     },
 

@@ -264,18 +264,76 @@ export interface PlanWriteInput {
 export interface CriteriaDimensionDto {
     key: string;
     label: string;
+    /**
+     * 取值域（已选平台的**并集**，按声明顺序）。
+     *
+     * 每一项带 `platforms`：**哪些已选平台接受这个取值**。多平台下这是必需信息 ——
+     * `sort` 在 51job 是 `sortType`、在智联是 `order`，同名的 1 意思完全不同，
+     * 界面如果只画一个下拉而不说"这个值只有谁认"，用户就只能靠猜。
+     */
     values: Array<{
         value: string;
         label: string;
+        platforms: string[];
     }>;
     max: number | null;
     hint: string;
-    /** 当前方案是否支持它。false = 界面上禁用 + 说明原因。 */
+    /** 至少有一个已选平台能填它且**会生效**。false = 界面上不给输入框 + 说明原因。 */
     supported: boolean;
-    /** 不支持的原因。 */
+    /** 不支持的原因（`supported === false` 时必有；聚合了各平台自己的解释）。 */
     disabledReason: string | null;
     /** 数值型维度（界面渲染成数字输入而不是下拉）。 */
     numeric: boolean;
+    /**
+     * 值域是否**开放**（自由文本）。
+     *
+     * 必须单独回传，不能从 `values` 空不空推：领英的 city 有建议列表但**收任何地名**
+     * （`closed: false`），而 hiredchina 的 city 是空表 + 封闭（一个都不收）。
+     * 界面据它决定渲染下拉还是可输入的框 —— 之前靠"values 非空 = 下拉"，
+     * 于是领英用户**填不了**列表外的城市（如 Hangzhou），而适配器明明说可以。
+     */
+    open: boolean;
+    /** 是否被任一已选平台声明过。false = 谁都没有这个筛选（与"声明了但不可用"不同）。 */
+    declared: boolean;
+    /**
+     * 每个已选平台对这个维度的态度。
+     *
+     * `declared` = 这个平台**声明过**它（`false` = 平台侧没有这个筛选参数）；
+     * `supported` = 用户能填进去一个它接受的值（声明了但一个取值都不收时为 `false`）；
+     * `note` 是该平台自己写的解释；`wire` 是**它把值落到哪个参数上**
+     * （`null` = 不进请求，只是采集深度）。界面据此写出"谁支持、谁不支持、为什么、
+     * 落到哪个参数"——`sort` 在 51job 是 `sortType`、在智联是 `order`，就是这样看出来的。
+     */
+    platforms: Array<{
+        id: string;
+        declared: boolean;
+        supported: boolean;
+        note: string | null;
+        wire: {
+            target: 'url' | 'body';
+            param: string | null;
+        } | null;
+    }>;
+    /**
+     * 这个维度**会进请求**吗（取各平台声明里的第一份；逐平台的参数名看上面的 `platforms`）。
+     *
+     * `null` = 采集深度旋钮（页数上限 / 加载轮数）：它不改请求，只改采集循环跑几轮。
+     * 界面必须把这两种分开说 —— 否则"页数上限 5"看起来和筛选条件一样，用户会以为没生效。
+     */
+    wire: {
+        target: 'url' | 'body';
+        param: string | null;
+    } | null;
+    /**
+     * ≥2 个已选平台声明了它、但**取值含义不同**（各自的值域/封闭性不一样）。
+     *
+     * 典型：`type` 在神仙外企是"外企/不限"，在 HiredChina 是 Marketing/Teaching…；
+     * `sort` 在 51job 是四档 sortType、在智联只有 `order=4`。方案级只能存一个值，
+     * 所以界面必须显式警告，而不是画一个"看起来共享"的下拉。
+     */
+    conflict: boolean;
+    /** 冲突的可读说明（`conflict === true` 时必有）。 */
+    conflictNote: string | null;
 }
 export interface CriteriaDimensionsDto {
     items: CriteriaDimensionDto[];
@@ -290,6 +348,26 @@ export interface PlanDuplicateDto {
     planId: number;
     name: string;
     reason: string;
+}
+/**
+ * 一条"这份条件对这个平台**实际会请求什么**"的干跑结果（`POST /criteria/preview`）。
+ *
+ * `request === null` 不是"没有条件"，而是**这一轮这个平台会被跳过**（例如城市码未配置）——
+ * `error` 里就是原因。两者在界面上必须长得不一样。
+ */
+export interface CriteriaPreviewDto {
+    platformId: string;
+    displayName: string;
+    request: {
+        url: string;
+        method: 'GET' | 'POST';
+        /** 真实参数：GET 的 query，或 POST 的请求体字段（键名都是平台自己的）。 */
+        params: Record<string, string>;
+        body?: string;
+        /** 声明了但**不进请求**的维度（采集深度旋钮）——界面要与筛选条件分开说。 */
+        crawlOnly: string[];
+    } | null;
+    error: string | null;
 }
 /** SR-45：校验结果。界面保存前先问一次，与工具/HTTP 是同一份校验。 */
 export interface PlanValidationDto {

@@ -253,7 +253,7 @@ import {
 } from './config.js'
 import { extractDetailInPage } from './page/detail.js'
 import { extractJobsInPage, isLoggedInByMarkersInPage, scrollToLoadInPage } from './page/list.js'
-import { buildJoblistBody, buildZhipinSearchUrl } from './urls.js'
+import { ZHIPIN_BODY_FIELDS, buildJoblistBody, buildZhipinSearchUrl } from './urls.js'
 
 export interface ZhipinAdapterOptions {
   config?: ZhipinConfig
@@ -415,12 +415,21 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
   }
 
   const dimensions: CriteriaDimension[] = [
-    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，平台原样接收' },
+    {
+      key: 'keyword',
+      label: '关键词',
+      values: [],
+      hint: '自由文本，平台原样接收',
+      // BOSS 的筛选**不在页面 URL 里**：真正的请求是页面内调 joblist 接口的表单体
+      // （`query` / `city`），URL 只承载页面外壳。声明落到 body 字段上，预览与对账看的是同一个请求。
+      wire: { target: 'body', param: ZHIPIN_BODY_FIELDS.keyword },
+    },
     {
       key: 'city',
       label: '城市',
       values: Object.keys(config.cityCodes).map((city) => ({ value: city, label: city })),
       hint: '城市码来自 zhipin 官方 cityGroup 接口（经 BossHunter 2026-08-10 抓取）；其它城市写 DB 覆盖',
+      wire: { target: 'body', param: ZHIPIN_BODY_FIELDS.city },
     },
     {
       key: 'maxPages',
@@ -434,6 +443,8 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
       label: '加载轮数',
       values: [],
       max: ZHIPIN_MAX_SCROLL_ROUNDS,
+      // 数值维度由**适配器**声明（不再靠宿主那张全局 NUMERIC_KEYS 猜）。
+      numeric: true,
       hint:
         `BOSS 没有页码翻页，只能滚动加载：每滚一次 +${String(ZHIPIN_PAGE_SIZE)} 条。` +
         `不填默认 ${String(ZHIPIN_DEFAULT_SCROLL_ROUNDS)} 轮（≈${String(ZHIPIN_PAGE_SIZE * ZHIPIN_DEFAULT_SCROLL_ROUNDS)} 条）；` +
@@ -469,6 +480,36 @@ export function createZhipinAdapter(options: ZhipinAdapterOptions = {}): SiteAda
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {
         return buildZhipinSearchUrl(config, criteria)
+      },
+      /**
+       * 预览：BOSS 的筛选**不在页面 URL 里**，而是页面内调 joblist 接口的表单体
+       * （`query` / `city`），URL 只是把页面开起来。所以预览必须给出**那个请求**，
+       * 否则界面上会显示"这个方案什么都没筛"（而声明里明明有 wire）。
+       *
+       * 与采集走**同一个** `buildJoblistBody`：预览与真实请求不可能分叉。
+       */
+      preview(criteria: SearchCriteria) {
+        const url = buildZhipinSearchUrl(config, criteria)
+        const cityCode =
+          criteria.city === undefined || criteria.city === ''
+            ? ''
+            : (config.cityCodes[criteria.city] ?? '')
+        const body = buildJoblistBody({
+          query: criteria.keyword ?? '',
+          cityCode,
+          page: 1,
+          pageSize: config.joblistPageSize,
+        })
+        const params: Record<string, string> = {}
+        for (const [key, value] of new URLSearchParams(body)) params[key] = value
+        // 城市码未知时 URL 是 null（不猜）—— 页面地址仍然给得出来，参数表能说明原因
+        return {
+          url: url ?? config.urlParams.base,
+          method: 'POST' as const,
+          params,
+          body,
+          crawlOnly: [],
+        }
       },
     },
 

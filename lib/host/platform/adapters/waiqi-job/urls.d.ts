@@ -25,6 +25,25 @@ export declare function splitCityList(city: string | undefined): string[];
  * 否则"城市没配"会变成一次静默的全国搜索。支持逗号分隔的多城市。
  */
 export declare function buildWaiqiSearchUrl(config: WaiqiConfig, criteria: SearchCriteria): string | null;
+/**
+ * 请求体字段名 —— **声明与构造共用这一份**。
+ *
+ * `index.ts` 里每个维度的 `wire.param` 直接引用这些常量，于是"声明说这个维度落到
+ * 哪个参数"与"实际往哪个字段写"不可能分叉。这一份就是为那条教训而存在的：
+ * 曾经声明里写着「行业 / 职能」两个维度，构造端写的是 `businessCategoryIdList` /
+ * `posIds` —— 两份字面量，中间还隔着宿主的命名空间转换，漂移了没有任何东西会响，
+ * 用户看到的就是"选了行业，抓回来的还是全量"。
+ */
+export declare const WAIQI_BODY_FIELDS: {
+    readonly keyword: "name";
+    readonly city: "cityIds";
+    readonly workExp: "workExp";
+    readonly education: "education";
+    readonly posInfo: "posIds";
+    readonly businessCategory: "businessCategoryIdList";
+    readonly type: "type";
+    readonly sort: "sort";
+};
 /** 接口请求体：页面初始值 + 用户配的筛选条件。 */
 export declare function buildWaiqiRequestBody(criteria: SearchCriteria, cityCodes: Record<string, number>, page: number, size?: number): Record<string, unknown>;
 //# sourceMappingURL=urls.d.ts.map

@@ -90,14 +90,36 @@ export interface LinkedInUrlParams {
   timeRangeParam: string
 }
 
+/**
+ * Messaging 收件箱的结构锚点（2026-09-21 `probe:linkedin-actions` 登录态真机快照
+ * 逐项证实，见 `page/inbox.ts` 文件头的结构引文与证据边界）。
+ */
+export interface LinkedInInboxSelectors {
+  /** 会话列表容器（找不到 = 选择器腐烂或不在 Messaging 页，解析层抛错）。 */
+  listContainer: string
+  /** 会话行（li）。 */
+  row: string
+  /** 会话卡（id 形如 conversation-card-ember48 —— conversationId 的首选来源）。 */
+  card: string
+  /** 对方显示名。 */
+  name: string
+  /** 最后一条消息摘要。 */
+  snippet: string
+  /** 时间戳（相对格式文本，如「3月19日」）。 */
+  time: string
+}
+
 export interface LinkedInConfig {
   /** 站点域。默认全球站 www.linkedin.com（中国版 InCareer 已于 2023-08 停运）。 */
   host: string
   selectors: LinkedInSelectors
   detailSelectors: LinkedInDetailSelectors
+  inboxSelectors: LinkedInInboxSelectors
   urlParams: LinkedInUrlParams
   /** guest 匿名列表端点的路径（导航式主通道的落点）。 */
   guestApiPath: string
+  /** Messaging 收件箱路径（readInbox 的导航目标，可 DB 覆盖）。 */
+  messagingPath: string
   /**
    * 搜索页导航时附带的 trk 参数值 —— 社区实测它显著降低未登录会话被 authwall
    * 拦截的概率。主通道（guest 端点）不需要它；`auth.checkUrl` 的搜索页仍带。
@@ -121,12 +143,32 @@ export interface LinkedInConfig {
    * `img.global-nav__me-photo` / `.global-nav__me` 已登录侧各 1 命中、未登录侧 0。
    */
   loggedInSelector: string
+  /**
+   * **登录态搜索页薪资回填通道**（2026-09-21 第三轮 actions 探针发现，默认**关**）。
+   *
+   * 发现：guest 通道卡片 0/10 有薪资，但**登录态搜索页的列表卡**（`[data-occludable-job-id]`）
+   * 部分展示薪资明文（实测 1/25：`¥20K/月 - ¥27K/月`）——「薪资无源」只对 guest 通道成立。
+   *
+   * 开启后 `readListPage` 在解析完 guest 文档后额外导航一次登录态搜索页（同条件、带 start），
+   * 按 `data-occludable-job-id` ↔ `platformJobId` 回填**空薪资**（对不上留空，绝不猜 ——
+   * 与 zhipin 的 `salaryApiEnabled` 同一口径）。默认关：回填要登录态，且每页多一次导航。
+   */
+  salaryPanelEnabled: boolean
+  /** 回填通道的列表卡选择器（用稳定属性，不用混淆类名）。 */
+  salaryCardSelector: string
 }
 
 export const LINKEDIN_JOB_URN_PATTERN = 'urn:li:jobPosting:(\\d+)'
 export const LINKEDIN_JOB_ID_FROM_URL_PATTERN = '/jobs/view/(?:[^/?#]*-)?(\\d+)'
+/**
+ * 薪资文本模式。真机形态：
+ *   * `$120,000.00/yr - $150,000.00/yr`（guest 详情端点社区形态：段/单位 - 段/单位）；
+ *   * `¥20K/月 - ¥27K/月`（**2026-09-21 登录态搜索页列表卡实测**：每段自带单位与 K/万 后缀）。
+ * 结构 = 段(货币+数字+可选K/万+可选/单位) + 可选区间(- 段)；单段（`$50/hr`）也收。
+ * 薪资节点类名是每次随机的混淆串，只能按文本抠 —— 与 BOSS 的语义做法同款。
+ */
 export const LINKEDIN_SALARY_PATTERN =
-  '[$€£¥₹]\\s?\\d[\\d,]*(?:\\.\\d+)?(?:\\s*[-–—~]\\s*[$€£¥₹]?\\s?\\d[\\d,]*(?:\\.\\d+)?)?\\s*/\\s*(?:yr|year|hr|hour|mo|month)'
+  '[$€£¥₹]\\s?\\d[\\d,]*(?:\\.\\d+)?\\s*[Kk万]?(?:\\s*/\\s*(?:yr|year|hr|hour|mo|month|月))?(?:\\s*[-–—~]\\s*[$€£¥₹]?\\s?\\d[\\d,]*(?:\\.\\d+)?\\s*[Kk万]?(?:\\s*/\\s*(?:yr|year|hr|hour|mo|month|月))?)?'
 
 /**
  * 单次抓取页数。LinkedIn 是业内最激进的风控之一（专属 999 状态码、authwall、
@@ -185,6 +227,14 @@ export const DEFAULT_LINKEDIN_CONFIG: LinkedInConfig = {
     postedTime: '.posted-time-ago__text',
     expHeader: '职位级别',
   },
+  inboxSelectors: {
+    listContainer: 'ul.msg-conversations-container__conversations-list',
+    row: 'li.msg-conversation-listitem',
+    card: 'div.msg-conversation-card',
+    name: '.msg-conversation-card__participant-names',
+    snippet: '.msg-conversation-card__message-snippet',
+    time: '.msg-conversation-card__time-stamp',
+  },
   urlParams: {
     keywordParam: 'keywords',
     locationParam: 'location',
@@ -192,12 +242,15 @@ export const DEFAULT_LINKEDIN_CONFIG: LinkedInConfig = {
     timeRangeParam: 'f_TPR',
   },
   guestApiPath: '/jobs-guest/jobs/api/seeMoreJobPostings/search',
+  messagingPath: '/messaging/',
   guestTrk: 'guest_homepage-basic_guest_nav_menu_jobs',
   pageSize: 10,
   jobUrnPattern: LINKEDIN_JOB_URN_PATTERN,
   jobIdFromUrlPattern: LINKEDIN_JOB_ID_FROM_URL_PATTERN,
   salaryPattern: LINKEDIN_SALARY_PATTERN,
   loggedInSelector: 'img.global-nav__me-photo, .global-nav__me',
+  salaryPanelEnabled: false,
+  salaryCardSelector: '[data-occludable-job-id]',
 }
 
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
@@ -212,14 +265,19 @@ export function mergeLinkedInConfig(override: unknown): LinkedInConfig {
     host: str('host', DEFAULT_LINKEDIN_CONFIG.host),
     selectors: { ...DEFAULT_LINKEDIN_CONFIG.selectors, ...(patch.selectors ?? {}) },
     detailSelectors: { ...DEFAULT_LINKEDIN_CONFIG.detailSelectors, ...(patch.detailSelectors ?? {}) },
+    inboxSelectors: { ...DEFAULT_LINKEDIN_CONFIG.inboxSelectors, ...(patch.inboxSelectors ?? {}) },
     urlParams: { ...DEFAULT_LINKEDIN_CONFIG.urlParams, ...(patch.urlParams ?? {}) },
     guestApiPath: str('guestApiPath', DEFAULT_LINKEDIN_CONFIG.guestApiPath),
+    messagingPath: str('messagingPath', DEFAULT_LINKEDIN_CONFIG.messagingPath),
     guestTrk: str('guestTrk', DEFAULT_LINKEDIN_CONFIG.guestTrk),
     pageSize: num('pageSize', DEFAULT_LINKEDIN_CONFIG.pageSize),
     jobUrnPattern: str('jobUrnPattern', DEFAULT_LINKEDIN_CONFIG.jobUrnPattern),
     jobIdFromUrlPattern: str('jobIdFromUrlPattern', DEFAULT_LINKEDIN_CONFIG.jobIdFromUrlPattern),
     salaryPattern: str('salaryPattern', DEFAULT_LINKEDIN_CONFIG.salaryPattern),
     loggedInSelector: str('loggedInSelector', DEFAULT_LINKEDIN_CONFIG.loggedInSelector),
+    salaryPanelEnabled:
+      typeof patch.salaryPanelEnabled === 'boolean' ? patch.salaryPanelEnabled : DEFAULT_LINKEDIN_CONFIG.salaryPanelEnabled,
+    salaryCardSelector: str('salaryCardSelector', DEFAULT_LINKEDIN_CONFIG.salaryCardSelector),
   }
 }
 

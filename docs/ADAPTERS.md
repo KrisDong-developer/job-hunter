@@ -173,7 +173,8 @@ npm test
 > · `probe:zhaopin-login` · `probe:liepin-chat`（猎聘**登录态**走查：hover 沟通入口 / 点侧边栏
 > 「我的沟通」抽屉 / 采 IM 接口；全程只读，沟通与投递入口按语义护栏默认不点）
 > · `probe:zhipin-chat` · `probe:zhaopin-anon`；纯 HTTP 型：`probe:sinojobs` · `probe:hiredchina` · `probe:indeed` · `probe:waiqi`
-> · `probe:linkedin` / `probe:linkedin-login` / `probe:linkedin-v2`（LinkedIn 轻量 / 登录侧 / 深度探针）。
+> · `probe:linkedin` / `probe:linkedin-login` / `probe:linkedin-v2` / `probe:linkedin-actions`
+> （LinkedIn 轻量 / 登录侧 / 深度探针 / 动作契约 —— 最后一个全程只读）。
 > 它们都是**手动跑一次**的校准工具（§14），产物落到仓库根的 `.probe-<平台>-capture/`
 > （已被 `.gitignore` 的 `.probe*` 忽略），**刻意不覆盖 `test/fixtures/` 里被用例钉住的夹具** ——
 > 那些文件的首条记录标题/条数/源地址被硬编码断言，静默替换只会让测试红在与本次校准无关的地方。
@@ -214,16 +215,44 @@ npm test
    这是刻意的）；同时按 ADR-19 读一次 DB 覆盖：
    `setting(key='adapter-config', scope='platform', scope_ref='<id>')`；
 5. 加**离线 fixture**（保存的响应/页面）+ 字段级断言测试 + 判墙测试 + 「按源码重建」护栏；
-6. **平台特有筛选维度不要摊平成顶层键**：进 `SearchCriteria.platform` 命名空间
-   （在 `domain/plan-config.ts` 的 `PLATFORM_KEYS` 里登记键名）。
-   摊平会让"某平台才认识的键"被另一个平台的适配器当成自由参数拼进 URL —— 静默的语义污染。
-   适配器读取用 `platformCriterion(criteria, 'workExp')`（它同时兼容直接构造的 `SearchCriteria`）；
+6. **筛选维度：声明 + `wire`（键 → 真实参数名）**。命名空间**不用登记** ——
+   `criteriaToSearchCriteria` 的规则是闭集：不在 `SearchCriteria` 类型化槽位
+   （`keyword` / `city` / `sort` / `maxPages` / `postedWithinDays` / `page`）里的键
+   **一律**进 `platform` 命名空间，适配器用 `platformCriterion(criteria, 'workExp')` 读
+   （它同时兼容直接构造的 `SearchCriteria`）。以前这里是一张要手工登记的白名单，
+   神仙外企的「行业 / 职能」就是漏登记后**静默失效**的（值进 `extra`，还被当参数名发出去，
+   平台上什么都没筛）—— 闭集不会忘，新键自动走对的那条路。
+   每个维度还**必须**写 `wire`，说清它落到哪个请求参数上：
+
+   ```ts
+   // URL 型：param 引用真正拼装请求的那份常量（config.urlParams.*）
+   { key: 'sort', label: '排序方式', values: SORT_OPTIONS, hint: '…',
+     wire: { target: 'url', param: config.urlParams.sortParam } },
+   // 接口型（筛选在 POST body 里）：param 引用 urls.ts 导出的字段名常量
+   { key: 'posInfo', label: '职能', values: …, hint: '…',
+     wire: { target: 'body', param: WAIQI_BODY_FIELDS.posInfo } },
+   // 采集深度旋钮（页数 / 滚动轮数）：**不写 wire** —— 它不进请求，只改采集循环
+   ```
+
+   三条硬规矩：
+   * `param` **不要写字面量**，引用构造端那份常量（`config.urlParams.*` /
+     `urls.ts` 导出的 `*_BODY_FIELDS`）。声明与拼装共用一份，才谈得上"不会漂移"；
+   * 路径型维度（智联的城市码写在 `/sou/jl<码>` 里）没有 query 参数名 → `param: null`，
+     对账只断言"带上它请求确实变了"；
+   * 筛选条件**不在 URL 里**的平台（`waiqi` / `sinojobs` / `zhipin`）**必须**实现
+     `criteria.preview()`，否则预览里只剩一个页面地址、看起来"什么都没筛"。
+   `test/platform/dimension-wiring.test.ts` 会拿**真实请求**逐条对账：
+   声明了 `wire` 的维度必须让请求改变、声明过的参数名必须能在请求里找到 —— 声明说谎当场红。
    ⚠️ **声明 `city` 维度时，`closed` 要按真实行为给**（`platform/cities.ts` 的 `citySupportOf` 读它）：
    表里的值就是全部取值域 → 省略或 `true`；**表是空的但你会拒绝**（`guopin` / `hiredchina`
-   带城市一律返回 `null`）→ **必须显式 `closed: true`**；表里只是**建议**、原样收自由文本
+   带城市一律返回 `null`）→ **必须显式 `closed: true`**（顺带也就成了"不可填"：界面不给输入框、
+   校验显式拒绝 —— 空表 + 封闭的含义就是"一个都别给"）；表里只是**建议**、原样收自由文本
    （`linkedin` / `indeed`）→ `closed: false`。
    缺了它用户收到的不是"少一条提示"就是"一条假警告" —— 而这个 flag **推不出来**，
    因为空表在这两种平台上的含义刚好相反；
+   数值维度（数字输入框 + 正整数校验）由适配器自己 `numeric: true`，宿主**不再**拿一张全局键名表猜
+   （那张表曾把 51job 的发布时间也算成数值维度，于是界面上给出一个能填的数字框，
+   而那个维度一个取值都不收）；
 7. 若该平台有「打招呼 / 投递 / 收件箱 / 阶段探测」动作，必须在 `guard/actions/` 里实现并配测试。
    返回类型是 `ActionResult`（**必须**给 `delivery`：`ok` 只说明"动作没抛错"，
    而"消息是否真的进了对方会话"是另一件事，也是本系统最不能猜的问题）。
@@ -761,8 +790,12 @@ npm test
     JD 全文 `.description__text--rich .show-more-less-html__markup`（clamp 折叠是 CSS 层，
     textContent 是全文）、criteria `li.description__job-criteria-item`（h3+span：
     职位级别→expReq，其余进 tags）；
-  - **薪资无源（v2 实测）**：卡片 0/10、详情页薪资正则 0 命中 —— 藏给登录会员视图，
-    `salary_raw` 不进必需字段；
+  - **薪资并非无源（2026-09-21 第三轮翻案）**：guest 通道卡片 0/10，但**登录态搜索页的
+    列表卡**（`[data-occludable-job-id]`）部分展示薪资明文（实测 `¥20K/月 - ¥27K/月`；
+    薪资节点类名是每次随机的混淆串 → 按文本抠）→ 已接**可选回填通道**
+    `salaryPanelEnabled`（默认关，DB 可开；按 occludable id ↔ platformJobId 只回填空薪资，
+    对不上留空 —— zhipin `salaryApiEnabled` 同口径）；`salary_raw` 仍不进必需字段
+    （回填要登录态且只覆盖部分岗位）；
   - **登录标记两侧定案**（login 探针）：`.global-nav__me-photo` / `.global-nav__me` 登录 1 /
     未登录 0 → `auth.isLoggedIn` 已落地；`checkUrl` 用搜索页（登录页上没有 global-nav）；
   - **登录墙只信地址**（`/authwall`、`/login`），词表 `skipLoginWall`：游客页页头本来就
@@ -772,8 +805,20 @@ npm test
   - ⚠️ 判墙词表条目必须**无空白**：`detectBlockWithSignals` 判文案前会把整页文本去掉全部
     空白再 `includes` —— 英文多词短语（如 `'quick security check'`）**永远匹配不上**
     （写成 `quicksecuritycheck` 才有效；indeed 词表里的 `'Ray ID'` 就是这么变成死信号的）；
-  - 登录态动作链路（消息 / 投递 / InMail / 封号规则）**未调研** → `actions` 仍 fail-closed；
+  - 登录态动作链路（**2026-09-21 `probe:linkedin-actions` 登录态只读取证，三轮**）：
+    **`readInbox` 已落地**（自导航 /messaging/ + 等容器 + 判墙，zhipin 同款契约）——
+    会话卡 `li.msg-conversation-listitem` + `.msg-conversation-card__participant-names` /
+    `__message-snippet` / `__time-stamp` 有真机快照（`test/fixtures/linkedin-messaging.html`
+    钉住）；⚠️ DOM 上**无未读标记**（唯一的 `.notification-badge` 是全局导航的）、
+    **无方向标记**（zhipin 有 `.message-status`）→ unread 恒 false、direction 按
+    「漏报比误报贵」记 hr；会话卡是「人」维度，无公司/岗位字段；
+    **sayHello / sendResume / reply / detectStage 仍 fail-closed**：动作入口已拿到
+    （登录态搜索页 + `currentJobId` 的右侧详情面板正常渲染：`.jobs-apply-button` /
+    `.jobs-save-button` 各 2，aria-label 区分 Easy Apply 与站外申请 —— 直连
+    `/jobs/view/{id}` 不渲染是**路由形态问题**，不是页面不渲染），但 Easy Apply 是
+    多步表单，**提交链路**没有实测；`/my-items/applications/` 恒 404 空态；
     探针入口：`probe:linkedin`（轻量/可离线）、`probe:linkedin-login`（登录侧）、
-    `probe:linkedin-v2`（深度：翻页/筛选真伪/详情/匿名侧）。
+    `probe:linkedin-v2`（深度：翻页/筛选真伪/详情/匿名侧）、
+    `probe:linkedin-actions`（动作契约：详情页/搜索页面板/Messaging/我的申请，全程只读）。
 - **通用**：服务器 IP 会被招聘站直接拒绝返回数据（get_jobs 实测，本项目本机运行天然规避）；
   开着代理（墙外节点）访问国内平台既慢又异常，README 明确要求关闭。

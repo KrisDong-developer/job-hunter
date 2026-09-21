@@ -31,8 +31,11 @@
  *   `.description__text--rich .show-more-less-html__markup`（clamp 折叠是 CSS 层的事，
  *   textContent 是全文）、criteria `li.description__job-criteria-item`（h3 标题 +
  *   span 值：职位级别/职位性质/职能类别/行业）→ `detail.extract` 已落地，无需登录。
- * * **薪资无源**：卡片 0/10、详情页/详情端点薪资正则 0 命中 —— LinkedIn 把薪资藏给
- *   登录会员视图，这个数据源**没有薪资**。`salary_raw` 不进必需字段（如实）。
+ * * **薪资并非无源（第三轮翻案）**：guest 通道卡片 0/10，但**登录态搜索页的列表卡**
+ *   （`[data-occludable-job-id]`）部分展示薪资明文（实测 `¥20K/月 - ¥27K/月`，薪资节点
+ *   类名是每次随机的混淆串 → 按文本抠）→ 已接**可选回填通道** `salaryPanelEnabled`
+ *   （默认关；开启后 readListPage 额外导航一次登录态搜索页，按 occludable id ↔
+ *   platformJobId 只回填**空薪资**，对不上留空 —— 与 zhipin 的 salaryApiEnabled 同口径）。
  * * **卡片结构（base-card 族）**：卡片 `div.base-card` 带
  *   `data-entity-urn="urn:li:jobPosting:{id}"`；标题链 `a.base-card__full-link`；
  *   公司 `.base-search-card__subtitle`；地点 `.job-search-card__location`（真机样本含
@@ -46,11 +49,24 @@
  *   已登录侧各 1、未登录侧 0 → `auth.isLoggedIn` 已落地（`checkUrl` 用搜索页 —— 登录页
  *   上没有 global-nav，在那儿判恒「未登录」）。
  *
- * ## 登录态动作（fail-closed）
+ * ## 登录态动作（2026-09-21 `probe:linkedin-actions` 登录态只读取证）
  *
- * 消息 / 投递 / InMail / 封号规则**未调研**（LinkedIn 封号风险高，不可逆动作上没有
- * 实测过的确认链路就不写）→ `actions` 刻意不实现。登录态调研入口：
- * `npm run probe:linkedin-login`（只读取证）。
+ * * **readInbox 已落地**：Messaging（/messaging/）会话卡结构有真机快照证据
+ *   （`li.msg-conversation-listitem` + `.msg-conversation-card__participant-names` /
+ *   `__message-snippet` / `__time-stamp`）；DOM 上**无未读标记**（唯一的
+ *   `.notification-badge` 是全局导航的）、**无方向标记**（zhipin 有 `.message-status`，
+ *   LinkedIn 没有）→ `unread` 恒 false、`direction` 按「漏报比误报贵」记 'hr'。
+ *   会话卡也无公司/岗位字段（「人」维度，与猎聘同形）。
+ * * **sayHello / sendResume / reply / detectStage 保持 fail-closed**，因为：
+ *   * 游客版详情页点「申请」只弹注册登录模态（`contextual-sign-in-modal`，v2 快照证实）；
+ *     登录态的**动作入口**已由第三轮探针拿到（登录态搜索页 + currentJobId 的右侧详情
+ *     面板正常渲染：`.jobs-apply-button` / `.jobs-save-button` 各 2，aria-label 区分
+ *     Easy Apply 与站外申请），但 **Easy Apply 是多步表单**（简历→问题→提交）——
+ *     入口有了，提交链路没有；不可逆动作上没有实测过的确认链路就不写；
+ *   * `/my-items/applications/` 对无申请记录的账号是 **404 空态**
+ *     （`data-test-not-found-error-container`，两轮一致）—— detectStage 无契约来源；
+ *   * LinkedIn 封号风险业内最高。
+ *   调研入口：`npm run probe:linkedin-actions`（只读：不点申请、不发消息）。
  *
  * ## 本仓实测入口
  *
@@ -60,9 +76,10 @@
  *   匿名侧（产物 `v2-report-<日期>.json`）
  *
  * ── 本目录分工 ─────────────────────────────────────────────────────────
- * * `config.ts`：选择器（列表+详情）/ URL 参数 / guest 端点路径 / 正则 / 时间窗 / 判墙信号（纯数据+纯函数）；
+ * * `config.ts`：选择器（列表+详情+收件箱）/ URL 参数 / guest 端点路径 / 正则 / 时间窗 / 判墙信号（纯数据+纯函数）；
  * * `urls.ts`：guest 端点（主导航目标）与搜索页（登录检测用）的 URL 构造，不碰 `document`；
- * * `page.ts`：页面上下文函数（活 DOM 解析 / 详情 / 判墙 / 登录），自包含、只读；
+ * * `page/list.ts`：卡片解析（活 DOM）；`page/detail.ts`：详情页解析；`page/inbox.ts`：
+ *   Messaging 收件箱解析；`page/guard.ts`：地址级判墙 + 登录检测 —— 全部自包含、只读（Trusted Types 红线）；
  * * `index.ts`：本文件 —— 适配器装配（`createLinkedInAdapter`）与 `criteriaDimensions` 表。
  */
 import type { BlockKind, CoreField } from '../../../../shared/contract/enums/crawl.js'
@@ -70,7 +87,16 @@ import { humanDelayMs } from '../../pacing.js'
 import { humanBrowse } from '../../humanize.js'
 import { detectBlockWithSignals, signalsOf } from '../../block-signals.js'
 import { platformFacts } from '../../platform-facts.js'
-import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../../types.js'
+import type {
+  AdapterLogger,
+  CriteriaDimension,
+  RawInboxMessage,
+  RawJob,
+  RawJobDetail,
+  SearchCriteria,
+  SiteAdapter,
+} from '../../types.js'
+import { PlatformBlockedError } from '../../types.js'
 import {
   DEFAULT_LINKEDIN_CONFIG,
   LINKEDIN_BLOCK_SIGNALS,
@@ -82,7 +108,10 @@ import {
 } from './config.js'
 import type { LinkedInConfig } from './config.js'
 import { buildLinkedInGuestApiUrl, buildLinkedInSearchUrl } from './urls.js'
-import { extractDetailInPage, extractJobsInPage, isLoggedInInPage, wallKindInPage } from './page.js'
+import { extractDetailInPage } from './page/detail.js'
+import { readInboxInPage } from './page/inbox.js'
+import { extractJobsInPage, extractPanelSalariesInPage } from './page/list.js'
+import { isLoggedInInPage, wallKindInPage } from './page/guard.js'
 
 export interface LinkedInAdapterOptions {
   config?: LinkedInConfig
@@ -90,12 +119,22 @@ export interface LinkedInAdapterOptions {
   delayRangeMs?: [number, number]
   /** 等卡片文档渲染出来的上限（ms）。 */
   waitForListMs?: number
+  /** 诊断日志：只用于上报「薪资回填通道被墙/失败」这一类不报警的坏法。 */
+  logger?: AdapterLogger
 }
 
 /** 构造 LinkedIn 适配器。 */
 export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): SiteAdapter {
   const config = options.config ?? DEFAULT_LINKEDIN_CONFIG
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
+  const logger = options.logger
+
+  /**
+   * 上一次 `gotoSearch` 记下的筛选条件：薪资回填通道要用它构造**同条件**的登录态
+   * 搜索页（guest 文档页与搜索页的 start 对齐，连接键才对得上）。
+   * WeakMap：页面关闭后条目自动消失，不留全局残留（C15）。
+   */
+  const pending = new WeakMap<object, SearchCriteria>()
 
   /**
    * 上一轮解析到的条数，按页面记 —— `hasNextPage` 的判据。
@@ -107,13 +146,20 @@ export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): Sit
   const lastCount = new WeakMap<object, number>()
 
   const dimensions: CriteriaDimension[] = [
-    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，原样进 keywords（中英文皆可）' },
+    {
+      key: 'keyword',
+      label: '关键词',
+      values: [],
+      hint: '自由文本，原样进 keywords（中英文皆可）',
+      wire: { target: 'url', param: config.urlParams.keywordParam },
+    },
     {
       key: 'city',
       label: '地点',
       values: LINKEDIN_CITY_SUGGESTIONS.map((city) => ({ value: city, label: city })),
       // 表里是**建议**不是取值域：location 是自由文本（英文地名最准，中文多数也能解析）
       closed: false,
+      wire: { target: 'url', param: config.urlParams.locationParam },
       hint: '自由文本地点（location= 直接地名）。英文地名最准；「China」搜全国、' +
         '「Remote」搜远程岗 —— 列表外的地方（如 Hangzhou）也能直接收',
     },
@@ -123,6 +169,8 @@ export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): Sit
       values: LINKEDIN_POSTED_WITHIN_OPTIONS,
       // f_TPR=r<秒> 接受任意秒数（实测生效）—— 表里只是常用档
       closed: false,
+      numeric: true,
+      wire: { target: 'url', param: config.urlParams.timeRangeParam },
       hint: '对应 f_TPR=r<秒>（guest 端点实测生效）：任意天数都能拼（1/7/30 是常用档）',
     },
     {
@@ -149,7 +197,9 @@ export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): Sit
       searchWithoutLogin: true,
       supportsAttachment: false,
       supportsReadReceipt: false,
-      supportsInbox: false,
+      // 2026-09-21 actions 探针落地 readInbox：Messaging 会话卡结构有真机快照证据
+      //（证据边界见 page/inbox.ts 文件头 —— 无未读/方向标记，如实降级）。
+      supportsInbox: true,
       supportsGreeting: false,
       // 真机读数：标题/公司/地点/日期 10/10；薪资无源（卡片 0/10、详情 0）→ medium。
       fieldCompleteness: 'medium',
@@ -189,6 +239,8 @@ export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): Sit
         //   ② LinkedIn 的 CSP（Trusted Types）让「fetch 回字符串再解析」在真实页面上
         //      必抛错 —— 顶层导航让浏览器自己渲染片段成文档，`readListPage` 解析活 DOM。
         const url = buildLinkedInGuestApiUrl(config, criteria)
+        // 先记再跳：readListPage 的薪资回填要用同一条件构造搜索页。
+        pending.set(page as object, criteria)
         await page.goto(url)
         if (page.waitForSelector !== undefined) {
           await page.waitForSelector(config.selectors.card, options.waitForListMs ?? 15_000)
@@ -210,6 +262,47 @@ export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): Sit
           jobIdFromUrlPattern: config.jobIdFromUrlPattern,
           salaryPattern: config.salaryPattern,
         })
+
+        // 可选薪资回填（2026-09-21 第三轮探针发现，默认关 —— 见 LinkedInConfig.salaryPanelEnabled）：
+        // guest 通道 0/10 有薪资，但登录态搜索页列表卡部分展示（¥20K/月 形态）。
+        // 「DOM 定列表、面板只补薪资」—— 与 zhipin 的 salaryApiEnabled 同一口径：
+        // 按连接键只回填**空薪资**，对不上留空，绝不猜。
+        if (config.salaryPanelEnabled && jobs.length > 0) {
+          try {
+            const panelUrl = buildLinkedInSearchUrl(config, pending.get(page as object) ?? {})
+            await page.goto(panelUrl)
+            if (page.waitForSelector !== undefined) {
+              await page.waitForSelector(config.salaryCardSelector, 15_000)
+            }
+            const wall = await page.evaluate(wallKindInPage, undefined as never)
+            if (wall === 'authwall' || wall === 'checkpoint') {
+              // 回填通道被墙：**不带倒主链**（列表数据已拿到，薪资本来就是可选）——
+              // 但要说出来，静默少数据是「不报警的坏法」。
+              options.logger?.warn(`[linkedin] 薪资回填通道被墙（${wall}）—— 本轮薪资留空`)
+            } else {
+              const salaries = await page.evaluate(extractPanelSalariesInPage, {
+                cardSelector: config.salaryCardSelector,
+                salaryPattern: config.salaryPattern,
+              })
+              let filled = 0
+              for (const job of jobs) {
+                if (job.salaryRaw !== '' || job.platformJobId === '') continue
+                const salary = salaries[job.platformJobId]
+                if (salary === undefined || salary === '') continue
+                job.salaryRaw = salary
+                filled += 1
+              }
+              if (filled > 0) {
+                options.logger?.info(`[linkedin] 薪资回填：${String(filled)}/${String(jobs.length)} 条`)
+              }
+            }
+          } catch (error) {
+            options.logger?.warn(
+              `[linkedin] 薪资回填通道失败（${error instanceof Error ? error.message : String(error)}）—— 本轮薪资留空`,
+            )
+          }
+        }
+
         lastCount.set(page as object, jobs.length)
         return jobs
       },
@@ -253,7 +346,40 @@ export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): Sit
       },
     },
 
-    // ⚠️ 刻意不实现 actions.*：登录态动作链路未调研（封号风险高）—— fail-closed，
-    //   而不是假装能用（与 indeed / guopin 同策略）。
+    /**
+     * 读收件箱（2026-09-21 `probe:linkedin-actions` 登录态真机证据落地）。
+     *
+     * 自导航契约（与 zhipin 同款）：goto Messaging → 等**容器**而不是行（空列表时
+     * 容器在、行不在，等行会把"真的空"拖成超时，而超时的 [] 和"选择器腐烂"的 []
+     * 长得一模一样）→ 判墙 → 解析。容器缺失时解析层抛错（0 条必须可信）。
+     *
+     * Messaging 是「人」维度（会话卡只有人名，无公司/岗位字段），与猎聘同形；
+     * 未读与方向在 DOM 上**没有标记**（快照逐项核实过）—— `unread` 恒 false、
+     * `direction` 按「漏报比误报贵」口径记 'hr'。证据边界详见 `page/inbox.ts`。
+     */
+    actions: {
+      async readInbox(page): Promise<RawInboxMessage[]> {
+        await page.goto(`https://${config.host}${config.messagingPath}`)
+        if (page.waitForSelector !== undefined) {
+          await page.waitForSelector(config.inboxSelectors.listContainer, options.waitForListMs ?? 20_000)
+        }
+        // 未登录会被弹到 authwall —— 这里抛风控错误而不是返回 []（guard 会如实转述）。
+        const wall = await page.evaluate(wallKindInPage, undefined as never)
+        if (wall === 'authwall') {
+          throw new PlatformBlockedError('login-required', 'Messaging 被登录墙接管（先完成登录）')
+        }
+        if (wall === 'checkpoint') {
+          throw new PlatformBlockedError('captcha', 'Messaging 被 checkpoint 挑战接管')
+        }
+        return await page.evaluate(readInboxInPage, { selectors: config.inboxSelectors })
+      },
+      // ⚠️ 刻意不实现 sayHello / sendResume / reply / detectStage：
+      //   * send/reply：Easy Apply 是多步表单、Messaging 发送框无实测输入链路 —— 不可逆
+      //     动作上没有实测过的确认链路就不写（两轮 actions 探针只读，均未渲染出按钮）；
+      //   * sayHello：LinkedIn 求职者端没有「打招呼」语义（Messaging 需先建立联系）；
+      //   * detectStage：登录态详情页两轮取证（9s sleep / 30s waitForSelector）连 h1
+      //     都不渲染、`/my-items/applications/` 恒 404 空态 —— 无契约证据。
+      //   调研入口：`npm run probe:linkedin-actions`（只读）。
+    },
   }
 }

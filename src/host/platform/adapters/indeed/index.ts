@@ -1,74 +1,84 @@
 /**
  * Indeed（cn.indeed.com）适配器。
  *
- * ## ⚠️ 2026-09-18 真实调研结论：中国大陆站已停运（必须先读，再决定怎么用）
+ * ## ✅ 2026-09-21 复核定案：cn 站真实可用（probe:indeed-login 两跑实证）
  *
- * * 直接请求 `cn.indeed.com/jobs?q=…&l=…`：被 **302 重定向到全球站 `www.indeed.com`**，
- *   随后被 **Cloudflare 验证墙拦截**（页面文案「需要进行其他验证」，响应带 `Ray ID`）。
- * * 站点自身也印证停运：全球站首页直接引导「For jobs in China, visit cn.indeed.com」，
- *   但 cn 站首页已变成通用跳转页，职位搜索入口不再返回岗位数据 —— 与 Indeed
- *   2022 年起退出中国大陆市场的事实一致。
- * * 因此**本适配器没有一个可信的「中国大陆岗位列表」真实夹具可校准**。
- *   ADAPTERS.md §6 铁律（不编选择器、未验证不猜）在这里直接适用。
+ * 用户提供了真实可用的搜索地址（`…/jobs?q=&l=广州市&…&vjk=…`），与 2026-09-18 的
+ * 「停运」记录矛盾 —— `probe:indeed-login`（两侧取证：未登录 vs 已登录）当天复核：
  *
- * ## 那么这份适配器是什么 / 不是什么
+ *   * **未登录即可搜**：同一条广州搜索页解析出 **16 条**，`jk=` jobKey 16/16、
+ *     标题/公司/城市全中、不判墙（证据：`.probe-indeed-capture/` 两侧快照与报告，
+ *     真实夹具已钉 `test/fixtures/indeed-search.html`）；
+ *   * **登录墙是首访抖动**：全新 profile 首访会被送到
+ *     `secure.indeed.com/auth?co=CN&continue=<原地址>`（页面载荷 `"isLoggedIn":false`），
+ *     profile 里有 `cf_clearance` 后复访直出列表 —— 地址级判据（`expectedHost`）已覆盖
+ *     这种跨域形态，判墙即停（C12），无需登录即可采集；
+ *   * **登录判据两侧定案**：页面内嵌载荷 `"isLoggedIn":true|false`（匿名搜索页 /
+ *     登录页 = false，已登录搜索页 = true）→ `auth.isLoggedIn` 已落地；回落判据是
+ *     匿名侧登录入口链接（匿名 2 命中 / 已登录 0）；
+ *   * **翻页校准**：真实分页容器是 `nav[aria-label="pagination"]`（页头的
+ *     `nav.gnav[aria-label="主要国家"]` 排在前面，宽泛选择器会抓错），「下一页」
+ *     `a[data-testid="pagination-page-next"]` 真实存在；`start` 步进 = **10**
+ *     （翻页链接 href 算术：page-2→start=10、page-3→start=20）；
+ *   * **无源字段**：这批 16 条卡片的薪资（`attribute_snippet_testid`）与发布日期
+ *     （`jobListingDate`）节点 **0 命中** —— 数据不在这批页面上，不是选择器错。
+ *     `salary_raw` 不进必需字段（hiredchina/zhipin 同款取舍），日期锚点保留待
+ *     有源页面再校准。
  *
- * * **是**：对 Indeed 全球通行的职位搜索页（JCS，job search）真实结构的适配器。
- *   该结构的核心语义锚点（`data-testid` / 类名）在所有 Indeed 国家域上**多年稳定**，
- *   是社区公开文档描述的形态。选择器与 URL 约定全部进配置（DB 可覆盖，ADR-19），
- *   留了后续换域（`host` 可配）即可在仍运营的 Indeed 国家站上校准的余地。
- * * **不是**：对「中国大陆 Indeed 在营数据源」的承诺。默认 `host=cn.indeed.com` 只是
- *   尊重用户原意的默认值 —— 它当前会命中 Cloudflare 墙或重定向，判墙即停（C12）。
+ * ## 历史记录：2026-09-18「停运」调查（已被上面的复核修正）
  *
- * 诚实边界：因为拿不到可信的中国大陆夹具，`capabilities.fieldCompleteness='low'`、
- * `antiBot='high'`，未锚定字段**留空 + notes**，由字段级断言隔离进 pending_repair，不编。
+ * * 当时直接请求 `cn.indeed.com/jobs` 被 302 到 `www.indeed.com` 并撞 Cloudflare
+ *   验证墙（「需要进行其他验证」+ `Ray ID`）—— 该形态今天仍可能出现（cf_clearance
+ *   过期时），判墙信号与 `expectedHost` 判据保留；
+ * * 当时因此把 `fieldCompleteness` 标为 `low`、`maturity` 标 `disabled` ——
+ *   现已按 2026-09-21 真实夹具升级（见 `platform-facts.ts`）。
  *
- * ✍️ 换一个仍运营的域来启用真实采集（示例）：
- *   在 `setting` 表写一条
- *   `scope='platform', scope_ref='indeed', key='adapter-config'` 的 JSON：
- *   `{"host":"de.indeed.com"}`（德国）或 `{"host":"sg.indeed.com"}`（新加坡）等，
- *   再把 `test/fixtures/indeed-search.html` 换成对应域用手动浏览器保存的搜索结果页，
- *   跑 `npm run probe:*` 校准锚点后，本适配器即可变成真实在用的适配器。
+ * ## Indeed JCS 结构（2026-09-21 按真实搜索页校准）
  *
- * ## Indeed JCS 结构（社区文档描述的稳定形态，2026-09-18 据此实现，待校准）
- *
- * * 搜索 URL：`https://{host}/jobs?q={关键词}&l={地点}&start={第几批}`；
- *   `start` 每页偏移一个定长（`pageSize`，默认 15）—— Indeed 免费版没有页码按钮，
- *   只有「下一页」，`start=0,15,30…`；
+ * * 搜索 URL：`https://{host}/jobs?q={关键词}&l={地点}&start={偏移}`；
+ *   `start` 步进 = `pageSize`（**10**，真实翻页链接定案）；
  * * 地点是**自由文本**（`l=` 直接吃中文/英文地名），不依赖城市码映射；
- * * 卡片：职位标题锚 `a.jcs-JobTitle`（就业界稳定类名），href 内带 `jk=<jobkey>`，
+ * * 卡片：职位标题锚 `a.jcs-JobTitle`（16/16 命中），href 内带 `jk=<jobkey>`，
  *   `jobkey` 就是平台 id（幂等 upsert 键）；公司 `[data-testid="company-name"]`、
- *   地点 `[data-testid="text-location"]`、薪资 `[data-testid="attribute_snippet_testid"]`、
- *   发布日期 `[data-testid="jobListingDate"]`；
- * * 翻页：分页区 `a[data-testid="pagination-page-next"]`，被禁用时打 `aria-disabled`。
- *
- * 以上锚点**只是实现依据，不是验证证据**（拿不到中国大陆夹具）。锚不中就留空，
- * 靠 `pp()` 架构里已有的字段级断言隔离，绝不假装抓到。
+ *   地点 `[data-testid="text-location"]` 全中；薪资 `attribute_snippet_testid` 与
+ *   日期 `jobListingDate` 在真实夹具 0 命中（数据无源，留空 + notes 隔离，不编）；
+ * * 翻页：分页容器 `nav[aria-label="pagination"]`，「下一页」
+ *   `a[data-testid="pagination-page-next"]`，被禁用时打 `aria-disabled`；
+ * * 详情页（`/viewjob?jk=`，2026-09-21 `probe:indeed-detail` 三页 3/3 实测）：标题
+ *   `h1[data-testid="jobsearch-JobInfoHeader-title"]`、公司
+ *   `[data-testid="inlineHeader-companyName"]`、地点
+ *   `[data-testid="inlineHeader-companyLocation"]`、JD 全文 `#jobDescriptionText`；
+ *   **无 JSON-LD JobPosting**、无日期/薪资 DOM 节点 —— 发布日期唯一来源是内嵌载荷
+ *   `"hiringInsightsModel":{"age":"30+天前"}`（`detail.extract` 已落地，夹具
+ *   `test/fixtures/indeed-detail.html`）。
  *
  * ── 本目录分工（2026-09-20 拆成目录）─────────────────────────────────
- * * `./config.ts`：结构锚点集、字段 → URL 参数映射、默认值与合并、jobkey / 薪资正则、
- *   页数上下限、平台判墙信号与开关（`expectedHost` / `skipLoginWall`）—— 纯数据 + 纯函数；
+ * * `./config.ts`：结构锚点集（列表 + 详情）、字段 → URL 参数映射、默认值与合并、
+ *   jobkey / 薪资 / 发布日期正则、页数上下限、登录回落判据常量、平台判墙信号与开关
+ *   —— 纯数据 + 纯函数；
  * * `./urls.ts`：宿主机侧的搜索 URL 构造（`start` = (page-1) * pageSize，不碰 `document`）；
- * * `./page.ts`：页面上下文函数（`extractJobsInPage` / `hasNextPageInPage`），自包含；
+ * * `./page.ts`：页面上下文函数（`extractJobsInPage` / `hasNextPageInPage` /
+ *   `isLoggedInInPage` / `extractDetailInPage`），自包含；
  * * `./index.ts`：本文件 —— 适配器装配（`createIndeedAdapter`）与 `criteriaDimensions` 表。
- * 换域启用真实采集的做法（改 `host` + 换夹具 + 校准锚点）仍然照上面的说明走。
  */
 import type { BlockKind, CoreField } from '../../../../shared/contract/enums/crawl.js'
-import { CORE_FIELDS } from '../../../../shared/contract/enums/crawl.js'
 import { humanDelayMs } from '../../pacing.js'
 import { humanBrowse } from '../../humanize.js'
 import { detectBlockWithSignals, signalsOf } from '../../block-signals.js'
 import { platformFacts } from '../../platform-facts.js'
+import type { RawJobDetail } from '../../types.js'
 import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../../types.js'
 import {
   DEFAULT_INDEED_CONFIG,
+  INDEED_ANON_LOGIN_LINK,
   INDEED_BLOCK_SIGNALS,
   INDEED_DEFAULT_MAX_PAGES,
   INDEED_MAX_PAGES,
+  INDEED_POSTED_AGE_PATTERN,
   indeedBlockFlags,
 } from './config.js'
 import type { IndeedConfig } from './config.js'
-import { extractJobsInPage, hasNextPageInPage } from './page.js'
+import { extractDetailInPage, extractJobsInPage, hasNextPageInPage, isLoggedInInPage } from './page.js'
 import { buildIndeedSearchUrl } from './urls.js'
 
 export interface IndeedAdapterOptions {
@@ -85,14 +95,26 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
 
   const dimensions: CriteriaDimension[] = [
-    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，平台原样接收' },
-    { key: 'city', label: '地点', values: [], hint: 'Indeed 是自由文本地点（l= 直接吃地名），无需城市码' },
+    {
+      key: 'keyword',
+      label: '关键词',
+      values: [],
+      hint: '自由文本，平台原样接收',
+      wire: { target: 'url', param: config.urlParams.keywordParam },
+    },
+    {
+      key: 'city',
+      label: '地点',
+      values: [],
+      hint: 'Indeed 是自由文本地点（l= 直接吃地名），无需城市码',
+      wire: { target: 'url', param: config.urlParams.locationParam },
+    },
     {
       key: 'maxPages',
       label: '抓取页数上限',
       values: [],
       max: INDEED_MAX_PAGES,
-      hint: `默认 ${String(INDEED_DEFAULT_MAX_PAGES)} 页、最多 ${String(INDEED_MAX_PAGES)} 页；Indeed 免费版无页码按钮 + Cloudflare 风控，刻意保守。注意：中国大陆站已停运，默认 host 会命中重定向/验证墙`,
+      hint: `默认 ${String(INDEED_DEFAULT_MAX_PAGES)} 页、最多 ${String(INDEED_MAX_PAGES)} 页；cn 站实测可用（未登录可搜），但 Cloudflare 风控在，刻意保守`,
     },
   ]
 
@@ -101,19 +123,34 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
     ...platformFacts('indeed'),
     displayName: 'Indeed',
     capabilities: {
+      // 2026-09-21 实测：未登录搜索直出 16 条（首访登录墙是抖动，见文件头）。
       searchWithoutLogin: true,
       supportsAttachment: false,
       supportsReadReceipt: false,
       supportsInbox: false,
       supportsGreeting: false,
-      // 无可信中国大陆夹具：锚点来自公开描述的稳定结构，未校准 → 如实标 low。
-      fieldCompleteness: 'low',
+      // 2026-09-21 真实夹具：标题/公司/城市/jobKey 16/16 全中；薪资与日期在该批页面
+      // 无数据源（0 命中）→ 如实标 medium，缺口靠 requiredFields 摘除 + notes 隔离。
+      fieldCompleteness: 'medium',
       antiBot: 'high',
     },
-    requiredFields: [...CORE_FIELDS] as readonly CoreField[],
+    // ⚠️ 不含 salary_raw：真实夹具 16 条薪资全空（卡片无该节点，数据无源）——
+    //   列进必需字段会把整批记录打进 pending_repair（hiredchina/zhipin 同款取舍）。
+    requiredFields: ['title', 'company', 'source_url'] as readonly CoreField[],
     criteriaDimensions: dimensions,
     maxPages: INDEED_MAX_PAGES,
     defaultMaxPages: INDEED_DEFAULT_MAX_PAGES,
+
+    auth: {
+      // 2026-09-21 实测登录页（首访被送到的就是它；不带 continue，登录后平台自己跳）。
+      loginUrl: 'https://secure.indeed.com/auth?hl=zh_CN&co=CN',
+      // 判登录态用搜索页：载荷 isLoggedIn 在搜索页同样内嵌（匿名/已登录两侧实测），
+      // 语义正是「当前页会不会被登录墙挡住」。
+      checkUrl: 'https://cn.indeed.com/jobs',
+      async isLoggedIn(page): Promise<boolean> {
+        return await page.evaluate(isLoggedInInPage, { loginLinkSelector: INDEED_ANON_LOGIN_LINK })
+      },
+    },
 
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {
@@ -154,6 +191,23 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
       },
     },
 
+    detail: {
+      /**
+       * 2026-09-21 `probe:indeed-detail` 三页实测（3/3 命中）：标题 / 公司 / 地点 /
+       * `#jobDescriptionText`；无 JSON-LD JobPosting，发布日期走内嵌载荷
+       * `hiringInsightsModel.age`；薪资在详情页同样无源（salaryRaw 恒空，notes 不记 ——
+       * 列表侧已按"无源字段"处理，见 requiredFields）。
+       */
+      async extract(page): Promise<RawJobDetail> {
+        return await page.evaluate(extractDetailInPage, {
+          selectors: config.detailSelectors,
+          host: config.host,
+          jobKeyPattern: config.jobKeyPattern,
+          postedAgePattern: INDEED_POSTED_AGE_PATTERN,
+        })
+      },
+    },
+
     guard: {
       async detectBlock(page): Promise<BlockKind | null> {
         return await page.evaluate(detectBlockWithSignals, {
@@ -164,7 +218,8 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
       },
     },
 
-    // ⚠️ 刻意不实现 actions.sayHello / actions.sendResume：Indeed 中国站已停运，
-    //   无法实测打招呼/投递契约，fail-closed 而不是假装能发（与猎聘同策略）。
+    // ⚠️ 刻意不实现 actions.sayHello / actions.sendResume：打招呼/投递契约没有任何
+    //   真机取证（登录态探针只读取证，未点任何岗位动作），fail-closed 而不是假装能发
+    //   （与猎聘同策略）。要做须另开探针单独评审（如 probe:zhaopin-login 的分组开关）。
   }
 }

@@ -78,17 +78,63 @@ export interface SearchCriteria {
  */
 export declare function platformCriterion(criteria: SearchCriteria, key: string): string;
 /**
+ * **一个维度怎么进请求**（声明与拼装共用这一份的判据）。
+ *
+ * 存在的理由是一条真实的静默失败：神仙外企声明了「行业 / 职能」两个维度，界面渲染了、
+ * 校验放行了，但键名没登记在宿主的命名空间表里 → 用户选的值被丢进 `extra`，
+ * 最后以平台**根本不认**的参数名（`posInfo` / `businessCategory`）塞进请求体。
+ * 声明与拼装是两份手写的东西，漂移了没有任何东西会响。
+ *
+ * 现在：**声明必须说出它落在哪个参数上**，而 `test/platform/dimension-wiring.test.ts`
+ * 拿真实请求对账 —— 声明里写了 `wire` 的维度，探针值必须让请求**真的改变**，
+ * 且声明过 `param` 的必须能在真实请求里找到那个参数名。
+ *
+ * ⚠️ `param` 要引用**真正拼装请求的那份常量**（`config.urlParams.sortParam`、
+ * `buildXxxRequestBody` 里的字段名），不要再写一份字面量 —— 否则又多一份会漂移的清单。
+ * 路径型的维度（智联的城市码写在 `/sou/jl<code>` 里）没有 query 参数名：`param: null`，
+ * 对账只做"请求确实变了"那一条。
+ */
+export interface CriterionWire {
+    /** 落到 URL query 还是请求体字段。 */
+    target: 'url' | 'body';
+    /** 真实参数名；`null` = 参数名就是路径/编码的一部分，没有可对账的字段名。 */
+    param: string | null;
+}
+/**
+ * 一个维度**实际会发出的请求**（诊断、界面预览、单测对账共用同一份形状）。
+ *
+ * 为什么不让界面自己拼：能拼出"看起来对的 URL"和"真正会发出的请求"是两件事，
+ * 而用户要看的是后者（界面上写着"按 5 页抓"、实际只抓 1 页，正是这类分歧）。
+ */
+export interface CriteriaRequestPreview {
+    /** 列表页地址。接口型平台也有它 —— 它们要先把这个页面开起来再调接口。 */
+    url: string;
+    method: 'GET' | 'POST';
+    /** **真实参数**：GET 的 query 参数，或 POST 的请求体字段（键名都是平台自己的）。 */
+    params: Record<string, string>;
+    /** POST 的请求体原文（仅用于展示/对账；可能含关键词，别写进日志）。 */
+    body?: string;
+    /**
+     * 声明了但**不进请求**的维度（采集深度这类旋钮）。
+     *
+     * 必须如实列出来：界面上"抓取页数上限 / 加载轮数"看起来和筛选条件一样，
+     * 但它们不改请求、只改采集循环跑几轮 —— 预览里不写清楚，用户会以为没生效。
+     */
+    crawlOnly: string[];
+}
+/**
  * 适配器声明的一个筛选维度（SR-41/42）。
  *
  * **这一层是"能力驱动的 UI"的落地点**：界面据它渲染筛选器，
  * 不支持的维度**禁用而非隐藏**并给出原因 —— 隐藏会让用户以为功能坏了。
  *
- * `values` 为空数组表示自由文本（如关键词）。
+ * `values` 为空数组表示自由文本（如关键词）。但注意**空值域 + `closed: true`
+ * 是相反的意思**："一个取值都别给"，界面不给输入框、校验显式拒绝。
  */
 export interface CriteriaDimension {
     key: string;
     label: string;
-    /** 值域；空数组 = 自由文本。 */
+    /** 值域；空数组 = 自由文本（配合 `closed: false`）。 */
     values: Array<{
         value: string;
         label: string;
@@ -111,7 +157,36 @@ export interface CriteriaDimension {
     max?: number;
     /** 不支持时的解释（用于"为什么这个筛选项是灰的"）。 */
     hint: string;
+    /**
+     * 数值型维度：界面渲染成数字输入，校验要求正整数。
+     *
+     * 必须由**适配器**声明，而不是宿主拿一张全局键名表猜 —— 猜的那张表（`NUMERIC_KEYS`）
+     * 曾经把"51job 的发布时间"也算成数值维度，于是界面上给出一个能填的数字框，
+     * 而那个维度一个取值都不收。
+     *
+     * 例外：`maxPages` 是 `SearchCriteria` 上的类型化槽位，宿主持有它"是数字"这个事实，
+     * 适配器不必每个都写一遍。
+     */
+    numeric?: boolean;
+    /** 怎么进请求。缺省 = **不进请求**（采集深度旋钮，如 `maxPages` / `scrollRounds`）。 */
+    wire?: CriterionWire;
 }
+/**
+ * 一个维度的取值域是否**封闭**；`closed` 缺省 = 值域非空（历史行为）。
+ *
+ * 这条判据必须在**一处**实现：空表 + `closed: true`（"一个都别给"）与空表 + 自由文本
+ * 在数据上一模一样、语义相反，而宿主侧有三处要按它分流（校验、界面快照、城市支持度）。
+ * 差一个 flag，用户收到的就是一条假的警告，或者一次整轮失败。
+ */
+export declare function isClosedDimension(dimension: CriteriaDimension): boolean;
+/**
+ * 用户在这个维度上填得进一个**平台会接受**的值吗。
+ *
+ * 封闭 + 空表 = 什么都不接受（guopin / hiredchina 的城市）：界面不给输入框、
+ * 校验显式拒绝。`postedWithinDays` 在 51job / 智联是同一形态 —— 它自己的 hint 写着
+ * "该维度不可用"，但缺了这个判据时界面会给一个能填的数字框。
+ */
+export declare function isSettableDimension(dimension: CriteriaDimension): boolean;
 /** 运行期健康自检结果。 */
 export interface HealthResult {
     ok: boolean;
@@ -260,6 +335,15 @@ export interface SiteAdapter {
     criteria: {
         /** URL 编码路径 —— 首选，比 DOM 回填稳健得多，也少触发风控（ADR-9）。 */
         buildSearchUrl(criteria: SearchCriteria): string | null;
+        /**
+         * 把条件翻译成**实际会发出的请求**（诊断 / 界面预览 / 单测对账）。
+         *
+         * 可选，但**凡是筛选条件不在 URL 里的平台必须实现它**（接口型平台：waiqi /
+         * sinojobs / zhipin）—— 否则 `previewOf()` 只能给出页面地址，界面上就会显示
+         * "这个方案什么都没筛"。对 URL 型平台，共享的 `previewOf()` 会直接解析
+         * `buildSearchUrl()` 的结果，不必各写一遍（少一份能漂移的实现）。
+         */
+        preview?(criteria: SearchCriteria): CriteriaRequestPreview | null;
     };
     /**
      * 登录态**检测实现**（§4.2.2 的 `auth`，P3 落地）。

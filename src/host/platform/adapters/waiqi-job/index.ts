@@ -76,7 +76,7 @@ import {
   WAIQI_WORK_EXP_OPTIONS,
 } from './config.js'
 import type { WaiqiConfig } from './config.js'
-import { buildWaiqiRequestBody, buildWaiqiSearchUrl } from './urls.js'
+import { WAIQI_BODY_FIELDS, buildWaiqiRequestBody, buildWaiqiSearchUrl } from './urls.js'
 import {
   countCardsInPage,
   detectBlockInPage,
@@ -125,6 +125,7 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       label: '关键词',
       values: [],
       hint: '自由文本，对应接口的 name 字段（实测：keyword/positionName 这些键**无效**，只有 name 生效）',
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.keyword },
     },
     {
       key: 'city',
@@ -133,18 +134,21 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       hint:
         '城市走接口的 cityIds（平台自增主键，不能按行政区划码猜）；表里没有的城市无法构造请求。' +
         '支持逗号分隔**多城市**（如 `深圳,广州`），一次请求按多个城市过滤',
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.city },
     },
     {
       key: 'workExp',
       label: '工作经验',
       values: WAIQI_WORK_EXP_OPTIONS,
       hint: '平台只有 6 档（0~5）；实测 6/7 恒为 0 条，故不列出',
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.workExp },
     },
     {
       key: 'education',
       label: '学历',
       values: WAIQI_EDUCATION_OPTIONS,
       hint: '取值域来自平台的 education-enum，**不是从 0 递增**（6/7/8 分别对应初中/高中/中专）',
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.education },
     },
     {
       key: 'businessCategory',
@@ -153,6 +157,9 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       hint:
         '对应接口 businessCategoryIdList（前端取值来自 getBusList，已过滤"不限"）。' +
         '内置为实测 seed，可在 DB 覆盖 config.businessCategoryList 补全',
+      // ⚠️ 这一行就是那次静默失败的修复点：`param` 必须指向构造端真正写的字段名。
+      // 声明与构造共用 `WAIQI_BODY_FIELDS`，中间不存在第二份字面量。
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.businessCategory },
     },
     {
       key: 'posInfo',
@@ -161,12 +168,14 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       hint:
         '对应接口 posIds（前端为两级树 businessCategory→posInfos）。' +
         '内置为实测 seed，可在 DB 覆盖 config.posInfoList 补全',
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.posInfo },
     },
     {
       key: 'type',
       label: '职位范围',
       values: WAIQI_TYPE_OPTIONS,
       hint: '页面顶部的两个 tab；默认只看外企（type=2）',
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.type },
     },
     {
       key: 'maxPages',
@@ -220,6 +229,24 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
     criteria: {
       buildSearchUrl(criteria: SearchCriteria): string | null {
         return buildWaiqiSearchUrl(config, criteria)
+      },
+      /**
+       * 预览：神仙外企的筛选**不在 URL 里**（URL 只承载页面自己的 keyword / posType），
+       * 真正的条件全在 POST body。所以预览必须给出那个请求 —— 否则界面上会显示
+       * "这个方案什么都没筛"。与采集走**同一个** `buildWaiqiRequestBody`。
+       */
+      preview(criteria: SearchCriteria) {
+        const url = buildWaiqiSearchUrl(config, criteria)
+        const body = buildWaiqiRequestBody(criteria, config.cityCodes, 1)
+        const params: Record<string, string> = {}
+        for (const [key, value] of Object.entries(body)) params[key] = String(value)
+        return {
+          url: url ?? `${config.webBase}/position`,
+          method: 'POST' as const,
+          params,
+          body: JSON.stringify(body),
+          crawlOnly: [],
+        }
       },
     },
 

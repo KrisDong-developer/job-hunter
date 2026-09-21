@@ -119,6 +119,7 @@ const ROUTES: RouteHandler[] = [
   plans.resume,
   crawl.once,
   crawl.dimensions,
+  crawl.previewCriteria,
   schedule.lease,
   schedule.pause,
   schedule.reasons,

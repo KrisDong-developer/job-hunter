@@ -52,6 +52,12 @@ export interface ValidatedPlanConfig {
     notices: string[];
 }
 /**
+ * 一个维度的取值域是否**封闭**；`closed` 缺省 = 值域非空（历史行为）。
+ *
+ * 实现搬到了 `platform/types.ts`（`isClosedDimension` / `isSettableDimension`）——
+ * 宿主侧有三处要按同一条判据分流，各写一遍必然漂移。
+ */
+/**
  * 把 `Record<string,string>` 归一成适配器认识的 `SearchCriteria`。
  *
  * 数值维度在这里转型：`'3'` → `3`。转不动就报错 —— 静默当成 0 会让
@@ -72,15 +78,13 @@ export declare function sameCriteria(a: Record<string, string>, b: Record<string
  * 形状的权威定义在 `shared/contract/dto/plan.ts` —— 宿主生产、界面消费，
  * 声明只能有一份（这里曾经另写了一遍同名同字段的接口）。
  */
-/** 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。 */
 /**
- * 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。
+ * 所有可能出现的维度键（**固定槽位表**）。
  *
- * ⚠️ 这是**固定槽位表**，不是"全部维度" —— 适配器自己声明的新维度由
- * `criteriaDimensionsFor` 的 `supported.keys()` 自动并进来（见下方 `keys`）。
- * 列在这里的键会**对每个平台都出现**（不支持的显示为禁用 + 原因），
- * 所以只列"跨平台都说得通"的几个：关键词 / 城市 / 排序 / 时间 / 页数，
- * 以及神仙外企引入的工作经验 / 学历 / 职位范围。
+ * ⚠️ 它不是"全部维度" —— 适配器自己声明的新维度由 `criteriaDimensionsFor`
+ * 自动并进来（见 `keys`）。它保证的是：这几个**跨平台都说得通**的键（关键词 /
+ * 城市 / 排序 / 时间 / 页数，以及神仙外企引入的工作经验 / 学历 / 职位范围）
+ * 有稳定的顺序，而且**当谁都没声明它时也会被如实报出来**（而不是从界面上消失）。
  */
 export declare const ALL_DIMENSION_KEYS: readonly ["keyword", "city", "workExp", "education", "type", "sort", "postedWithinDays", "maxPages"];
 export declare function criteriaDimensionsFor(registry: AdapterRegistry, platforms: string[]): CriteriaDimensionDto[];

@@ -106,7 +106,13 @@ export function createGuopinAdapter(options: GuopinAdapterOptions = {}): SiteAda
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
 
   const dimensions: CriteriaDimension[] = [
-    { key: 'keyword', label: '关键词', values: [], hint: '自由文本，平台原样接收' },
+    {
+      key: 'keyword',
+      label: '关键词',
+      values: [],
+      hint: '自由文本，平台原样接收',
+      wire: { target: 'url', param: config.urlParams.keywordParam },
+    },
     {
       key: 'city',
       label: '城市',

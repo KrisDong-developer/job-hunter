@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * LinkedIn 登录态探针 —— 打开真浏览器让用户手动登录，然后采集**登录标记两侧对比**与登录态快照。
  *
@@ -42,7 +42,7 @@ import { candidateExecutables, discoverExecutable } from '../../src/host/platfor
 import { STEALTH_INIT_SCRIPT } from '../../src/host/platform/stealth.js'
 import { DEFAULT_LINKEDIN_CONFIG } from '../../src/host/platform/adapters/linkedin/config.js'
 import { buildLinkedInGuestApiUrl, buildLinkedInSearchUrl } from '../../src/host/platform/adapters/linkedin/urls.js'
-import { extractJobsInPage } from '../../src/host/platform/adapters/linkedin/page.js'
+import { extractJobsInPage } from '../../src/host/platform/adapters/linkedin/page/list.js'
 
 const KEYWORD = process.env['LINKEDIN_KEY'] ?? 'Software Engineer'
 const CITY = process.env['LINKEDIN_CITY'] ?? 'China'
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
   before = await page.evaluate(scanMarkers, { candidates: [...ME_MARKERS, ...ANON_MARKERS] }).catch(() => null)
   beforeLoggedIn =
     (before?.hits.some((hit) => ME_MARKERS.includes(hit.selector) && hit.count > 0) ?? false) ||
-    page.url().includes('/feed/')
+    /\/feed\/?$/.test(page.url())
   log(
     `当前侧（${beforeLoggedIn ? '看起来已登录 —— profile 里已有登录态' : '未登录'}）：` +
       `${(before?.hits ?? []).map((hit) => `${hit.selector}=${String(hit.count)}`).join(' ') || '(一个候选都没命中)'}`,
@@ -208,9 +208,9 @@ async function main(): Promise<void> {
         )
         .catch(() => ({ loggedIn: false }))
       // 第二信号：登录成功后 LinkedIn 会跳 /feed/（未登录访问 feed 会被弹回 authwall，不会误判）。
-      if (state.loggedIn || url.includes('/feed/')) {
+      if (state.loggedIn || /\/feed\/?$/.test(url)) {
         sawLoginMarker = true
-        log(`✔ 看到登录标记${url.includes('/feed/') ? '（已落到 /feed/）' : ''} —— 认为已登录`)
+        log(`✔ 看到登录标记${/\/feed\/?$/.test(url) ? '（已落到 feed）' : ''} —— 认为已登录`)
         break
       }
       const remainSec = Math.round((deadline - Date.now()) / 1000)
@@ -310,3 +310,4 @@ void main().catch((error: unknown) => {
   log(`未捕获异常：${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
 })
+

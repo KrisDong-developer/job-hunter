@@ -194,6 +194,22 @@ export const PLAN_EDITOR_MODAL = `
   background:var(--dsw-alias-bg-layer-1);font-size:12.5px}
 .jh-plan-name{font-size:13.5px}
 
+/* 「这个条件当前平台用不了」那一行：说明文字可以很长（disabledReason 里带着
+   每个平台自己写的理由），所以让它在左边**换行**，移除按钮留在右边不被挤走。
+   长句不换行会撑破弹窗宽度，而这三个字（移除这个条件）是这一行唯一的出口。 */
+.jh-dim-blocked{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.jh-dim-blocked>span{min-width:0;overflow-wrap:anywhere}
+.jh-dim-blocked>.jh-btn{flex:0 0 auto}
+
+/* 干跑预览（方案表单里的「各平台实际会请求什么」）：一个平台一块。
+   URL 常常很长（带一串 query），所以让它**换行**而不是撑破弹窗宽度 ——
+   撑破之后右侧会被裁掉，而右边的参数表恰恰是这一块的重点。 */
+.jh-preview{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-radius:9px;
+  border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
+.jh-preview-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.jh-preview-url code{font-size:11.5px;overflow-wrap:anywhere;word-break:break-all;
+  color:var(--dsw-alias-label-secondary)}
+
 /* 按钮权重：危险 / 警示。主操作复用已有的 .jh-btn-primary。
    颜色一律走主题变量（§5.3），不写死 red。 */
 /* 危险操作：**实底**。

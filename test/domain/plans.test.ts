@@ -10,6 +10,7 @@ import { createHiredChinaAdapter } from '../../src/host/platform/adapters/hiredc
 import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed/index.js'
 import { createLinkedInAdapter } from '../../src/host/platform/adapters/linkedin/index.js'
 import { createWaiqiAdapter } from '../../src/host/platform/adapters/waiqi-job/index.js'
+import { createZhaopinAdapter } from '../../src/host/platform/adapters/zhaopin/index.js'
 import { createZhipinAdapter } from '../../src/host/platform/adapters/zhipin/index.js'
 import type { SiteAdapter } from '../../src/host/platform/types.js'
 import { DomainError } from '../../src/host/util/errors.js'
@@ -222,10 +223,26 @@ test('SR-41：取值域外的值被拒绝，域内的通过', () => {
     const ok = plans.create({
       name: '正常',
       platforms: ['51job'],
-      criteria: { keyword: 'Java', city: '深圳', sort: '3', postedWithinDays: '3', maxPages: '2' },
+      criteria: { keyword: 'Java', city: '深圳', sort: '3', maxPages: '2' },
     })
     assert.equal(ok.criteria['sort'], '3')
     assert.equal(ok.criteria['maxPages'], '2')
+
+    // 2026-09-21 起：51job 的 `postedWithinDays` 是**空值域 + closed**（它自己的 hint 写着
+    // "该维度不可用"）→ 界面上不再给输入框，校验也必须**显式拒绝**。
+    // 以前它落进 NUMERIC_KEYS 的数值分支并被放行：条件存得下、平台上什么都没筛。
+    assert.throws(
+      () =>
+        plans.create({
+          name: '发布时间不可用',
+          platforms: ['51job'],
+          criteria: { keyword: 'Java', postedWithinDays: '3' },
+        }),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'INVALID_INPUT' &&
+        error.message.includes('发布时间'),
+    )
 
     // SR-40/41：页数上限受适配器声明约束
     assert.throws(
@@ -297,7 +314,7 @@ function citiesOf(adapter: SiteAdapter): string[] {
   return dimension?.values.map((item) => item.value) ?? []
 }
 
-test('提示：选到还没校准/已停用的平台时要说清楚，而不是让你白跑一轮', () => {
+test('提示：选到还没校准的平台时要说清楚，而不是让你白跑一轮', () => {
   const platforms = ['51job', 'guopin', 'indeed']
   const { store, plans } = withPlatforms(createFiftyOneAdapter, createGuopinAdapter, createIndeedAdapter)
   try {
@@ -310,9 +327,13 @@ test('提示：选到还没校准/已停用的平台时要说清楚，而不是�
       checked.notices.some((note) => note.includes('guopin') && note.includes('实验')),
       `应当提示 guopin 是实验性平台：${checked.notices.join(' | ')}`,
     )
+    // indeed 已按 2026-09-21 真实夹具升级为 calibrated（曾是唯一的 disabled 平台）——
+    // 校准过的平台不该再吓用户「停用/实验」。
     assert.ok(
-      checked.notices.some((note) => note.includes('indeed') && note.includes('停用')),
-      `应当提示 indeed 已停用：${checked.notices.join(' | ')}`,
+      !checked.notices.some(
+        (note) => note.includes('indeed') && (note.includes('停用') || note.includes('实验')),
+      ),
+      `indeed 已校准，不应再提示停用/实验：${checked.notices.join(' | ')}`,
     )
     // **提示 ≠ 拒绝**：方案照样建得出来
     assert.ok(plans.create({ name: '多平台', platforms, criteria: { keyword: 'Java', city: '深圳' } }).id > 0)
@@ -653,6 +674,137 @@ test('每平台覆盖项：平台被移出方案时，它的覆盖项一起消�
       {},
       '留着它，下次把 waiqi 加回来时会**静默生效** —— 而用户早忘了自己配过它',
     )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+/* ── 维度声明 == 界面上能填什么（2026-09-21）─────────────────────────────
+   这一组钉的是三类"界面与适配器声明不一致"的形态，它们都不是视觉问题：
+   用户看着一个能填的控件，填完之后平台上什么都没发生。
+
+     ① **声明了却一个取值都不收**（51job / 智联的发布时间、国聘的城市）：
+        `closed` + 空值域。以前 `criteriaDimensionsFor` 照样报 `supported: true`，
+        界面按 `NUMERIC_KEYS` 渲染成一个可填的数字框，校验的数值分支又排在取值域
+        检查前面并 `continue` —— 于是"发布时间＝3"能存进方案。
+     ② **值域开放但有建议列表**（领英的 location）：以前按 `values` 非空 = 下拉渲染，
+        于是"表外地名"根本打不进去 —— 而适配器明说 `closed: false`（收任何地名）。
+     ③ **同一个键在多个平台含义不同**（`sort` / `type`）：以前只画第一个声明者的
+        取值域，用户既看不到别家能选什么，也不知道自己选的值另一家认不认。 */
+
+test('空值域 + closed = 不可填：不给输入框，原因取自适配器自己的声明', () => {
+  const { store, registry } = withPlatforms(createFiftyOneAdapter)
+  try {
+    const items = criteriaDimensionsFor(registry, ['51job'])
+    const posted = items.find((item) => item.key === 'postedWithinDays')
+    assert.ok(posted !== undefined)
+    assert.equal(posted.supported, false, '一个取值都不收 → 不能填')
+    assert.equal(posted.declared, true, '"声明过但不可用" 与 "平台没这个筛选" 必须分开')
+    assert.equal(posted.values.length, 0)
+    assert.equal(posted.open, false)
+    assert.ok(
+      posted.disabledReason?.includes('issueDate') === true,
+      `原因要引用适配器自己写的理由：${posted.disabledReason ?? '（空）'}`,
+    )
+    assert.equal(posted.platforms[0]?.supported, false)
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('空值域 + closed 的城市（国聘）：不可填 —— 以前是一个能打字、保存必失败的输入框', () => {
+  const { store, registry } = withPlatforms(createGuopinAdapter)
+  try {
+    const city = criteriaDimensionsFor(registry, ['guopin']).find((item) => item.key === 'city')
+    assert.ok(city !== undefined)
+    assert.equal(city.supported, false)
+    assert.equal(city.open, false)
+    assert.ok(city.disabledReason?.includes('城市码') === true, city.disabledReason ?? '（空）')
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('值域开放但有建议列表（领英的城市）：open=true，界面必须允许自由输入', () => {
+  const { store, registry } = withPlatforms(createLinkedInAdapter)
+  try {
+    const city = criteriaDimensionsFor(registry, ['linkedin']).find((item) => item.key === 'city')
+    assert.ok(city !== undefined)
+    assert.equal(city.supported, true)
+    assert.equal(city.open, true, 'accepts free text —— 渲染成下拉就等于禁止表外地名')
+    assert.ok(city.values.length > 0, '建议值仍然要给（datalist）')
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('多平台：取值域取并集，每个取值标出"谁接受它"；含义不同则报冲突', () => {
+  const { store, registry } = withPlatforms(createFiftyOneAdapter, createZhaopinAdapter)
+  try {
+    const sort = criteriaDimensionsFor(registry, ['51job', 'zhaopin']).find(
+      (item) => item.key === 'sort',
+    )
+    assert.ok(sort !== undefined)
+    assert.equal(sort.conflict, true, '51job 的 sortType 与智联的 order 是两套不透明编码')
+    assert.ok(
+      sort.conflictNote?.includes('前程无忧') === true && sort.conflictNote?.includes('智联招聘') === true,
+      `冲突说明要把两家的取值域都写出来（用显示名）：${sort.conflictNote ?? '（空）'}`,
+    )
+    assert.ok(
+      sort.values.some((item) => item.value === '1' && item.platforms.join(',') === '51job'),
+      '「最新优先」(sortType=1) 只属于 51job',
+    )
+    assert.ok(
+      sort.values.some((item) => item.value === '4' && item.platforms.join(',') === 'zhaopin'),
+      '「最新发布」(order=4) 只属于智联',
+    )
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('多平台：type 在神仙外企与 HiredChina 含义不同 —— 冲突要说出来，校验口径与界面一致', () => {
+  const { store, registry, plans } = withPlatforms(createWaiqiAdapter, createHiredChinaAdapter)
+  try {
+    const type = criteriaDimensionsFor(registry, ['waiqi', 'hiredchina']).find(
+      (item) => item.key === 'type',
+    )
+    assert.ok(type !== undefined)
+    assert.equal(type.conflict, true, '"外企/不限" 与 "Marketing/Teaching…" 不是一套取值')
+    // 界面口径 = "至少一个平台接受" = 校验口径（`validatePlanConfig` 的同一判据），
+    // 所以两家的取值都能存 —— 存下来之后由界面按平台说清谁会用对。
+    const plan = plans.create({
+      name: '两家 type',
+      platforms: ['waiqi', 'hiredchina'],
+      criteria: { type: 'marketing' },
+    })
+    assert.equal(plan.criteria['type'], 'marketing')
+  } finally {
+    const dir = store.dataDir
+    store.close()
+    cleanup(dir)
+  }
+})
+
+test('城市刻意**不**判冲突：它是跨平台共享的人的概念，取并集', () => {
+  const { store, registry } = withPlatforms(createFiftyOneAdapter, createLinkedInAdapter)
+  try {
+    const city = criteriaDimensionsFor(registry, ['51job', 'linkedin']).find(
+      (item) => item.key === 'city',
+    )
+    assert.ok(city !== undefined)
+    assert.equal(city.conflict, false, '一个封闭表 + 一个自由文本，不等于"含义冲突"')
+    assert.ok(city.values.some((item) => item.value === '深圳' && item.platforms.includes('51job')))
   } finally {
     const dir = store.dataDir
     store.close()

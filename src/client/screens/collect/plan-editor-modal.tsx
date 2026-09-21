@@ -9,13 +9,14 @@ import { PLAN_KEYWORDS_MAX } from '../../../shared/config/crawl.js'
 import { WEEKDAY_PRESETS, formatWeekdays, formatWindow, parseClockValue } from '../../../shared/text/time-format.js'
 import { ApiError } from '../../net/client.js'
 import { fetchCriteriaDimensions } from '../../net/collect/plans.js'
-import type { CriteriaDimensionDto, PlanDuplicateDto } from '../../../shared/contract/dto/plan.js'
+import type { CriteriaDimensionDto, CriteriaDimensionsDto, PlanDuplicateDto } from '../../../shared/contract/dto/plan.js'
 import type { PlatformOverviewDto } from '../../../shared/contract/dto/platform.js'
 import { useAsync } from '../../hooks/use-async.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import { Modal } from '../../ui/modal.js'
 import type { PlanForm } from './plan-form.js'
 import { parseKeywordsText, writeOf } from './plan-form.js'
+import { CriteriaPreview } from './criteria-preview.js'
 
 /** 分步弹窗的三步（分步条与"下一步"的文案共用这一份，不各写一遍）。 */
 const PLAN_STEPS = ['基础与平台', '采集与筛选', '调度与后处理'] as const
@@ -119,6 +120,8 @@ export function PlanEditorModal(props: {
   const [rulesOpen, setRulesOpen] = useState(false)
   /** 「高级筛选」展开态；有生效值时会被下面的 effect 强制展开（折叠的条件不能变成隐形条件）。 */
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  /** 「用不了的筛选」展开态（那些维度没有输入框，只是**报出来**）。 */
+  const [blockedOpen, setBlockedOpen] = useState(false)
   /** 批量设置页数用的输入值（不落库，只作用于一次点击）。 */
   const [batchPages, setBatchPages] = useState('5')
   const allBoxRef = useRef<HTMLInputElement>(null)
@@ -139,6 +142,10 @@ export function PlanEditorModal(props: {
   const [receipt, setReceipt] = useState<{ body: string; name: string } | null>(null)
 
   const patch = (next: Partial<PlanForm>): void => setForm((current) => ({ ...current, ...next }))
+
+  /** 平台 id → 显示名（"这个取值只有谁认"那几句要用它）。认不出来退回 id。 */
+  const platformNameOf = (id: string): string =>
+    props.available.find((item) => item.id === id)?.displayName ?? id
 
   /**
    * 总残留重复 = 保存接口返回的 + 本地实时校验得到的，**按方案 id 收敛**。
@@ -188,7 +195,13 @@ export function PlanEditorModal(props: {
   }, [validationKey, props.planId])
 
   const dimensions = useAsync(
-    (signal) => fetchCriteriaDimensions(form.platforms, signal),
+    (signal) =>
+      // 一个平台都没选时**不能**问宿主"所有平台支持什么"：HTTP 侧的口径是
+      // "platforms 为空 = 全部已注册平台"，那会在第 2 步画出一张十个平台的并集，
+      // 而这时候方案里一个平台都没有。宁可给空表（第 1 步本来就过不去）。
+      form.platforms.length === 0
+        ? Promise.resolve<CriteriaDimensionsDto>({ items: [], platforms: [], available: [] })
+        : fetchCriteriaDimensions(form.platforms, signal),
     [form.platforms.join(',')],
   )
   const items: CriteriaDimensionDto[] = dimensions.state.status === 'ok' ? dimensions.state.data.items : []
@@ -286,16 +299,38 @@ export function PlanEditorModal(props: {
   // keyword 同理：它升级成了下面的多关键词输入区，网格里不再出现。
   const pagesDimension = items.find((item) => item.key === 'maxPages')
   const filterItems = items.filter((item) => item.key !== 'maxPages' && item.key !== 'keyword')
-  const primaryItems = filterItems.filter(
-    (item) => item.supported && PRIMARY_CRITERIA_KEYS.includes(item.key),
-  )
+  /** **能填的**维度（至少有一个已选平台会真的按它筛）→ 进编辑网格。 */
+  const editableItems = filterItems.filter((item) => item.supported)
+  const primaryItems = editableItems.filter((item) => PRIMARY_CRITERIA_KEYS.includes(item.key))
   const primaryKeys = new Set(primaryItems.map((item) => item.key))
-  // 不支持的维度一律留在高级区（禁用 + 写明原因），所以"只有支持的才进高频区"
-  // 不会把任何一个维度藏起来。
-  const advancedItems = filterItems.filter((item) => !primaryKeys.has(item.key))
+  const advancedItems = editableItems.filter((item) => !primaryKeys.has(item.key))
+  /**
+   * **填不了的**维度：没有任何已选平台支持它，或平台声明了却一个取值都不收
+   * （`closed` + 空值域）。
+   *
+   * 它们不进编辑网格 —— 以前是"每个平台铺一排禁用输入框"（indeed 那种只支持
+   * 关键词/地点/页数的平台，会白占 5 个格子，用户既填不了、也看不出为什么在那儿）。
+   * 但也**不消失**：折叠区里逐条写明原因，且**带着旧值时留在外面可直接移除** ——
+   * 否则校验会拦下保存（"这些筛选条件当前平台不认识/没有可用取值"），
+   * 而用户在界面上找不到那个条件的任何控件，就卡死了。
+   */
+  const blockedItems = filterItems.filter((item) => !item.supported)
+  const staleBlocked = blockedItems.filter((item) => (form.criteria[item.key] ?? '') !== '')
+  const restBlocked = blockedItems.filter((item) => (form.criteria[item.key] ?? '') === '')
   const advancedActiveCount = advancedItems.filter(
     (item) => (form.criteria[item.key] ?? '') !== '',
   ).length
+  /**
+   * 干跑预览用的**生效条件**。
+   *
+   * 多关键词方案里条件本身不含 `keyword`（它是逐个跑的），所以要把**第一个关键词**
+   * 补进去 —— 那正是最先发出去的那一次请求。少放它，预览就会漏掉最要紧的那个参数。
+   */
+  const previewKeyword = parseKeywordsText(form.keywordsText)[0]
+  const previewCriteria: Record<string, string> = {
+    ...(writeOf(form).criteria ?? {}),
+    ...(previewKeyword === undefined ? {} : { keyword: previewKeyword }),
+  }
   const advancedNames =
     advancedItems
       .filter((item) => item.supported)
@@ -353,12 +388,42 @@ export function PlanEditorModal(props: {
   /**
    * 渲染一个筛选维度（高频区与高级区共用同一份）。
    *
-   * 不支持的维度**仍然渲染**（禁用 + 写明原因）—— 这是本项目一贯的做法：
-   * 隐藏会让用户以为功能坏了（§5.5 能力驱动的 UI）。所以"进折叠区"不等于"藏起来"。
+   * 三条"控件必须跟着适配器声明走"的规则（§5.5 能力驱动的 UI）：
+   *   ① **控件形状由 `open` 决定**：值域开放时必须渲染成**可输入的框**。
+   *      领英的 `location` 有建议列表但收任何地名（`closed: false`）——
+   *      以前按"values 非空 = 下拉"渲染，于是用户**填不了**列表外的城市（Hangzhou），
+   *      而适配器明明说可以收。现在有建议列表就挂 `<datalist>`，既不挡自由输入、
+   *      也仍然给得出常用值。
+   *   ② **每个取值标出"谁接受它"**（多平台下 `sort` / `type` 是同名不同义的不透明编码）：
+   *      选 `1` 对 51job 是"最新优先"，智联会收到一个它取值域外的值。
+   *   ③ **含义冲突（`conflict`）摊开写**，而不是画一个看起来共享的下拉。
+   *
+   * 不支持的维度**不在这里渲染**（它在下面「用不了的筛选」里，带原因、可移除）——
+   * 之前是给每个平台铺一排灰输入框，用户既填不了、也不知道为什么在那儿。
    */
   const renderDimension = (dimension: CriteriaDimensionDto) => {
     const value = form.criteria[dimension.key] ?? ''
     const hint = dimension.supported ? dimension.hint : (dimension.disabledReason ?? dimension.hint)
+    /** 声明了这个维度的平台（`declared=false` 的是"平台侧没有这个筛选参数"）。 */
+    const declarers = dimension.platforms.filter((item) => item.declared)
+    /** 取值需要标"仅谁"吗：只有当**另一个也有这个筛选的平台**不认这个取值时才标。 */
+    const partial = (platforms: readonly string[]): boolean =>
+      platforms.length > 0 && platforms.length < declarers.length
+    const options = dimension.values.map((option) => ({
+      value: option.value,
+      label: partial(option.platforms)
+        ? `${option.label}（仅 ${option.platforms.map(platformNameOf).join('、')}）`
+        : option.label,
+    }))
+    /**
+     * 归属那句"谁支持、谁不支持"——**只在有话要说时**才出现：
+     * 要么有平台没有这个筛选，要么有平台声明了却填不了。
+     */
+    const notes = dimension.platforms
+      .filter((item) => !item.supported)
+      .map((item) => `${platformNameOf(item.id)}：${item.note ?? '不支持这个筛选'}`)
+    const listId = `jh-dim-${dimension.key}`
+
     /**
      * 控件一律写**显式** `aria-label`，不靠外层 `<label>` 的隐式关联。
      *
@@ -386,15 +451,34 @@ export function PlanEditorModal(props: {
             placeholder={dimension.supported ? '不限' : '不支持'}
             onChange={(event) => setCriteria(dimension.key, event.target.value)}
           />
-        ) : dimension.values.length === 0 ? (
-          <input
-            className="jh-input"
-            disabled={!dimension.supported}
-            value={value}
-            aria-label={dimension.label}
-            placeholder={dimension.supported ? '不限' : '不支持'}
-            onChange={(event) => setCriteria(dimension.key, event.target.value)}
-          />
+        ) : dimension.open ? (
+          <>
+            {/* 自由文本：有建议值就挂 datalist（不是下拉），没有就给一个空框 */}
+            <input
+              className="jh-input"
+              list={dimension.values.length === 0 ? undefined : listId}
+              disabled={!dimension.supported}
+              value={value}
+              aria-label={dimension.label}
+              placeholder={
+                !dimension.supported
+                  ? '不支持'
+                  : dimension.values.length === 0
+                    ? '不限'
+                    : '可自由填写，下面是常用值'
+              }
+              onChange={(event) => setCriteria(dimension.key, event.target.value)}
+            />
+            {dimension.values.length === 0 ? null : (
+              <datalist id={listId}>
+                {options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </datalist>
+            )}
+          </>
         ) : (
           <select
             className="jh-select"
@@ -404,12 +488,16 @@ export function PlanEditorModal(props: {
             onChange={(event) => setCriteria(dimension.key, event.target.value)}
           >
             <option value="">不限</option>
-            {dimension.values.map((option) => (
+            {options.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
+        )}
+        {notes.length === 0 ? null : <span className="jh-filter-note">{notes.join(' · ')}</span>}
+        {!dimension.conflict || dimension.conflictNote === null ? null : (
+          <span className="jh-warn">⚠ {dimension.conflictNote}</span>
         )}
       </label>
     )
@@ -842,9 +930,14 @@ export function PlanEditorModal(props: {
             {/* 高频区：只留"改方案时最常动的几个"。其余进高级筛选 ——
                 它们默认值几乎都是"不限"，摊在明面上只会把上面这几个淹掉。 */}
             <div className="jh-section-title">筛选条件</div>
-            {primaryItems.length === 0 ? (
+            {editableItems.length === 0 ? (
               <p className="jh-muted">
-                已纳入的平台没有声明任何筛选维度 —— 保存后它们会按平台自己的默认列表抓。
+                已纳入的平台没有可用的筛选维度 —— 保存后它们会按平台自己的默认列表抓。
+              </p>
+            ) : primaryItems.length === 0 ? (
+              <p className="jh-muted">
+                已纳入的平台没有「城市 / 经验 / 学历 / 薪资」这几类常用筛选 ——
+                它们能筛的东西都在下面的「高级筛选」里。
               </p>
             ) : (
               <div className="jh-grid2">{primaryItems.map(renderDimension)}</div>
@@ -875,6 +968,74 @@ export function PlanEditorModal(props: {
                 </button>
                 <div className="jh-plan-panel" id="jh-plan-advanced" hidden={!advancedOpen}>
                   <div className="jh-grid2">{advancedItems.map(renderDimension)}</div>
+                </div>
+              </>
+            )}
+            {/* ── 干跑预览：这份条件**实际上会发出什么请求** ────────────────────
+                写在筛选条件下面、折叠区之外：它是"我配的东西到底有没有生效"的直接答案。
+                宿主侧只调拼 URL / body 的纯函数，不发请求、不开浏览器（见 criteria-preview.tsx）。 */}
+            <CriteriaPreview platforms={form.platforms} criteria={previewCriteria} />
+
+            {/* ── 用不了的筛选 ────────────────────────────────────────────────
+                两条要求同时成立才放这里：
+                  ① **不隐藏**（§5.5）—— 逐条写明"哪个平台说了什么原因"，
+                     否则用户会以为平台根本没这个功能，或者以为界面坏了；
+                  ② **编辑网格里不给灰输入框** —— 用户填不了，还白占一格。
+                带旧值的那几条**直接摊在外面**并给一个移除按钮：校验会拦下这种方案
+                （"没有可用的取值"），而用户在界面上找不到任何能改它的地方就卡死了。 */}
+            {staleBlocked.length === 0 ? null : (
+              <div className="jh-alert jh-alert-warn" role="alert">
+                <div className="jh-alert-head">
+                  <span className="jh-alert-title">有 {String(staleBlocked.length)} 个条件当前平台用不了</span>
+                  <span className="jh-muted">平台上不会按它筛，保存前会被拦下 —— 点「移除这个条件」清掉</span>
+                </div>
+                <ul className="jh-alert-list">
+                  {staleBlocked.map((item) => (
+                    <li key={item.key} className="jh-dim-blocked">
+                      <span>
+                        <b>{item.label}</b>：{form.criteria[item.key] ?? ''} —— {item.disabledReason}
+                      </span>
+                      <button
+                        type="button"
+                        className="jh-btn jh-btn-inline jh-btn-tiny"
+                        title="只从这个方案里去掉这一条条件，不影响平台配置。"
+                        onClick={() => setCriteria(item.key, '')}
+                      >
+                        移除这个条件
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {restBlocked.length === 0 ? null : (
+              <>
+                <button
+                  type="button"
+                  className="jh-plan-toggle"
+                  aria-expanded={blockedOpen}
+                  aria-controls="jh-plan-blocked"
+                  onClick={() => setBlockedOpen((open) => !open)}
+                >
+                  <span className="jh-plan-caret" aria-hidden="true">
+                    {blockedOpen ? '▾' : '▸'}
+                  </span>
+                  <span className="jh-plan-toggle-text">
+                    当前平台用不了的筛选（{String(restBlocked.length)}）
+                  </span>
+                  <span className="jh-filter-note">
+                    {restBlocked.map((item) => item.label).join(' / ')}
+                  </span>
+                </button>
+                <div className="jh-plan-panel" id="jh-plan-blocked" hidden={!blockedOpen}>
+                  <ul className="jh-alert-list">
+                    {restBlocked.map((item) => (
+                      <li key={item.key}>
+                        <b>{item.label}</b> —— {item.disabledReason}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </>
             )}

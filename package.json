@@ -80,9 +80,12 @@
     "probe:sinojobs": "node scripts/run-ts.mjs test/tools/probe-sinojobs.ts",
     "probe:hiredchina": "node scripts/run-ts.mjs test/tools/probe-hiredchina.ts",
     "probe:indeed": "node scripts/run-ts.mjs test/tools/probe-indeed.ts",
+    "probe:indeed-login": "node scripts/run-ts.mjs test/tools/probe-indeed-login.ts",
+    "probe:indeed-detail": "node scripts/run-ts.mjs test/tools/probe-indeed-detail.ts",
     "probe:linkedin": "node scripts/run-ts.mjs test/tools/probe-linkedin.ts",
     "probe:linkedin-login": "node scripts/run-ts.mjs test/tools/probe-linkedin-login.ts",
-    "probe:linkedin-v2": "node scripts/run-ts.mjs test/tools/probe-linkedin-v2.ts"
+    "probe:linkedin-v2": "node scripts/run-ts.mjs test/tools/probe-linkedin-v2.ts",
+    "probe:linkedin-actions": "node scripts/run-ts.mjs test/tools/probe-linkedin-actions.ts"
   },
   "peerDependencies": {
     "react": "^18.2.0"

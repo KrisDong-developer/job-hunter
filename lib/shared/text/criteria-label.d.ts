@@ -32,6 +32,18 @@ export interface CriteriaDimensionLike {
         label: string;
     }>;
 }
+/**
+ * 兜底中文名。
+ *
+ * 为什么需要它：`criteriaDimensionsFor()` 只返回**当前选中平台**声明过的维度。
+ * 如果一个方案引用了某个平台已经不支持的键（或方案正在编辑、平台刚被取消勾选），
+ * 界面不该退回去印 `postedWithinDays`。已知的键在这里永远有中文名。
+ *
+ * ⚠️ 它同时是**宿主侧**那张"固定槽位表"（`ALL_DIMENSION_KEYS` 里谁都没声明的键）
+ * 的中文名来源 —— 那几项也会出现在方案表单的「用不了的筛选」里，印出 `workExp`
+ * 这种键名等于没说。所以这里的键必须覆盖两个来源的并集。
+ */
+export declare const FALLBACK_LABEL: Record<string, string>;
 /** 把一份条件摊成人话；键顺序按声明顺序，未声明的排在后面。 */
 export declare function describeCriteria(criteria: Record<string, string>, dimensions?: readonly CriteriaDimensionLike[]): CriteriaItem[];
 /** 一行文本，例如 `关键词：Java · 城市：深圳`。空条件返回 `null`（界面据此显示"不限"）。 */

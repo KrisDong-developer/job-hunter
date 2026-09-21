@@ -23,8 +23,10 @@ import type {
 } from '../../shared/contract/dto/plan.js'
 import { MATURITY_LEVEL_LABEL, maturityNeedsWarning } from '../../shared/contract/enums/platform.js'
 import { canonicalCityOf, citySupportOf, orderCities, type CitySupport } from '../platform/cities.js'
+import { FALLBACK_LABEL } from '../../shared/text/criteria-label.js'
 import type { AdapterRegistry } from '../platform/registry.js'
-import type { SearchCriteria } from '../platform/types.js'
+import type { SearchCriteria, CriteriaDimension } from '../platform/types.js'
+import { isClosedDimension, isSettableDimension } from '../platform/types.js'
 import { DomainError } from '../util/errors.js'
 import {
   keywordsOfPlan,
@@ -39,36 +41,25 @@ import {
 const PAGINATION_KEYS = new Set(['page'])
 
 /**
- * 数值型维度的键（SR-40）。它们参与校验但仍然存在 `criteria` 里，
- * 因为 `plan.criteria` 的形状是"平台无关的键值对"，加一层类型只会让 DTO 更绕。
+ * `SearchCriteria` 上**有类型化槽位**的键 —— 就这样五个，**闭集**。
+ *
+ * `criteriaToSearchCriteria` 的规则因此变成一句话：**不在这张表里的键一律进
+ * `platform` 命名空间**（"平台自己在 `criteriaDimensions` 里声明过的键"）。
+ *
+ * 为什么必须反过来写：原来这里是一张 12 个平台特有键的**白名单**（`PLATFORM_KEYS`），
+ * 而白名单是开集 —— 适配器每加一个维度都得记得回来补一行。神仙外企的
+ * 「行业 / 职能」就是漏了那一行：键落进 `extra`，适配器读 `platform` 命名空间
+ * 读到空，最后还被 `extra` 的兜底循环当参数名透传出去。闭集不会忘：
+ * 新键自动走 `platform`，而"适配器只读自己声明的键"本来就是既有约定。
  */
-const NUMERIC_KEYS = new Set(['maxPages', 'postedWithinDays', 'scrollRounds'])
+const TOP_LEVEL_SLOTS = new Set(['keyword', 'city', 'sort', 'maxPages', 'postedWithinDays', 'page'])
 
 /**
- * 平台特有维度的键（`SearchCriteria` 上的可选槽位）。
- *
- * **必须在这里列名**，否则 `criteriaToSearchCriteria` 会把它丢进 `extra`，
- * 适配器读 `criteria.workExp` 就永远读到空 —— 界面上选好了、实际没筛，
- * 正是 SR-42 要防的那种静默失败。
+ * `maxPages` 是**类型化槽位**，所以"它是数值"这件事由宿主持有，
+ * 不必让十个适配器各写一遍 `numeric: true`。
+ * 其它数值维度（`scrollRounds` / `postedWithinDays`）由适配器自己声明。
  */
-const PLATFORM_KEYS = new Set([
-  // 神仙外企：workExp / education / type
-  'workExp',
-  'education',
-  'type',
-  // SinoJobs：salaryRange / experience / workNature / jobType
-  'salaryRange',
-  'experience',
-  'workNature',
-  'jobType',
-  // HiredChina：employment（雇佣类型）/ workMode（工作模式）
-  'employment',
-  'workMode',
-  // BOSS 直聘：scrollRounds（滚动加载轮数 —— 该站点没有可寻址的页码翻页）
-  'scrollRounds',
-  // 注：LinkedIn 的 experienceLevel / easyApply 曾在此登记，2026-09-20 v2 真机实测
-  // guest 端点对这些参数全部忽略（f_E=4 与对照 id 差异 0）→ 维度已删，键一并移除。
-])
+const NUMERIC_SLOT_KEYS = new Set(['maxPages'])
 
 export interface PlanConfigInput {
   name?: string
@@ -125,6 +116,14 @@ function cleanValue(value: string): string {
 }
 
 /**
+ * 一个维度的取值域是否**封闭**；`closed` 缺省 = 值域非空（历史行为）。
+ *
+ * 实现搬到了 `platform/types.ts`（`isClosedDimension` / `isSettableDimension`）——
+ * 宿主侧有三处要按同一条判据分流，各写一遍必然漂移。
+ */
+
+
+/**
  * 把 `Record<string,string>` 归一成适配器认识的 `SearchCriteria`。
  *
  * 数值维度在这里转型：`'3'` → `3`。转不动就报错 —— 静默当成 0 会让
@@ -132,7 +131,6 @@ function cleanValue(value: string): string {
  */
 export function criteriaToSearchCriteria(criteria: Record<string, string>): SearchCriteria {
   const out: SearchCriteria = {}
-  const extra: Record<string, string> = {}
   const platform: Record<string, string> = {}
   for (const [key, raw] of Object.entries(criteria)) {
     const value = cleanValue(raw)
@@ -159,15 +157,18 @@ export function criteriaToSearchCriteria(criteria: Record<string, string>): Sear
       if (Number.isFinite(parsed) && parsed > 0) out.postedWithinDays = parsed
       continue
     }
-    // 平台特有维度：**进 `platform` 命名空间**，而不是摊平成顶层键。
-    // 摊平会让"某平台才认识的键"被另一个平台的适配器当成自由参数拼进 URL（静默语义污染）。
-    if (PLATFORM_KEYS.has(key)) {
-      platform[key] = value
+    if (key === 'page') {
+      const parsed = Number.parseInt(value, 10)
+      if (Number.isFinite(parsed) && parsed > 0) out.page = parsed
       continue
     }
-    extra[key] = value
+    // **闭集规则**：不在类型化槽位里的键，一律进 `platform` 命名空间 ——
+    // 适配器用 `platformCriterion(criteria, key)` 读自己声明的那些。
+    // 这里**不放行 `extra`**：`extra` 会让任意键悄悄变成平台参数（曾把
+    // `posInfo` / `businessCategory` 当参数名发出去）。方案条件只能来自
+    // "某个适配器声明过的维度"，而声明过的维度都走这条分支。
+    platform[key] = value
   }
-  if (Object.keys(extra).length > 0) out.extra = extra
   if (Object.keys(platform).length > 0) out.platform = platform
   return out
 }
@@ -260,7 +261,17 @@ export function validatePlanConfig(
   // "部分平台不接受"由下面的 notice ④ 说清楚，不是硬拒。
   const declared = new Map<
     string,
-    { values: Set<string>; open: boolean; max?: number; label: string; hint: string }
+    {
+      values: Set<string>
+      open: boolean
+      /** 有没有平台能接受一个值（封闭 + 空表 = 一个都收不了，见 `settableOf`）。 */
+      settable: boolean
+      /** 数值型（界面渲染成数字框、校验要求正整数）——由适配器声明，见 `numeric`。 */
+      numeric: boolean
+      max?: number
+      label: string
+      hint: string
+    }
   >()
   /** 至少有一个选中的平台真的在注册表里。一个都没有 → 没有声明可依据。 */
   let hasKnownPlatform = false
@@ -269,14 +280,15 @@ export function validatePlanConfig(
     if (adapter === undefined) continue
     hasKnownPlatform = true
     for (const dimension of adapter.criteriaDimensions) {
-      // `closed` 缺省 = values 非空（历史行为）。空表 + `closed: true` 是"一个都别给"
-      // （guopin/hiredchina），与"自由文本"（indeed/linkedin）在数据上一样，语义相反。
-      const closed = dimension.closed ?? dimension.values.length > 0
+      const closed = isClosedDimension(dimension)
+      const settable = isSettableDimension(dimension)
       const existing = declared.get(dimension.key)
       if (existing === undefined) {
         declared.set(dimension.key, {
           values: new Set(dimension.values.map((item) => item.value)),
           open: !closed,
+          settable,
+          numeric: NUMERIC_SLOT_KEYS.has(dimension.key) || dimension.numeric === true,
           ...(dimension.max === undefined ? {} : { max: dimension.max }),
           label: dimension.label,
           hint: dimension.hint,
@@ -285,6 +297,9 @@ export function validatePlanConfig(
       }
       for (const item of dimension.values) existing.values.add(item.value)
       if (!closed) existing.open = true
+      // 只要**有一个**平台收得下这个维度，它就还能用（其余平台由 notice / 界面按平台说清）
+      if (settable) existing.settable = true
+      if (NUMERIC_SLOT_KEYS.has(dimension.key) || dimension.numeric === true) existing.numeric = true
     }
   }
   // 注册表里一个平台都没有（纯逻辑单测直接 new 服务、没有装配适配器）时，
@@ -312,7 +327,24 @@ export function validatePlanConfig(
       continue
     }
 
-    if (NUMERIC_KEYS.has(key)) {
+    /**
+     * 声明了、但**一个取值都收不了**的维度：显式拒绝，并且**说清是平台自己写的理由**。
+     *
+     * 这条必须排在数值分支**前面**：`postedWithinDays` 在 `NUMERIC_KEYS` 里，
+     * 而数值分支会 `continue` —— 排在后面就等于"数值维度永远跳过取值域检查"，
+     * 于是 51job / 智联那种空值域的发布时间维度会被放行（写进方案、平台上不生效）。
+     */
+    if (!spec.settable) {
+      // 措辞与下面那条"取值域封闭且一个都不接受"保持同一句 —— 对用户来说这是同一件事，
+      // 只是这里连**空表**都收不了（guopin/hiredchina 的城市、51job/智联的发布时间）。
+      throw new DomainError('INVALID_INPUT', `${spec.label}不接受取值「${inputValue}」`, {
+        hint:
+          `已选平台（${platforms.join('/')}）都没有${spec.label}的取值表 —— 带上它一定会失败：` +
+          `去掉这个条件，或换一个支持它的平台。${spec.hint}`,
+      })
+    }
+
+    if (spec.numeric) {
       const parsed = Number.parseInt(inputValue, 10)
       if (!Number.isFinite(parsed) || parsed <= 0) {
         throw new DomainError('INVALID_INPUT', `${spec.label} 需要一个正整数，收到「${inputValue}」`, {
@@ -322,6 +354,14 @@ export function validatePlanConfig(
       if (spec.max !== undefined && parsed > spec.max) {
         throw new DomainError('INVALID_INPUT', `${spec.label} 最大 ${String(spec.max)}，收到 ${String(parsed)}`, {
           hint: spec.hint,
+        })
+      }
+      // 数值维度也可能是**封闭值域**（如某平台只认 1/7/30 三档）——
+      // 数值分支不能因此跳过取值域检查，否则"填 5"会静默变成平台不认识的值。
+      if (!spec.open && !spec.values.has(String(parsed))) {
+        const list = [...spec.values]
+        throw new DomainError('INVALID_INPUT', `${spec.label}不接受取值「${inputValue}」`, {
+          hint: `可选取值：${list.join(' / ')}。${spec.hint}`,
         })
       }
       criteria[key] = String(parsed)
@@ -522,15 +562,13 @@ export function sameCriteria(
  * 声明只能有一份（这里曾经另写了一遍同名同字段的接口）。
  */
 
-/** 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。 */
 /**
- * 所有可能出现的维度键（用于"不支持"的维度也出现在界面上并解释原因）。
+ * 所有可能出现的维度键（**固定槽位表**）。
  *
- * ⚠️ 这是**固定槽位表**，不是"全部维度" —— 适配器自己声明的新维度由
- * `criteriaDimensionsFor` 的 `supported.keys()` 自动并进来（见下方 `keys`）。
- * 列在这里的键会**对每个平台都出现**（不支持的显示为禁用 + 原因），
- * 所以只列"跨平台都说得通"的几个：关键词 / 城市 / 排序 / 时间 / 页数，
- * 以及神仙外企引入的工作经验 / 学历 / 职位范围。
+ * ⚠️ 它不是"全部维度" —— 适配器自己声明的新维度由 `criteriaDimensionsFor`
+ * 自动并进来（见 `keys`）。它保证的是：这几个**跨平台都说得通**的键（关键词 /
+ * 城市 / 排序 / 时间 / 页数，以及神仙外企引入的工作经验 / 学历 / 职位范围）
+ * 有稳定的顺序，而且**当谁都没声明它时也会被如实报出来**（而不是从界面上消失）。
  */
 export const ALL_DIMENSION_KEYS = [
   'keyword',
@@ -543,93 +581,192 @@ export const ALL_DIMENSION_KEYS = [
   'maxPages',
 ] as const
 
+/** 一个键在已选平台里的全部声明（顺序 = 平台顺序，= 谁先声明谁决定 label/hint）。 */
+interface DimensionDeclaration {
+  platformId: string
+  dimension: CriteriaDimension
+}
+
+/** 取值域的指纹：封闭表 → 值+展示名；自由文本 → `open`。用来判"各平台含义是否一致"。 */
+function domainFingerprintOf(dimension: CriteriaDimension): string {
+  if (!isClosedDimension(dimension)) return 'open'
+  return dimension.values.map((item) => `${item.value}=${item.label}`).join('|')
+}
+
+/**
+ * 一个键 → 它对**当前已选平台集合**的完整形状（`CriteriaDimensionDto`）。
+ *
+ * 汇总口径（每一条都是"多平台下界面必须说实话"的落点）：
+ *   * `supported` = **至少一个**平台能填且会生效 —— 与 `validatePlanConfig` 的
+ *     "至少有一个平台接受就放行"同一条判据，界面不再比校验更严或更松；
+ *   * `values` = 各平台取值域的**并集**，每一项带 `platforms`（谁接受它）——
+ *     以前只给"第一个声明者"那张表，用户既看不到别的平台能选什么，也不知道
+ *     自己选的值另一个平台认不认；
+ *   * `open` 单独回传：有建议列表但收自由文本的平台（领英的 location）不能被
+ *     渲染成下拉，否则用户**填不了**表外地名；
+ *   * `conflict` = 多个平台对同一个键的取值含义不同（`type` / `sort`）→ 界面必须警告。
+ */
+function dimensionOf(
+  key: string,
+  declarations: DimensionDeclaration[],
+  platforms: string[],
+  registry: AdapterRegistry,
+): CriteriaDimensionDto {
+  const numeric =
+    NUMERIC_SLOT_KEYS.has(key) || declarations.some((item) => item.dimension.numeric === true)
+  const nameOf = (id: string): string => registry.get(id)?.displayName ?? id
+
+  if (declarations.length === 0) {
+    // 谁都没声明：保留槽位并说明原因（"禁用而非隐藏"），但**不给输入框**。
+    return {
+      key,
+      // 中文名走共享的那份兜底表 —— 否则「用不了的筛选」那一块会印出 `workExp` 这种源码键名。
+      label: FALLBACK_LABEL[key] ?? key,
+      values: [],
+      max: null,
+      hint: '当前选中的平台没有声明这个筛选维度',
+      supported: false,
+      disabledReason:
+        platforms.length === 0
+          ? '还没有选平台'
+          : `已选平台（${platforms.join('/')}）不支持这个筛选维度 —— 平台侧没有这个参数`,
+      numeric,
+      open: false,
+      declared: false,
+      platforms: [],
+      wire: null,
+      conflict: false,
+      conflictNote: null,
+    }
+  }
+
+  const first = declarations[0]?.dimension
+  const open = declarations.some((item) => !isClosedDimension(item.dimension))
+  const settable = declarations.some((item) => isSettableDimension(item.dimension))
+  const max = declarations.reduce<number | null>(
+    (acc, item) => acc ?? item.dimension.max ?? null,
+    null,
+  )
+
+  const merged = new Map<string, { label: string; platforms: string[] }>()
+  for (const { platformId, dimension } of declarations) {
+    for (const item of dimension.values) {
+      const seen = merged.get(item.value)
+      if (seen === undefined) merged.set(item.value, { label: item.label, platforms: [platformId] })
+      else if (!seen.platforms.includes(platformId)) seen.platforms.push(platformId)
+    }
+  }
+  // 城市是**跨平台共享的人的概念**（"深圳"在哪个平台都是深圳）→ 并集按城市目录排序；
+  // 其它维度保持"各平台自己的顺序、首次出现在前"（它们的值是不透明编码，排序无意义）。
+  const ordered: Array<[string, { label: string; platforms: string[] }]> =
+    key === 'city'
+      ? orderCities([...merged.keys()]).map((value) => [
+          value,
+          merged.get(value) ?? { label: value, platforms: [] },
+        ])
+      : [...merged.entries()]
+
+  const known = platforms.filter((id) => registry.get(id) !== undefined)
+  const views = known.map((id) => {
+    const declaration = declarations.find((item) => item.platformId === id)
+    if (declaration === undefined) {
+      return {
+        id,
+        declared: false,
+        supported: false,
+        note: '平台侧没有这个筛选参数',
+        wire: null,
+      }
+    }
+    return {
+      id,
+      declared: true,
+      supported: isSettableDimension(declaration.dimension),
+      note: declaration.dimension.hint,
+      // 逐平台的真实参数名：`sort` 在 51job 是 sortType、在智联是 order ——
+      // 一个方案级的值落到两家不同的参数上，界面必须能分别说出来。
+      wire: declaration.dimension.wire ?? null,
+    }
+  })
+
+  // 冲突只在**非城市**维度上判（城市刻意取并集，见上）。判据是各平台的取值域指纹不同。
+  const conflict = key !== 'city' && new Set(declarations.map((item) => domainFingerprintOf(item.dimension))).size > 1
+  const conflictNote = conflict
+    ? `「${first?.label ?? key}」在各平台的含义不同 —— ` +
+      declarations
+        .map(({ platformId, dimension }) => {
+          if (!isClosedDimension(dimension)) return `${nameOf(platformId)}：自由文本`
+          if (dimension.values.length === 0) return `${nameOf(platformId)}：没有可填的取值`
+          return `${nameOf(platformId)}：${dimension.values.map((item) => item.label).join(' / ')}`
+        })
+        .join('；') +
+      '。方案级只能存一个值：选中它以后，只有上面对应的平台会按它筛，' +
+      '其余平台会收到自己取值域外的值（多半被忽略，或退回它自己的默认）。'
+    : null
+
+  const disabledReason = settable
+    ? null
+    : '这个条件没有平台能用 —— ' +
+      declarations
+        .map(({ platformId, dimension }) => `${nameOf(platformId)}：${dimension.hint}`)
+        .join(' ')
+
+  return {
+    key,
+    label: first?.label ?? key,
+    values: ordered.map(([value, item]) => ({ value, label: item.label, platforms: item.platforms })),
+    max,
+    hint: first?.hint ?? '',
+    supported: settable,
+    disabledReason,
+    numeric,
+    open,
+    declared: true,
+    platforms: views,
+    wire: first?.wire ?? null,
+    conflict,
+    conflictNote,
+  }
+}
+
 export function criteriaDimensionsFor(
   registry: AdapterRegistry,
   platforms: string[],
 ): CriteriaDimensionDto[] {
-  const supported = new Map<string, { values: Array<{ value: string; label: string }>; max: number | null; label: string; hint: string }>()
-  /** 每个平台对"城市"这一维的处理方式（并集的提示要写清楚"谁支持"）。 */
-  const cityNotes: string[] = []
+  const declarations = new Map<string, DimensionDeclaration[]>()
   for (const platformId of platforms) {
     const adapter = registry.get(platformId)
     if (adapter === undefined) continue
     for (const dimension of adapter.criteriaDimensions) {
-      if (dimension.key === 'city') {
-        const closed = dimension.closed ?? dimension.values.length > 0
-        cityNotes.push(
-          closed
-            ? dimension.values.length === 0
-              ? `${platformId} 没有城市码（带城市会被拒）`
-              : `${platformId} ${String(dimension.values.length)} 城`
-            : `${platformId} 自由文本`,
-        )
-      }
-      const existing = supported.get(dimension.key)
-      if (existing === undefined) {
-        supported.set(dimension.key, {
-          values: dimension.values,
-          max: dimension.max ?? null,
-          label: dimension.label,
-          hint: dimension.hint,
-        })
-        continue
-      }
-      // **城市取并集，其它维度刻意不并。**
-      //
-      // 城市是一个**跨平台共享的人的概念**："深圳"在哪个平台都是深圳。取并集
-      // 才让多平台下"选得到 zhipin 有、51job 没有的城市"（以前只给**第一个**
-      // 声明 city 的平台那张表，用户根本看不到别的平台支持什么）。
-      //
-      // 排序/时间/平台特有维度则**不能并**：它们的取值是各平台自己的**不透明编码**
-      // （51job 的 sortType 2 与别家的 2 不是一回事），并起来会拼出一个错误的 URL，
-      // 而且错得无声无息。
-      if (dimension.key !== 'city') continue
-      const merged = orderCities([
-        ...existing.values.map((item) => item.value),
-        ...dimension.values.map((item) => item.value),
-      ])
-      existing.values = merged.map((value) => ({ value, label: value }))
+      const list = declarations.get(dimension.key) ?? []
+      list.push({ platformId, dimension })
+      declarations.set(dimension.key, list)
     }
   }
 
-  const citySpec = supported.get('city')
-  if (citySpec !== undefined) {
+  const keys = [...new Set([...ALL_DIMENSION_KEYS, ...declarations.keys()])]
+  const items = keys.map((key) =>
+    dimensionOf(key, declarations.get(key) ?? [], platforms, registry),
+  )
+
+  const city = items.find((item) => item.key === 'city')
+  const cityDeclarations = declarations.get('city') ?? []
+  if (city !== undefined && city.declared) {
     // 并集的含义必须写出来：用户看着几十个城市，得知道**不是每个平台都吃**这些
     // （选了不受支持的组合，保存前的提示会说清是哪个平台）。
     // ⚠️ 这段文字进的是字段旁的 `?` 悬浮提示（`title`/`aria-label`），**不是 markdown** ——
     // 写 `**粗体**` 只会让用户看到一堆星号。
-    citySpec.hint =
-      `城市取值域是已选平台的并集（${String(citySpec.values.length)} 个）。` +
-      `${cityNotes.join(' · ')}。选中某个平台不支持的城市时，保存前会提示 —— 只提示，仍然可以保存。`
+    const notes = cityDeclarations.map(({ platformId, dimension }) => {
+      const name = registry.get(platformId)?.displayName ?? platformId
+      if (!isClosedDimension(dimension)) return `${name} 自由文本`
+      return dimension.values.length === 0
+        ? `${name} 没有城市码（带城市会被拒）`
+        : `${name} ${String(dimension.values.length)} 城`
+    })
+    city.hint =
+      `城市取值域是已选平台的并集（${String(city.values.length)} 个）。` +
+      `${notes.join(' · ')}。选中某个平台不支持的城市时，保存前会提示 —— 只提示，仍然可以保存。`
   }
 
-  const keys = [...new Set([...ALL_DIMENSION_KEYS, ...supported.keys()])]
-  return keys.map((key) => {
-    const spec = supported.get(key)
-    if (spec === undefined) {
-      return {
-        key,
-        label: key,
-        values: [],
-        max: null,
-        hint: '当前选中的平台没有声明这个筛选维度',
-        supported: false,
-        disabledReason:
-          platforms.length === 0
-            ? '还没有选平台'
-            : `已选平台（${platforms.join('/')}）不支持这个筛选维度 —— 平台侧没有这个参数`,
-        numeric: NUMERIC_KEYS.has(key),
-      }
-    }
-    return {
-      key,
-      label: spec.label,
-      values: spec.values,
-      max: spec.max,
-      hint: spec.hint,
-      supported: true,
-      disabledReason: null,
-      numeric: NUMERIC_KEYS.has(key),
-    }
-  })
+  return items
 }

@@ -3,7 +3,13 @@
  */
 import type { PlanDto } from '../../../shared/contract/dto/plan.js'
 import { request } from '../client.js'
-import type { CriteriaDimensionsDto, PlanDuplicateDto, PlanValidationDto, PlanWriteInput } from '../../../shared/contract/dto/plan.js'
+import type {
+  CriteriaDimensionsDto,
+  CriteriaPreviewDto,
+  PlanDuplicateDto,
+  PlanValidationDto,
+  PlanWriteInput,
+} from '../../../shared/contract/dto/plan.js'
 
 export async function fetchPlans(signal?: AbortSignal): Promise<{ items: PlanDto[] }> {
   return await request<{ items: PlanDto[] }>('/plans', signal === undefined ? {} : { signal })
@@ -66,5 +72,23 @@ export async function fetchCriteriaDimensions(
 ): Promise<CriteriaDimensionsDto> {
   const query = platforms.length === 0 ? '' : `?platforms=${encodeURIComponent(platforms.join(','))}`
   return await request<CriteriaDimensionsDto>(`/criteria/dimensions${query}`, signal === undefined ? {} : { signal })
+}
+
+/**
+ * **干跑**：这份条件对每个平台会发出什么请求（宿主侧不发请求、不开浏览器）。
+ *
+ * 用途是"把看不见的那一段变可见"：界面上写的条件 → 校验放行的条件 → **真正发出的请求**
+ * 是三件事，分叉时用户什么都看不出来（"筛了没结果"与"没筛"长得一样）。
+ */
+export async function previewCriteria(
+  platforms: string[],
+  criteria: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<{ items: CriteriaPreviewDto[] }> {
+  return await request<{ items: CriteriaPreviewDto[] }>('/criteria/preview', {
+    method: 'POST',
+    body: JSON.stringify({ platforms, criteria }),
+    ...(signal === undefined ? {} : { signal }),
+  })
 }
 
