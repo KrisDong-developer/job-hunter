@@ -6,6 +6,7 @@
  * 完整实测记录（`start` 步进与 `pageSize` 的关系、地点是自由文本、中国站停运）见 `./index.ts` 文件头。
  */
 import type { SearchCriteria } from '../../types.js'
+import { platformCriterion } from '../../types.js'
 import type { IndeedConfig } from './config.js'
 
 /**
@@ -21,6 +22,19 @@ export function buildIndeedSearchUrl(config: IndeedConfig, criteria: SearchCrite
   if (criteria.city !== undefined && criteria.city !== '') {
     params.set(config.urlParams.locationParam, criteria.city)
   }
+  /**
+   * 筛选：2026-09-21 第 12 轮 URL 变体对照证明这两个参数真的生效
+   * （`fromage=1`→4 条、`fromage=7`→16 条、`jt=parttime`→0 条；基线两次都是 16 条）。
+   *
+   * 与 51job/智联同款：**只在真的配了的时候才写**，不塞平台默认值 ——
+   * 那会静默改变"什么都没配"的行为。
+   */
+  if (criteria.postedWithinDays !== undefined && criteria.postedWithinDays > 0) {
+    params.set(config.urlParams.postedWithinParam, String(criteria.postedWithinDays))
+  }
+  const jobType = platformCriterion(criteria, 'jobType')
+  if (jobType !== '') params.set(config.urlParams.jobTypeParam, jobType)
+
   const page = criteria.page === undefined ? 1 : criteria.page
   const start = Math.max(0, page - 1) * config.pageSize
   params.set(config.urlParams.startParam, String(start))

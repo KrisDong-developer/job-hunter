@@ -293,6 +293,17 @@ export function jobsTools(runtime: HostRuntime): ToolDefinition[] {
             (result.skippedGrouped > 0 ? `（跳过已在分组里的 ${String(result.skippedGrouped)} 条）` : '') +
             '。',
           `合并 ${String(result.merged)} 条，新建 ${String(result.newGroups)} 组，现在共 ${String(result.groups)} 组。`,
+          // 复核现在会**重判已有分组**（字段改过之后原来的合并可能已经不成立）——
+          // 拆了几条、解散了几组必须报出来，否则用户不知道自己的分组被动过。
+          result.unmerged > 0 || result.dissolved > 0
+            ? `同时重判了已有分组：拆出 ${String(result.unmerged)} 条不再成立的合并` +
+              (result.dissolved > 0 ? `、解散 ${String(result.dissolved)} 组（不足两条）` : '') +
+              '。'
+            : '',
+          // 覆盖率：公司没归并的岗位**根本没查过** —— 不报出来，用户读到的就是"没有重复"
+          result.skippedNoCompany > 0
+            ? `另有 ${String(result.skippedNoCompany)} 条因为公司没归并、判不了重（不算"没有重复"，是"没查过"）。`
+            : '',
           result.candidates > 0
             ? `另有 ${String(result.candidates)} 条**疑似**跨平台重复（标题相似度不够，没自动合并）—— 需要人看一眼。`
             : '没有疑似待确认的。',

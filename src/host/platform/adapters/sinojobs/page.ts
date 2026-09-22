@@ -165,11 +165,17 @@ export async function fetchListInPage(arg: {
     }
   }
 
+  const errorName = (error: unknown): string =>
+    error !== null && typeof error === 'object' && 'name' in error
+      ? String((error as { name: unknown }).name)
+      : 'Error'
+
   const form = new URLSearchParams()
   for (const [key, value] of Object.entries(arg.body)) form.set(key, value)
 
   let payload: unknown = null
   let rawStatus = 0
+  let parseError = ''
   try {
     const response = await scope.fetch(arg.url, {
       method: 'POST',
@@ -186,27 +192,42 @@ export async function fetchListInPage(arg: {
       body: form.toString(),
     })
     rawStatus = typeof response.status === 'number' ? response.status : 0
-    payload = await response.json()
+    try {
+      payload = await response.json()
+    } catch (error) {
+      // 响应不是 JSON（HTTP 错误页 / WAF 拦截页都是这种形态）—— 记下来，
+      // 下面的 statusCode 抬升要靠它区分"形状漂移"与"压根不是接口响应"。
+      parseError = errorName(error)
+    }
   } catch (error) {
-    const name =
-      error !== null && typeof error === 'object' && 'name' in error
-        ? String((error as { name: unknown }).name)
-        : 'Error'
-    return { ok: false, statusCode: null, message: `网络请求失败（${name}）`, rawStatus }
+    return { ok: false, statusCode: null, message: `网络请求失败（${errorName(error)}）`, rawStatus }
   }
 
   // 把响应交给 `extractJobsInPage` —— 它在**同一次 evaluate 的后续调用**里读这个全局。
   scope.__SINOJOBS_LIST_PAYLOAD__ = payload
   const parsed = payload as SinoJobsResponse | null
   const statusValue = parsed?.status
-  const statusCode =
+  let statusCode =
     typeof statusValue === 'number' ? statusValue : typeof statusValue === 'string' && statusValue !== ''
       ? Number(statusValue)
       : null
-  const message =
+  let message =
     parsed !== null && parsed !== undefined && typeof parsed.info === 'string' ? parsed.info : ''
+  // 响应不是 JSON、或 JSON 里没有可用的 status 字段时，把 **HTTP 状态码**抬进
+  // statusCode —— `blockFromApiFailure`（宿主侧）的风控判读靠这个输入：
+  // 429 → rate-limited、403+登录文案 → login-required。不抬的话，一次 429 的
+  // HTML 拦截页只能以"网络请求失败（SyntaxError）"收场，被降级成普通 PARSE_FAILED。
+  if (parseError !== '' || statusCode === null) {
+    if (rawStatus >= 400) statusCode = rawStatus
+    if (message === '') {
+      message =
+        parseError !== ''
+          ? `HTTP ${String(rawStatus)}（响应不是 JSON：${parseError}）`
+          : `HTTP ${String(rawStatus)}（响应缺少 status 字段）`
+    }
+  }
   // 实测成功码：1（`{"status":1,"info":"数据获取成功"}`）。
-  const ok = statusCode === 1
+  const ok = statusCode === 1 && parseError === ''
   return { ok, statusCode, message, rawStatus }
 }
 
@@ -252,15 +273,6 @@ export function detectBlockInPage(arg: {
   return null
 }
 
-/** 在页面上下文里找「下一页」是否可用（UI 信号；真正的闸门是 `maxPages` + 接口 total）。 */
-export function hasNextPageInPage(arg: { selector: string }): boolean {
-  try {
-    return document.querySelector(arg.selector) !== null
-  } catch {
-    return false
-  }
-}
-
 /**
  * 是否处于「已登录」态（用于 `auth.isLoggedIn`）。
  *
@@ -284,10 +296,18 @@ export function countCardsInPage(arg: { selector: string }): number {
 /**
  * **在页面上下文里**解析详情页（服务端渲染的静态 HTML，实测结构）：
  *
- *   * 职位名：`h5`；
- *   * 公司名：第一个 `h6`；
- *   * 信息列表（`ul li`）：`[薪资, 城市, 经验 X, 全职/兼职/实习, 发布于YYYY-MM-DD]`；
- *   * JD 正文：`h6`（职位描述/任职要求/联系方式/公司信息）+ 随后的 `p`。
+ *   * 概要区 `.Resume-info1`：职位名 `h5`；公司名第一个 `h6`；
+ *     信息列表（`ul li`）：`[薪资, 城市, 经验 X, 全职/兼职/实习, 发布于YYYY-MM-DD]`；
+ *   * 正文区 `.Resume-info2`：JD 正文 = `h6`（职位描述/任职要求/联系方式/公司信息）
+ *     + 随后的 `p`。
+ *
+ * 两处防错位（与 zhipin 详情页同一套纪律）：
+ *
+ *   * **按容器限定作用域**：正文区的小节标题（「职位描述」等）也是 `h6`，
+ *     全局取"第一个 h6"在概要区缺位时会把小节标题当公司名。容器未命中时
+ *     相关字段留空 + 记 note，**不回退整页**（fail-closed，宁可空也不错）；
+ *   * **标题有兜底链**：`h5` 缺位时用 `document.title` 去掉站名后缀
+ *     （实测后缀形如 ` - SinoJobs`；标题内文里的连字符不受影响）。
  *
  * 信息列表**按文案模式分类而不是按下标**：平台字段增减时按位置读会错位。
  */
@@ -308,8 +328,16 @@ export function extractDetailInPage(config: SinoJobsConfig): RawJobDetail {
   const idMatch = /[?&]id=(\d+)/.exec(String(location.href))
   const jobId = idMatch === null || idMatch[1] === undefined ? '' : idMatch[1]
 
-  const title = textOf(queryAll(document, detail.title)[0] ?? null)
-  const company = textOf(queryAll(document, detail.company)[0] ?? null)
+  // ── 作用域：概要 / 正文各认各的容器；未命中 = 选择器腐烂，按未锚定处理 ──
+  const headScope = queryAll(document, detail.headBox)[0] ?? null
+  const bodyScope = queryAll(document, detail.bodyBox)[0] ?? null
+
+  // 标题兜底链：概要区 h5 → document.title 去站名后缀（后缀实测 ` - SinoJobs`）。
+  let title = headScope === null ? '' : textOf(queryAll(headScope, detail.title)[0] ?? null)
+  if (title === '') {
+    title = clean(document.title).replace(/\s*-\s*SinoJobs\s*$/, '')
+  }
+  const company = headScope === null ? '' : textOf(queryAll(headScope, detail.company)[0] ?? null)
 
   // ── 信息列表：按文案模式分类，不按下标 ──
   let salaryRaw = ''
@@ -317,42 +345,55 @@ export function extractDetailInPage(config: SinoJobsConfig): RawJobDetail {
   let expReq = ''
   let publishedAt: string | null = null
   const tags: string[] = []
-  for (const li of queryAll(document, detail.infoList)) {
-    const value = clean(li.textContent)
-    if (value === '') continue
-    if (/^发布于/.test(value)) {
-      const m = /^发布于(\d{4}-\d{2}-\d{2})/.exec(value)
-      publishedAt = m === null || m[1] === undefined ? null : m[1]
-      continue
-    }
-    if (/^经验\s*/.test(value)) {
-      expReq = value.replace(/^经验\s*/, '').trim()
-      continue
-    }
-    if (/^(全职|兼职|实习)$/.test(value)) {
-      tags.push(value)
-      continue
-    }
-    if (salaryRaw === '' && /(K|薪|元|万|面议)/.test(value)) {
-      salaryRaw = value
-      continue
-    }
-    // 兜底：还没拿到城市且这行不像薪资（既无 K/元/万/面议 也不是已分类项）→ 城市。
-    if (city === '' && salaryRaw !== '' && /[\u4e00-\u9fff]/.test(value)) {
-      city = value
+  if (headScope !== null) {
+    for (const li of queryAll(headScope, detail.infoList)) {
+      const value = clean(li.textContent)
+      if (value === '') continue
+      if (/^发布于/.test(value)) {
+        const m = /^发布于(\d{4}-\d{2}-\d{2})/.exec(value)
+        publishedAt = m === null || m[1] === undefined ? null : m[1]
+        continue
+      }
+      if (/^经验\s*/.test(value)) {
+        expReq = value.replace(/^经验\s*/, '').trim()
+        continue
+      }
+      if (/^(全职|兼职|实习)$/.test(value)) {
+        tags.push(value)
+        continue
+      }
+      if (salaryRaw === '' && /(K|薪|元|万|面议)/.test(value)) {
+        salaryRaw = value
+        continue
+      }
+      // 兜底：还没拿到城市且这行不像薪资（既无 K/元/万/面议 也不是已分类项）→ 城市。
+      if (city === '' && salaryRaw !== '' && /[\u4e00-\u9fff]/.test(value)) {
+        city = value
+      }
     }
   }
 
   // ── JD 正文：拼接所有段落的可读文本（去重、去首尾空行） ──
   const paragraphs: string[] = []
   const seen = new Set<string>()
-  for (const block of queryAll(document, detail.jdBlocks)) {
-    const value = clean(block.textContent)
-    if (value === '' || seen.has(value)) continue
-    seen.add(value)
-    paragraphs.push(value)
+  if (bodyScope !== null) {
+    for (const block of queryAll(bodyScope, detail.jdBlocks)) {
+      const value = clean(block.textContent)
+      if (value === '' || seen.has(value)) continue
+      seen.add(value)
+      paragraphs.push(value)
+    }
   }
   const jdText = paragraphs.length === 0 ? null : paragraphs.join('\n')
+
+  // ── 缺口留痕（与 zhipin 详情页同款）：锚点腐烂要能被看见，而不是静默给空值 ──
+  const notes: string[] = []
+  if (headScope === null) notes.push('概要区容器未锚定（headBox 待校准）')
+  if (bodyScope === null) notes.push('JD 容器未锚定（bodyBox 待校准）')
+  if (title === '') notes.push('详情标题未锚定（h5 与 document.title 兜底都没取到）')
+  if (company === '') notes.push('详情公司名未锚定（h6 待校准）')
+  if (salaryRaw === '') notes.push('详情薪资未锚定，待校准')
+  if (jdText === null) notes.push('JD 未锚定（p 待校准）')
 
   return {
     platformJobId: jobId,
@@ -365,6 +406,7 @@ export function extractDetailInPage(config: SinoJobsConfig): RawJobDetail {
     tags,
     publishedAt,
     jdText,
+    ...(notes.length === 0 ? {} : { notes }),
   }
 }
 

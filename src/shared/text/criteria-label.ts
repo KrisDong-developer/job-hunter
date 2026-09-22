@@ -60,13 +60,29 @@ export const FALLBACK_LABEL: Record<string, string> = {
   education: '学历',
   type: '职位范围',
   businessCategory: '行业',
+  // ⚠️ 同一个键在两个平台含义不同（神仙外企 `companyTypeList`=美企/德企；51job `companyType`=国企/外资）——
+  // 单平台方案里各自的声明会给出准确标签（DTO 的 label 来自那个适配器），这张**兜底表**
+  // 只在"平台不明"时用（如方案卡），所以给一个两头都说得过去的合并名，而不是二选一。
+  companyType: '公司性质 / 类型',
+  companySize: '公司规模',
   posInfo: '职能',
+  /** 国聘的 `major`（专业，独立于"行业类别"）。 */
+  major: '专业',
   salaryRange: '薪资',
   experience: '经验',
   workNature: '工作性质',
-  jobType: '行业类别',
+  // ⚠️ 第二处同名不同义：`jobType` 在 SinoJobs 是"行业类别"（43 项），在 51job 是"职位类型"（全职/实习）。
+  // 兜底表给合并名；单平台方案下用各自声明里的 label（那才是准的）。
+  jobType: '职位类型 / 行业类别',
+  degree: '学历',
+  workYear: '工作经验',
   employment: '雇佣类型',
   workMode: '工作模式',
+  // 智联的 `workExperience`（四位码 0103 = 1-3年）与 51job 的 `workYear` 是同一件事、
+  // 键名不同 —— 这里同样只是兜底，单平台方案用的是各自声明里的 label。
+  workExperience: '工作经验',
+  /** 智联的 `jobStatus`（全职/兼职/实习/校园）—— 与 51job 的 `jobType` 语义相邻但不等价，故单列。 */
+  jobStatus: '职位类型',
 }
 
 /** 数值型维度（展示时补单位，避免"3"这种光秃秃的数字）。 */

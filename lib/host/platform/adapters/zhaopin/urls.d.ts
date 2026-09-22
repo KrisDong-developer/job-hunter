@@ -11,9 +11,11 @@ import type { ZhaopinConfig } from './config.js';
  * 构造搜索 URL。
  *
  * 两种形式（见文件头）：
- *   - 第 1 页：`https://www.zhaopin.com/sou/jl765?kw=Java&order=4`
- *   - 第 2 页起：**优先**用站点给的无 query path 形式；这里只能构造 query 兜底，
- *     真正的 path 形式由 `gotoSearch` 从上一页分页区里读出来（`nextPageUrl`）。
+ *   - **无筛选**：`https://www.zhaopin.com/sou/jl765?kw=Java`（有真实分页、薪资明文）
+ *   - **带筛选**：`https://www.zhaopin.com/jobs?jl=765&kw=Java&el=4`（实测站点自己跳的地址）
+ *
+ * 翻页：第 1 页用 `?kw=` / `?p=`；第 2 页起**优先**用站点给的无 query path 形式 ——
+ * 真正的 path 形式由 `gotoSearch` 从上一页分页区里读出来（`nextPageUrl`），这里只是兜底。
  */
 export declare function buildZhaopinSearchUrl(config: ZhaopinConfig, criteria: SearchCriteria): string | null;
 /**

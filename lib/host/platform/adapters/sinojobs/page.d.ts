@@ -57,10 +57,6 @@ export declare function detectBlockInPage(arg: {
     /** 通用词表（宿主侧用 `signalsOf(...)` 组装后传进来）。 */
     signals: BlockSignalSet;
 }): BlockKind | null;
-/** 在页面上下文里找「下一页」是否可用（UI 信号；真正的闸门是 `maxPages` + 接口 total）。 */
-export declare function hasNextPageInPage(arg: {
-    selector: string;
-}): boolean;
 /**
  * 是否处于「已登录」态（用于 `auth.isLoggedIn`）。
  *
@@ -76,10 +72,18 @@ export declare function countCardsInPage(arg: {
 /**
  * **在页面上下文里**解析详情页（服务端渲染的静态 HTML，实测结构）：
  *
- *   * 职位名：`h5`；
- *   * 公司名：第一个 `h6`；
- *   * 信息列表（`ul li`）：`[薪资, 城市, 经验 X, 全职/兼职/实习, 发布于YYYY-MM-DD]`；
- *   * JD 正文：`h6`（职位描述/任职要求/联系方式/公司信息）+ 随后的 `p`。
+ *   * 概要区 `.Resume-info1`：职位名 `h5`；公司名第一个 `h6`；
+ *     信息列表（`ul li`）：`[薪资, 城市, 经验 X, 全职/兼职/实习, 发布于YYYY-MM-DD]`；
+ *   * 正文区 `.Resume-info2`：JD 正文 = `h6`（职位描述/任职要求/联系方式/公司信息）
+ *     + 随后的 `p`。
+ *
+ * 两处防错位（与 zhipin 详情页同一套纪律）：
+ *
+ *   * **按容器限定作用域**：正文区的小节标题（「职位描述」等）也是 `h6`，
+ *     全局取"第一个 h6"在概要区缺位时会把小节标题当公司名。容器未命中时
+ *     相关字段留空 + 记 note，**不回退整页**（fail-closed，宁可空也不错）；
+ *   * **标题有兜底链**：`h5` 缺位时用 `document.title` 去掉站名后缀
+ *     （实测后缀形如 ` - SinoJobs`；标题内文里的连字符不受影响）。
  *
  * 信息列表**按文案模式分类而不是按下标**：平台字段增减时按位置读会错位。
  */

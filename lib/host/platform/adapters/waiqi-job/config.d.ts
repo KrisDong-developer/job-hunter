@@ -11,6 +11,15 @@ export declare const WAIQI_API_BASE = "https://backservice.offerxiansheng.com/ap
 /** 列表接口路径。`/social-position/foreign/...` 就是外企平台自己在用的那个。 */
 export declare const WAIQI_LIST_PATH = "/social-position/foreign/page-list";
 /**
+ * 详情接口路径（GET，`?id=<岗位id>`）。
+ *
+ * 2026-09-21 实测（匿名、无 access-token）：
+ * `code=1000` 且 `loginStatus=0` 时仍返回**完整** `data.description`（JD 原文，
+ * 外企岗常为英文）与 `data.translateDescription`（平台提供的中文翻译）。
+ * 注意详情响应的城市键是 `cityNamelist`（小写 l），与列表的 `cityNameList` **不是同一个拼写**。
+ */
+export declare const WAIQI_DETAIL_PATH = "/social-position/details";
+/**
  * 单页容量上限（平台硬上限，不是我们保守）。
  *
  * 实测：`size=50` 正常返回 50 条；`size=100` → `code=1010, message="size最大为50"`。
@@ -93,12 +102,29 @@ export declare const WAIQI_POS_INFO_SEED: Array<{
     name: string;
 }>;
 /**
- * 行业取值域（`businessCategoryIdList`）—— 实测 **seed**，来自真实列表响应。
+ * 行业取值域（`businessCategoryIdList`）—— **2026-09-21 探针实测全量**。
  *
- * 完整表由接口 `getBusList` 返回（前端已按 `name !== "不限"` 过滤）。
- * 这里的 13 个是夹具里真实出现的主行业（IT / 医药 / 金融 / 销售 / 运营 等）。同上，DB 可扩充。
+ * ⚠️ 这一份是修过的：原来的 13 项 seed 抄的是**职能**（`position/list`：8=产品、11=运营、
+ * 33=IT技术…），而平台的行业字典是另一个 id 空间（33=不限、26=IT/互联网/游戏、
+ * 27=金融业…）。两套码混用之后，"选行业"发出去的是职能码 —— 平台多半按未知码忽略，
+ * 用户看到的就是"选了行业，结果还是全量"。
+ *
+ * 实测来源：`GET /api/backend-service/business-dict/list`（30 项，本表去掉"不限"：
+ * 不限由**不填**表达，与界面上的"不限"是同一件事）。
+ * 探针：`node scripts/run-ts.mjs test/tools/probe-filters.ts --platforms=waiqi`。
  */
 export declare const WAIQI_BUSINESS_CATEGORY_SEED: Array<{
+    id: number;
+    name: string;
+}>;
+/**
+ * 公司类型取值域（请求体的 `companyTypeList`，**数组、可多选**）—— 2026-09-21 探针实测全量。
+ *
+ * 实测来源：`GET /api/position-service/company-tag/fixed-group-list`（45 项，全部 groupId=4）。
+ * 站点初始请求里 `companyTypeList: []`（空数组 = 不筛），所以我们之前**完全没声明**它：
+ * 界面上没有这个条件，用户也就没法按"美企/德企/中德合资"筛。
+ */
+export declare const WAIQI_COMPANY_TYPE_SEED: Array<{
     id: number;
     name: string;
 }>;
@@ -155,10 +181,58 @@ export interface WaiqiFields {
     /** 投递方式（`sendType`）。 */
     applyKind: string;
 }
+/**
+ * 详情接口记录字段名 → 我们的语义（与列表响应**不是同一份拼写**，见 `WAIQI_DETAIL_PATH` 的注释）。
+ *
+ * 2026-09-21 由真实响应校准（`test/fixtures/waiqi-detail-payload.json`，Cognex 岗）。
+ */
+export interface WaiqiDetailFields {
+    id: string;
+    title: string;
+    titleEn: string;
+    company: string;
+    salaryMin: string;
+    salaryMax: string;
+    /** 年发薪月数（`coefficient`）。 */
+    salaryMonths: string;
+    negotiable: string;
+    /** ⚠️ 详情响应里是 `cityNamelist`（小写 l），与列表的 `cityNameList` 不同。 */
+    city: string;
+    district: string;
+    address: string;
+    exp: string;
+    edu: string;
+    industry: string;
+    companySize: string;
+    companyNature: string;
+    /** 福利标签数组（`welfareList`，如 `["带薪年假","五险一金"]`）。 */
+    welfare: string;
+    /** 另一套标记，逗号分隔。 */
+    attribute: string;
+    /** JD 原文（`description`，外企岗常为纯英文）。 */
+    jdText: string;
+    /** 平台提供的中文翻译（`translateDescription`，可与原文逐段对上）。 */
+    jdTranslate: string;
+    publishedAt: string;
+    outsideUrl: string;
+    informationSource: string;
+    source: string;
+    positionType: string;
+}
 export interface WaiqiConfig {
     webBase: string;
     apiBase: string;
     listPath: string;
+    /** 详情接口路径（GET `?id=`）。JD 明文来自这里，不解析详情页 DOM。 */
+    detailPath: string;
+    /**
+     * 详情补抓的总开关（DB 可关）。
+     *
+     * 为什么要有它：主链补详情会**导航到 `/position/detail`**（robots.txt 唯一禁的路径，
+     * 见 `./index.ts` 文件头的口径更新）。平台若收紧 robots / 或用户不想让采集链打开详情页，
+     * DB 覆盖 `detailApiEnabled:false` 即可整体下线该能力（`detail` 槽位随之为空）。
+     */
+    detailApiEnabled: boolean;
     detailUrlTemplate: string;
     /** 记录里 `posType` 缺失时的兜底值。 */
     defaultPosType: string;
@@ -173,7 +247,13 @@ export interface WaiqiConfig {
         id: number;
         name: string;
     }>;
+    /** 公司类型（请求体 `companyTypeList`，数组可多选）取值域。2026-09-21 探针实测 45 项。 */
+    companyTypeList: Array<{
+        id: number;
+        name: string;
+    }>;
     fields: WaiqiFields;
+    detailFields: WaiqiDetailFields;
     /** 只用于"等页面渲染"与"翻页按钮探测"，**不用于解析**（解析走接口）。 */
     selectors: {
         card: string;
@@ -181,7 +261,13 @@ export interface WaiqiConfig {
     };
 }
 export declare const DEFAULT_WAIQI_CONFIG: WaiqiConfig;
-/** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
+/**
+ * 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。
+ *
+ * 合并**边界**上做校验（zhipin 同款纪律）：DB 覆盖是人的手笔，写坏的形态必须在这里拦下，
+ * 不能让它流进页面上下文 —— 那里的失败形态是"整页解析挂掉"或"静默筛不出结果"，
+ * 两种都不报警。
+ */
 export declare function mergeWaiqiConfig(override: unknown): WaiqiConfig;
 /**
  * **在页面上下文里**判断是否撞上风控 / 登录墙 / 空白页。

@@ -10,6 +10,14 @@ import {
   mergeGuopinConfig,
 } from '../../src/host/platform/adapters/guopin/config.js'
 import { buildGuopinJobDetailUrl, buildGuopinSearchUrl } from '../../src/host/platform/adapters/guopin/urls.js'
+import {
+  buildGuopinListBody,
+  guopinListPageOf,
+} from '../../src/host/platform/adapters/guopin/api.js'
+import {
+  GUOPIN_EXPERIENCE_OPTIONS,
+  GUOPIN_MAJOR_OPTIONS,
+} from '../../src/host/platform/adapters/guopin/dictionaries.js'
 import { isLoggedInByMarkersInPage } from '../../src/host/platform/adapters/guopin/page/list.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
@@ -61,6 +69,62 @@ test('搜索 URL：keyword 原样透传；城市码表为空 ⇒ 带城市一律
     ),
     'https://www.iguopin.com/jobList?keyword=Java',
   )
+})
+
+test('列表接口（2026-09-21 探针实测）：筛选进请求体、记录逐字段映射', () => {
+  // ① 请求体：只发证明过会筛的两个键，且必须是**数组**（字符串形状会被忽略，见 FINDINGS）
+  const body = JSON.parse(
+    buildGuopinListBody(
+      { keyword: 'Java', platform: { experience: '113aJGtA', major: '117CvKmE' } },
+      2,
+      20,
+    ),
+  )
+  assert.deepEqual(body.search, {
+    page: 2,
+    page_size: 20,
+    keyword: 'Java',
+    experience: ['113aJGtA'],
+    major: ['117CvKmE'],
+  })
+  // 没配就不发这两个键（"没配"与"配了"分得开）
+  const bare = JSON.parse(buildGuopinListBody({ keyword: 'Java' }, 1, 20))
+  assert.equal('experience' in bare.search, false)
+  assert.equal('major' in bare.search, false)
+
+  // ② 真实夹具（抓包里那一次带 experience 筛选的响应）→ 逐字段映射
+  const fixture = JSON.parse(
+    readFileSync(join(import.meta.dirname, '..', 'fixtures', 'guopin-list-api.json'), 'utf8'),
+  )
+  const page = guopinListPageOf(fixture, {
+    detailUrlTemplate: 'https://www.iguopin.com/job/detail?id={jobId}',
+  } as never)
+  assert.ok(page !== null, '真实响应必须能解析')
+  assert.equal(page?.jobs.length, 20)
+  assert.equal(page?.total, 48, '这一份是"Java + 1-3年"的结果集（api-diff 实测 400→48）')
+  const first = page?.jobs[0]
+  assert.equal(first?.title, 'Java工程师')
+  assert.equal(first?.company, '北京易电智通信息技术有限公司保定分公司')
+  // 接口直接给明文区间 + 单位；发薪月数**只在 >12 时**才announce（12 薪是默认，写出来是噪音）
+  assert.equal(first?.salaryRaw, '6000-8000元/月')
+  assert.equal(first?.city, '保定')
+  assert.equal(first?.district, '竞秀区', 'district_list[0].area_cn 是「市-区」')
+  assert.equal(first?.eduReq, '本科')
+  assert.equal(first?.expReq, '1-3年')
+  assert.equal(first?.publishedAt, '2026-09-15 01:00:00')
+  assert.ok(
+    first?.sourceUrl.includes(first?.platformJobId ?? 'x'),
+    'sourceUrl 由 detailUrlTemplate 拼出',
+  )
+
+  // ③ 声明：两个维度都写了 wire（对账测试会验"探针值必须改变真实请求"）
+  const adapter = createGuopinAdapter()
+  const experience = adapter.criteriaDimensions.find((item) => item.key === 'experience')
+  assert.equal(experience?.wire?.param, 'experience')
+  assert.equal(experience?.values.length, GUOPIN_EXPERIENCE_OPTIONS.length)
+  const major = adapter.criteriaDimensions.find((item) => item.key === 'major')
+  assert.equal(major?.wire?.param, 'major')
+  assert.equal(major?.values.length, GUOPIN_MAJOR_OPTIONS.length)
 })
 
 test('详情 URL 模板：{jobId} 替换（19 位数字 id 形态）', () => {

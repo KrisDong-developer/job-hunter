@@ -3,8 +3,9 @@
  * 城市码表、页数上限、判墙信号常量 —— 只有数据与纯函数，不碰 `document`、不发请求。
  *
  * 完整实测记录（排序取值来源、`issueDate` 恒空、城市码与判墙信号的逐条理由）见 `./index.ts` 文件头。
+ * 各选择器分组的**证据状态**（✅ 实测 / ⚠️ 候选待校准）逐条写在类型与默认值的注释里。
  */
-import { mergeAdapterConfig } from '../../config-merge.js'
+import { mergeAdapterConfig, numberRange } from '../../config-merge.js'
 
 /** 51job 列表页的选择器集。**每一项都可以在 UI 里改。** */
 export interface FiftyOneSelectors {
@@ -38,6 +39,19 @@ export interface FiftyOneUrlParams {
   sortParam: string
   /** 发布时间窗（`issueDate`），单位=天。 */
   postedWithinParam: string
+  /**
+   * 学历 / 工作经验 / 公司性质 —— **2026-09-21 点击探针实测**。
+   *
+   * 证据：点一次页面的筛选项，站点的搜索历史接口就会回一份
+   * `searchKeyValue`，形如 `keyword=Java&searchType=2&jobArea=040000&degree=04&sortType=0&pageNum=1`
+   * —— 参数名与取值码都在里面（点「本科」→ `degree=04`）。
+   */
+  degreeParam: string
+  workYearParam: string
+  companyTypeParam: string
+  /** 公司规模 / 职位类型（同为点击探针实测：点「500-1000人」→ `companySize=04`，点「全职」→ `jobType=01`）。 */
+  companySizeParam: string
+  jobTypeParam: string
 }
 
 /**
@@ -77,16 +91,152 @@ export const SORT_OPTIONS: Array<{ value: string; label: string }> = [
  */
 export const POSTED_WITHIN_OPTIONS: Array<{ value: string; label: string }> = []
 
+/**
+ * 详情页选择器集（`jobs.51job.com/all/<jobId>.html`）。
+ *
+ * ⚠️ **整组都是候选、没有一条在本仓实测过**（详情页没有夹具；搜索夹具是另一棵 DOM 树）。
+ * 老版详情页的经典类名（`.job_msg` 等）在前，新版 we-SPA 风格的结构式候选在后；
+ * 锚不到的字段留空 + 记 note（`page/detail.ts`），选择器可经 DB 覆盖修正。
+ */
+export interface FiftyOneDetailSelectors {
+  /** 职位名（候选；`document.title` 另有兜底）。 */
+  title: string
+  salary: string
+  /** 「经验 / 学历」标签行（按内容特征分流到 expReq / eduReq）。 */
+  tags: string
+  /** JD 正文（**取候选链里第一个有文本的**）。 */
+  jdText: string
+  company: string
+  /** 公司「行业 / 性质 / 规模」三段（与列表侧 `.bc .dc` 同一去处）。 */
+  companyMeta: string
+}
+
+/**
+ * 沟通面选择器集（动作链用：打招呼入口 / 投递弹窗 / 会话消息）。
+ *
+ * 证据分层（逐条注明）：
+ *   * ✅ **实测**（真实夹具 `51job-sz.html`，2026-09-21 摘录）：
+ *     卡片「去聊聊」`.chat` + 未登录扫码弹层 `.chat-popover`（`.hr-name` / `.hr-position` /
+ *     `.hr-tip`「微信扫码与我聊聊吧」/ `.qrcode`）；投递按钮 `button.btn.apply`
+ *     （trace-name="申请职位-职位下"）；投递弹窗组件样式 `.apply-component-resume-dialog`
+ *     （`.pc-apply-resume__row` / `__select--resume` 逐条渲染）、提示形态
+ *     `.apply-component-hint-dialog`、成功提示 `.success_title`；
+ *   * ⚠️ **候选待校准**（登录态会话 DOM 未实测）：`chatInput` / `sendButton` /
+ *     `messageList` / `myMessage` / `messageText` / `messageStatus`。
+ */
+export interface FiftyOneChatSelectors {
+  /** 「去聊聊 / 立即沟通」入口（✅ 实测 `.chat`；详情页形态为候选）。 */
+  chatButton: string
+  /** 未登录视图的微信扫码弹层（✅ 实测 `.chat-popover`）。在场 = 没有可输入面。 */
+  chatQrPopover: string
+  /** 弹层文案（✅ 实测 `.hr-tip`，如「微信扫码与我聊聊吧」）。 */
+  chatQrTip: string
+  /** 弹层里的二维码（✅ 实测 `.qrcode`）。 */
+  chatQrCode: string
+  /** 弹层里的 HR 名（✅ 实测 `.hr-name`）。 */
+  hrName: string
+  /** 弹层里的 HR 头衔（✅ 实测 `.hr-position`）。 */
+  hrPosition: string
+  /** 站内会话输入框（⚠️ 候选：登录态形态未实测）。 */
+  chatInput: string
+  /** 发送按钮（⚠️ 候选）。 */
+  sendButton: string
+  /** 消息列表容器（⚠️ 候选）。 */
+  messageList: string
+  /** 「我发出的」消息条目（⚠️ 候选）。 */
+  myMessage: string
+  /** 消息正文节点（⚠️ 候选）。 */
+  messageText: string
+  /** 消息送达/失败状态节点（⚠️ 候选）。 */
+  messageStatus: string
+  /** 「投递」按钮（✅ 实测 `button.btn.apply`，trace-name^="申请职位"）。 */
+  applyButton: string
+  /** 投递（选择简历）弹窗（✅ 组件样式实测 `.apply-component-resume-dialog`）。 */
+  applyDialog: string
+  /** 弹窗里的简历条目行（✅ 样式证据 `.pc-apply-resume__row`）。 */
+  applyResumeRow: string
+  /** 弹窗里的简历选择控件（✅ 样式证据 `.pc-apply-resume__select--resume`）。 */
+  applyResumeSelect: string
+  /** 弹窗确认按钮（✅ 容器样式证据 + Element Plus 惯例）。 */
+  applyDialogConfirm: string
+  /** 投递提示形态弹窗（✅ 样式证据 `.apply-component-hint-dialog`，如「今日投递太多」）。 */
+  applyHintDialog: string
+  /** 投递成功提示（✅ 样式证据 `.success_title`；Element Plus toast 兜底）。 */
+  applySuccess: string
+}
+
+/**
+ * 收件箱（会话列表）选择器集。
+ *
+ * ⚠️ **整组候选待校准**：51job 消息页没有夹具、没有探针记录。结构按 zhipin 求职者端
+ * 会话列表的同一套写（容器 → 行 → 行内字段），配齐 DB 覆盖即可在真机校准后点亮。
+ */
+export interface FiftyOneInboxSelectors {
+  /** 会话列表容器。空列表时容器**仍在** —— 这是区分"真的空"与"选择器腐烂"的锚点。 */
+  listContainer: string
+  /** 空态节点。 */
+  emptyState: string
+  /** 会话行。 */
+  row: string
+  /** 行内 HR 名。 */
+  name: string
+  /** 行内公司名。 */
+  company: string
+  /** 最后一条消息。 */
+  lastMessage: string
+  /** 送达/已读状态节点（**节点在 ⇒ 最后一条是我发的**）。 */
+  status: string
+  /** 未读标记。 */
+  unread: string
+  /** 时间节点（相对时间，原样带出）。 */
+  time: string
+}
+
+/** 发送后轮询确认送达的节奏。 */
+export interface FiftyOneDeliveryPoll {
+  attempts: number
+  intervalMs: number
+}
+
 /** 页数上限：再大也不会更"全"，只会更容易触发风控。 */
 export const FIFTYONE_MAX_PAGES = 5
 
 export interface FiftyOneConfig {
   selectors: FiftyOneSelectors
+  detailSelectors: FiftyOneDetailSelectors
+  chatSelectors: FiftyOneChatSelectors
+  inboxSelectors: FiftyOneInboxSelectors
   urlParams: FiftyOneUrlParams
   /** 城市名 → 平台城市码。 */
   cityCodes: Record<string, string>
   /** 详情页 URL 模板，`{jobId}` 会被替换。 */
   detailUrlTemplate: string
+  /**
+   * 求职者侧消息页（收件箱动作的入口）。
+   *
+   * ⚠️ **候选地址、未实测**：搜索页（未登录）不暴露消息入口。真机走查（2026-09-21）
+   * 实测消息入口**不在页头**，在「我的51job」（we.51job.com/pc/my/myjob）—— 具体
+   * 消息页地址以 `npm run probe:51job`（FIFTYONE_LOGIN=1，从 myjob 收割消息链接并采样）
+   * 的采证为准，经 DB 覆盖修正，不必发版。
+   */
+  chatUrl: string,
+  /**
+   * ── 登录态锚点 ──────────────────────────────────────────
+   *
+   * 未登录锚点 ✅ 实测（夹具 `51job-sz.html`：页头 `.login.loginBtnClick`「登录/注册」）；
+   * 已登录锚点 ⚠️ 候选（登录态夹具缺位）。判不出来时按"未登录"处理（保守）。
+   */
+  loginSelectors: { loggedIn: string; notLoggedIn: string }
+  /** 动作流程里等弹窗/输入框/会话出现的时间上限（ms）。 */
+  actionWaitMs: number
+  /** 发送后的送达校验轮询（次数 × 间隔）。 */
+  deliveryPoll: FiftyOneDeliveryPoll
+  /** 打招呼前在岗位页「看一会儿」的时长区间（ms）；`[0, 0]` = 关闭（离线测试用）。 */
+  dwellBeforeGreetMs: [number, number]
+  /** **回复之前**的停留区间（ms）；语义是"读完对方那条再回"。`[0, 0]` = 关闭。 */
+  dwellBeforeReplyMs: [number, number]
+  /** **投递之前**的停留区间（ms）；投递是不可逆动作，给得最长。`[0, 0]` = 关闭。 */
+  dwellBeforeApplyMs: [number, number]
 }
 
 export const DEFAULT_FIFTYONE_CONFIG: FiftyOneConfig = {
@@ -110,6 +260,11 @@ export const DEFAULT_FIFTYONE_CONFIG: FiftyOneConfig = {
     pageParam: 'pageNum',
     sortParam: 'sortType',
     postedWithinParam: 'issueDate',
+    degreeParam: 'degree',
+    workYearParam: 'workYear',
+    companyTypeParam: 'companyType',
+    companySizeParam: 'companySize',
+    jobTypeParam: 'jobType',
   },
   cityCodes: {
     北京: '010000',
@@ -129,14 +284,116 @@ export const DEFAULT_FIFTYONE_CONFIG: FiftyOneConfig = {
     西安: '200200',
   },
   detailUrlTemplate: 'https://jobs.51job.com/all/{jobId}.html',
+  detailSelectors: {
+    // ⚠️ 候选链（未实测，DB 可覆盖）：老版经典类名在前、结构式兜底在后
+    title: '.cn h1, h1, .job-name, .jname',
+    salary: '.cn strong, .sal, .salary, [class*="sal"]',
+    tags: '.jtag span, .job-tags .tag, .tags .tag, .cn p span',
+    jdText: '.job_msg, .job-desc, .job_detail_msg, [class*="job_msg"]',
+    company: '.cname, .company-name, .comp_name, [class*="company_name"]',
+    companyMeta: '.dc, .company-meta span, .tCompany_sidebar .compay_list li',
+  },
+  chatSelectors: {
+    // ✅ 实测（搜索卡片右侧）：`.chat`（内文「去聊聊」）；详情页入口形态为候选
+    chatButton: '.chat, .btn-chat, [trace-name*="聊天"], [class*="chat-btn"]',
+    chatQrPopover: '.chat-popover',
+    chatQrTip: '.hr-tip',
+    chatQrCode: '.qrcode',
+    hrName: '.hr-name',
+    hrPosition: '.hr-position',
+    // ⚠️ 候选（登录态站内会话未实测）。刻意不含 `.msg-list`：
+    // 那是收件箱会话列表容器的候选（inboxSelectors.listContainer），两处共用一个类名
+    // 会让"会话页上读消息"与"消息页读会话列表"互相串台（离线测试已撞过一次）。
+    chatInput: 'textarea.chat-input, .chat-input, [contenteditable="true"]',
+    sendButton: '.btn-send, .send-btn, [class*="send-btn"]',
+    messageList: '.chat-record, .chat-message-list, .message-list',
+    myMessage: '.item-myself, [class*="myself"], [class*="item-my"]',
+    messageText: '.message-content, .text, .msg-text',
+    messageStatus: '.message-status, [class*="msg-status"]',
+    // ✅ 实测（搜索卡片 `button.btn.apply`，trace-name="申请职位-职位下"）
+    applyButton: 'button.apply, .btn.apply, [trace-name^="申请职位"]',
+    applyDialog: '.apply-component-resume-dialog',
+    applyResumeRow: '.pc-apply-resume__row',
+    applyResumeSelect: '.pc-apply-resume__select--resume',
+    applyDialogConfirm: '.el-dialog__footer .el-button--primary, .btn-sure, [class*="confirm"]',
+    applyHintDialog: '.apply-component-hint-dialog',
+    applySuccess: '.success_title, .el-message--success',
+  },
+  inboxSelectors: {
+    // ⚠️ 整组候选（消息页未实测，DB 可覆盖）
+    listContainer: '.msg-list, .chat-list, [class*="conversation-list"]',
+    emptyState: '.no-data, .empty, [class*="no-data"]',
+    row: 'li[role=listitem], .msg-item, [class*="conversation-item"]',
+    name: '.name-text, .hr-name, [class*="user-name"]',
+    company: '.company, [class*="company-name"]',
+    lastMessage: '.last-msg-text, .msg-text, [class*="last-msg"]',
+    status: '.message-status, [class*="msg-status"]',
+    unread: '.notice-badge, .unread-count, .badge, [class*="unread"]',
+    time: '.time, [class*="time"]',
+  },
+  // ⚠️ 候选地址（未实测）：真机校准后经 DB 覆盖
+  chatUrl: 'https://i.51job.com/message/',
+  loginSelectors: {
+    // 已登录：⚠️ 候选（登录态夹具缺位）
+    loggedIn: '.header .user-name, .userName, [class*="user-info"]',
+    // 未登录：✅ 实测（页头 `.login.loginBtnClick`「登录/注册」）
+    notLoggedIn: '.loginBtnClick',
+  },
+  actionWaitMs: 15_000,
+  deliveryPoll: { attempts: 12, intervalMs: 500 },
+  dwellBeforeGreetMs: [15_000, 30_000],
+  dwellBeforeReplyMs: [3_000, 8_000],
+  dwellBeforeApplyMs: [8_000, 16_000],
 }
 
-/** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
+/**
+ * 把 DB 里的覆盖合并到默认配置上。
+ *
+ * 选择器分组走通用 `mergeAdapterConfig`（分组浅合并 + 空串保护）；
+ * **形状敏感的字段**（轮询对象 / 停留区间）单独校验 —— 一份写坏的 DB 覆盖
+ * （`deliveryPoll: {attempts: 0}`、`dwell: [8000, 1000]`）会让动作链静默变成
+ * "永不轮询 / 停留恒 0ms"，那正是校验要拦的形态。
+ */
 export function mergeFiftyOneConfig(override: unknown): FiftyOneConfig {
   // 通用合并（`platform/config-merge.ts`）：分组浅合并 + 字符串空值保护 +
   // 只认默认值里已有的键。以前这里是一份手写实现 —— 10 个适配器各写一遍
   // 同一套语义，漏掉哪一条都只会以"某平台配置突然被清空"的形式暴露。
-  return mergeAdapterConfig(DEFAULT_FIFTYONE_CONFIG, override)
+  const merged = mergeAdapterConfig(DEFAULT_FIFTYONE_CONFIG, override)
+  const poll = (value: unknown): FiftyOneDeliveryPoll => {
+    const fallback = DEFAULT_FIFTYONE_CONFIG.deliveryPoll
+    if (value === null || typeof value !== 'object') return fallback
+    const candidate = value as Partial<FiftyOneDeliveryPoll>
+    return {
+      attempts:
+        typeof candidate.attempts === 'number' &&
+        Number.isInteger(candidate.attempts) &&
+        candidate.attempts > 0
+          ? candidate.attempts
+          : fallback.attempts,
+      intervalMs:
+        typeof candidate.intervalMs === 'number' &&
+        Number.isFinite(candidate.intervalMs) &&
+        candidate.intervalMs >= 0
+          ? candidate.intervalMs
+          : fallback.intervalMs,
+    }
+  }
+  return {
+    ...merged,
+    deliveryPoll: poll((override as Partial<FiftyOneConfig> | null)?.deliveryPoll),
+    dwellBeforeGreetMs: numberRange(
+      (override as Partial<FiftyOneConfig> | null)?.dwellBeforeGreetMs,
+      DEFAULT_FIFTYONE_CONFIG.dwellBeforeGreetMs,
+    ),
+    dwellBeforeReplyMs: numberRange(
+      (override as Partial<FiftyOneConfig> | null)?.dwellBeforeReplyMs,
+      DEFAULT_FIFTYONE_CONFIG.dwellBeforeReplyMs,
+    ),
+    dwellBeforeApplyMs: numberRange(
+      (override as Partial<FiftyOneConfig> | null)?.dwellBeforeApplyMs,
+      DEFAULT_FIFTYONE_CONFIG.dwellBeforeApplyMs,
+    ),
+  }
 }
 
 /**

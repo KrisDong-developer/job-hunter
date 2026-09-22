@@ -22,8 +22,17 @@
  *     （翻页链接 href 算术：page-2→start=10、page-3→start=20）；
  *   * **无源字段**：这批 16 条卡片的薪资（`attribute_snippet_testid`）与发布日期
  *     （`jobListingDate`）节点 **0 命中** —— 数据不在这批页面上，不是选择器错。
- *     `salary_raw` 不进必需字段（hiredchina/zhipin 同款取舍），日期锚点保留待
- *     有源页面再校准。
+ *     `salary_raw` 不进必需字段（hiredchina/zhipin 同款取舍）。
+ *
+ *     ⚠️ **后半句已被同日的载荷复核修正（2026-09-21 追加）**：发布日期其实**有源** ——
+ *     同一搜索页内嵌 `window.mosaic.providerData["mosaic-provider-jobcards"]` 的
+ *     `metaData.mosaicProviderJobCardsModel.results[]`（连接键 `jobkey` ↔ DOM 的 `jk`，
+ *     15/16 重合），`formattedRelativeTime`（「25天前」/「30+天前」）15/15 有值、
+ *     `pubDate`（epoch ms）同在。**薪资两侧都确认无源**：该载荷里匿名侧的
+ *     `salarySnippet` 恒为 `{"currency":"","salaryTextFormatted":false}` 空对象。
+ *     ⇒ `readListPage` 落地"DOM 定集合、载荷补字段"通道（zhipin `enrichFromApi`
+ *     同族纪律，但**零额外请求**——数据就在当页脚本里），`publishedAt` 真源切到
+ *     `formattedRelativeTime`；`salary_raw` 维持留空 + notes（不进必需字段）。
  *
  * ## 历史记录：2026-09-18「停运」调查（已被上面的复核修正）
  *
@@ -54,11 +63,12 @@
  *
  * ── 本目录分工（2026-09-20 拆成目录）─────────────────────────────────
  * * `./config.ts`：结构锚点集（列表 + 详情）、字段 → URL 参数映射、默认值与合并、
- *   jobkey / 薪资 / 发布日期正则、页数上下限、登录回落判据常量、平台判墙信号与开关
- *   —— 纯数据 + 纯函数；
+ *   jobkey / 薪资 / 发布日期正则、页数上下限、登录回落判据常量、平台判墙信号与开关、
+ *   内嵌载荷通道（`payloadEnabled` / `payloadProviderKey`）—— 纯数据 + 纯函数；
  * * `./urls.ts`：宿主机侧的搜索 URL 构造（`start` = (page-1) * pageSize，不碰 `document`）；
  * * `./page.ts`：页面上下文函数（`extractJobsInPage` / `hasNextPageInPage` /
- *   `isLoggedInInPage` / `extractDetailInPage`），自包含；
+ *   `isLoggedInInPage` / `extractDetailInPage`），自包含；列表解析含**内嵌载荷回填**
+ *   （发布日期真源，见上）；
  * * `./index.ts`：本文件 —— 适配器装配（`createIndeedAdapter`）与 `criteriaDimensions` 表。
  */
 import type { BlockKind, CoreField } from '../../../../shared/contract/enums/crawl.js'
@@ -73,8 +83,10 @@ import {
   INDEED_ANON_LOGIN_LINK,
   INDEED_BLOCK_SIGNALS,
   INDEED_DEFAULT_MAX_PAGES,
+  INDEED_JOB_TYPE_OPTIONS,
   INDEED_MAX_PAGES,
   INDEED_POSTED_AGE_PATTERN,
+  INDEED_POSTED_WITHIN_OPTIONS,
   indeedBlockFlags,
 } from './config.js'
 import type { IndeedConfig } from './config.js'
@@ -109,6 +121,26 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
       hint: 'Indeed 是自由文本地点（l= 直接吃地名），无需城市码',
       wire: { target: 'url', param: config.urlParams.locationParam },
     },
+    /**
+     * 下面两个是 2026-09-21 第 12 轮补的：Indeed 的现代 SERP 把**大部分**筛选编成不透明的
+     * `sc=0kf:attr(…)`（学历/远程/薪资…没有可读参数名，故不声明），但这两个是多年公开的
+     * URL 参数，而且**用真实 URL 比过卡片数**（基线在最后重跑一遍，排除限流）：
+     * `fromage=1`→4 条、`fromage=7`→16 条、`jt=parttime`→**0 条**、基线 16 条。
+     */
+    {
+      key: 'postedWithinDays',
+      label: '发布时间',
+      values: INDEED_POSTED_WITHIN_OPTIONS,
+      wire: { target: 'url', param: config.urlParams.postedWithinParam },
+      hint: '实测 fromage=1 → 4 条、fromage=7 → 16 条（基线 16 条）；站点的 3 天/14 天两档未实测，故不提供',
+    },
+    {
+      key: 'jobType',
+      label: '职位类型',
+      values: INDEED_JOB_TYPE_OPTIONS,
+      wire: { target: 'url', param: config.urlParams.jobTypeParam },
+      hint: '实测 jt=parttime → 0 条（基线 16 条），参数确实生效；其余档位（合同工/实习等）未实测，故不提供',
+    },
     {
       key: 'maxPages',
       label: '抓取页数上限',
@@ -129,8 +161,9 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
       supportsReadReceipt: false,
       supportsInbox: false,
       supportsGreeting: false,
-      // 2026-09-21 真实夹具：标题/公司/城市/jobKey 16/16 全中；薪资与日期在该批页面
-      // 无数据源（0 命中）→ 如实标 medium，缺口靠 requiredFields 摘除 + notes 隔离。
+      // 2026-09-21 真实夹具：标题/公司/城市/jobKey 16/16 全中；发布日期真源 = 同页
+      // 内嵌载荷 formattedRelativeTime（15/16）；薪资两侧（DOM + 载荷）均无源 →
+      // 如实标 medium，缺口靠 requiredFields 摘除 + notes 隔离。
       fieldCompleteness: 'medium',
       antiBot: 'high',
     },
@@ -179,6 +212,8 @@ export function createIndeedAdapter(options: IndeedAdapterOptions = {}): SiteAda
           host: config.host,
           jobKeyPattern: config.jobKeyPattern,
           salaryPattern: config.salaryPattern,
+          payloadEnabled: config.payloadEnabled,
+          payloadProviderKey: config.payloadProviderKey,
         })
       },
 

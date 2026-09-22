@@ -7,6 +7,8 @@
  * 随后 `extractJobsInPage` 在**同一次 evaluate 的后续调用**里把它读出来 ——
  * 写入与读取的**顺序由宿主在 `readListPage` 里保证**（写 → 解析）。
  * 写的一半与读的一半是**同一个页面上下文协议**，不许拆到不同文件。
+ * 详情侧同款一对：`fetchDetailInPage` 写 `__WAIQI_DETAIL_PAYLOAD__` →
+ * `extractDetailInPage` 读它（顺序由 `detail.extract` 保证）。
  *
  * ⚠️ 本文件的函数在真机上**脱离模块作用域**执行（`evaluate` 只序列化源码，闭包不存在）：
  * 不得引用本文件的任何模块级**值**（常量 / 工具函数）；需要就**内联进函数体内**。
@@ -16,8 +18,8 @@
  */
 import type { BlockKind } from '../../../../shared/contract/enums/crawl.js'
 import type { BlockSignalSet } from '../../block-signals.js'
-import type { RawJob } from '../../types.js'
-import type { WaiqiConfig, WaiqiFields } from './config.js'
+import type { RawJob, RawJobDetail } from '../../types.js'
+import type { WaiqiConfig, WaiqiDetailFields, WaiqiFields } from './config.js'
 
 /**
  * **在页面上下文里**解析列表。
@@ -249,6 +251,203 @@ export async function fetchListInPage(arg: {
   const message =
     parsed !== null && parsed !== undefined && typeof parsed.message === 'string' ? parsed.message : ''
   // 实测成功码：1000。0/200 一并容忍（不同网关层的写法）。
+  const ok = code === 1000 || code === 0 || code === 200
+  return { ok, code, message, status }
+}
+
+/**
+ * **在页面上下文里**解析详情接口响应 → `RawJobDetail`（同步、自包含）。
+ *
+ * 数据来源与列表同一协议：`fetchDetailInPage` 写 `globalThis.__WAIQI_DETAIL_PAYLOAD__`，
+ * 这里读它；离线测试可改用 `<script id="waiqi-detail-fixture-payload">` 内联夹具。
+ *
+ * JD 的拼法（2026-09-21 实测定案）：`description` 是**原文**（外企岗常为纯英文），
+ * `translateDescription` 是**平台提供的完整中文翻译**（实测可与原文逐段对上）。
+ * 下游（打分 / 技能差距分析）按中文关键词匹配，纯英文 JD 会系统性漏配 ——
+ * 所以两者都在时拼接为「原文 + 【平台中文翻译】标记 + 译文」；原文缺失时用译文兜底并记 note。
+ *
+ * ⚠️ 详情响应的城市键是 `cityNamelist`（小写 l），与列表不同 —— 字段表来自 `config.detailFields`。
+ */
+export function extractDetailInPage(config: WaiqiConfig): RawJobDetail {
+  const clean = (value: unknown): string =>
+    value === null || value === undefined ? '' : String(value).replace(/\s+/g, ' ').trim()
+  const asNumber = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null
+  const queryAll = (scope: Element | Document, selector: string): Element[] => {
+    try {
+      return Array.prototype.slice.call(scope.querySelectorAll(selector)) as Element[]
+    } catch {
+      return []
+    }
+  }
+  const fields = config.detailFields
+  const globalScope = globalThis as unknown as { __WAIQI_DETAIL_PAYLOAD__?: unknown }
+  let payload: unknown = globalScope.__WAIQI_DETAIL_PAYLOAD__
+  if (payload === undefined || payload === null) {
+    const holder = queryAll(document, '#waiqi-detail-fixture-payload')[0] ?? null
+    if (holder !== null) {
+      try {
+        payload = JSON.parse(holder.textContent ?? '')
+      } catch {
+        payload = null
+      }
+    }
+  }
+  const root = payload as { data?: unknown } | null | undefined
+  const record = ((root?.data ?? null) as Record<string, unknown> | null) ?? {}
+  const text = (key: string): string => clean(record[fields[key as keyof WaiqiDetailFields] ?? key])
+
+  // 岗位 id：以**当前页 URL** 里的 `?id=` 为准（与列表侧 upsert 的 platformJobId 同键），
+  // 响应里的 id 只作兜底 —— URL 是主链按 sourceUrl 导航过来的，两侧不一致时信导航。
+  let idFromUrl = ''
+  try {
+    const match = /[?&]id=(\d+)/.exec(String(location.href))
+    idFromUrl = match === null ? '' : (match[1] ?? '')
+  } catch {
+    idFromUrl = ''
+  }
+  const id = idFromUrl !== '' ? idFromUrl : text('id')
+
+  const notes: string[] = []
+
+  // ── JD：原文 + 平台中文翻译（见函数头注释） ──
+  const jdOriginal = text('jdText')
+  const jdTranslate = text('jdTranslate')
+  let jdText = ''
+  if (jdOriginal !== '' && jdTranslate !== '' && jdOriginal !== jdTranslate) {
+    jdText = `${jdOriginal}\n\n【平台中文翻译】\n${jdTranslate}`
+  } else if (jdOriginal !== '') {
+    jdText = jdOriginal
+  } else if (jdTranslate !== '') {
+    jdText = jdTranslate
+    notes.push('jd:from-translate')
+  }
+  if (jdText === '') notes.push('jd:absent')
+
+  // ── 薪资：与列表同一条展示规则（面议兜底，`coefficient>12` 挂 `*N薪`） ──
+  const min = asNumber(record[fields.salaryMin])
+  const max = asNumber(record[fields.salaryMax])
+  const months = asNumber(record[fields.salaryMonths])
+  const negotiable = record[fields.negotiable] === 1
+  let salaryRaw = '面议'
+  if (!negotiable && (min !== null || max !== null)) {
+    salaryRaw = `${String(min ?? 0)}-${String(max ?? min ?? 0)}K`
+    if (months !== null && months > 12) salaryRaw = `${salaryRaw}*${String(months)}薪`
+  } else if (min === null && max === null) {
+    notes.push('salary:absent')
+  }
+
+  const title = text('title')
+  const titleEn = text('titleEn')
+  if (title === '' && titleEn === '') notes.push('title:missing')
+
+  // ── 标签：福利（`welfareList` 数组）+ `attribute`（逗号分隔） ──
+  const tags: string[] = []
+  const welfareList = record[fields.welfare]
+  if (Array.isArray(welfareList)) {
+    for (const item of welfareList) {
+      const value = clean(item)
+      if (value !== '' && !tags.includes(value)) tags.push(value)
+    }
+  }
+  const attribute = text('attribute')
+  if (attribute !== '') {
+    for (const part of attribute.split(/[,，、]/)) {
+      const value = clean(part)
+      if (value !== '' && !tags.includes(value)) tags.push(value)
+    }
+  }
+
+  // ── 来源与投递方式（与列表同款 note 口径，供下游判断"投递走哪套渠道"） ──
+  const sourceCode = text('source')
+  if (sourceCode !== '') notes.push(`source:${sourceCode}`)
+  if (text('outsideUrl') !== '') notes.push('apply:external-site')
+  const ats = text('informationSource')
+  if (ats !== '') notes.push(`ats:${ats}`)
+
+  // 与 zhipin 详情同口径：地址给**实际导航到的** location.href（主链只用 jdText，
+  // sourceUrl 在这里只是回显；重建模板反而会引入第二份 URL 拼接逻辑）。
+  let currentUrl = ''
+  try {
+    currentUrl = String(location.href)
+  } catch {
+    currentUrl = ''
+  }
+
+  return {
+    platformJobId: id,
+    title: title !== '' ? title : titleEn,
+    salaryRaw,
+    company: text('company'),
+    sourceUrl: currentUrl,
+    // JD 是详情补抓的**唯一目的**：空值如实给 null（主链记"没解析出 JD"），不编。
+    jdText: jdText === '' ? null : jdText,
+    city: text('city'),
+    district: text('district') === '' ? text('address') : text('district'),
+    expReq: text('exp'),
+    eduReq: text('edu'),
+    tags,
+    publishedAt: (() => {
+      const createTime = text('publishedAt')
+      const dateMatch = /^(\d{4}-\d{2}-\d{2})/.exec(createTime)
+      return dateMatch === null ? null : (dateMatch[1] ?? null)
+    })(),
+    industry: text('industry') === '' ? null : text('industry'),
+    companySize: text('companySize') === '' ? null : text('companySize'),
+    companyNature: text('companyNature') === '' ? null : text('companyNature'),
+    notes,
+  }
+}
+
+/**
+ * **在页面上下文里**发详情接口请求（GET，自包含），把响应挂到全局供 `extractDetailInPage` 解析。
+ *
+ * 与 `fetchListInPage` 同一套纪律：只认**页面上下文自己的** fetch（`__WAIQI_FETCH__` 护栏），
+ * 绝不回退宿主 Node 的 fetch（那会脱离浏览器登录态、在离线测试里还会真的打到线上）。
+ */
+export async function fetchDetailInPage(arg: {
+  url: string
+}): Promise<{ ok: boolean; code: number | null; message: string; status: number }> {
+  const scope = globalThis as unknown as {
+    __WAIQI_DETAIL_PAYLOAD__?: unknown
+    __WAIQI_FETCH__?: unknown
+    fetch?: (input: string, init?: Record<string, unknown>) => Promise<{
+      json(): Promise<unknown>
+      status?: number
+    }>
+  }
+  if (scope.__WAIQI_FETCH__ !== scope.fetch || typeof scope.fetch !== 'function') {
+    return { ok: false, code: null, message: 'fetch 不可用（页面上下文异常）', status: 0 }
+  }
+
+  let payload: unknown = null
+  let status = 0
+  try {
+    const response = await scope.fetch(arg.url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'content-type': 'application/json;charset=UTF-8',
+        accept: 'application/json, text/plain, */*',
+        source: '24',
+      },
+    })
+    status = typeof response.status === 'number' ? response.status : 0
+    payload = await response.json()
+  } catch (error) {
+    const name =
+      error !== null && typeof error === 'object' && 'name' in error
+        ? String((error as { name: unknown }).name)
+        : 'Error'
+    return { ok: false, code: null, message: `网络请求失败（${name}）`, status }
+  }
+
+  scope.__WAIQI_DETAIL_PAYLOAD__ = payload
+  const parsed = payload as WaiqiResponse | null
+  const code =
+    parsed !== null && parsed !== undefined && typeof parsed.code === 'number' ? parsed.code : null
+  const message =
+    parsed !== null && parsed !== undefined && typeof parsed.message === 'string' ? parsed.message : ''
   const ok = code === 1000 || code === 0 || code === 200
   return { ok, code, message, status }
 }

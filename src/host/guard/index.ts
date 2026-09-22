@@ -205,6 +205,16 @@ export function createGuard(deps: GuardDeps): Guard {
     if (typeof payload['sideEffect'] === 'string' && payload['sideEffect'] !== '') {
       lines.push(`同时会发生：${payload['sideEffect']}`)
     }
+    /**
+     * 同一岗位的另一个平台副本已经投过了（跨平台去重分组判出来的）。
+     *
+     * 放在**审批文案**里而不是只放在批量预览里：模型走的单条投递路径没有预览，
+     * 用户就是在这一屏上按下"同意"的 —— 提醒不在这里出现，就等于在最需要它的那条路径上消失。
+     * 文案自带"分组可能判错"，因为它确实是启发式判断，不能当成事实。
+     */
+    if (typeof payload['duplicateApplicationWarning'] === 'string' && payload['duplicateApplicationWarning'] !== '') {
+      lines.push(`⚠️ ${payload['duplicateApplicationWarning']}`)
+    }
     lines.push(`超时：${String(Math.round(deps.approval.timeoutMs() / 1000))} 秒后自动按拒绝处理`)
     return {
       action: input.action,

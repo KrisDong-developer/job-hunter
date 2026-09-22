@@ -44,6 +44,39 @@
  * `indexAjaxPage.html`）与详情页 `/Recruitment/content.html` 都在允许范围内。
  * 投递要登录（`/UserCenter/resumeShow.html`），采集链路**不碰**投递与任何 Ucenter 路径。
  *
+ * ## 深度对齐 zhipin（2026-09-21）
+ *
+ * 逐项对过 `adapters/zhipin`，把这个适配器里"zhipin 有、我们没有"且**有实测证据可落地**
+ * 的部分补齐；没有证据的部分（actions）维持 fail-closed：
+ *
+ *   * **HTTP 状态码抬升**（对应 zhipin `api.ts` 检查 `response.ok`）：列表接口若被
+ *     429/403 的 HTML 拦截页顶掉，`response.json()` 只会抛 SyntaxError —— 原先那条路
+ *     的报错是"网络请求失败（SyntaxError）"，`blockFromApiFailure` 拿不到任何风控输入，
+ *     最后被降级成普通 `PARSE_FAILED`（一路退避重试，越撞越紧）。现在 `fetchListInPage`
+ *     在"响应不是 JSON / 缺 status 字段"时把 HTTP 状态码抬进 `statusCode`，
+ *     `readListPage` 据此抛 `PlatformBlockedError`（429 → rate-limited），主链按风控停手（SR-22）。
+ *   * **详情页按容器限定作用域**（对应 zhipin 的 `jdExclude`）：概要与正文分居
+ *     `.Resume-info1` / `.Resume-info2`（真实镜像夹具实测）。正文区的小节标题
+ *     （「职位描述」等）也是 `h6` —— 不限定作用域时，概要区一缺位"全局第一个 h6"
+ *     就会把**小节标题当公司名**写进结果。容器未命中 ⇒ 留空 + note，不回退整页。
+ *   * **详情页缺口留痕 + 标题兜底链**（对应 zhipin 的"未锚定"notes）：标题 `h5`
+ *     缺位时用 `document.title` 去站名后缀（实测后缀 ` - SinoJobs`；标题内文的连字符
+ *     如「公关传播项目经理-全职/兼职」不受影响）；锚点腐烂一律记 note，不静默给空值。
+ *   * **形状漂移告警**（对应 zhipin `enrichFromApi` 的降级日志）：接口成功且 `total>0`
+ *     却一条都解析不出来时 `logger.warn` —— 这种坏法不触发任何报警，日志是唯一出口。
+ *   * **死代码清理**：`hasNextPageInPage` 与 `selectors.nextPage` 从未接入翻页判据
+ *     （真判据是接口 total），已删 —— 留着会让人以为 UI 信号在这条链路上有作用。
+ *
+ * ### 为什么仍然不实现 actions（证据链更新）
+ *
+ * 夹具里能看到**申请入口的真实形态**：列表卡片「现在申请」与详情页「立即申请」都指向
+ * `/UserCenter/resumeShow.html?recruitment_id=<id>` —— 它落在 robots 的禁区
+ * （`User-agent: *` 禁 `/UserCenter/*`）且需要登录态，而我们**没有任何已登录态的
+ * 页面样本**（那个页面长什么样、表单有哪些字段，全部未知）。没有消息/会话体系
+ * （这不是聊天型平台），所以 `sayHello` / `readInbox` / `detectStage` / `sendResume`
+ * 四个槽位都没有可实现的证据 —— 按「不编选择器」的原则维持 fail-closed，
+ * 等 `probe:sinojobs` 采到已登录样本再谈。
+ *
  * ## 本目录分工（每平台一个目录）
  *
  *   * `config.ts` —— 配置面：选择器接口 / 字段名 / 值域 / 地点码表 / 行业 seed /
@@ -60,7 +93,14 @@ import { humanDelayMs } from '../../pacing.js'
 import { humanBrowse } from '../../humanize.js'
 import { blockFromApiFailure, signalsOf } from '../../block-signals.js'
 import { platformFacts } from '../../platform-facts.js'
-import type { CriteriaDimension, RawJob, RawJobDetail, SearchCriteria, SiteAdapter } from '../../types.js'
+import type {
+  AdapterLogger,
+  CriteriaDimension,
+  RawJob,
+  RawJobDetail,
+  SearchCriteria,
+  SiteAdapter,
+} from '../../types.js'
 import { PlatformBlockedError } from '../../types.js'
 import {
   DEFAULT_SINOJOBS_CONFIG,
@@ -89,12 +129,19 @@ export interface SinoJobsAdapterOptions {
   delayRangeMs?: [number, number]
   /** 等页面渲染出来的上限（ms）。 */
   waitForListMs?: number
+  /**
+   * 诊断日志：只用于上报"**不报警的坏法**"（接口成功但一条都没解析出来这一类
+   * 形状漂移）—— 它们不会让采集失败，健康度与量级基线也都不响，日志是唯一的出口。
+   * 与 zhipin 的 `enrichFromApi` 降级告警同一套纪律。
+   */
+  logger?: AdapterLogger
 }
 
 /** 构造 SinoJobs 适配器。 */
 export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): SiteAdapter {
   const config = options.config ?? DEFAULT_SINOJOBS_CONFIG
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
+  const logger = options.logger
 
   /**
    * 上一次 `gotoSearch` 记下的筛选条件。
@@ -303,6 +350,15 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
         if (jobs.length === 0) {
           // 接口成功但零记录有两种可能：真的没结果，或响应形状变了（字段/层级改名）。
           // 两种都让主链按 `NO_RECORDS` 记成 partial，**不在这里猜**。
+          //
+          // 但 total>0 时"形状变了"的证据是压倒性的（平台自报有 N 条，我们一条都
+          // 解析不出来）—— 这种**静默降级**不会触发任何报警，日志是它唯一的出口。
+          if (total > 0) {
+            logger?.warn(
+              `[sinojobs] 列表接口成功（total=${String(total)}）但一条都没解析出来 —— ` +
+                '响应形状可能变了（rows / 字段名漂移），本页按 0 条入库',
+            )
+          }
           return []
         }
         return jobs
@@ -337,8 +393,10 @@ export function createSinoJobsAdapter(options: SinoJobsAdapterOptions = {}): Sit
       },
     },
 
-    // ⚠️ 刻意**不实现** `actions.sayHello` / `actions.sendResume`：
-    // 投递要登录态，且未登录 DOM 里没有可靠的投递按钮契约（入口是 /UserCenter/resumeShow.html）。
+    // ⚠️ 刻意**不实现** `actions.sayHello` / `actions.sendResume`（四个槽位全空）：
+    // 申请入口实测是 /UserCenter/resumeShow.html?recruitment_id=<id> —— robots 禁区
+    // （/UserCenter/*）+ 需登录态，且没有任何已登录样本；平台也没有消息/会话体系。
     // 按「不编选择器」的原则，宁可让 guard 以 ADAPTER_BROKEN 明确拒绝（fail-closed）。
+    // 完整证据链见文件头「为什么仍然不实现 actions」。
   }
 }

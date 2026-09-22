@@ -79,12 +79,17 @@ test('decide：方案城市传到门上；不支持的平台带 city_unsupported
   const clock = (): string => now.toISOString()
 
   const plans = createPlanService(store, clock, registry)
-  const plan = plans.create({
-    name: '城市混合',
-    platforms: ['a', 'b'],
-    criteria: { city: '深圳' },
-    schedule: { windowStartHour: 0, windowEndHour: 24, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
-  })
+  // 直接写库：多平台行是**历史遗留**，而这里要测的是调度层的城市门
+  // （一个平台不支持这个城市 → 跳过它、其它平台照跑）。配置面现在只允许单平台方案。
+  const plan = store.plan.create(
+    {
+      name: '城市混合',
+      platforms: ['a', 'b'],
+      criteria: { city: '深圳' },
+      schedule: { windowStartHour: 0, windowEndHour: 24, weekdays: [], jitterMs: 0, missedGraceMs: 0 },
+    },
+    clock(),
+  )
 
   /** 真门（`runtime/gate.ts`）：读的就是这一份 store 与上面注册的两个夹具平台。 */
   const realGate = createPlatformGate({ storeOf: () => store, registry, clock })

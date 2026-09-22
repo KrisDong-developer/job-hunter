@@ -3,7 +3,8 @@
  *
  * 夹具来源：`POST {WAIQI_API_BASE}/social-position/foreign/page-list` 的**真实响应**
  * （2026-09 实测，24 条，见 `test/fixtures/waiqi-position-payload.json`），
- * 外加一份与真页面同形的外壳 HTML。两条一起用才说明问题：
+ * 外加一份与真页面同形的外壳 HTML；详情侧同款一对（2026-09-21 实测，
+ * `test/fixtures/waiqi-detail-payload.json`，Cognex 岗）。两条一起用才说明问题：
  *
  *   * 载荷保证**解析**与真接口同形；
  *   * 外壳保证**判墙 / 等待 / 卡片计数**在真实 DOM 上成立。
@@ -24,7 +25,7 @@ import {
 } from '../../src/host/platform/adapters/waiqi-job/config.js'
 import { buildWaiqiRequestBody } from '../../src/host/platform/adapters/waiqi-job/urls.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
-import type { PageLike } from '../../src/host/platform/types.js'
+import { PlatformBlockedError, type PageLike } from '../../src/host/platform/types.js'
 
 // 夹具目录：源码路径是 `test/fixtures`；`scripts/test.mjs` 会把整个 `fixtures/`
 // 复制到产物目录（`.test-build/fixtures`），两种布局都要认。
@@ -44,11 +45,25 @@ const FIXTURE_PAYLOAD = JSON.parse(
     'utf8',
   ),
 ) as unknown
+/** 详情接口的真实响应（2026-09-21 匿名抓取，岗位 257761 = Cognex 高级光学设计工程师）。 */
+const DETAIL_PAYLOAD = JSON.parse(
+  readFileSync(
+    existsSync(join(FIXTURES_SRC, 'waiqi-detail-payload.json'))
+      ? join(FIXTURES_SRC, 'waiqi-detail-payload.json')
+      : join(FIXTURES_BUILT, 'waiqi-detail-payload.json'),
+    'utf8',
+  ),
+) as unknown
 const SEARCH_URL = 'https://www.waiqi.com/position?keyword=Java'
+const DETAIL_URL = 'https://www.waiqi.com/position/detail?id=257761&posType=1'
 
 /** 一个"接口正常"的 fetch 桩。 */
 const okStub: PageFetchStub = () =>
   Promise.resolve({ json: () => Promise.resolve(FIXTURE_PAYLOAD), status: 200 })
+
+/** 详情接口的"正常"fetch 桩（真实响应夹具，岗位 257761）。 */
+const okDetailStub: PageFetchStub = () =>
+  Promise.resolve({ json: () => Promise.resolve(DETAIL_PAYLOAD), status: 200 })
 
 /** 一个返回指定 code 的 stub。 */
 function errorStub(code: number, message: string): PageFetchStub {
@@ -123,7 +138,7 @@ test('请求体：关键词的键是 name（实测 keyword/positionName 都无�
 test('请求体：平台特有维度（经验 / 学历 / 职位范围 / 行业 / 职能 / 排序）能传下去', () => {
   const body = buildWaiqiRequestBody(
     {
-      platform: { workExp: '3', education: '2', type: '1', businessCategory: '33', posInfo: '323' },
+      platform: { workExp: '3', education: '2', type: '1', businessCategory: '26', posInfo: '323' },
       sort: '1',
     },
     DEFAULT_WAIQI_CONFIG.cityCodes,
@@ -133,9 +148,31 @@ test('请求体：平台特有维度（经验 / 学历 / 职位范围 / 行业 /
   assert.equal(body['education'], '2')
   assert.equal(body['type'], 1)
   assert.equal(body['posIds'], '323') // 职能（算法工程师）
-  assert.equal(body['businessCategoryIdList'], '33') // 行业（IT技术）
+  assert.equal(body['businessCategoryIdList'], '26') // 行业（IT/互联网/游戏，2026-09-21 探针实测）
   assert.equal(body['sort'], 1)
   assert.equal(body['page'], 2)
+})
+
+test('请求体：公司类型（companyTypeList）是**数组**、可多选 —— 2026-09-21 探针实测', () => {
+  const adapter = createWaiqiAdapter()
+  const dimension = adapter.criteriaDimensions.find((item) => item.key === 'companyType')
+  assert.ok(dimension !== undefined, '公司类型维度必须声明 —— 站点请求体里一直有这个参数')
+  assert.equal(dimension?.multi, true, '平台这个参数是数组（可多选），界面按多选渲染')
+  assert.ok(
+    (dimension?.values.length ?? 0) >= 45,
+    `实测 45 项标签，实际 ${String(dimension?.values.length)} 项`,
+  )
+
+  const body = buildWaiqiRequestBody(
+    { platform: { companyType: '28,31' } },
+    DEFAULT_WAIQI_CONFIG.cityCodes,
+    1,
+  )
+  assert.deepEqual(body['companyTypeList'], [28, 31], '多选 → number[]（平台要数组，不是字符串）')
+
+  // 不配时保持站点初始请求里的空数组："没配"与"配了"在请求指纹上分得开。
+  const empty = buildWaiqiRequestBody({}, DEFAULT_WAIQI_CONFIG.cityCodes, 1)
+  assert.deepEqual(empty['companyTypeList'], [])
 })
 
 test('DB 覆盖能合并到默认配置上（ADR-19：配置以 DB 为权威）', () => {
@@ -152,6 +189,22 @@ test('DB 覆盖能合并到默认配置上（ADR-19：配置以 DB 为权威）'
   assert.deepEqual(merged.posInfoList, [{ id: 1, name: '新职能' }])
   assert.deepEqual(merged.businessCategoryList, [{ id: 2, name: '新行业' }])
   assert.deepEqual(mergeWaiqiConfig(null), DEFAULT_WAIQI_CONFIG)
+})
+
+test('合并边界拦下脏条目：seed 表逐条校验、城市码归一（zhipin 同款纪律）', () => {
+  const merged = mergeWaiqiConfig({
+    // id 非数值 / name 空 / 非对象条目 —— 一律丢弃，好条目保留
+    posInfoList: [{ id: 1, name: '好职能' }, { id: 'x', name: '坏id' }, { id: 2 }, null, 'junk'],
+    // 字符串数值 id 归一成 number；空白 name 丢弃
+    businessCategoryList: [{ id: '33', name: '字符串id也认' }, { id: 5, name: '   ' }],
+    // 城市码：字符串数值归一；非数值丢弃（这个平台对错参数是**静默忽略**，脏码会变成"抓了全国"）
+    cityCodes: { 测试城: 999, 坏城: 'abc', 深圳: '248', '': 100 },
+  })
+  assert.deepEqual(merged.posInfoList, [{ id: 1, name: '好职能' }])
+  assert.deepEqual(merged.businessCategoryList, [{ id: 33, name: '字符串id也认' }])
+  assert.equal(merged.cityCodes['测试城'], 999)
+  assert.equal(merged.cityCodes['坏城'], undefined, '非数值城市码必须被丢弃')
+  assert.equal(merged.cityCodes['深圳'], 248, '字符串数值城市码应归一保留')
 })
 
 // ── 2. 解析：离线夹具逐字段对得上 ─────────────────────────────────────
@@ -319,6 +372,17 @@ test('接口 code=429 → 判为限流（停手退避，不硬重试）', async 
   assert.equal(await adapter.guard.detectBlock(target), 'rate-limited')
 })
 
+test('登录检测：先等 SPA 挂载（卡片）再判，夹具无头像 → false，等待超时也不抛错', async () => {
+  const adapter = createWaiqiAdapter()
+  assert.ok(adapter.auth, 'auth 槽位应已声明')
+  // 夹具里有卡片（应用挂载完成的信号）但没有 .head-avatar → 未登录。
+  const target = page({ fetchStub: okStub })
+  assert.equal(await adapter.auth?.isLoggedIn(target), false)
+  // 卡片都没渲染出来（等待落空）也要按原样判，不能抛错 —— 判不出时保守算未登录。
+  const blank = page({ html: '<html><body></body></html>', fetchStub: errorStub(999, '系统数据异常') })
+  assert.equal(await adapter.auth?.isLoggedIn(blank), false)
+})
+
 // ── 5. 能力声明与实际行为一致 ─────────────────────────────────────────
 
 test('声明的能力：只承诺验证过的维度，且页数上限是 1', () => {
@@ -331,13 +395,30 @@ test('声明的能力：只承诺验证过的维度，且页数上限是 1', () 
   for (const key of ['keyword', 'city', 'workExp', 'education', 'businessCategory', 'posInfo', 'type', 'maxPages']) {
     assert.ok(keys.includes(key), `缺少维度 ${key}`)
   }
-  for (const dead of ['sort', 'postedWithinDays', 'companyType']) {
+  // `companyType` 原来是"没验证过"所以不声明；2026-09-21 探针实测到站点请求体里
+  // 恒定带 `companyTypeList`（45 项标签）→ 已按实测补上（见下面的专项用例）。
+  // `sort` 站点请求体里也有，但它的**取值域**还没探测出来（页面交互待跑）—— 先不声明。
+  for (const dead of ['sort', 'postedWithinDays']) {
     assert.ok(!keys.includes(dead), `${dead} 没有验证过，不该声明`)
   }
   // 行业 / 职能维度必须给出来自 config seed 的取值域（否则界面会渲染成自由文本）。
   const business = adapter.criteriaDimensions.find((dimension) => dimension.key === 'businessCategory')
   assert.ok(business && business.values.length > 0, '行业维度应有 seed 取值域')
-  assert.ok(business?.values.some((option) => option.value === '33'), '行业 seed 应含 IT技术(33)')
+  // ⚠️ 2026-09-21 探针实测纠正：行业字典里 26=IT/互联网/游戏、33=**不限**。
+  // 旧 seed 抄的是**职能**的 id 空间（33=IT技术），两套码混用 → "选行业"发出去的是职能码。
+  assert.ok(
+    business?.values.some((option) => option.value === '26' && option.label === 'IT/互联网/游戏'),
+    `行业 seed 应含 26=IT/互联网/游戏：${business?.values.slice(0, 5).map((o) => `${o.value}=${o.label}`).join(' ')}`,
+  )
+  assert.equal(
+    business?.values.some((option) => option.value === '33'),
+    false,
+    '"不限"不列进取值域 —— 不选就是不限（与界面上的空值同一件事）',
+  )
+  assert.ok(
+    (business?.values.length ?? 0) >= 29,
+    `行业应当是实测全量（30 项去掉"不限"=29），实际 ${String(business?.values.length)} 项`,
+  )
   const posInfo = adapter.criteriaDimensions.find((dimension) => dimension.key === 'posInfo')
   assert.ok(posInfo && posInfo.values.length > 0, '职能维度应有 seed 取值域')
   assert.ok(posInfo?.values.some((option) => option.value === '323'), '职能 seed 应含 算法工程师(323)')
@@ -345,6 +426,14 @@ test('声明的能力：只承诺验证过的维度，且页数上限是 1', () 
   const city = adapter.criteriaDimensions.find((dimension) => dimension.key === 'city')
   assert.ok(city && city.values.length > 0)
   assert.ok(city.values.some((option) => option.value === '深圳'))
+  // 2026-09-21 修正：没有实现 readInbox、也没有平台证据 → 不承认有收件箱（能力矩阵对用户说实话）。
+  assert.equal(adapter.capabilities.supportsInbox, false)
+  // detail 已落地（JD 走 details 接口）；关掉开关后槽位必须消失（实现度如实派生）。
+  assert.ok(adapter.detail, 'detail 槽位应已声明（detailApiEnabled 默认开）')
+  const disabled = createWaiqiAdapter({
+    config: { ...DEFAULT_WAIQI_CONFIG, detailApiEnabled: false },
+  })
+  assert.equal(disabled.detail, undefined, 'detailApiEnabled=false 时不应声明 detail')
 })
 
 // ── 6. 真路径的回归护栏 ───────────────────────────────────────────────
@@ -360,8 +449,8 @@ function asSerialized<F extends (...args: never[]) => unknown>(fn: F): F {
 }
 
 /** 一个 evaluate 时会重建函数的页面（模拟 Playwright 的序列化）。 */
-function browserLikePage(html: string, fetchStub: PageFetchStub): PageLike {
-  const inner = new JsdomPage({ html, url: SEARCH_URL, fetchStub })
+function browserLikePage(html: string, fetchStub: PageFetchStub, url: string = SEARCH_URL): PageLike {
+  const inner = new JsdomPage({ html, url, fetchStub })
   return {
     goto: (url) => inner.goto(url),
     url: () => inner.url(),
@@ -395,6 +484,12 @@ test('页面函数必须自包含：按源码重建后仍能取数、解析与�
   assert.equal(await adapter.guard.detectBlock(target), null)
   assert.equal(typeof (await adapter.crawl.hasNextPage(target)), 'boolean')
   assert.equal(typeof (await adapter.auth?.isLoggedIn(target)), 'boolean')
+
+  // 详情那一对页面函数（fetchDetailInPage / extractDetailInPage）同样必须自包含。
+  const detailTarget = browserLikePage(FIXTURE_HTML, okDetailStub, DETAIL_URL)
+  const detail = await adapter.detail?.extract(detailTarget)
+  assert.equal(detail?.platformJobId, '257761')
+  assert.ok(detail?.jdText?.includes('【平台中文翻译】'))
 })
 
 test('撞墙判定在「按源码重建」后同样成立', async () => {
@@ -447,4 +542,111 @@ test('卡片选择器被改坏时：判墙仍然工作（解析不依赖 DOM）'
   // 解析走接口，所以选择器坏掉**不影响取数** —— 这正是这个适配器的设计取舍。
   const jobs = await adapter.crawl.readListPage(target)
   assert.equal(jobs.length, 24)
+})
+
+// ── 8. 详情补抓（2026-09-21：JD 走 details 接口，不解析详情页 DOM）──────
+
+/** 一个停留在详情页 URL 上的夹具页面（主链 fetchNewJobDetails 会先 goto(sourceUrl)）。 */
+function detailPage(fetchStub: PageFetchStub): JsdomPage {
+  return new JsdomPage({ html: FIXTURE_HTML, url: DETAIL_URL, fetchStub })
+}
+
+test('详情：从 URL 取 id、请求形态带 source:24、逐字段对得上', async () => {
+  const adapter = createWaiqiAdapter()
+  assert.ok(adapter.detail, 'detail 槽位应已声明')
+  const target = detailPage(okDetailStub)
+  const detail = await adapter.detail.extract(target)
+
+  // id 以**当前页 URL** 为准（与列表侧 upsert 的 platformJobId 同键）
+  assert.equal(detail.platformJobId, '257761')
+  assert.equal(detail.title, '高级光学设计工程师')
+  assert.equal(detail.company, 'Cognex 康耐视')
+  // negotiable=1 且薪资为 null → 面议兜底（与列表同一条展示规则）
+  assert.equal(detail.salaryRaw, '面议')
+  assert.ok(detail.notes?.includes('salary:absent'))
+  assert.equal(detail.city, '深圳市')
+  assert.equal(detail.expReq, '5-10年')
+  assert.equal(detail.eduReq, '本科')
+  assert.equal(detail.industry, '智能硬件')
+  assert.equal(detail.companySize, '10000人以上')
+  assert.equal(detail.companyNature, '外企')
+  assert.equal(detail.publishedAt, '2026-09-20')
+  // 福利（welfareList）进 tags
+  assert.ok(detail.tags?.includes('带薪年假'))
+  assert.ok(detail.tags?.includes('五险一金'))
+  // 投递渠道线索（workday ATS + 官网外投）落 notes —— 与列表同款口径
+  assert.ok(detail.notes?.includes('ats:workday'))
+  assert.ok(detail.notes?.includes('apply:external-site'))
+  assert.equal(detail.sourceUrl, DETAIL_URL)
+
+  // 请求形态：GET {apiBase}/social-position/details?id=…，带 source:24（缺它服务端走另一套分支）
+  const request = target.requests[0]
+  assert.ok(request, '应发出一次详情请求')
+  assert.equal(request.url, 'https://backservice.offerxiansheng.com/api/position-service/social-position/details?id=257761')
+  assert.equal(request.init?.method, 'GET')
+  const headers = request.init?.headers as Record<string, string> | undefined
+  assert.equal(headers?.['source'], '24')
+})
+
+test('详情 JD：原文（常为英文）+ 平台中文翻译拼接，译文兜底时留痕', async () => {
+  const adapter = createWaiqiAdapter()
+  const base = DETAIL_PAYLOAD as { data: Record<string, unknown> }
+
+  // 真实夹具：原文与译文都在 → 拼接（下游按中文关键词打分，纯英文 JD 会系统性漏配）
+  const both = detailPage(okDetailStub)
+  const withBoth = await adapter.detail?.extract(both)
+  assert.ok(withBoth?.jdText?.includes('Senior Optical Design Engineer'))
+  assert.ok(withBoth?.jdText?.includes('【平台中文翻译】'))
+  assert.ok(withBoth?.jdText?.includes('光学设计软件'))
+
+  // 原文缺失、译文在 → 用译文兜底并记 note
+  const translateOnly = detailPage(() =>
+    Promise.resolve({
+      json: () => Promise.resolve({ ...base, data: { ...base.data, description: null } }),
+      status: 200,
+    }),
+  )
+  const withTranslate = await adapter.detail?.extract(translateOnly)
+  assert.ok(withTranslate?.jdText?.includes('光学设计软件'))
+  assert.ok(!withTranslate?.jdText?.includes('Senior Optical'))
+  assert.ok(withTranslate?.notes?.includes('jd:from-translate'))
+
+  // 两者都缺 → jdText 空 + note（主链按"没解析出 JD"记日志，不谎报）
+  const neither = detailPage(() =>
+    Promise.resolve({
+      json: () =>
+        Promise.resolve({ ...base, data: { ...base.data, description: null, translateDescription: null } }),
+      status: 200,
+    }),
+  )
+  const withNone = await adapter.detail?.extract(neither)
+  assert.equal(withNone?.jdText ?? '', '')
+  assert.ok(withNone?.notes?.includes('jd:absent'))
+})
+
+test('详情接口 code=1022 / 429 → 抛 PlatformBlockedError（主链按风控停手，不记成单条失败）', async () => {
+  const adapter = createWaiqiAdapter()
+  const detail = adapter.detail
+  assert.ok(detail)
+  for (const [code, message, kind] of [
+    [1022, '请先登录', 'login-required'],
+    [429, '访问行为异常，请稍后再试', 'rate-limited'],
+  ] as const) {
+    const target = detailPage(errorStub(code, message))
+    await assert.rejects(
+      () => detail.extract(target),
+      (error: unknown) => error instanceof PlatformBlockedError && error.kind === kind,
+    )
+  }
+})
+
+test('详情接口报错 → 抛错（记解析失败），URL 没有 id → 拒绝', async () => {
+  const adapter = createWaiqiAdapter()
+  const detail = adapter.detail
+  assert.ok(detail)
+  const target = detailPage(errorStub(1010, '参数错误'))
+  await assert.rejects(() => detail.extract(target), /详情接口未返回可用数据/)
+  // 当前页不是详情页形态（主链 goto 失败 / URL 被改写）→ 明确报错，不猜
+  const noId = page({ fetchStub: okDetailStub })
+  await assert.rejects(() => detail.extract(noId), /没有岗位 id/)
 })

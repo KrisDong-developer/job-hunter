@@ -59,6 +59,59 @@ test('发布时间维度不提供取值 —— 探针实测搜索页无该控件
   assert.deepEqual(posted.values, [])
 })
 
+test('即便方案里存着 postedWithinDays，URL 也**不许**带 issueDate（探针实测它会把结果清空）', () => {
+  // 2026-09-21 探针（带对照组的 URL 变体差分）：
+  //   基线 .joblist-item=20 → issueDate=7 → **0** → 基线（再跑一次）=20
+  // 这个参数被接受但会清空结果集 → 老方案里的 postedWithinDays 必须被忽略，
+  // 否则这一轮会静默抓回 0 条，而用户以为"今天没岗位"。
+  const adapter = createFiftyOneAdapter()
+  const url = adapter.criteria.buildSearchUrl({ keyword: 'Java', postedWithinDays: 7 })
+  assert.equal(url?.includes('issueDate'), false, String(url))
+})
+
+test('点击探针实测的三个筛选进 URL：degree / workYear / companyType，且不配就不写', () => {
+  // 证据来自站点自己的搜索历史接口（2026-09-21 点击探针）：
+  //   点「本科」→ `degree=04`，点「1-3年」→ `workYear=02`，点「国企」→ `companyType=04`。
+  const adapter = createFiftyOneAdapter()
+  const withFilters = adapter.criteria.buildSearchUrl({
+    platform: {
+      degree: '04',
+      workYear: '02',
+      companyType: '04',
+      companySize: '04',
+      jobType: '01',
+    },
+  })
+  assert.ok(withFilters !== null)
+  assert.ok(withFilters.includes('degree=04'), withFilters)
+  assert.ok(withFilters.includes('workYear=02'), withFilters)
+  assert.ok(withFilters.includes('companyType=04'), withFilters)
+  // 2026-09-21 同一套点击探针补的两个：点「500-1000人」→ `companySize=04`；点「全职」→ `jobType=01`。
+  assert.ok(withFilters.includes('companySize=04'), withFilters)
+  assert.ok(withFilters.includes('jobType=01'), withFilters)
+
+  // 与 sort 同款：**没配就不写** —— 塞平台默认值会静默改变"什么都没配"的行为。
+  const bare = adapter.criteria.buildSearchUrl({})
+  assert.equal(bare?.includes('degree='), false, String(bare))
+  assert.equal(bare?.includes('workYear='), false, String(bare))
+  assert.equal(bare?.includes('companyType='), false, String(bare))
+  assert.equal(bare?.includes('companySize='), false, String(bare))
+  assert.equal(bare?.includes('jobType='), false, String(bare))
+
+  // 维度声明：只列实测到的档位，且都写了 wire（声明与拼装同一份参数名）
+  const keys = adapter.criteriaDimensions.map((item) => item.key)
+  for (const key of ['degree', 'workYear', 'companyType', 'companySize', 'jobType']) {
+    assert.ok(keys.includes(key), `缺少探针实测过的维度 ${key}`)
+  }
+  const degree = adapter.criteriaDimensions.find((item) => item.key === 'degree')
+  assert.deepEqual(
+    degree?.values.map((item) => item.value),
+    ['03', '04', '05', '06'],
+    '学历只列实测档位（大专/本科/硕士/博士）',
+  )
+  assert.equal(degree?.wire?.param, 'degree')
+})
+
 test('排序映射进 URL：最新优先 → sortType=1', () => {
   const adapter = createFiftyOneAdapter()
   assert.equal(

@@ -3,7 +3,7 @@
 // platformHintOf / limitTextOf 都是本模块私有，对外只导出 PlanEditorModal。
 // 表单形状与换算（PlanForm / parseKeywordsText / writeOf）来自同目录的 plan-form。
 
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { AUTH_REQUIREMENT_LABEL, MATURITY_LEVEL_LABEL, MATURITY_LEVEL_SHORT, MATURITY_LEVEL_TONE } from '../../../shared/contract/enums/platform.js'
 import { PLAN_KEYWORDS_MAX } from '../../../shared/config/crawl.js'
 import { WEEKDAY_PRESETS, formatWeekdays, formatWindow, parseClockValue } from '../../../shared/text/time-format.js'
@@ -16,30 +16,12 @@ import { FieldHint } from '../../ui/field-hint.js'
 import { Modal } from '../../ui/modal.js'
 import type { PlanForm } from './plan-form.js'
 import { parseKeywordsText, writeOf } from './plan-form.js'
+import { FALLBACK_LABEL } from '../../../shared/text/criteria-label.js'
 import { CriteriaPreview } from './criteria-preview.js'
 
 /** 分步弹窗的三步（分步条与"下一步"的文案共用这一份，不各写一遍）。 */
 const PLAN_STEPS = ['基础与平台', '采集与筛选', '调度与后处理'] as const
 
-/**
- * 第 2 步里默认**摊在明面上**的筛选维度。
- *
- * 判据是"改方案时最常动的几个"。`keyword` **刻意不在维度网格里** —— 它升级成了
- * 方案级多关键词（每行一个），有自己的专属输入区，网格里再出现一个单值输入
- * 只会造成"两处都能配关键词"的歧义。
- * 其余维度（排序方式 / 发布时间 / 职位范围 / 各平台特有维度）默认值几乎都是"不限"，
- * 十来个下拉框全摊出来只会把上面这几个淹掉 —— 评审原话："中间 15+ 个下拉框大部分默认不限，
- * 极占空间"。所以它们进「高级筛选」折叠区。
- *
- * ⚠️ 放进折叠区**不等于**隐藏：不支持的维度仍然会渲染（禁用 + 写明原因），
- * 折叠区里有生效值时还会自动展开并把项数写在折叠开关上。
- */
-const PRIMARY_CRITERIA_KEYS: readonly string[] = [
-  'city',
-  'workExp',
-  'education',
-  'salaryRange',
-]
 
 /**
  * 表格「平台」列里问号的内容：**一个平台的静态事实**。
@@ -68,10 +50,15 @@ function platformHintOf(item: PlatformOverviewDto): string {
  * 完整说明在平台名旁的问号里 —— 表格单元格塞长段文字正是评审要消掉的那种噪音。
  */
 function limitTextOf(item: PlatformOverviewDto): string {
-  // 拦一道版本错位：宿主半改了 `maxPages` 而 DSH 没重启时，这个字段会是 undefined。
-  // 那种情况下宁可不写页数，也不要印出"最多 undefined 页"（OPTIMIZATION-PLAN §1.2 第 9 条：
-  // 改宿主半必须重启 DSH —— 界面这一侧不该因此说假话）。
-  const parts = Number.isFinite(item.maxPages) ? [`最多 ${String(item.maxPages)} 页`] : []
+  const parts: string[] = []
+  // 深度**按平台适配**：只有真的能翻页的平台才写"最多 N 页"。
+  // 上限 ≤ 1 的平台（BOSS 的页码本来就不可寻址）不写页数 —— 它真正的深度旋钮
+  // 是它自己声明的那个维度，在下一步的「采集深度」里按它的名字出现（加载轮数）。
+  // 拦一道版本错位：宿主半改了 `maxPages` 而 DSH 没重启时这个字段会是 undefined，
+  // 那种情况下宁可不写页数，也不要印出"最多 undefined 页"。
+  if (Number.isFinite(item.maxPages) && item.maxPages > 1) {
+    parts.push(`最多 ${String(item.maxPages)} 页`)
+  }
   const crawl = item.authRequirement.crawl
   if (crawl === 'required') parts.push('抓取需登录')
   else if (crawl === 'unknown') parts.push('抓取登录未验证')
@@ -118,13 +105,7 @@ export function PlanEditorModal(props: {
   const [step, setStep] = useState(0)
   /** 「配置须知」默认**收起**：它每次都出现，展开就等于每次弹窗都先挡一段说明。 */
   const [rulesOpen, setRulesOpen] = useState(false)
-  /** 「高级筛选」展开态；有生效值时会被下面的 effect 强制展开（折叠的条件不能变成隐形条件）。 */
-  const [advancedOpen, setAdvancedOpen] = useState(false)
-  /** 「用不了的筛选」展开态（那些维度没有输入框，只是**报出来**）。 */
-  const [blockedOpen, setBlockedOpen] = useState(false)
-  /** 批量设置页数用的输入值（不落库，只作用于一次点击）。 */
-  const [batchPages, setBatchPages] = useState('5')
-  const allBoxRef = useRef<HTMLInputElement>(null)
+
   /** 正在保存（本弹窗自己的，不含页面级那一条反馈）。 */
   const [submitting, setSubmitting] = useState(false)
   /** 保存失败的原因，**就地**显示。 */
@@ -170,11 +151,10 @@ export function PlanEditorModal(props: {
    * 实时查重（防抖）：平台/筛选条件一改就自动校验，不用再手动点「检查是否重复」。
    * 只对**真正影响查重**的输入做键，避免每次敲字都触发。
    */
-  // 覆盖项也进键：改"停用某个平台"或"它的页数"时，提示（如"深度被截断"）要跟着重算。
-  // 关键词同理 —— 宿主的查重口径里关键词是**参与比较**的（多关键词方案之间
-  // "同样的平台 + 同样的条件 + 同样的关键词"才算重复），不进键就会拿着一份旧结论。
+  // 关键词也要进键 —— 宿主的查重口径里关键词是**参与比较**的（"同样的平台 + 同样的条件
+  // + 同样的关键词"才算重复），不进键就会拿着一份旧结论。
   const keywordsKey = JSON.stringify(parseKeywordsText(form.keywordsText))
-  const validationKey = `${form.platforms.join(',')}\u0000${JSON.stringify(form.overrides)}\u0000${JSON.stringify(form.criteria)}\u0000${keywordsKey}`
+  const validationKey = `${form.platforms.join(',')}\u0000${JSON.stringify(form.criteria)}\u0000${keywordsKey}`
   useEffect(() => {
     // 新建方案也走这条（`POST /plans/validate`）—— "选了国聘 + 成都"要能在保存前就看见。
     const timer = window.setTimeout(() => {
@@ -206,20 +186,24 @@ export function PlanEditorModal(props: {
   )
   const items: CriteriaDimensionDto[] = dimensions.state.status === 'ok' ? dimensions.state.data.items : []
 
-  const togglePlatform = (id: string): void => {
-    const has = form.platforms.includes(id)
-    const nextPlatforms = has ? form.platforms.filter((item) => item !== id) : [...form.platforms, id]
-    // 覆盖项跟着平台集合走：加入时补一条默认（否则那一行没有初值），
-    // 移除时**同时删掉**它的覆盖项（留着它会在重新加入时静默生效）。
-    const nextOverrides = { ...form.overrides }
-    if (has) delete nextOverrides[id]
-    else nextOverrides[id] = { enabled: true, maxPages: '' }
-    patch({ platforms: nextPlatforms, overrides: nextOverrides })
-  }
-
-  const setOverride = (id: string, next: Partial<{ enabled: boolean; maxPages: string }>): void => {
-    const current = form.overrides[id] ?? { enabled: true, maxPages: '' }
-    patch({ overrides: { ...form.overrides, [id]: { ...current, ...next } } })
+  /**
+   * 选平台（**单选**）：一个方案只抓一个平台。
+   *
+   * 换平台时把筛选条件**一并清空**：条件的取值域与参数名都是平台自己的，
+   * 上一个平台选好的「行业 33」搬到另一个平台上没有任何意义（那边 33 可能是别的东西，
+   * 或者干脆没这个筛选）—— 留着它，界面上看起来"配好了"，实际发出去的是错的。
+   */
+  const selectPlatform = (id: string): void => {
+    /** 当前是**单平台**方案时的那个平台；`null` = 还没选，或**旧数据**里的多平台行。 */
+    const previousSingle = form.platforms.length === 1 ? form.platforms[0] : null
+    if (previousSingle === id) return
+    // 真的从 A 平台换到 B 平台 → 条件清空（取值域与参数名都是平台自己的，搬过去没有意义）。
+    // 把旧的多平台行收敛成一个平台时**保留**条件 —— 那些值本来就是这个方案在用的，
+    // 平台用不了的那几条由第 2 步的「这个平台用不了的条件」逐条移除。
+    patch({
+      platforms: [id],
+      ...(previousSingle === null ? {} : { criteria: {} }),
+    })
   }
 
   const setCriteria = (key: string, value: string): void => {
@@ -281,109 +265,80 @@ export function PlanEditorModal(props: {
     }
   }
 
-  // ── 第 1 步的门槛：与 `validatePlanConfig` 的三条硬性判据**一一对应** ──────────
+  // ── 第 1 步的门槛：与 `validatePlanConfig` 的硬性判据**一一对应** ──────────────
   // 拦在这里只是省一趟必然失败的网络往返，不是另立一套规则。
-  const includedCount = form.platforms.length
-  const enabledCount = form.platforms.filter(
-    (id) => (form.overrides[id] ?? { enabled: true }).enabled,
-  ).length
   const nameMissing = form.name.trim() === ''
-  const stepOneBlocked = nameMissing || includedCount === 0 || enabledCount === 0
-  const planPages = form.criteria['maxPages'] ?? ''
+  const platformMissing = form.platforms.length === 0
+  const stepOneBlocked = nameMissing || platformMissing
   /** 生效关键词数（清洗后）；超上限 → 保存按钮置灰并就地说明（判据与宿主一致）。 */
   const keywordCount = parseKeywordsText(form.keywordsText).length
   const keywordsOverCap = keywordCount > PLAN_KEYWORDS_MAX
 
-  // 方案级页数上限在第 1 步与平台表挨着呈现，所以从第 2 步的维度网格里摘出去 ——
-  // 同一个输入出现在两处，正是评审要消掉的那种重复。
-  // keyword 同理：它升级成了下面的多关键词输入区，网格里不再出现。
-  const pagesDimension = items.find((item) => item.key === 'maxPages')
-  const filterItems = items.filter((item) => item.key !== 'maxPages' && item.key !== 'keyword')
-  /** **能填的**维度（至少有一个已选平台会真的按它筛）→ 进编辑网格。 */
-  const editableItems = filterItems.filter((item) => item.supported)
-  const primaryItems = editableItems.filter((item) => PRIMARY_CRITERIA_KEYS.includes(item.key))
-  const primaryKeys = new Set(primaryItems.map((item) => item.key))
-  const advancedItems = editableItems.filter((item) => !primaryKeys.has(item.key))
   /**
-   * **填不了的**维度：没有任何已选平台支持它，或平台声明了却一个取值都不收
-   * （`closed` + 空值域）。
+   * **要显示的条件 = 这个平台声明了 且 真的能发到平台参数上。**
    *
-   * 它们不进编辑网格 —— 以前是"每个平台铺一排禁用输入框"（indeed 那种只支持
-   * 关键词/地点/页数的平台，会白占 5 个格子，用户既填不了、也看不出为什么在那儿）。
-   * 但也**不消失**：折叠区里逐条写明原因，且**带着旧值时留在外面可直接移除** ——
-   * 否则校验会拦下保存（"这些筛选条件当前平台不认识/没有可用取值"），
-   * 而用户在界面上找不到那个条件的任何控件，就卡死了。
+   * 判据就是声明里的 `wire`：
+   *   * `wire !== null` → 它落在某个真实参数上 → **列出来**；
+   *   * `wire === null` → 它不进请求（采集深度旋钮），或者平台侧这个筛选根本没打通
+   *     （51job / 智联的发布时间、国聘的城市）→ **不列**。
+   *
+   * 为什么"站点页面有、适配器没写"的不列出来：那是**适配器的缺口**，不是用户的配置项。
+   * 把"平台有这个筛选、但我们发不出去"摆进表单，只会让用户配一个点了没用的东西
+   * （而这正是之前那几个静默失败的样子）。缺的筛选该去适配器里补，不该让界面兜。
+   *
+   * `keyword` 单独摘出去：它有自己的多关键词输入区（一轮里逐个跑）。
    */
-  const blockedItems = filterItems.filter((item) => !item.supported)
-  const staleBlocked = blockedItems.filter((item) => (form.criteria[item.key] ?? '') !== '')
-  const restBlocked = blockedItems.filter((item) => (form.criteria[item.key] ?? '') === '')
-  const advancedActiveCount = advancedItems.filter(
-    (item) => (form.criteria[item.key] ?? '') !== '',
-  ).length
+  const wiredItems = items.filter(
+    (item) => item.key !== 'keyword' && item.wire !== null && item.supported,
+  )
+  /**
+   * **采集深度**：同样由适配器声明，但**不进请求** —— 它是"抓几轮"，不是"按什么筛"。
+   *
+   * 单独一块，而且**按平台适配**：翻页的平台声明的是「抓取页数上限」，
+   * 下滑加载的平台（BOSS 直聘）声明的是「加载轮数」—— 控件、标签、上限全部来自
+   * 那个平台的声明，界面不替它决定"深度长什么样"。
+   * `maxPages` 上限 ≤ 1 的平台不显示它（那等于不可调，BOSS 的页码本来就不可寻址），
+   * 它真正的深度旋钮是 `scrollRounds`。
+   */
+  const depthItems = items.filter(
+    (item) =>
+      item.wire === null &&
+      item.declared === true &&
+      item.supported &&
+      (item.key !== 'maxPages' || (item.max ?? 0) > 1),
+  )
+  /**
+   * **方案里带着、但这个平台根本没有（或发不出去）的条件。**
+   *
+   * 两个来路：① 从别的平台换过来时清过一次，但老数据（多平台行 / 旧版本）仍可能带着；
+   * ② 适配器后来撤掉了某个维度。它们**不会被渲染成控件**（本屏只画这个平台声明了
+   * 且能发出去的条件），而校验会拦下这种保存 —— 所以必须给一条出路，
+   * 否则用户在界面上找不到任何能改它的地方，方案就卡死了。
+   */
+  const orphanKeys = Object.keys(form.criteria).filter(
+    (key) =>
+      key !== 'keyword' &&
+      !items.some((item) => item.key === key && item.wire !== null && item.supported),
+  )
+
   /**
    * 干跑预览用的**生效条件**。
    *
    * 多关键词方案里条件本身不含 `keyword`（它是逐个跑的），所以要把**第一个关键词**
    * 补进去 —— 那正是最先发出去的那一次请求。少放它，预览就会漏掉最要紧的那个参数。
    */
+  /** 选中的那个平台（空 = 还没选）。第 2 步的标题与预览都用它。 */
+  const selectedPlatformId = form.platforms[0] ?? null
+  const selectedPlatformName =
+    selectedPlatformId === null ? '所选平台' : platformNameOf(selectedPlatformId)
   const previewKeyword = parseKeywordsText(form.keywordsText)[0]
   const previewCriteria: Record<string, string> = {
     ...(writeOf(form).criteria ?? {}),
     ...(previewKeyword === undefined ? {} : { keyword: previewKeyword }),
   }
-  const advancedNames =
-    advancedItems
-      .filter((item) => item.supported)
-      .map((item) => item.label)
-      .slice(0, 4)
-      .join(' / ') || '排序方式 / 发布时间 / 平台特有维度'
 
-  useEffect(() => {
-    // 高级区里有生效值就必须展开：折叠的条件不能变成隐形条件（与岗位库同一条判据）。
-    if (advancedActiveCount > 0) setAdvancedOpen(true)
-  }, [advancedActiveCount])
 
-  const allIncluded = includedCount > 0 && includedCount === props.available.length
-  useEffect(() => {
-    // 半选态只能通过 DOM 属性表达（React 没有对应的 prop），所以跟着渲染同步一次。
-    const box = allBoxRef.current
-    if (box !== null) box.indeterminate = includedCount > 0 && !allIncluded
-  }, [includedCount, allIncluded])
 
-  const toggleAll = (): void => {
-    if (allIncluded) {
-      patch({ platforms: [], overrides: {} })
-      return
-    }
-    // 保留已经配过的覆盖项：全选不该把"某个平台单独设的页数/暂停"抹掉。
-    const nextOverrides: Record<string, { enabled: boolean; maxPages: string }> = {}
-    for (const item of props.available) {
-      nextOverrides[item.id] = form.overrides[item.id] ?? { enabled: true, maxPages: '' }
-    }
-    patch({ platforms: props.available.map((item) => item.id), overrides: nextOverrides })
-  }
-
-  /**
-   * 批量设置页数上限（评审："支持顶部批量设置选中平台页数上限"）。
-   *
-   * **超过平台自己上限的按该平台上限填写**，而不是静默截断：工具栏上就写着这条，
-   * 表格里的数字也会当场变成那个上限，而「限制」列本来就写着"最多 N 页"。
-   * 不这么做的话，一次批量设置会造出若干条保存时必然被拒的配置（guopin / waiqi / zhipin
-   * 都只有 1 页，不是边角情况）。
-   */
-  const applyBatchPages = (): void => {
-    const parsed = Number.parseInt(batchPages, 10)
-    if (!Number.isFinite(parsed) || parsed <= 0) return
-    const nextOverrides = { ...form.overrides }
-    for (const item of props.available) {
-      if (!form.platforms.includes(item.id)) continue
-      const current = nextOverrides[item.id] ?? { enabled: true, maxPages: '' }
-      // 拿不到平台上限时（版本错位）不收敛、也不写 NaN —— 就按用户填的值写下去。
-      const cap = Number.isFinite(item.maxPages) ? item.maxPages : parsed
-      nextOverrides[item.id] = { ...current, maxPages: String(Math.min(parsed, cap)) }
-    }
-    patch({ overrides: nextOverrides })
-  }
 
   /**
    * 渲染一个筛选维度（高频区与高级区共用同一份）。
@@ -404,22 +359,30 @@ export function PlanEditorModal(props: {
   const renderDimension = (dimension: CriteriaDimensionDto) => {
     const value = form.criteria[dimension.key] ?? ''
     const hint = dimension.supported ? dimension.hint : (dimension.disabledReason ?? dimension.hint)
+    /**
+     * ⚠️ **版本错位时的兜底**：宿主半是启动时装载的，改了 `src/` 只刷新页面（客户端半）
+     * 会拿到**旧形状**的维度 —— 没有 `open` / `platforms` / `declared` / `wire`。
+     * 这里必须容忍它，否则用户一刷新方案弹窗就白屏（`undefined.filter` 直接崩）。
+     * 兜底口径刻意与**旧实现逐字一致**：`values` 非空 = 下拉、空 = 自由文本输入。
+     */
+    const freeText = dimension.open ?? dimension.values.length === 0
+    const platformViews = dimension.platforms ?? []
     /** 声明了这个维度的平台（`declared=false` 的是"平台侧没有这个筛选参数"）。 */
-    const declarers = dimension.platforms.filter((item) => item.declared)
+    const declarers = platformViews.filter((item) => item.declared)
     /** 取值需要标"仅谁"吗：只有当**另一个也有这个筛选的平台**不认这个取值时才标。 */
     const partial = (platforms: readonly string[]): boolean =>
       platforms.length > 0 && platforms.length < declarers.length
     const options = dimension.values.map((option) => ({
       value: option.value,
-      label: partial(option.platforms)
-        ? `${option.label}（仅 ${option.platforms.map(platformNameOf).join('、')}）`
+      label: partial(option.platforms ?? [])
+        ? `${option.label}（仅 ${(option.platforms ?? []).map(platformNameOf).join('、')}）`
         : option.label,
     }))
     /**
      * 归属那句"谁支持、谁不支持"——**只在有话要说时**才出现：
      * 要么有平台没有这个筛选，要么有平台声明了却填不了。
      */
-    const notes = dimension.platforms
+    const notes = platformViews
       .filter((item) => !item.supported)
       .map((item) => `${platformNameOf(item.id)}：${item.note ?? '不支持这个筛选'}`)
     const listId = `jh-dim-${dimension.key}`
@@ -439,7 +402,40 @@ export function PlanEditorModal(props: {
           {dimension.supported ? null : <em className="jh-field-flag">当前平台不支持</em>}
           <FieldHint text={hint} />
         </span>
-        {dimension.numeric ? (
+        {dimension.multi ? (
+          <>
+            <div className="jh-chips" role="group" aria-label={dimension.label}>
+              {options.map((option) => {
+                const picked = value
+                  .split(',')
+                  .filter((item) => item !== '')
+                  .includes(option.value)
+                return (
+                  <label key={option.value} className="jh-check">
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      onChange={() => {
+                        const current = value.split(',').filter((item) => item !== '')
+                        const next = picked
+                          ? current.filter((item) => item !== option.value)
+                          : [...current, option.value]
+                        // 空 = 不筛（平台侧的语义就是"这个参数不设值"）
+                        setCriteria(dimension.key, next.join(','))
+                      }}
+                    />
+                    {option.label}
+                  </label>
+                )
+              })}
+            </div>
+            <span className="jh-filter-note">
+              {value === ''
+                ? '不按它筛'
+                : `已选 ${String(value.split(',').filter((item) => item !== '').length)} 项（可多选）`}
+            </span>
+          </>
+        ) : dimension.numeric ? (
           <input
             className="jh-input"
             type="number"
@@ -713,182 +709,57 @@ export function PlanEditorModal(props: {
               ) : null}
             </div>
 
-            <div className="jh-section-title">目标平台与页数</div>
+            <div className="jh-section-title">目标平台</div>
+            <p className="jh-filter-note">
+              一个方案只抓一个平台：筛选条件是按平台自己的取值域与参数名定义的，
+              两个平台共用一份条件必然有一家收错。要同时盯多个平台就建多个方案
+              —— 它们的时段与每日额度各自独立。
+            </p>
 
             {props.available.length === 0 ? (
               <p className="jh-muted">还没有已注册的平台。</p>
             ) : (
-              <>
-                {/* 方案级页数：只作用于**没单独填页数**的平台。方案级表达不了"某个平台
-                    只支持 1 页"，所以逐平台的覆盖项才是精确的那一层（见下表）。 */}
-                {pagesDimension === undefined || !pagesDimension.supported ? null : (
-                  <div className="jh-field">
-                    <span className="jh-field-label">
-                      抓取页数上限（方案级）
-                      <FieldHint
-                        text={`${pagesDimension.hint} 单个平台可在下表单独填，填了就用它。留空则各平台按自己的默认页数抓；超过某个平台自身上限的部分对它无效，保存前会提示。`}
-                      />
-                    </span>
-                    <div className="jh-field-row">
+              <div className="jh-platform-list" role="radiogroup" aria-label="目标平台">
+                {props.available.map((item) => {
+                  const selected = form.platforms[0] === item.id
+                  return (
+                    <label
+                      key={item.id}
+                      className={`jh-platform-row${selected ? ' jh-platform-row-on' : ''}`}
+                    >
                       <input
-                        className="jh-input jh-input-narrow"
-                        type="number"
-                        min={1}
-                        placeholder="默认"
-                        aria-label="方案级抓取页数上限"
-                        value={planPages}
-                        onChange={(event) => setCriteria('maxPages', event.target.value)}
+                        type="radio"
+                        name="jh-plan-platform"
+                        checked={selected}
+                        onChange={() => selectPlatform(item.id)}
                       />
-                      <span className="jh-muted">页 —— 留空则各平台按自己的默认页数抓</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* 表格工具条：全选在左（与"已勾选的行"贴在一起），批量设置在右 */}
-                <div className="jh-batch">
-                  <label className="jh-check">
-                    <input
-                      ref={allBoxRef}
-                      type="checkbox"
-                      checked={allIncluded}
-                      onChange={toggleAll}
-                    />
-                    全选
-                  </label>
-                  <span className="jh-muted">
-                    已纳入 {includedCount} / {props.available.length} 个平台
-                    {enabledCount === includedCount
-                      ? ''
-                      : `（其中 ${String(includedCount - enabledCount)} 个已暂停）`}
-                  </span>
-                  <span className="jh-spacer" />
-                  <label className="jh-muted" htmlFor="jh-batch-pages">
-                    批量设置页数上限
-                  </label>
-                  <input
-                    id="jh-batch-pages"
-                    className="jh-input"
-                    type="number"
-                    min={1}
-                    value={batchPages}
-                    onChange={(event) => setBatchPages(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="jh-btn jh-btn-inline jh-btn-tiny"
-                    disabled={includedCount === 0}
-                    title="给所有已纳入的平台填上同一个页数上限。超过平台自身上限的按该平台上限填写。"
-                    onClick={applyBatchPages}
-                  >
-                    应用
-                  </button>
-                </div>
-                <p className="jh-filter-note">
-                  超过平台自身上限的按该平台上限填写；页数留空的平台用上面的方案级页数。
-                </p>
-
-                <div className="jh-table-scroll">
-                  <table className="jh-table jh-table-plan jh-table-roomy">
-                    <thead>
-                      <tr>
-                        <th scope="col" className="jh-col-check">
-                          <span className="jh-sr-only">纳入方案</span>
-                        </th>
-                        <th scope="col">平台</th>
-                        <th scope="col">状态</th>
-                        <th scope="col">页数上限</th>
-                        <th scope="col">限制</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {props.available.map((item) => {
-                        const included = form.platforms.includes(item.id)
-                        const entry = form.overrides[item.id] ?? { enabled: true, maxPages: '' }
-                        // 至少留一个启用的平台：全暂停等于"这个方案永远不抓任何东西"，
-                        // 而 `validatePlanConfig` 会因此直接拒绝保存 —— 与其让用户点两次
-                        // 才知道，不如把最后一个"暂停"按禁掉并说明原因。
-                        const lastEnabled = included && entry.enabled && enabledCount === 1
-                        // 超过这个平台自己的上限 → 保存必被拒（`validatePlanConfig` 按**每个平台
-                        // 各自**的 maxPages 校验）。这里先说出来，省一趟必然失败的往返。
-                        const overCap =
-                          entry.maxPages.trim() !== '' && Number(entry.maxPages) > item.maxPages
-                        return (
-                          <tr key={item.id}>
-                            <td className="jh-col-check">
-                              <input
-                                type="checkbox"
-                                checked={included}
-                                aria-label={`纳入 ${item.displayName}`}
-                                onChange={() => togglePlatform(item.id)}
-                              />
-                            </td>
-                            <td>
-                              {item.displayName}
-                              <FieldHint text={platformHintOf(item)} />
-                            </td>
-                            <td>
-                              <span
-                                className={`jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`}
-                              >
-                                {MATURITY_LEVEL_SHORT[item.maturity.level]}
-                              </span>
-                              {included && !entry.enabled ? (
-                                <span className="jh-tag jh-tone-muted">已暂停</span>
-                              ) : null}
-                              {included ? (
-                                <button
-                                  type="button"
-                                  className="jh-btn jh-btn-inline jh-btn-tiny"
-                                  disabled={lastEnabled}
-                                  title={
-                                    lastEnabled
-                                      ? '至少留一个启用的平台 —— 全暂停等于这个方案永远抓不到东西。'
-                                      : entry.enabled
-                                        ? '暂时不抓这个平台（保留它的页数配置与查重口径）。'
-                                        : '恢复抓取这个平台。'
-                                  }
-                                  onClick={() => setOverride(item.id, { enabled: !entry.enabled })}
-                                >
-                                  {entry.enabled ? '暂停' : '恢复'}
-                                </button>
-                              ) : null}
-                            </td>
-                            <td>
-                              <input
-                                className="jh-input jh-pages-input"
-                                type="number"
-                                min={1}
-                                max={item.maxPages}
-                                value={entry.maxPages}
-                                placeholder={planPages === '' ? '默认' : planPages}
-                                disabled={!included || !entry.enabled}
-                                aria-invalid={overCap}
-                                aria-label={`${item.displayName} 的页数上限`}
-                                onChange={(event) =>
-                                  setOverride(item.id, { maxPages: event.target.value })
-                                }
-                              />
-                            </td>
-                            <td className="jh-muted">
-                              {limitTextOf(item)}
-                              {overCap ? (
-                                <span className="jh-error"> · 超过上限，保存会被拒</span>
-                              ) : null}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
+                      <span className="jh-platform-name">
+                        {item.displayName}
+                        <FieldHint text={platformHintOf(item)} />
+                      </span>
+                      <span className={`jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`}>
+                        {MATURITY_LEVEL_SHORT[item.maturity.level]}
+                      </span>
+                      <span className="jh-spacer" />
+                      <span className="jh-muted">{limitTextOf(item)}</span>
+                    </label>
+                  )
+                })}
+              </div>
             )}
+
+            {form.platforms.length > 1 ? (
+              <p className="jh-warn" role="alert">
+                这个方案原来带着 {String(form.platforms.length)} 个平台（旧数据）——
+                现在一个方案只抓一个平台。点一个平台就只保留它（其余平台请另建方案）；
+                保存前必须收敛成一个。
+              </p>
+            ) : null}
 
             {stepOneBlocked ? (
               <p className="jh-warn" role="alert">
                 {nameMissing ? '先填方案名。' : ''}
-                {includedCount === 0 ? '至少纳入一个平台。' : ''}
-                {includedCount > 0 && enabledCount === 0 ? '至少留一个未暂停的平台。' : ''}
+                {platformMissing ? '选一个平台。' : ''}
                 这两条同时也是保存接口的硬性判据。
               </p>
             ) : null}
@@ -927,79 +798,45 @@ export function PlanEditorModal(props: {
               )}
             </div>
 
-            {/* 高频区：只留"改方案时最常动的几个"。其余进高级筛选 ——
-                它们默认值几乎都是"不限"，摊在明面上只会把上面这几个淹掉。 */}
-            <div className="jh-section-title">筛选条件</div>
-            {editableItems.length === 0 ? (
+            <div className="jh-section-title">{selectedPlatformName} 的搜索条件</div>
+            <p className="jh-filter-note">
+              这里是这个平台声明了、并且真的会发到它接口参数上的全部筛选条件，一条不少。
+              平台页面上有、但适配器还没打通的条件不会出现在这里 —— 那是适配器的缺口，
+              摆进表单只会让你配一个点了没用的东西。
+            </p>
+            {wiredItems.length === 0 ? (
               <p className="jh-muted">
-                已纳入的平台没有可用的筛选维度 —— 保存后它们会按平台自己的默认列表抓。
-              </p>
-            ) : primaryItems.length === 0 ? (
-              <p className="jh-muted">
-                已纳入的平台没有「城市 / 经验 / 学历 / 薪资」这几类常用筛选 ——
-                它们能筛的东西都在下面的「高级筛选」里。
+                这个平台没有可配的筛选条件 —— 保存后它会按自己的默认列表抓。
               </p>
             ) : (
-              <div className="jh-grid2">{primaryItems.map(renderDimension)}</div>
+              <div className="jh-grid2">{wiredItems.map(renderDimension)}</div>
             )}
 
-            {/* 高级筛选默认收起；**有生效值时会被上面的 effect 自动展开**，
-                折叠开关上也把项数写出来 —— 折叠的条件不能变成隐形条件。 */}
-            {advancedItems.length === 0 ? null : (
-              <>
-                <button
-                  type="button"
-                  className="jh-plan-toggle"
-                  aria-expanded={advancedOpen}
-                  aria-controls="jh-plan-advanced"
-                  onClick={() => setAdvancedOpen((open) => !open)}
-                >
-                  <span className="jh-plan-caret" aria-hidden="true">
-                    {advancedOpen ? '▾' : '▸'}
-                  </span>
-                  <span className="jh-plan-toggle-text">高级筛选</span>
-                  <span
-                    className={`jh-filter-note${advancedActiveCount > 0 ? ' jh-filter-note-on' : ''}`}
-                  >
-                    {advancedActiveCount > 0
-                      ? `已设 ${String(advancedActiveCount)} 项`
-                      : advancedNames}
-                  </span>
-                </button>
-                <div className="jh-plan-panel" id="jh-plan-advanced" hidden={!advancedOpen}>
-                  <div className="jh-grid2">{advancedItems.map(renderDimension)}</div>
-                </div>
-              </>
-            )}
-            {/* ── 干跑预览：这份条件**实际上会发出什么请求** ────────────────────
-                写在筛选条件下面、折叠区之外：它是"我配的东西到底有没有生效"的直接答案。
-                宿主侧只调拼 URL / body 的纯函数，不发请求、不开浏览器（见 criteria-preview.tsx）。 */}
-            <CriteriaPreview platforms={form.platforms} criteria={previewCriteria} />
-
-            {/* ── 用不了的筛选 ────────────────────────────────────────────────
-                两条要求同时成立才放这里：
-                  ① **不隐藏**（§5.5）—— 逐条写明"哪个平台说了什么原因"，
-                     否则用户会以为平台根本没这个功能，或者以为界面坏了；
-                  ② **编辑网格里不给灰输入框** —— 用户填不了，还白占一格。
-                带旧值的那几条**直接摊在外面**并给一个移除按钮：校验会拦下这种方案
-                （"没有可用的取值"），而用户在界面上找不到任何能改它的地方就卡死了。 */}
-            {staleBlocked.length === 0 ? null : (
+            {/* 老数据 / 换平台残留：这个平台用不了的条件。不画成控件（画了也发不出去），
+                但必须能一条条移除 —— 否则保存一定被拦，而用户在界面上无处可改。 */}
+            {orphanKeys.length === 0 ? null : (
               <div className="jh-alert jh-alert-warn" role="alert">
                 <div className="jh-alert-head">
-                  <span className="jh-alert-title">有 {String(staleBlocked.length)} 个条件当前平台用不了</span>
-                  <span className="jh-muted">平台上不会按它筛，保存前会被拦下 —— 点「移除这个条件」清掉</span>
+                  <span className="jh-alert-title">
+                    有 {String(orphanKeys.length)} 个条件这个平台用不了
+                  </span>
+                  <span className="jh-muted">平台不会按它筛，保存前会被拦下 —— 点「移除」清掉</span>
                 </div>
                 <ul className="jh-alert-list">
-                  {staleBlocked.map((item) => (
-                    <li key={item.key} className="jh-dim-blocked">
+                  {orphanKeys.map((key) => (
+                    <li key={key} className="jh-dim-blocked">
                       <span>
-                        <b>{item.label}</b>：{form.criteria[item.key] ?? ''} —— {item.disabledReason}
+                        <b>
+                          {items.find((item) => item.key === key)?.label ??
+                            FALLBACK_LABEL[key] ??
+                            key}
+                        </b>
+                        ：{form.criteria[key] ?? ''} —— 当前平台（{selectedPlatformName}）没有这个筛选
                       </span>
                       <button
                         type="button"
                         className="jh-btn jh-btn-inline jh-btn-tiny"
-                        title="只从这个方案里去掉这一条条件，不影响平台配置。"
-                        onClick={() => setCriteria(item.key, '')}
+                        onClick={() => setCriteria(key, '')}
                       >
                         移除这个条件
                       </button>
@@ -1009,36 +846,23 @@ export function PlanEditorModal(props: {
               </div>
             )}
 
-            {restBlocked.length === 0 ? null : (
+            {/* 采集深度：**按平台适配** —— 翻页的平台声明的是「抓取页数上限」，
+                下滑加载的平台（BOSS 直聘）声明的是「加载轮数」。标签、上限、说明
+                全部来自那个平台的声明，界面不替它决定"深度该长什么样"。 */}
+            {depthItems.length === 0 ? null : (
               <>
-                <button
-                  type="button"
-                  className="jh-plan-toggle"
-                  aria-expanded={blockedOpen}
-                  aria-controls="jh-plan-blocked"
-                  onClick={() => setBlockedOpen((open) => !open)}
-                >
-                  <span className="jh-plan-caret" aria-hidden="true">
-                    {blockedOpen ? '▾' : '▸'}
-                  </span>
-                  <span className="jh-plan-toggle-text">
-                    当前平台用不了的筛选（{String(restBlocked.length)}）
-                  </span>
-                  <span className="jh-filter-note">
-                    {restBlocked.map((item) => item.label).join(' / ')}
-                  </span>
-                </button>
-                <div className="jh-plan-panel" id="jh-plan-blocked" hidden={!blockedOpen}>
-                  <ul className="jh-alert-list">
-                    {restBlocked.map((item) => (
-                      <li key={item.key}>
-                        <b>{item.label}</b> —— {item.disabledReason}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <div className="jh-section-title">采集深度</div>
+                <p className="jh-filter-note">
+                  这些不进请求，只决定这个平台抓多深（翻页抓几页／滚动加载几轮）。
+                </p>
+                <div className="jh-grid2">{depthItems.map(renderDimension)}</div>
               </>
             )}
+
+            {/* ── 干跑预览：这份条件**实际上会发出什么请求** ────────────────────
+                写在筛选条件下面：它是"我配的东西到底有没有生效"的直接答案。
+                宿主侧只调拼 URL / body 的纯函数，不发请求、不开浏览器（见 criteria-preview.tsx）。 */}
+            <CriteriaPreview platforms={form.platforms} criteria={previewCriteria} />
           </>
         ) : null}
 

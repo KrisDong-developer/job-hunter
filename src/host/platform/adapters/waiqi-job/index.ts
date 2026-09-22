@@ -36,7 +36,7 @@
  * 职能 / 行业 / 企业性质虽然生效，但要各自挂一份 id 表才做得对，本轮先不做（见
  * `docs/PLATFORM-WAIQI.md` §6）。
  *
- * ## robots.txt 取舍
+ * ## robots.txt 取舍（2026-09-21 口径更新，经用户确认）
  *
  * `https://www.waiqi.com/robots.txt` 只禁 `/position/detail`：
  * ```
@@ -44,18 +44,27 @@
  * Disallow: /position/detail
  * Allow: /
  * ```
- * 本适配器访问的是 `/position`（列表）与列表**接口**，不碰 `/position/detail`，
- * 因此与站点声明一致。详情页链接仍然会写进 `source_url`（那是给**人**点的），
- * 但采集链路不会去自动打开它。
+ * 2026-09-18 的旧口径是"完全不碰详情页"。本轮起 **detail 补抓会导航到该页**：
+ * 主链 `fetchNewJobDetails` 固定 `goto(sourceUrl)`，适配器无法绕开。取舍如下 ——
+ *
+ *   * JD 明文取自**同源 details 接口**（`backservice.offerxiansheng.com`，不在
+ *     www.waiqi.com robots 的管辖域），**不解析**页面 DOM；
+ *   * 频次受主链三重约束：只补**新增**岗位、每轮 `DETAIL_FETCH_MAX_PER_ROUND` 上限、
+ *     高斯间隔 + 突发惩罚（`domain/crawl.ts`）；
+ *   * 平台若收紧 robots / 用户不想让采集链打开详情页：DB 覆盖
+ *     `detailApiEnabled:false` 即可整体下线（`detail` 槽位随之为空）。
+ *
+ * 详情页链接 `source_url` 本来就是给人点的，这一点不变。
  *
  * ## 本目录分工（每平台一个目录）
  *
- *   * `config.ts` —— 配置面：选择器接口 / 字段名 / 值域 / 城市码表 / 职能与行业 seed /
- *     判墙信号常量 + `mergeWaiqiConfig`（纯数据 + 纯函数）；
+ *   * `config.ts` —— 配置面：选择器接口 / 字段名（列表 + 详情两份）/ 值域 / 城市码表 /
+ *     职能与行业 seed / 判墙信号常量 + `mergeWaiqiConfig`（纯数据 + 纯函数）；
  *   * `urls.ts`   —— 宿主机侧的 URL 与请求体构造（含多城市归一化 `splitCityList`，不碰 `document`）；
  *   * `page.ts`   —— 页面上下文函数（`page.evaluate` 序列化后进浏览器），
  *     含 `fetchListInPage` 写 `globalThis.__WAIQI_LIST_PAYLOAD__`
- *     与 `extractJobsInPage` 读它的**同文件协议**；
+ *     与 `extractJobsInPage` 读它的**同文件协议**（详情侧 `fetchDetailInPage` /
+ *     `extractDetailInPage` 同款一对）；
  *   * `index.ts`  —— 工厂 `createWaiqiAdapter` 与本文件头（实测记录的正身）。
  */
 import type { BlockKind, CoreField } from '../../../../shared/contract/enums/crawl.js'
@@ -64,7 +73,14 @@ import { humanDelayMs } from '../../pacing.js'
 import { humanBrowse } from '../../humanize.js'
 import { signalsOf } from '../../block-signals.js'
 import { platformFacts } from '../../platform-facts.js'
-import type { CriteriaDimension, RawJob, SearchCriteria, SiteAdapter } from '../../types.js'
+import type {
+  CriteriaDimension,
+  PageLike,
+  RawJob,
+  RawJobDetail,
+  SearchCriteria,
+  SiteAdapter,
+} from '../../types.js'
 import { PlatformBlockedError } from '../../types.js'
 import {
   DEFAULT_WAIQI_CONFIG,
@@ -80,7 +96,9 @@ import { WAIQI_BODY_FIELDS, buildWaiqiRequestBody, buildWaiqiSearchUrl } from '.
 import {
   countCardsInPage,
   detectBlockInPage,
+  extractDetailInPage,
   extractJobsInPage,
+  fetchDetailInPage,
   fetchListInPage,
   hasNextPageInPage,
   isLoggedInInPage,
@@ -155,11 +173,24 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       label: '行业',
       values: config.businessCategoryList.map((item) => ({ value: String(item.id), label: item.name })),
       hint:
-        '对应接口 businessCategoryIdList（前端取值来自 getBusList，已过滤"不限"）。' +
-        '内置为实测 seed，可在 DB 覆盖 config.businessCategoryList 补全',
+        '对应接口 businessCategoryIdList（**2026-09-21 探针全量实测**：30 项，去掉"不限"）。' +
+        '⚠️ 旧 seed 抄的是**职能**的 id 空间（8=产品/33=IT技术），与行业字典不是一套码 —— ' +
+        '已经换成实测表；要加行业在 DB 覆盖 config.businessCategoryList',
       // ⚠️ 这一行就是那次静默失败的修复点：`param` 必须指向构造端真正写的字段名。
       // 声明与构造共用 `WAIQI_BODY_FIELDS`，中间不存在第二份字面量。
       wire: { target: 'body', param: WAIQI_BODY_FIELDS.businessCategory },
+    },
+    {
+      key: 'companyType',
+      label: '公司类型',
+      values: config.companyTypeList.map((item) => ({ value: String(item.id), label: item.name })),
+      // 平台这个参数是**数组**（可多选）：界面上按多选渲染，值在 criteria 里以逗号分隔存，
+      // 由 `buildWaiqiRequestBody` 拆成 number[] 写进请求体。
+      multi: true,
+      hint:
+        '对应接口 companyTypeList（数组，可多选）：美企 / 德企 / 中德合资 … ' +
+        '**2026-09-21 探针实测 45 项**（company-tag/fixed-group-list）。不选 = 不按公司类型筛。',
+      wire: { target: 'body', param: WAIQI_BODY_FIELDS.companyType },
     },
     {
       key: 'posInfo',
@@ -198,7 +229,11 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       // 平台的投递要登录，且未登录 DOM 里没有可靠的投递入口 —— 与打招呼一起留空（fail-closed）。
       supportsAttachment: false,
       supportsReadReceipt: false,
-      supportsInbox: true,
+      // 2026-09-21 修正为 false：此前标 true 但既无实现、也无平台证据 ——
+      // 该平台投递大量跳企业 ATS（outsideUrl / informationSource），未观察到平台内消息中心
+      // （路由里没有会话页）。全仓口径是「实现了 readInbox 才承认平台有收件箱」（见 liepin），
+      // 反过来「标了 true 却没有实现」会让能力矩阵对用户说谎。
+      supportsInbox: false,
       supportsGreeting: false,
       // 结构化接口：字段齐、几乎不用猜；但薪资大量缺失（实测约 1/5 才有明文），所以不是 high。
       fieldCompleteness: 'medium',
@@ -220,8 +255,17 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       /**
        * 搜索不需要登录，所以这里**只看用户头像**这一个正向信号；
        * 「没登录」不该让采集停摆（`runtime` 那侧也只在"确实被登录墙挡过"时才拦）。
+       *
+       * 2026-09-21 补 SPA 挂载等待（zhipin 同款坑）：站点是 Vue3 纯前端渲染，
+       * `goto` 一返回页头多半还没挂上 —— 立刻判会**恒判未登录**（头像锚点必然缺席），
+       * 定时任务就永远不跑。先等**卡片**出现（列表页最稳定的"应用活过来了"信号，
+       * 匿名可读、选择器已夹具校准），等到或超时都再按原样 evaluate。
+       * 没有等"未登录锚点"：未登录态的页头结构没有实测样本，编一个就是猜。
        */
       async isLoggedIn(page): Promise<boolean> {
+        if (page.waitForSelector !== undefined) {
+          await page.waitForSelector(config.selectors.card, options.waitForListMs ?? 15_000)
+        }
         return await page.evaluate(isLoggedInInPage, undefined as never)
       },
     },
@@ -330,6 +374,55 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       },
     },
 
+    /**
+     * 详情补抓（2026-09-21 落地）—— JD 明文来自**同源 details 接口**，不解析页面 DOM。
+     *
+     * 主链调用契约：先 `goto(sourceUrl)`（即 `/position/detail?id=…&posType=…`），
+     * 本实现从**当前页 URL** 取 `id` 拼 API 地址 —— 与列表侧 upsert 的 platformJobId 同键。
+     * robots 口径的更新见文件头；`config.detailApiEnabled=false`（DB 覆盖）可整体下线，
+     * 此时适配器**不声明** `detail`（`adapterImplementationOf` 如实反映）。
+     */
+    ...(config.detailApiEnabled
+      ? {
+          detail: {
+            async extract(page: PageLike): Promise<RawJobDetail> {
+              const idMatch = /[?&]id=(\d+)/.exec(page.url())
+              const id = idMatch === null ? '' : (idMatch[1] ?? '')
+              if (id === '') {
+                throw new Error(
+                  `神仙外企：当前页地址里没有岗位 id（${page.url()}）—— 无法构造详情接口请求`,
+                )
+              }
+              const request = await page.evaluate(fetchDetailInPage, {
+                url: `${config.apiBase}${config.detailPath}?id=${id}`,
+              })
+              // 接口侧风控与列表同一套语义：1022=登录墙、429=频控墙 → 抛 PlatformBlockedError，
+              // 主链据此停手 + 平台级暂停（而不是记成这一条解析失败）。
+              const block: BlockKind | null =
+                request.code === 1022 ? 'login-required' : request.code === 429 ? 'rate-limited' : null
+              if (block !== null) {
+                throw new PlatformBlockedError(
+                  block,
+                  `详情接口 code=${String(request.code)}：${
+                    request.message === '' ? '（无说明）' : request.message
+                  }`,
+                )
+              }
+              if (!request.ok) {
+                throw new Error(
+                  `神仙外企：详情接口未返回可用数据（code=${
+                    request.code === null ? '?' : String(request.code)
+                  }，status=${String(request.status)}，message=${
+                    request.message === '' ? '（空）' : request.message
+                  }）`,
+                )
+              }
+              return await page.evaluate(extractDetailInPage, config)
+            },
+          },
+        }
+      : {}),
+
     guard: {
       /**
        * 判墙**不发请求**（见 `lastCode` 的注释）：它读的是
@@ -350,10 +443,11 @@ export function createWaiqiAdapter(options: WaiqiAdapterOptions = {}): SiteAdapt
       },
     },
 
-    // ⚠️ 刻意**不实现** `actions.sayHello` / `actions.sendResume`：
+    // ⚠️ 刻意**不实现** `actions.*`（sayHello / sendResume / reply / readInbox / detectStage）：
     // 神仙外企的投递要登录态，且未登录 DOM 里没有可靠的投递按钮契约；
-    // 大量岗位的投递其实是**跳转到企业官网 ATS**（记录里的 `outsideUrl`）。
+    // 大量岗位的投递其实是**跳转到企业官网 ATS**（记录里的 `outsideUrl`，
+    // `informationSource` 指名 workday / successfactors 等渠道）。
     // 按「不编选择器」的原则，宁可让 guard 以 ADAPTER_BROKEN 明确拒绝（fail-closed），
-    // 也不上线一个会乱点的实现。
+    // 也不上线一个会乱点的实现。`supportsInbox` 也因此如实为 false（见 capabilities 注释）。
   }
 }

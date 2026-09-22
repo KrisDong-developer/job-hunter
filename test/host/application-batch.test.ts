@@ -27,6 +27,7 @@ import {
 import type { JobUpsertInput } from '../../src/host/store/repo/jobs.js'
 import type { Store } from '../../src/host/store/store.js'
 import { DomainError } from '../../src/host/util/errors.js'
+import { sweepDedup } from '../../src/host/domain/dedupe-sweep.js'
 import { cleanup, fixedClock, openTestStore, tempDataDir } from '../support/store.js'
 
 const T = '2026-09-16T10:00:00.000Z'
@@ -442,5 +443,64 @@ test('条数上限与空列表：直接拒绝，不进入循环', async () => {
   } finally {
     store.close()
     cleanup(dir)
+  }
+})
+// ── 跨平台副本已经投过 → 提醒（只提醒，不拦）2026-09-21 修 ────────────
+//
+// 起因：系统已经知道"BOSS 这条和 51job 那条是同一个岗位"（去重分组），
+// 但投递链根本不看分组 —— 在一边投完再去另一边投，没有任何提示，
+// 投递记录还各算一次，漏斗归因也被同一实体的两份副本污染。
+
+test('★ 同一岗位的另一个平台副本投过了 → 预览里**提醒**（不拦，能投还是要能投）', async () => {
+  const dir = tempDataDir()
+  const store = openTestStore(dir)
+  try {
+    const companyId = seedCompany(store, '字节跳动')
+    const a = seedJob(store, {
+      platformId: 'zhipin',
+      platformJobId: 'a',
+      companyId,
+      title: 'Java开发工程师',
+      salaryMin: 20000,
+      salaryMax: 30000,
+    })
+    const b = seedJob(store, {
+      platformId: '51job',
+      platformJobId: 'b',
+      companyId,
+      title: 'Java 开发工程师',
+      salaryMin: 20000,
+      salaryMax: 30000,
+    })
+    // 先让它们成为一组（与采集时同一套判断）
+    sweepDedup(store, T)
+    assert.ok(store.job.detail(b)?.dedupGroupId !== null, '两条应当被合成一组')
+
+    // 在 A（BOSS）上投一笔
+    store.pipeline.createApplication({ jobId: a, resumeId: null, channel: 'platform', actor: 'gui' }, T)
+
+    const plan = await previewApplicationBatch(depsOf(store), { jobIds: [b], resumeFileId: null, actor: 'gui' })
+    const item = plan.items[0]
+    assert.equal(item?.willDeliver, true, '提醒不许变成拦下 —— 分组是启发式判断')
+    assert.ok(
+      typeof item?.warning === 'string' && item.warning.includes('zhipin'),
+      `提醒要说清是哪个平台的哪一条：${String(item?.warning ?? '（没有提醒）')}`,
+    )
+  } finally {
+    cleanup(dir)
+    store.close()
+  }
+})
+
+test('没有跨平台副本投过 → 没有提醒（不制造噪音）', async () => {
+  const dir = tempDataDir()
+  const store = openTestStore(dir)
+  try {
+    const jobId = seedJob(store, { platformId: 'zhaopin', platformJobId: 'solo' })
+    const plan = await previewApplicationBatch(depsOf(store), { jobIds: [jobId], resumeFileId: null, actor: 'gui' })
+    assert.equal(plan.items[0]?.warning, null)
+  } finally {
+    cleanup(dir)
+    store.close()
   }
 })

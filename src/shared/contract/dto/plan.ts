@@ -293,6 +293,8 @@ export interface CriteriaDimensionDto {
   disabledReason: string | null
   /** 数值型维度（界面渲染成数字输入而不是下拉）。 */
   numeric: boolean
+  /** 多选维度（界面渲染成复选标签组；值以逗号分隔存）。 */
+  multi: boolean
   /**
    * 值域是否**开放**（自由文本）。
    *

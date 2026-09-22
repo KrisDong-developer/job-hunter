@@ -91,9 +91,20 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
     maturity: {
       level: 'stable',
       verifiedAt: '2026-09-18',
-      notes: '真实夹具 51job-sz.html（684KB）+ 真机冒烟（20 条 / 四核心字段 20/20）。阿里云 WAF 滑块；「今日投递太多」需 200ms×10 轮询。',
+      notes:
+        '真实夹具 51job-sz.html（684KB）+ 真机冒烟（20 条 / 四核心字段 20/20）。阿里云 WAF 滑块；「今日投递太多」需 200ms×10 轮询。' +
+        '2026-09-21 对标 zhipin 补齐功能深度（证据分层，逐条见适配器 config.ts）：' +
+        '① `detail.extract` 落地 —— 选择器为**候选链、未实测**（无详情页夹具），锚不到留空 + 记 note，' +
+        'DB 可覆盖校准（校准入口 `probe:51job` 现会顺带采详情页快照）；' +
+        '② 五个高危动作落地 —— 投递链路（`button.btn.apply` → `.apply-component-resume-dialog` → ' +
+        '`.success_title`）与「去聊聊」的未登录扫码形态（`.chat-popover`）来自**搜索夹具实证**；' +
+        '登录态站内会话 DOM 与消息页地址（`chatUrl`）候选待校准，路径 fail-closed；' +
+        '③ `auth.isLoggedIn` 升级为结构性锚点（未登录侧 `.loginBtnClick` 夹具实测；已登录侧候选）。',
     },
     authRequirement: { crawl: 'none', detail: U, actions: 'required' },
+    // 投递弹窗（.apply-component-resume-dialog「选择投递简历」）选的是账号内简历 ——
+    // 夹具样式证据 + 无本地文件直投入口（sendResume 对 filePath≠null fail-closed）。
+    resumeSource: 'platform-only',
   },
   zhaopin: {
     maturity: {
@@ -248,10 +259,16 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
   waiqi: {
     maturity: {
       level: 'calibrated',
-      verifiedAt: '2026-09-18',
-      notes: '真实响应夹具（页面 + 载荷）。服务端翻页坏 → 声明 1 页（≤50 条/页）是平台事实，不是保守取舍。接口 code=1022 表示未登录。',
+      verifiedAt: '2026-09-21',
+      notes:
+        '真实响应夹具（页面 + 载荷 + 详情）。服务端翻页坏 → 声明 1 页（≤50 条/页）是平台事实，不是保守取舍。' +
+        '接口 code=1022 表示未登录。2026-09-21 落地 detail 补抓：匿名 GET details 接口实测 code=1000 且 ' +
+        'loginStatus=0 仍返回完整 JD（description 原文 + translateDescription 平台中文翻译，夹具 ' +
+        'waiqi-detail-payload.json）；JD 走接口不解析 DOM，导航 /position/detail 的 robots 口径更新见适配器文件头' +
+        '（DB 覆盖 detailApiEnabled=false 可下线）。同日修正 supportsInbox→false（无实现亦无平台证据）。',
     },
-    authRequirement: { crawl: U, detail: U, actions: 'required' },
+    // detail=none：2026-09-21 匿名实测（loginStatus=0 时 details 接口给全量 JD）。
+    authRequirement: { crawl: U, detail: 'none', actions: 'required' },
   },
   guopin: {
     maturity: {
@@ -280,8 +297,10 @@ export const PLATFORM_FACTS: Record<string, PlatformFacts> = {
         '翻页容器 nav[aria-label="pagination"]（页头 gnav 会干扰宽泛选择器）、start 步进 = 10（翻页 href 算术）。' +
         '**detail 探针（同日三页 3/3）**：标题 h1[data-testid=jobsearch-JobInfoHeader-title] / 公司 inlineHeader-companyName / ' +
         '地点 inlineHeader-companyLocation / JD #jobDescriptionText → detail.extract 已落地（夹具 indeed-detail.html）；' +
-        '无 JSON-LD JobPosting，发布日期唯一来源 = 内嵌载荷 hiringInsightsModel.age；详情页匿名访问未测（探针在登录态 profile 下跑）。' +
-        '缺口：列表与详情的薪资节点均 0 命中（数据无源）→ salary_raw 不进必需字段。',
+        '无 JSON-LD JobPosting，详情发布日期唯一来源 = 内嵌载荷 hiringInsightsModel.age；详情页匿名访问未测（探针在登录态 profile 下跑）。' +
+        '**列表发布日期已有源（同日按夹具载荷复核）**：同页内嵌 mosaic-provider-jobcards 载荷的 formattedRelativeTime ' +
+        '（「25天前」/「30+天前」，jobkey↔jk 15/16 重合）→ readListPage 走"DOM 定集合、载荷补字段"通道（零额外请求）。' +
+        '缺口：薪资**两侧**确认无源（DOM 节点 0 命中 + 载荷 salarySnippet 匿名侧恒空）→ salary_raw 不进必需字段。',
     },
     authRequirement: { crawl: 'none', detail: U, actions: 'required' },
   },

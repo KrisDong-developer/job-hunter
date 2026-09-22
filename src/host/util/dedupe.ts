@@ -10,7 +10,17 @@
  *      合并会写 `company_signal(type='name-merge')` 留下可反查的依据；
  *   3. **每次合并记录依据** —— 返回值里的 `basis` 是人话，不是分数。
  */
-import { normalizeCompanyName } from './company-name.js'
+import { COMPANY_SUFFIXES, LEGAL_SUFFIXES, normalizeCompanyName, strictCompanyName } from './company-name.js'
+
+/**
+ * 「行业词 / 机构词」—— 宽松归一化会剥、严格归一化**不剥**的那些。
+ *
+ * 不另立一张表：它就是两张表的差集。多写一张表迟早会漂移，而漂移的表现是
+ * "某个词到底算不算行业词"在两条路径上答案不同 —— 那正是这类 bug 最难查的形态。
+ */
+const WEAK_COMPANY_WORDS: ReadonlySet<string> = new Set(
+  COMPANY_SUFFIXES.filter((word) => !LEGAL_SUFFIXES.includes(word)),
+)
 
 export type DedupeLevel = 'normalized' | 'alias' | 'containment' | 'similarity' | 'none'
 
@@ -180,7 +190,21 @@ export function compareCompanyNames(
 
 /** 岗位去重键的组成部分。 */
 export interface JobDedupeKey {
+  /**
+   * **宽松**公司键（地域 + 法人后缀 + 行业词都剥）。
+   *
+   * 只用来判"疑似"：两个键相等说明差异**仅在于行业词/机构词**
+   * （「XX网络科技」vs「XX网络技术」）—— 可能是同一家，也可能不是，交给人看。
+   */
   companyKey: string
+  /**
+   * **严格**公司键（只剥地域 + 法人/机构后缀，保留行业词）。
+   *
+   * 自动合并**只认它**。行业词被剥掉之后「XX网络科技有限公司」与「XX网络技术有限公司」
+   * 会落到同一个「XX网络」，再撞上同名通用标题 + 同城 + 同薪资档，就会把两个真岗位
+   * 合掉 —— 而合并的代价是投递记录串在一起，且极难发现。
+   */
+  companyKeyStrict: string
   titleClean: string
   salaryBucket: string
   city: string
@@ -242,6 +266,7 @@ export function jobDedupeKey(input: {
 }): JobDedupeKey {
   return {
     companyKey: normalizeCompanyName(input.companyName),
+    companyKeyStrict: strictCompanyName(input.companyName),
     titleClean: cleanJobTitle(input.title),
     salaryBucket: salaryBucketOf(input.salaryMin, input.salaryMax),
     city: normalizeCityForDedupe(input.city),
@@ -266,12 +291,57 @@ export interface JobDedupeVerdict {
 export const CANDIDATE_SIMILARITY = 0.75
 
 /**
+ * 公司这一关判到哪一档。
+ *
+ * * `same` —— 允许自动合并；
+ * * `weak` —— **只有**"疑似"：两家公司名只差一个行业词/机构词，而且**不是**
+ *   "少写了一个词"那种关系（见下）；
+ * * `none` —— 不同（含公司名归一化后为空）。
+ *
+ * 两档的判据为什么不是简单的一句"严格键相等"：
+ *
+ * * 「北京字节跳动科技有限公司」与「字节跳动」→ 严格键分别是「字节跳动科技」与「字节跳动」，
+ *   长的那边**正好多一个行业词**。这是**写法差异**（同一个词写没写全），算同一个公司
+ *   —— 这种形态在跨平台数据里极其常见，一刀切成"疑似"等于把去重废掉。
+ * * 「XX网络科技有限公司」与「XX网络技术有限公司」→ 严格键是「XX网络科技」与「XX网络技术」，
+ *   谁也不包含谁 —— 是**替换了一个行业词**，语义上可能就是两家不同的公司。
+ *   这种才是危险的：硬键一相等，再撞上通用标题 + 同城 + 同薪资档，两个真岗位就被合掉了。
+ *
+ * 所以用"差集是否恰好是一个被剥掉的词 + 前缀关系"来区分这两者，
+ * 而不是把整个行业词表重新引入硬键。
+ */
+export function companyTierOf(left: JobDedupeKey, right: JobDedupeKey): 'same' | 'weak' | 'none' {
+  const a = left.companyKeyStrict
+  const b = right.companyKeyStrict
+  if (a === '' || b === '') return 'none'
+  if (a === b) return 'same'
+
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a]
+  if (longer.startsWith(shorter) && WEAK_COMPANY_WORDS.has(longer.slice(shorter.length))) {
+    // 只是"少写了一个行业词" —— 写法差异，仍算同一个公司
+    return 'same'
+  }
+  if (left.companyKey !== '' && left.companyKey === right.companyKey) return 'weak'
+  return 'none'
+}
+
+/**
  * 判断两个岗位是不是「同一个岗位在不同平台」。
  *
  * 比公司名更保守：硬键必须一致，标题再做一次相似度确认。
  * 岗位标题天然差异大（「Java开发工程师」vs「Java 后端工程师」），
  * 所以标题相似度只作为**确认**，不作为主要依据 —— 宁可保留两个，也不要把两个
  * 真岗位合成一个（合并后投递记录会串）。
+ *
+ * ## 公司名这一关分两档（2026-09-21 修，判据在 `companyTierOf`）
+ *
+ * * **`same`** → 公司过了，继续看城市 / 薪资 / 标题。除了"严格键完全相等"，
+ *   还包括"**只少写了一个行业词**"（「字节跳动科技」vs「字节跳动」）——
+ *   那是写法差异，在跨平台数据里极其常见，一刀切成"疑似"等于把去重废掉。
+ * * **`weak`** → **不自动合并**，判成"疑似"交人看。成因见 `company-name.ts` 的
+ *   `LEGAL_SUFFIXES`：把行业词也剥掉之后，「XX网络科技」与「XX网络技术」会变成
+ *   同一家公司 —— 那是"**换了一个行业词**"，语义上可能就是两家不同的公司，
+ *   再撞上通用标题 + 同城 + 同薪资档，两个真岗位就会被合掉。
  *
  * 三条硬键各有各的**缺值**处理（R25）：
  *   * 公司：归一化后为空 → 直接不判（无法判断，不是"不同"）；
@@ -283,11 +353,11 @@ export function compareJobs(
   right: JobDedupeKey,
   threshold = 0.9,
 ): JobDedupeVerdict {
-  if (left.companyKey === '' || right.companyKey === '') {
-    return { merge: false, basis: '公司名为空，不合并', score: 0, candidate: false }
-  }
-  if (left.companyKey !== right.companyKey) {
-    return { merge: false, basis: '公司不同，不合并', score: 0, candidate: false }
+  const companyTier = companyTierOf(left, right)
+  if (companyTier === 'none') {
+    return left.companyKeyStrict === '' || right.companyKeyStrict === ''
+      ? { merge: false, basis: '公司名为空，不合并', score: 0, candidate: false }
+      : { merge: false, basis: '公司不同，不合并', score: 0, candidate: false }
   }
   if (left.city !== right.city) {
     return {
@@ -314,6 +384,23 @@ export function compareJobs(
     : '薪资未锚定（一侧为空，此项未作门槛）'
 
   const similarity = bigramSimilarity(left.titleClean, right.titleClean)
+  /**
+   * 公司只到"宽松相等"：**不合并，但必须报出来**。
+   *
+   * 城市与薪资已经过了才走到这里 —— 也就是说这几条在用户眼里几乎一模一样，
+   * 唯一的疑点是"公司名差一个行业词"。这种"我拿不准"正是 `candidate` 存在的理由：
+   * 不自动合并（宁可漏），但让人能一眼看见（不可错得太安静）。
+   */
+  if (companyTier === 'weak') {
+    return {
+      merge: false,
+      basis:
+        `公司名只差行业词/机构词（都归一到「${left.companyKey}」），城市与 ${salaryNote} 一致` +
+        `，标题相似度 ${similarity.toFixed(2)} —— 疑似同一家的同一个岗位，未自动合并，建议人工确认`,
+      score: similarity,
+      candidate: true,
+    }
+  }
   if (similarity >= threshold) {
     return {
       merge: true,

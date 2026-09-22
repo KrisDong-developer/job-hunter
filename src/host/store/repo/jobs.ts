@@ -267,11 +267,40 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
        first_seen_at, last_seen_at, crawled_at, source_url, state
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
   )
-  // 注意：**不覆盖** state / first_seen_at —— 前者是用户的处置态，后者是“首次见到”的事实。
+  /**
+   * ⚠️ **不覆盖** state / first_seen_at —— 前者是用户的处置态，后者是"首次见到"的事实。
+   *
+   * 2026-09-21 修：**空值也不许覆盖已有的好值**。
+   *
+   * 成因：这是覆盖式更新，`crawl.ts` 把这一轮解析出的字段直接写进来（`?? ''` 兜底）。
+   * 于是某轮平台把城市/经验/学历掩码成空、或者薪资变成"面议"（`salary_min = null`），
+   * 上一轮拿到的好值就被**静默写掉了** —— 列表看着还在那儿，字段却空了，
+   * 而且没有任何一条日志会说这件事。
+   *
+   * 语义定成"**新值为空 = 这一轮没解析出来，保留旧值**"：
+   *   * 文本字段用 `coalesce(nullif(?, ''), 旧值)`；
+   *   * 可空数字用 `coalesce(?, 旧值)`（null 表示"这一轮没锚定"）；
+   *   * `tags_json` 的"空"是 `[]`（不是空串），所以要 `CASE`；
+   *   * `title` / `source_url` 仍然直接覆盖 —— 它们是必填字段（空值早被字段断言拦下），
+   *     而且标题本来就会更新。
+   *
+   * 代价说清楚：平台**真的**把薪资从"2万"改成"面议"时，我们会留着旧数字。
+   * 这与项目一贯的取舍一致 —— 宁可留一个旧值（用户看得见、能改），
+   * 也不要静默清空（用户看不见，还以为这条岗位没写薪资）。
+   */
   const update = db.prepare(
     `UPDATE job SET
-       title = ?, company_id = ?, salary_raw = ?, salary_min = ?, salary_max = ?, salary_months = ?,
-       city = ?, district = ?, exp_req = ?, edu_req = ?, tags_json = ?,
+       title = ?,
+       company_id = coalesce(?, company_id),
+       salary_raw = coalesce(nullif(?, ''), salary_raw),
+       salary_min = coalesce(?, salary_min),
+       salary_max = coalesce(?, salary_max),
+       salary_months = coalesce(?, salary_months),
+       city = coalesce(nullif(?, ''), city),
+       district = coalesce(nullif(?, ''), district),
+       exp_req = coalesce(nullif(?, ''), exp_req),
+       edu_req = coalesce(nullif(?, ''), edu_req),
+       tags_json = CASE WHEN ? = '[]' THEN tags_json ELSE ? END,
        jd_text = coalesce(?, jd_text), published_at = coalesce(?, published_at),
        last_seen_at = ?, crawled_at = ?, source_url = ?
      WHERE id = ?`,
@@ -446,6 +475,8 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
           input.district,
           input.expReq,
           input.eduReq,
+          tagsJson,
+          // `tags_json` 的 CASE 要两个占位（一个判空、一个写值），值相同
           tagsJson,
           input.jdText ?? null,
           input.publishedAt,

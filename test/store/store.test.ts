@@ -434,3 +434,82 @@ test('v7 迁移：老库的 last_run_at 被回填成 attempt + success', () => {
     cleanup(dir)
   }
 })
+// ── 空值不覆盖已有的好值（2026-09-21 修）──────────────────────────────
+//
+// 起因：upsert 的更新分支是覆盖式的，`crawl.ts` 把这一轮解析出的字段直接写进来。
+// 某轮平台把城市/经验/薪资掩码成空，上一轮拿到的好值就被**静默写掉**了 ——
+// 列表里这条岗位还在，字段却空了，而且没有任何日志会说这件事。
+
+test('upsert：这一轮解析为空 → 保留上一轮的好值（不静默清空）', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const first = store.job.upsert(jobInput(), T1).id
+
+    // 第二轮：平台把薪资掩码了、城市/区/经验/学历都没解析出来、标签也没了
+    store.job.upsert(
+      jobInput({
+        salaryRaw: '',
+        salaryMin: null,
+        salaryMax: null,
+        city: '',
+        district: '',
+        expReq: '',
+        eduReq: '',
+        tags: [],
+      }),
+      T2,
+    )
+
+    const job = store.job.detail(first)
+    assert.equal(job?.salaryRaw, '1.3-1.8万', '掩码成空的薪资不许写掉明文薪资')
+    assert.equal(job?.salaryMin, 13000)
+    assert.equal(job?.salaryMax, 18000)
+    assert.equal(job?.city, '深圳')
+    assert.equal(job?.district, '南山区')
+    assert.equal(job?.expReq, '5年及以上')
+    assert.equal(job?.eduReq, '本科')
+    assert.deepEqual(store.job.detail(first)?.tags, ['react', 'Java'], '标签同样不许被空数组清掉')
+    store.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('upsert：这一轮解析出**新值**时照常覆盖（上一条不是"冻结"）', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const id = store.job.upsert(jobInput(), T1).id
+    store.job.upsert(
+      jobInput({ salaryRaw: '2-3万', salaryMin: 20000, salaryMax: 30000, city: '杭州', tags: ['go'] }),
+      T2,
+    )
+    const job = store.job.detail(id)
+    assert.equal(job?.salaryRaw, '2-3万')
+    assert.equal(job?.salaryMin, 20000)
+    assert.equal(job?.city, '杭州')
+    assert.deepEqual(job?.tags, ['go'])
+    store.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('upsert：来源链接与标题仍然直接覆盖（必填字段，空值早被断言拦下）', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const id = store.job.upsert(jobInput(), T1).id
+    store.job.upsert(
+      jobInput({ title: '全栈开发工程师（改）', sourceUrl: 'https://jobs.51job.com/all/173674707.html?v=2' }),
+      T2,
+    )
+    const job = store.job.detail(id)
+    assert.equal(job?.title, '全栈开发工程师（改）')
+    assert.equal(job?.sourceUrl, 'https://jobs.51job.com/all/173674707.html?v=2')
+    store.close()
+  } finally {
+    cleanup(dir)
+  }
+})

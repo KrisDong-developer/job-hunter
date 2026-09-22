@@ -104,6 +104,20 @@ export interface GuopinConfig {
     loginSelectors: GuopinLoginSelectors;
     urlParams: GuopinUrlParams;
     /**
+     * **列表接口**（2026-09-21 探针实测：筛选条件只在这条请求的 body 里）。
+     *
+     * 老路径是"URL + DOM 解析"，而国聘的 `?page=` 被 SPA 忽略、筛选参数更是只认请求体 ——
+     * 列表改走接口之后，筛选与翻页同时变成"发一个参数"的事。
+     */
+    listApi: {
+        /** 接口域名。 */
+        base: string;
+        /** 列表路径。 */
+        path: string;
+        /** 每页条数（站点自己用 20）。 */
+        pageSize: number;
+    };
+    /**
      * 城市码。**只放实测确认过的**；调研期筛选栏有城市名但 URL 城市参数未实证，故 v1 置空。
      * 未列出城市 `buildSearchUrl` 返回 null（入口层拒绝），**不猜**。逐城实测后写 DB 覆盖。
      */

@@ -21,6 +21,14 @@ import type { CrawlFailureCode } from '../contract/enums/error.js'
 /** 故障类别 —— 界面据此给排查入口，不自己猜。 */
 export type FailureKind =
   | 'selector'
+  /**
+   * **身份键没解析出来**（解析出了记录，但一条都没有平台岗位 id）。
+   *
+   * 单独立一个类别而不是并进 `selector`：并进去之后的短文案是"没解析到岗位"，
+   * 而这一种的情况恰恰是"解析到了 4 条、一条都没写" —— 说成"没解析到"会把人引到
+   * 错误的排查方向上（他会去翻卡片选择器，而问题在 id 正则上）。
+   */
+  | 'identity'
   | 'script'
   | 'login'
   | 'risk'
@@ -70,6 +78,8 @@ export function looksLikeStackTrace(message: string): boolean {
  */
 const KIND_OF: Record<CrawlFailureCode, FailureKind | ((message: string) => FailureKind)> = {
   NO_RECORDS: 'selector',
+  // 身份键整轮没解析出来：解析到了记录，但一条都没写库（写进去会互相覆盖）
+  NO_IDENTITY: 'identity',
   PARSE_FAILED: (message) => (looksLikeStackTrace(message) ? 'script' : 'selector'),
   NOT_LOGGED_IN: 'login',
   BLOCKED: 'risk',
@@ -95,6 +105,7 @@ function kindOf(errorCode: string | null, message: string): FailureKind {
 
 const SHORT: Record<FailureKind, string> = {
   selector: '没解析到岗位（选择器可能失效）',
+  identity: '岗位没有平台 id，一条都没写库',
   script: '代码语法异常',
   login: '平台要求先登录',
   risk: '被平台风控拦住了',
@@ -107,6 +118,10 @@ const SHORT: Record<FailureKind, string> = {
 }
 
 const ADVICE: Record<FailureKind, string> = {
+  identity:
+    '页面解析出了岗位，但**一条都没有平台岗位 id** —— 所以一条都没写库。' +
+    '这不是"没有岗位"：空 id 会让整页记录互相覆盖（最后只剩一条）。' +
+    '去检查该适配器取岗位 id 的那条正则/选择器（平台改版后 href 或内嵌载荷的形状变了）。',
   selector:
     '页面打开了但一条岗位都没解析出来，通常是招聘站改了页面结构、选择器对不上了。' +
     '先在下面的「平台状态」里看是哪个字段连续缺失，再按「排查方案」逐条核对。',
@@ -174,6 +189,8 @@ function firstLine(message: string): string {
 
 /** 故障类别 → 界面上的短标签（"排查方案"的标题用）。 */
 export const FAILURE_KIND_LABEL: Record<FailureKind, string> = {
+  /** 与 `SHORT` 同源的短标签（界面上的分类名）。 */
+  identity: '岗位身份键缺失',
   selector: '选择器失效',
   script: '脚本异常',
   login: '未登录',

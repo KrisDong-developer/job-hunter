@@ -201,6 +201,19 @@ export const PLAN_EDITOR_MODAL = `
 .jh-dim-blocked>span{min-width:0;overflow-wrap:anywhere}
 .jh-dim-blocked>.jh-btn{flex:0 0 auto}
 
+/* 平台单选（一个方案一个平台）：一行一个平台，整行可点。
+   用 <label> 包住 radio 让整行成为点击目标 —— 只点那个小圆点太考验耐心，
+   而这一屏的主任务就是"选一个平台"。选中行给左侧色条 + 边框加深，
+   与卡片里的警告 banner 用同一套"左侧色条"语言（不叠实心底色）。 */
+.jh-platform-list{display:flex;flex-direction:column;gap:6px}
+.jh-platform-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:9px 11px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
+  background:var(--dsw-alias-bg-layer-1);cursor:pointer}
+.jh-platform-row:hover{border-color:var(--dsw-alias-border-l3)}
+.jh-platform-row-on{border-left:3px solid var(--dsw-alias-brand-primary);
+  border-color:var(--dsw-alias-brand-primary)}
+.jh-platform-name{display:inline-flex;align-items:center;gap:4px;font-weight:600}
+
 /* 干跑预览（方案表单里的「各平台实际会请求什么」）：一个平台一块。
    URL 常常很长（带一串 query），所以让它**换行**而不是撑破弹窗宽度 ——
    撑破之后右侧会被裁掉，而右边的参数表恰恰是这一块的重点。 */

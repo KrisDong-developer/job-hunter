@@ -7,6 +7,8 @@
  * 随后 `extractJobsInPage` 在**同一次 evaluate 的后续调用**里把它读出来 ——
  * 写入与读取的**顺序由宿主在 `readListPage` 里保证**（写 → 解析）。
  * 写的一半与读的一半是**同一个页面上下文协议**，不许拆到不同文件。
+ * 详情侧同款一对：`fetchDetailInPage` 写 `__WAIQI_DETAIL_PAYLOAD__` →
+ * `extractDetailInPage` 读它（顺序由 `detail.extract` 保证）。
  *
  * ⚠️ 本文件的函数在真机上**脱离模块作用域**执行（`evaluate` 只序列化源码，闭包不存在）：
  * 不得引用本文件的任何模块级**值**（常量 / 工具函数）；需要就**内联进函数体内**。
@@ -16,7 +18,7 @@
  */
 import type { BlockKind } from '../../../../shared/contract/enums/crawl.js';
 import type { BlockSignalSet } from '../../block-signals.js';
-import type { RawJob } from '../../types.js';
+import type { RawJob, RawJobDetail } from '../../types.js';
 import type { WaiqiConfig } from './config.js';
 /**
  * **在页面上下文里**解析列表。
@@ -40,6 +42,34 @@ export declare function extractJobsInPage(config: WaiqiConfig): RawJob[];
 export declare function fetchListInPage(arg: {
     url: string;
     body: Record<string, unknown>;
+}): Promise<{
+    ok: boolean;
+    code: number | null;
+    message: string;
+    status: number;
+}>;
+/**
+ * **在页面上下文里**解析详情接口响应 → `RawJobDetail`（同步、自包含）。
+ *
+ * 数据来源与列表同一协议：`fetchDetailInPage` 写 `globalThis.__WAIQI_DETAIL_PAYLOAD__`，
+ * 这里读它；离线测试可改用 `<script id="waiqi-detail-fixture-payload">` 内联夹具。
+ *
+ * JD 的拼法（2026-09-21 实测定案）：`description` 是**原文**（外企岗常为纯英文），
+ * `translateDescription` 是**平台提供的完整中文翻译**（实测可与原文逐段对上）。
+ * 下游（打分 / 技能差距分析）按中文关键词匹配，纯英文 JD 会系统性漏配 ——
+ * 所以两者都在时拼接为「原文 + 【平台中文翻译】标记 + 译文」；原文缺失时用译文兜底并记 note。
+ *
+ * ⚠️ 详情响应的城市键是 `cityNamelist`（小写 l），与列表不同 —— 字段表来自 `config.detailFields`。
+ */
+export declare function extractDetailInPage(config: WaiqiConfig): RawJobDetail;
+/**
+ * **在页面上下文里**发详情接口请求（GET，自包含），把响应挂到全局供 `extractDetailInPage` 解析。
+ *
+ * 与 `fetchListInPage` 同一套纪律：只认**页面上下文自己的** fetch（`__WAIQI_FETCH__` 护栏），
+ * 绝不回退宿主 Node 的 fetch（那会脱离浏览器登录态、在离线测试里还会真的打到线上）。
+ */
+export declare function fetchDetailInPage(arg: {
+    url: string;
 }): Promise<{
     ok: boolean;
     code: number | null;

@@ -1,0 +1,245 @@
+{
+  "_note": "智联 GET /c/i/search/base/data 响应的**字典子集**（原样摘录，未改一个字）。来源：登录态探测转储 .probe-filters/zhaopin-2026-09-21.json，2026-09-21。适配器的取值域必须与这里逐条一致 —— 平台的筛选取值不是我们编的。",
+  "code": 200,
+  "data": {
+    "educationType": [
+      {
+        "code": "-1",
+        "parentCode": null,
+        "name": "不限",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "9",
+        "parentCode": null,
+        "name": "初中及以下",
+        "en_name": "junior high",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "7",
+        "parentCode": null,
+        "name": "高中",
+        "en_name": " Senior High",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "12",
+        "parentCode": null,
+        "name": "中专/中技",
+        "en_name": "Secondary Specialized/Skilled Workers Training",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "5",
+        "parentCode": null,
+        "name": "大专",
+        "en_name": "Associate",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "4",
+        "parentCode": null,
+        "name": "本科",
+        "en_name": "Bachelor",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "3",
+        "parentCode": null,
+        "name": "硕士",
+        "en_name": "Master",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "10",
+        "parentCode": null,
+        "name": "MBA/EMBA",
+        "en_name": "MBA/EMBA",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "1",
+        "parentCode": null,
+        "name": "博士",
+        "en_name": "Doctor",
+        "deleted": false,
+        "sublist": []
+      }
+    ],
+    "workExpType": [
+      {
+        "code": "-99",
+        "parentCode": null,
+        "name": "全部",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "-1",
+        "parentCode": null,
+        "name": "经验不限",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "0001",
+        "parentCode": null,
+        "name": "1年以下",
+        "en_name": "Below 1 Year",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "0103",
+        "parentCode": null,
+        "name": "1-3年",
+        "en_name": "1-3 Year",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "0305",
+        "parentCode": null,
+        "name": "3-5年",
+        "en_name": "3-5 Year",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "0510",
+        "parentCode": null,
+        "name": "5-10年",
+        "en_name": "5-10 Year",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "1099",
+        "parentCode": null,
+        "name": "10年以上",
+        "en_name": "Above 10 Year",
+        "deleted": false,
+        "sublist": []
+      }
+    ],
+    "companyType": [
+      {
+        "parentCode": null,
+        "name": "不限",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "1",
+        "parentCode": null,
+        "name": "国企",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "2",
+        "parentCode": null,
+        "name": "外企",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "4",
+        "parentCode": null,
+        "name": "中外合资",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "16",
+        "parentCode": null,
+        "name": "港澳台企业",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "5",
+        "parentCode": null,
+        "name": "民营",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "6;10",
+        "parentCode": null,
+        "name": "机关/事业单位",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "7;14;15",
+        "parentCode": null,
+        "name": "其他",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      }
+    ],
+    "jobStatus": [
+      {
+        "code": "-1",
+        "parentCode": null,
+        "name": "不限",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "2",
+        "parentCode": null,
+        "name": "全职",
+        "en_name": "Full-time",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "1",
+        "parentCode": null,
+        "name": "兼职/临时",
+        "en_name": "Part-time",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "4",
+        "parentCode": null,
+        "name": "实习",
+        "en_name": "Intern",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "5",
+        "parentCode": null,
+        "name": "校园",
+        "en_name": "Campus",
+        "deleted": false,
+        "sublist": []
+      }
+    ]
+  }
+}

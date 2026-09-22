@@ -217,3 +217,114 @@ test('dedupDepsOf：候选是**同一家公司**的其它岗位，且只取跨�
     cleanup(dir)
   }
 })
+// ── 重判已有分组（2026-09-21 修）──────────────────────────────────────
+//
+// 起因：分组是**当时**那批字段判出来的，而字段会变（公司名修对了、城市补上了、
+// 标题改了）。以前复核一律跳过已分组的岗位，于是**错合并是单向门** —— 只能人工一组组拆，
+// 而它的可见后果是"某个岗位你永远看不到"（列表按组折叠，只显示代表）。
+
+test('重判：**不该在一起**的组会被拆散（而不是永远留着）', () => {
+  const store = openTestStore()
+  try {
+    const bytedance = store.company.ensure({ name: '字节跳动', nameNorm: '字节跳动' }, NOW).id
+    const meituan = store.company.ensure({ name: '美团', nameNorm: '美团' }, NOW).id
+    const a = seed(store, { platformId: '51job', platformJobId: 'a', title: 'Java开发工程师', companyId: bytedance, salaryMin: 20000, salaryMax: 30000 })
+    const b = seed(store, { platformId: 'zhipin', platformJobId: 'b', title: 'Java开发工程师', companyId: meituan, salaryMin: 20000, salaryMax: 30000 })
+    // 手工造一个"旧规则/旧数据留下的"错组：两条不同公司的岗位被并在了一起
+    const groupId = store.dedupGroup.create({ primaryJobId: a, memberIds: [a, b], basis: '旧规则留下的', score: 1 }, NOW)
+    assert.equal(store.job.detail(a)?.dedupGroupId, groupId)
+
+    const result = sweepDedup(store, NOW)
+
+    assert.equal(store.job.detail(a)?.dedupGroupId, null, '不再成立的合并必须被拆开')
+    assert.equal(store.job.detail(b)?.dedupGroupId, null)
+    assert.equal(store.dedupGroup.get(groupId), undefined, '拆到不足两条，组就没意义了')
+    assert.equal(result.unmerged, 2, '两条都不再成立')
+    assert.equal(result.dissolved, 1)
+  } finally {
+    cleanup(store.dataDir)
+    store.close()
+  }
+})
+
+test('重判：**该在一起**的组一条都不动（幂等，别把好组拆了）', () => {
+  const store = openTestStore()
+  try {
+    const companyId = store.company.ensure({ name: '字节跳动', nameNorm: '字节跳动' }, NOW).id
+    const a = seed(store, { platformId: '51job', platformJobId: 'a', title: 'Java 开发工程师', companyId, salaryMin: 20000, salaryMax: 30000 })
+    const b = seed(store, { platformId: 'zhipin', platformJobId: 'b', title: 'Java开发工程师', companyId, salaryMin: 20000, salaryMax: 30000 })
+    const first = sweepDedup(store, NOW)
+    assert.equal(first.merged, 2)
+    const groupId = store.job.detail(a)?.dedupGroupId
+    assert.ok(groupId !== null && groupId !== undefined)
+
+    const second = sweepDedup(store, NOW)
+    assert.equal(second.unmerged, 0, '好组不许被重判动到')
+    assert.equal(second.dissolved, 0)
+    assert.equal(store.job.detail(a)?.dedupGroupId, groupId, '组 id 保持不变')
+    assert.equal(store.job.detail(b)?.dedupGroupId, groupId)
+  } finally {
+    cleanup(store.dataDir)
+    store.close()
+  }
+})
+
+test('重判：字段被修过之后（这条其实属于另一家公司）组会解散', () => {
+  const store = openTestStore()
+  try {
+    const bytedance = store.company.ensure({ name: '字节跳动', nameNorm: '字节跳动' }, NOW).id
+    const meituan = store.company.ensure({ name: '美团', nameNorm: '美团' }, NOW).id
+    const a = seed(store, { platformId: '51job', platformJobId: 'a', title: 'Java开发工程师', companyId: bytedance, salaryMin: 20000, salaryMax: 30000 })
+    const b = seed(store, { platformId: 'zhipin', platformJobId: 'b', title: 'Java开发工程师', companyId: bytedance, salaryMin: 20000, salaryMax: 30000 })
+    sweepDedup(store, NOW)
+    const groupId = store.job.detail(b)?.dedupGroupId
+    assert.ok(groupId !== null && groupId !== undefined, '先正常合成一组')
+
+    // "后来发现 B 其实是美团的" —— 重新 upsert 同一身份键，改公司
+    seed(store, { platformId: 'zhipin', platformJobId: 'b', title: 'Java开发工程师', companyId: meituan, salaryMin: 20000, salaryMax: 30000 })
+
+    const result = sweepDedup(store, NOW)
+    assert.equal(store.job.detail(a)?.dedupGroupId, null, '字段变了，原来的合并就不成立了')
+    assert.equal(store.dedupGroup.get(groupId), undefined)
+    assert.equal(result.unmerged, 2)
+  } finally {
+    cleanup(store.dataDir)
+    store.close()
+  }
+})
+
+test('重判：判不了就**整组不动**（缺证据不等于判错）', () => {
+  const store = openTestStore()
+  try {
+    const companyId = store.company.ensure({ name: '字节跳动', nameNorm: '字节跳动' }, NOW).id
+    const a = seed(store, { platformId: '51job', platformJobId: 'a', title: 'Java开发工程师', companyId, salaryMin: 20000, salaryMax: 30000 })
+    // 这条没有公司（companyId=null）→ 它的公司名读不出来 → 无法判断这两条该不该在一起
+    const b = seed(store, { platformId: 'zhipin', platformJobId: 'b', title: 'Java开发工程师', companyId: null, salaryMin: 20000, salaryMax: 30000 })
+    const groupId = store.dedupGroup.create({ primaryJobId: a, memberIds: [a, b], basis: '人工确认过', score: 1 }, NOW)
+
+    const result = sweepDedup(store, NOW)
+
+    assert.equal(store.job.detail(a)?.dedupGroupId, groupId, '拿不齐证据就不许动手拆')
+    assert.equal(result.unmerged, 0)
+    assert.equal(result.dissolved, 0)
+  } finally {
+    cleanup(store.dataDir)
+    store.close()
+  }
+})
+test('复核计数：公司没归并的岗位算"没查过"，不算"没有重复"', () => {
+  const store = openTestStore()
+  try {
+    const companyId = store.company.ensure({ name: '字节跳动', nameNorm: '字节跳动' }, NOW).id
+    seed(store, { platformId: '51job', platformJobId: 'a', title: 'Java开发工程师', companyId, salaryMin: 20000, salaryMax: 30000 })
+    seed(store, { platformId: 'zhipin', platformJobId: 'b', title: 'Go开发工程师', companyId: null, salaryMin: 20000, salaryMax: 30000 })
+
+    const result = sweepDedup(store, NOW)
+
+    assert.equal(result.scanned, 1, '只有能判的那条被送进判定')
+    assert.equal(result.skippedNoCompany, 1, '判不了的那条必须被计数 —— 否则它隐形了')
+  } finally {
+    cleanup(store.dataDir)
+    store.close()
+  }
+})

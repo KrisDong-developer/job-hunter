@@ -2867,7 +2867,8 @@ window.__ModuleLoader__.load({
 		                "\u6295\u4E0D\u4E86\uFF1A",
 		                item.blocker?.message,
 		                item.blocker?.hint === void 0 ? "" : ` \u2014\u2014 ${item.blocker.hint}`
-		              ] })
+		              ] }),
+		              item.warning === null || item.warning === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { className: "jh-warn", children: item.warning })
 		            ] }, item.jobId);
 		          }) }),
 		          receipts.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("details", { className: "jh-details", open: true, children: [
@@ -6511,6 +6512,8 @@ window.__ModuleLoader__.load({
 		}
 		var KIND_OF = {
 		  NO_RECORDS: "selector",
+		  // 身份键整轮没解析出来：解析到了记录，但一条都没写库（写进去会互相覆盖）
+		  NO_IDENTITY: "identity",
 		  PARSE_FAILED: (message) => looksLikeStackTrace(message) ? "script" : "selector",
 		  NOT_LOGGED_IN: "login",
 		  BLOCKED: "risk",
@@ -6533,6 +6536,7 @@ window.__ModuleLoader__.load({
 		}
 		var SHORT = {
 		  selector: "\u6CA1\u89E3\u6790\u5230\u5C97\u4F4D\uFF08\u9009\u62E9\u5668\u53EF\u80FD\u5931\u6548\uFF09",
+		  identity: "\u5C97\u4F4D\u6CA1\u6709\u5E73\u53F0 id\uFF0C\u4E00\u6761\u90FD\u6CA1\u5199\u5E93",
 		  script: "\u4EE3\u7801\u8BED\u6CD5\u5F02\u5E38",
 		  login: "\u5E73\u53F0\u8981\u6C42\u5148\u767B\u5F55",
 		  risk: "\u88AB\u5E73\u53F0\u98CE\u63A7\u62E6\u4F4F\u4E86",
@@ -6544,6 +6548,7 @@ window.__ModuleLoader__.load({
 		  unknown: "\u8FD0\u884C\u51FA\u9519"
 		};
 		var ADVICE = {
+		  identity: '\u9875\u9762\u89E3\u6790\u51FA\u4E86\u5C97\u4F4D\uFF0C\u4F46**\u4E00\u6761\u90FD\u6CA1\u6709\u5E73\u53F0\u5C97\u4F4D id** \u2014\u2014 \u6240\u4EE5\u4E00\u6761\u90FD\u6CA1\u5199\u5E93\u3002\u8FD9\u4E0D\u662F"\u6CA1\u6709\u5C97\u4F4D"\uFF1A\u7A7A id \u4F1A\u8BA9\u6574\u9875\u8BB0\u5F55\u4E92\u76F8\u8986\u76D6\uFF08\u6700\u540E\u53EA\u5269\u4E00\u6761\uFF09\u3002\u53BB\u68C0\u67E5\u8BE5\u9002\u914D\u5668\u53D6\u5C97\u4F4D id \u7684\u90A3\u6761\u6B63\u5219/\u9009\u62E9\u5668\uFF08\u5E73\u53F0\u6539\u7248\u540E href \u6216\u5185\u5D4C\u8F7D\u8377\u7684\u5F62\u72B6\u53D8\u4E86\uFF09\u3002',
 		  selector: "\u9875\u9762\u6253\u5F00\u4E86\u4F46\u4E00\u6761\u5C97\u4F4D\u90FD\u6CA1\u89E3\u6790\u51FA\u6765\uFF0C\u901A\u5E38\u662F\u62DB\u8058\u7AD9\u6539\u4E86\u9875\u9762\u7ED3\u6784\u3001\u9009\u62E9\u5668\u5BF9\u4E0D\u4E0A\u4E86\u3002\u5148\u5728\u4E0B\u9762\u7684\u300C\u5E73\u53F0\u72B6\u6001\u300D\u91CC\u770B\u662F\u54EA\u4E2A\u5B57\u6BB5\u8FDE\u7EED\u7F3A\u5931\uFF0C\u518D\u6309\u300C\u6392\u67E5\u65B9\u6848\u300D\u9010\u6761\u6838\u5BF9\u3002",
 		  script: "\u89E3\u6790\u811A\u672C\u5728\u9875\u9762\u91CC\u6267\u884C\u65F6\u62A5\u9519\u4E86\uFF08\u4E0D\u662F\u7F51\u7EDC\u95EE\u9898\uFF09\u3002\u8FD9\u901A\u5E38\u610F\u5473\u7740\u811A\u672C\u6216\u9009\u62E9\u5668\u914D\u7F6E\u88AB\u6539\u574F\u4E86\uFF0C\u5C55\u5F00\u4E0B\u9762\u7684\u539F\u59CB\u4FE1\u606F\u80FD\u770B\u5230\u5177\u4F53\u662F\u54EA\u4E00\u884C\u3002",
 		  login: "\u5728\u4E0B\u9762\u7684\u300C\u5E73\u53F0\u72B6\u6001\u300D\u91CC\u70B9\u300C\u767B\u5F55\u300D\uFF0C\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u7A97\u53E3\u91CC\u5B8C\u6210\u767B\u5F55\u540E\uFF0C\u5B9A\u65F6\u4F1A\u81EA\u52A8\u6062\u590D\u3002",
@@ -6574,6 +6579,8 @@ window.__ModuleLoader__.load({
 		  return line.length > 60 ? `${line.slice(0, 57)}\u2026` : line;
 		}
 		var FAILURE_KIND_LABEL = {
+		  /** 与 `SHORT` 同源的短标签（界面上的分类名）。 */
+		  identity: "\u5C97\u4F4D\u8EAB\u4EFD\u952E\u7F3A\u5931",
 		  selector: "\u9009\u62E9\u5668\u5931\u6548",
 		  script: "\u811A\u672C\u5F02\u5E38",
 		  login: "\u672A\u767B\u5F55",
@@ -6730,28 +6737,6 @@ window.__ModuleLoader__.load({
 		}
 
 		// src/client/screens/collect/plan-form.ts
-		function overridesOf(platforms, source) {
-		  const out = {};
-		  for (const id of platforms) {
-		    const entry = source[id];
-		    out[id] = {
-		      enabled: entry?.enabled !== false,
-		      maxPages: entry?.maxPages === void 0 || entry.maxPages === null ? "" : String(entry.maxPages)
-		    };
-		  }
-		  return out;
-		}
-		function buildOverrides(overrides) {
-		  const out = {};
-		  for (const [id, entry] of Object.entries(overrides)) {
-		    const parsed = Number.parseInt(entry.maxPages, 10);
-		    out[id] = {
-		      enabled: entry.enabled,
-		      maxPages: entry.maxPages.trim() === "" || !Number.isFinite(parsed) ? null : parsed
-		    };
-		  }
-		  return out;
-		}
 		function parseKeywordsText(text) {
 		  const seen = /* @__PURE__ */ new Set();
 		  const out = [];
@@ -6771,7 +6756,6 @@ window.__ModuleLoader__.load({
 		    // 多关键词方案直接回填列表；老方案把 criteria.keyword 翻成单行 ——
 		    // 用户看到的永远是"这个方案实际会跑的关键词"，不用关心新老形态。
 		    keywordsText: plan.keywords.length > 0 ? plan.keywords.join("\n") : plan.criteria["keyword"] ?? "",
-		    overrides: overridesOf(plan.platforms, plan.platformOverrides),
 		    criteria: { ...plan.criteria },
 		    windowStart: clockValueOf(schedule.windowStartHour, schedule.windowStartMinute),
 		    windowEnd: clockValueOf(schedule.windowEndHour, schedule.windowEndMinute),
@@ -6787,7 +6771,6 @@ window.__ModuleLoader__.load({
 		    name: "\u65B0\u65B9\u6848",
 		    platforms: [],
 		    keywordsText: "",
-		    overrides: {},
 		    criteria: {},
 		    windowStart: "09:00",
 		    windowEnd: "11:00",
@@ -6808,7 +6791,10 @@ window.__ModuleLoader__.load({
 		    name: form.name,
 		    platforms: form.platforms,
 		    keywords,
-		    platformOverrides: buildOverrides(form.overrides),
+		    // 单平台方案不需要逐平台覆盖项（"临时停用某个平台"是多平台的产物）。
+		    // 显式发空对象，语义是**整份替换** → 历史遗留的覆盖项会被清掉：否则老方案里
+		    // "被暂停的平台"会一直暂停，而界面上已经没有那个开关了。
+		    platformOverrides: {},
 		    criteria,
 		    schedule: {
 		      enabled: form.scheduleEnabled,
@@ -6859,6 +6845,80 @@ window.__ModuleLoader__.load({
 		var CRAWL_ROUND_BUDGET_DEFAULT_MIN = 20;
 		var CRAWL_ROUND_BUDGET_MIN_MIN = 5;
 		var CRAWL_ROUND_BUDGET_MAX_MIN = 240;
+
+		// src/shared/text/criteria-label.ts
+		var FALLBACK_LABEL = {
+		  keyword: "\u5173\u952E\u8BCD",
+		  city: "\u57CE\u5E02",
+		  sort: "\u6392\u5E8F\u65B9\u5F0F",
+		  postedWithinDays: "\u53D1\u5E03\u65F6\u95F4",
+		  maxPages: "\u6293\u53D6\u9875\u6570\u4E0A\u9650",
+		  scrollRounds: "\u52A0\u8F7D\u8F6E\u6570",
+		  // 平台特有维度：只有部分平台声明（如神仙外企），但方案可能引用了它们，
+		  // 而平台刚被取消勾选 —— 那时候界面不该退回去印 `workExp`。
+		  //
+		  // ⚠️ 这张表必须**覆盖所有被适配器声明过的键**：漏一个，方案卡上的条件行就会
+		  // 印出源码里的键名（`businessCategory：30`）。`test/platform/dimension-namespace.test.ts`
+		  // 遍历全部适配器的声明来钉这条不变量。
+		  workExp: "\u5DE5\u4F5C\u7ECF\u9A8C",
+		  education: "\u5B66\u5386",
+		  type: "\u804C\u4F4D\u8303\u56F4",
+		  businessCategory: "\u884C\u4E1A",
+		  // ⚠️ 同一个键在两个平台含义不同（神仙外企 `companyTypeList`=美企/德企；51job `companyType`=国企/外资）——
+		  // 单平台方案里各自的声明会给出准确标签（DTO 的 label 来自那个适配器），这张**兜底表**
+		  // 只在"平台不明"时用（如方案卡），所以给一个两头都说得过去的合并名，而不是二选一。
+		  companyType: "\u516C\u53F8\u6027\u8D28 / \u7C7B\u578B",
+		  companySize: "\u516C\u53F8\u89C4\u6A21",
+		  posInfo: "\u804C\u80FD",
+		  /** 国聘的 `major`（专业，独立于"行业类别"）。 */
+		  major: "\u4E13\u4E1A",
+		  salaryRange: "\u85AA\u8D44",
+		  experience: "\u7ECF\u9A8C",
+		  workNature: "\u5DE5\u4F5C\u6027\u8D28",
+		  // ⚠️ 第二处同名不同义：`jobType` 在 SinoJobs 是"行业类别"（43 项），在 51job 是"职位类型"（全职/实习）。
+		  // 兜底表给合并名；单平台方案下用各自声明里的 label（那才是准的）。
+		  jobType: "\u804C\u4F4D\u7C7B\u578B / \u884C\u4E1A\u7C7B\u522B",
+		  degree: "\u5B66\u5386",
+		  workYear: "\u5DE5\u4F5C\u7ECF\u9A8C",
+		  employment: "\u96C7\u4F63\u7C7B\u578B",
+		  workMode: "\u5DE5\u4F5C\u6A21\u5F0F",
+		  // 智联的 `workExperience`（四位码 0103 = 1-3年）与 51job 的 `workYear` 是同一件事、
+		  // 键名不同 —— 这里同样只是兜底，单平台方案用的是各自声明里的 label。
+		  workExperience: "\u5DE5\u4F5C\u7ECF\u9A8C",
+		  /** 智联的 `jobStatus`（全职/兼职/实习/校园）—— 与 51job 的 `jobType` 语义相邻但不等价，故单列。 */
+		  jobStatus: "\u804C\u4F4D\u7C7B\u578B"
+		};
+		var NUMERIC_SUFFIX = {
+		  postedWithinDays: " \u5929\u5185",
+		  maxPages: " \u9875",
+		  scrollRounds: " \u8F6E"
+		};
+		function describeCriteria(criteria, dimensions = []) {
+		  const declared = new Map(dimensions.map((dimension) => [dimension.key, dimension]));
+		  const order = [
+		    ...dimensions.map((dimension) => dimension.key).filter((key) => key in criteria),
+		    ...Object.keys(criteria).filter((key) => !declared.has(key))
+		  ];
+		  const seen = /* @__PURE__ */ new Set();
+		  const items = [];
+		  for (const key of order) {
+		    if (seen.has(key)) continue;
+		    seen.add(key);
+		    const value = criteria[key];
+		    if (value === void 0 || value === "") continue;
+		    const spec = declared.get(key);
+		    const suffix = NUMERIC_SUFFIX[key] ?? "";
+		    const inDomain = spec?.values.find((option) => option.value === value);
+		    items.push({
+		      key,
+		      label: spec?.label ?? FALLBACK_LABEL[key] ?? key,
+		      value,
+		      display: inDomain === void 0 ? `${value}${suffix}` : inDomain.label,
+		      declared: spec !== void 0
+		    });
+		  }
+		  return items;
+		}
 
 		// src/client/screens/collect/criteria-preview.tsx
 		var import_react23 = require("react");
@@ -6933,12 +6993,6 @@ window.__ModuleLoader__.load({
 		// src/client/screens/collect/plan-editor-modal.tsx
 		var import_jsx_runtime47 = require("react/jsx-runtime");
 		var PLAN_STEPS = ["\u57FA\u7840\u4E0E\u5E73\u53F0", "\u91C7\u96C6\u4E0E\u7B5B\u9009", "\u8C03\u5EA6\u4E0E\u540E\u5904\u7406"];
-		var PRIMARY_CRITERIA_KEYS = [
-		  "city",
-		  "workExp",
-		  "education",
-		  "salaryRange"
-		];
 		function platformHintOf(item) {
 		  const parts = [`${item.displayName}\uFF08${item.id}\uFF09`, MATURITY_LEVEL_LABEL[item.maturity.level]];
 		  if (item.maturity.verifiedAt !== null) parts.push(`\u4E0A\u6B21\u771F\u673A\u9A8C\u8BC1 ${item.maturity.verifiedAt}`);
@@ -6949,7 +7003,10 @@ window.__ModuleLoader__.load({
 		  return parts.join("\uFF1B");
 		}
 		function limitTextOf(item) {
-		  const parts = Number.isFinite(item.maxPages) ? [`\u6700\u591A ${String(item.maxPages)} \u9875`] : [];
+		  const parts = [];
+		  if (Number.isFinite(item.maxPages) && item.maxPages > 1) {
+		    parts.push(`\u6700\u591A ${String(item.maxPages)} \u9875`);
+		  }
 		  const crawl = item.authRequirement.crawl;
 		  if (crawl === "required") parts.push("\u6293\u53D6\u9700\u767B\u5F55");
 		  else if (crawl === "unknown") parts.push("\u6293\u53D6\u767B\u5F55\u672A\u9A8C\u8BC1");
@@ -6961,10 +7018,6 @@ window.__ModuleLoader__.load({
 		  const [localNotices, setLocalNotices] = (0, import_react24.useState)([]);
 		  const [step, setStep] = (0, import_react24.useState)(0);
 		  const [rulesOpen, setRulesOpen] = (0, import_react24.useState)(false);
-		  const [advancedOpen, setAdvancedOpen] = (0, import_react24.useState)(false);
-		  const [blockedOpen, setBlockedOpen] = (0, import_react24.useState)(false);
-		  const [batchPages, setBatchPages] = (0, import_react24.useState)("5");
-		  const allBoxRef = (0, import_react24.useRef)(null);
 		  const [submitting, setSubmitting] = (0, import_react24.useState)(false);
 		  const [submitError, setSubmitError] = (0, import_react24.useState)(null);
 		  const [receipt, setReceipt] = (0, import_react24.useState)(null);
@@ -6981,7 +7034,7 @@ window.__ModuleLoader__.load({
 		  const startMissing = startClock === null;
 		  const endMissing = endClock === null;
 		  const keywordsKey = JSON.stringify(parseKeywordsText(form.keywordsText));
-		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.overrides)}\0${JSON.stringify(form.criteria)}\0${keywordsKey}`;
+		  const validationKey = `${form.platforms.join(",")}\0${JSON.stringify(form.criteria)}\0${keywordsKey}`;
 		  (0, import_react24.useEffect)(() => {
 		    const timer = window.setTimeout(() => {
 		      void props.onValidate(form).then((result) => {
@@ -7004,17 +7057,13 @@ window.__ModuleLoader__.load({
 		    [form.platforms.join(",")]
 		  );
 		  const items = dimensions.state.status === "ok" ? dimensions.state.data.items : [];
-		  const togglePlatform = (id) => {
-		    const has = form.platforms.includes(id);
-		    const nextPlatforms = has ? form.platforms.filter((item) => item !== id) : [...form.platforms, id];
-		    const nextOverrides = { ...form.overrides };
-		    if (has) delete nextOverrides[id];
-		    else nextOverrides[id] = { enabled: true, maxPages: "" };
-		    patch({ platforms: nextPlatforms, overrides: nextOverrides });
-		  };
-		  const setOverride = (id, next) => {
-		    const current = form.overrides[id] ?? { enabled: true, maxPages: "" };
-		    patch({ overrides: { ...form.overrides, [id]: { ...current, ...next } } });
+		  const selectPlatform = (id) => {
+		    const previousSingle = form.platforms.length === 1 ? form.platforms[0] : null;
+		    if (previousSingle === id) return;
+		    patch({
+		      platforms: [id],
+		      ...previousSingle === null ? {} : { criteria: {} }
+		    });
 		  };
 		  const setCriteria = (key, value) => {
 		    const next = { ...form.criteria };
@@ -7047,74 +7096,39 @@ window.__ModuleLoader__.load({
 		      setSubmitting(false);
 		    }
 		  };
-		  const includedCount = form.platforms.length;
-		  const enabledCount = form.platforms.filter(
-		    (id) => (form.overrides[id] ?? { enabled: true }).enabled
-		  ).length;
 		  const nameMissing = form.name.trim() === "";
-		  const stepOneBlocked = nameMissing || includedCount === 0 || enabledCount === 0;
-		  const planPages = form.criteria["maxPages"] ?? "";
+		  const platformMissing = form.platforms.length === 0;
+		  const stepOneBlocked = nameMissing || platformMissing;
 		  const keywordCount = parseKeywordsText(form.keywordsText).length;
 		  const keywordsOverCap = keywordCount > PLAN_KEYWORDS_MAX;
-		  const pagesDimension = items.find((item) => item.key === "maxPages");
-		  const filterItems = items.filter((item) => item.key !== "maxPages" && item.key !== "keyword");
-		  const editableItems = filterItems.filter((item) => item.supported);
-		  const primaryItems = editableItems.filter((item) => PRIMARY_CRITERIA_KEYS.includes(item.key));
-		  const primaryKeys = new Set(primaryItems.map((item) => item.key));
-		  const advancedItems = editableItems.filter((item) => !primaryKeys.has(item.key));
-		  const blockedItems = filterItems.filter((item) => !item.supported);
-		  const staleBlocked = blockedItems.filter((item) => (form.criteria[item.key] ?? "") !== "");
-		  const restBlocked = blockedItems.filter((item) => (form.criteria[item.key] ?? "") === "");
-		  const advancedActiveCount = advancedItems.filter(
-		    (item) => (form.criteria[item.key] ?? "") !== ""
-		  ).length;
+		  const wiredItems = items.filter(
+		    (item) => item.key !== "keyword" && item.wire !== null && item.supported
+		  );
+		  const depthItems = items.filter(
+		    (item) => item.wire === null && item.declared === true && item.supported && (item.key !== "maxPages" || (item.max ?? 0) > 1)
+		  );
+		  const orphanKeys = Object.keys(form.criteria).filter(
+		    (key) => key !== "keyword" && !items.some((item) => item.key === key && item.wire !== null && item.supported)
+		  );
+		  const selectedPlatformId = form.platforms[0] ?? null;
+		  const selectedPlatformName = selectedPlatformId === null ? "\u6240\u9009\u5E73\u53F0" : platformNameOf(selectedPlatformId);
 		  const previewKeyword = parseKeywordsText(form.keywordsText)[0];
 		  const previewCriteria2 = {
 		    ...writeOf(form).criteria ?? {},
 		    ...previewKeyword === void 0 ? {} : { keyword: previewKeyword }
 		  };
-		  const advancedNames = advancedItems.filter((item) => item.supported).map((item) => item.label).slice(0, 4).join(" / ") || "\u6392\u5E8F\u65B9\u5F0F / \u53D1\u5E03\u65F6\u95F4 / \u5E73\u53F0\u7279\u6709\u7EF4\u5EA6";
-		  (0, import_react24.useEffect)(() => {
-		    if (advancedActiveCount > 0) setAdvancedOpen(true);
-		  }, [advancedActiveCount]);
-		  const allIncluded = includedCount > 0 && includedCount === props.available.length;
-		  (0, import_react24.useEffect)(() => {
-		    const box = allBoxRef.current;
-		    if (box !== null) box.indeterminate = includedCount > 0 && !allIncluded;
-		  }, [includedCount, allIncluded]);
-		  const toggleAll = () => {
-		    if (allIncluded) {
-		      patch({ platforms: [], overrides: {} });
-		      return;
-		    }
-		    const nextOverrides = {};
-		    for (const item of props.available) {
-		      nextOverrides[item.id] = form.overrides[item.id] ?? { enabled: true, maxPages: "" };
-		    }
-		    patch({ platforms: props.available.map((item) => item.id), overrides: nextOverrides });
-		  };
-		  const applyBatchPages = () => {
-		    const parsed = Number.parseInt(batchPages, 10);
-		    if (!Number.isFinite(parsed) || parsed <= 0) return;
-		    const nextOverrides = { ...form.overrides };
-		    for (const item of props.available) {
-		      if (!form.platforms.includes(item.id)) continue;
-		      const current = nextOverrides[item.id] ?? { enabled: true, maxPages: "" };
-		      const cap = Number.isFinite(item.maxPages) ? item.maxPages : parsed;
-		      nextOverrides[item.id] = { ...current, maxPages: String(Math.min(parsed, cap)) };
-		    }
-		    patch({ overrides: nextOverrides });
-		  };
 		  const renderDimension = (dimension) => {
 		    const value = form.criteria[dimension.key] ?? "";
 		    const hint = dimension.supported ? dimension.hint : dimension.disabledReason ?? dimension.hint;
-		    const declarers = dimension.platforms.filter((item) => item.declared);
+		    const freeText = dimension.open ?? dimension.values.length === 0;
+		    const platformViews = dimension.platforms ?? [];
+		    const declarers = platformViews.filter((item) => item.declared);
 		    const partial = (platforms) => platforms.length > 0 && platforms.length < declarers.length;
 		    const options = dimension.values.map((option) => ({
 		      value: option.value,
-		      label: partial(option.platforms) ? `${option.label}\uFF08\u4EC5 ${option.platforms.map(platformNameOf).join("\u3001")}\uFF09` : option.label
+		      label: partial(option.platforms ?? []) ? `${option.label}\uFF08\u4EC5 ${(option.platforms ?? []).map(platformNameOf).join("\u3001")}\uFF09` : option.label
 		    }));
-		    const notes = dimension.platforms.filter((item) => !item.supported).map((item) => `${platformNameOf(item.id)}\uFF1A${item.note ?? "\u4E0D\u652F\u6301\u8FD9\u4E2A\u7B5B\u9009"}`);
+		    const notes = platformViews.filter((item) => !item.supported).map((item) => `${platformNameOf(item.id)}\uFF1A${item.note ?? "\u4E0D\u652F\u6301\u8FD9\u4E2A\u7B5B\u9009"}`);
 		    const listId = `jh-dim-${dimension.key}`;
 		    return /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("label", { className: "jh-field", children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("span", { className: "jh-field-label", children: [
@@ -7122,7 +7136,27 @@ window.__ModuleLoader__.load({
 		        dimension.supported ? null : /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("em", { className: "jh-field-flag", children: "\u5F53\u524D\u5E73\u53F0\u4E0D\u652F\u6301" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(FieldHint, { text: hint })
 		      ] }),
-		      dimension.numeric ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
+		      dimension.multi ? /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(import_jsx_runtime47.Fragment, { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-chips", role: "group", "aria-label": dimension.label, children: options.map((option) => {
+		          const picked = value.split(",").filter((item) => item !== "").includes(option.value);
+		          return /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("label", { className: "jh-check", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
+		              "input",
+		              {
+		                type: "checkbox",
+		                checked: picked,
+		                onChange: () => {
+		                  const current = value.split(",").filter((item) => item !== "");
+		                  const next = picked ? current.filter((item) => item !== option.value) : [...current, option.value];
+		                  setCriteria(dimension.key, next.join(","));
+		                }
+		              }
+		            ),
+		            option.label
+		          ] }, option.value);
+		        }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-filter-note", children: value === "" ? "\u4E0D\u6309\u5B83\u7B5B" : `\u5DF2\u9009 ${String(value.split(",").filter((item) => item !== "").length)} \u9879\uFF08\u53EF\u591A\u9009\uFF09` })
+		      ] }) : dimension.numeric ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
 		        "input",
 		        {
 		          className: "jh-input",
@@ -7330,156 +7364,44 @@ window.__ModuleLoader__.load({
 		              ] }),
 		              nameMissing ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-warn", role: "alert", children: "\u65B9\u6848\u540D\u4E0D\u80FD\u4E3A\u7A7A\u3002" }) : null
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-section-title", children: "\u76EE\u6807\u5E73\u53F0\u4E0E\u9875\u6570" }),
-		            props.available.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DF2\u6CE8\u518C\u7684\u5E73\u53F0\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(import_jsx_runtime47.Fragment, { children: [
-		              pagesDimension === void 0 || !pagesDimension.supported ? null : /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("div", { className: "jh-field", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("span", { className: "jh-field-label", children: [
-		                  "\u6293\u53D6\u9875\u6570\u4E0A\u9650\uFF08\u65B9\u6848\u7EA7\uFF09",
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                    FieldHint,
-		                    {
-		                      text: `${pagesDimension.hint} \u5355\u4E2A\u5E73\u53F0\u53EF\u5728\u4E0B\u8868\u5355\u72EC\u586B\uFF0C\u586B\u4E86\u5C31\u7528\u5B83\u3002\u7559\u7A7A\u5219\u5404\u5E73\u53F0\u6309\u81EA\u5DF1\u7684\u9ED8\u8BA4\u9875\u6570\u6293\uFF1B\u8D85\u8FC7\u67D0\u4E2A\u5E73\u53F0\u81EA\u8EAB\u4E0A\u9650\u7684\u90E8\u5206\u5BF9\u5B83\u65E0\u6548\uFF0C\u4FDD\u5B58\u524D\u4F1A\u63D0\u793A\u3002`
-		                    }
-		                  )
-		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("div", { className: "jh-field-row", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                    "input",
-		                    {
-		                      className: "jh-input jh-input-narrow",
-		                      type: "number",
-		                      min: 1,
-		                      placeholder: "\u9ED8\u8BA4",
-		                      "aria-label": "\u65B9\u6848\u7EA7\u6293\u53D6\u9875\u6570\u4E0A\u9650",
-		                      value: planPages,
-		                      onChange: (event) => setCriteria("maxPages", event.target.value)
-		                    }
-		                  ),
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-muted", children: "\u9875 \u2014\u2014 \u7559\u7A7A\u5219\u5404\u5E73\u53F0\u6309\u81EA\u5DF1\u7684\u9ED8\u8BA4\u9875\u6570\u6293" })
-		                ] })
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("div", { className: "jh-batch", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("label", { className: "jh-check", children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                    "input",
-		                    {
-		                      ref: allBoxRef,
-		                      type: "checkbox",
-		                      checked: allIncluded,
-		                      onChange: toggleAll
-		                    }
-		                  ),
-		                  "\u5168\u9009"
-		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("span", { className: "jh-muted", children: [
-		                  "\u5DF2\u7EB3\u5165 ",
-		                  includedCount,
-		                  " / ",
-		                  props.available.length,
-		                  " \u4E2A\u5E73\u53F0",
-		                  enabledCount === includedCount ? "" : `\uFF08\u5176\u4E2D ${String(includedCount - enabledCount)} \u4E2A\u5DF2\u6682\u505C\uFF09`
-		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-spacer" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("label", { className: "jh-muted", htmlFor: "jh-batch-pages", children: "\u6279\u91CF\u8BBE\u7F6E\u9875\u6570\u4E0A\u9650" }),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                  "input",
-		                  {
-		                    id: "jh-batch-pages",
-		                    className: "jh-input",
-		                    type: "number",
-		                    min: 1,
-		                    value: batchPages,
-		                    onChange: (event) => setBatchPages(event.target.value)
-		                  }
-		                ),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                  "button",
-		                  {
-		                    type: "button",
-		                    className: "jh-btn jh-btn-inline jh-btn-tiny",
-		                    disabled: includedCount === 0,
-		                    title: "\u7ED9\u6240\u6709\u5DF2\u7EB3\u5165\u7684\u5E73\u53F0\u586B\u4E0A\u540C\u4E00\u4E2A\u9875\u6570\u4E0A\u9650\u3002\u8D85\u8FC7\u5E73\u53F0\u81EA\u8EAB\u4E0A\u9650\u7684\u6309\u8BE5\u5E73\u53F0\u4E0A\u9650\u586B\u5199\u3002",
-		                    onClick: applyBatchPages,
-		                    children: "\u5E94\u7528"
-		                  }
-		                )
-		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-filter-note", children: "\u8D85\u8FC7\u5E73\u53F0\u81EA\u8EAB\u4E0A\u9650\u7684\u6309\u8BE5\u5E73\u53F0\u4E0A\u9650\u586B\u5199\uFF1B\u9875\u6570\u7559\u7A7A\u7684\u5E73\u53F0\u7528\u4E0A\u9762\u7684\u65B9\u6848\u7EA7\u9875\u6570\u3002" }),
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-table-scroll", children: /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("table", { className: "jh-table jh-table-plan jh-table-roomy", children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("tr", { children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("th", { scope: "col", className: "jh-col-check", children: /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-sr-only", children: "\u7EB3\u5165\u65B9\u6848" }) }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("th", { scope: "col", children: "\u5E73\u53F0" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("th", { scope: "col", children: "\u72B6\u6001" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("th", { scope: "col", children: "\u9875\u6570\u4E0A\u9650" }),
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("th", { scope: "col", children: "\u9650\u5236" })
-		                ] }) }),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("tbody", { children: props.available.map((item) => {
-		                  const included = form.platforms.includes(item.id);
-		                  const entry = form.overrides[item.id] ?? { enabled: true, maxPages: "" };
-		                  const lastEnabled = included && entry.enabled && enabledCount === 1;
-		                  const overCap = entry.maxPages.trim() !== "" && Number(entry.maxPages) > item.maxPages;
-		                  return /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("tr", { children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("td", { className: "jh-col-check", children: /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
+		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-section-title", children: "\u76EE\u6807\u5E73\u53F0" }),
+		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-filter-note", children: "\u4E00\u4E2A\u65B9\u6848\u53EA\u6293\u4E00\u4E2A\u5E73\u53F0\uFF1A\u7B5B\u9009\u6761\u4EF6\u662F\u6309\u5E73\u53F0\u81EA\u5DF1\u7684\u53D6\u503C\u57DF\u4E0E\u53C2\u6570\u540D\u5B9A\u4E49\u7684\uFF0C \u4E24\u4E2A\u5E73\u53F0\u5171\u7528\u4E00\u4EFD\u6761\u4EF6\u5FC5\u7136\u6709\u4E00\u5BB6\u6536\u9519\u3002\u8981\u540C\u65F6\u76EF\u591A\u4E2A\u5E73\u53F0\u5C31\u5EFA\u591A\u4E2A\u65B9\u6848 \u2014\u2014 \u5B83\u4EEC\u7684\u65F6\u6BB5\u4E0E\u6BCF\u65E5\u989D\u5EA6\u5404\u81EA\u72EC\u7ACB\u3002" }),
+		            props.available.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-muted", children: "\u8FD8\u6CA1\u6709\u5DF2\u6CE8\u518C\u7684\u5E73\u53F0\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-platform-list", role: "radiogroup", "aria-label": "\u76EE\u6807\u5E73\u53F0", children: props.available.map((item) => {
+		              const selected = form.platforms[0] === item.id;
+		              return /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(
+		                "label",
+		                {
+		                  className: `jh-platform-row${selected ? " jh-platform-row-on" : ""}`,
+		                  children: [
+		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
 		                      "input",
 		                      {
-		                        type: "checkbox",
-		                        checked: included,
-		                        "aria-label": `\u7EB3\u5165 ${item.displayName}`,
-		                        onChange: () => togglePlatform(item.id)
+		                        type: "radio",
+		                        name: "jh-plan-platform",
+		                        checked: selected,
+		                        onChange: () => selectPlatform(item.id)
 		                      }
-		                    ) }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("td", { children: [
+		                    ),
+		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("span", { className: "jh-platform-name", children: [
 		                      item.displayName,
 		                      /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(FieldHint, { text: platformHintOf(item) })
 		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("td", { children: [
-		                      /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                        "span",
-		                        {
-		                          className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`,
-		                          children: MATURITY_LEVEL_SHORT[item.maturity.level]
-		                        }
-		                      ),
-		                      included && !entry.enabled ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-tag jh-tone-muted", children: "\u5DF2\u6682\u505C" }) : null,
-		                      included ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                        "button",
-		                        {
-		                          type: "button",
-		                          className: "jh-btn jh-btn-inline jh-btn-tiny",
-		                          disabled: lastEnabled,
-		                          title: lastEnabled ? "\u81F3\u5C11\u7559\u4E00\u4E2A\u542F\u7528\u7684\u5E73\u53F0 \u2014\u2014 \u5168\u6682\u505C\u7B49\u4E8E\u8FD9\u4E2A\u65B9\u6848\u6C38\u8FDC\u6293\u4E0D\u5230\u4E1C\u897F\u3002" : entry.enabled ? "\u6682\u65F6\u4E0D\u6293\u8FD9\u4E2A\u5E73\u53F0\uFF08\u4FDD\u7559\u5B83\u7684\u9875\u6570\u914D\u7F6E\u4E0E\u67E5\u91CD\u53E3\u5F84\uFF09\u3002" : "\u6062\u590D\u6293\u53D6\u8FD9\u4E2A\u5E73\u53F0\u3002",
-		                          onClick: () => setOverride(item.id, { enabled: !entry.enabled }),
-		                          children: entry.enabled ? "\u6682\u505C" : "\u6062\u590D"
-		                        }
-		                      ) : null
-		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                      "input",
-		                      {
-		                        className: "jh-input jh-pages-input",
-		                        type: "number",
-		                        min: 1,
-		                        max: item.maxPages,
-		                        value: entry.maxPages,
-		                        placeholder: planPages === "" ? "\u9ED8\u8BA4" : planPages,
-		                        disabled: !included || !entry.enabled,
-		                        "aria-invalid": overCap,
-		                        "aria-label": `${item.displayName} \u7684\u9875\u6570\u4E0A\u9650`,
-		                        onChange: (event) => setOverride(item.id, { maxPages: event.target.value })
-		                      }
-		                    ) }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("td", { className: "jh-muted", children: [
-		                      limitTextOf(item),
-		                      overCap ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-error", children: " \xB7 \u8D85\u8FC7\u4E0A\u9650\uFF0C\u4FDD\u5B58\u4F1A\u88AB\u62D2" }) : null
-		                    ] })
-		                  ] }, item.id);
-		                }) })
-		              ] }) })
-		            ] }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: `jh-tag jh-tone-${MATURITY_LEVEL_TONE[item.maturity.level]}`, children: MATURITY_LEVEL_SHORT[item.maturity.level] }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-spacer" }),
+		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-muted", children: limitTextOf(item) })
+		                  ]
+		                },
+		                item.id
+		              );
+		            }) }),
+		            form.platforms.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("p", { className: "jh-warn", role: "alert", children: [
+		              "\u8FD9\u4E2A\u65B9\u6848\u539F\u6765\u5E26\u7740 ",
+		              String(form.platforms.length),
+		              " \u4E2A\u5E73\u53F0\uFF08\u65E7\u6570\u636E\uFF09\u2014\u2014 \u73B0\u5728\u4E00\u4E2A\u65B9\u6848\u53EA\u6293\u4E00\u4E2A\u5E73\u53F0\u3002\u70B9\u4E00\u4E2A\u5E73\u53F0\u5C31\u53EA\u4FDD\u7559\u5B83\uFF08\u5176\u4F59\u5E73\u53F0\u8BF7\u53E6\u5EFA\u65B9\u6848\uFF09\uFF1B \u4FDD\u5B58\u524D\u5FC5\u987B\u6536\u655B\u6210\u4E00\u4E2A\u3002"
+		            ] }) : null,
 		            stepOneBlocked ? /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("p", { className: "jh-warn", role: "alert", children: [
 		              nameMissing ? "\u5148\u586B\u65B9\u6848\u540D\u3002" : "",
-		              includedCount === 0 ? "\u81F3\u5C11\u7EB3\u5165\u4E00\u4E2A\u5E73\u53F0\u3002" : "",
-		              includedCount > 0 && enabledCount === 0 ? "\u81F3\u5C11\u7559\u4E00\u4E2A\u672A\u6682\u505C\u7684\u5E73\u53F0\u3002" : "",
+		              platformMissing ? "\u9009\u4E00\u4E2A\u5E73\u53F0\u3002" : "",
 		              "\u8FD9\u4E24\u6761\u540C\u65F6\u4E5F\u662F\u4FDD\u5B58\u63A5\u53E3\u7684\u786C\u6027\u5224\u636E\u3002"
 		            ] }) : null
 		          ] }) : null,
@@ -7520,88 +7442,47 @@ window.__ModuleLoader__.load({
 		                " \u904D"
 		              ] })
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-section-title", children: "\u7B5B\u9009\u6761\u4EF6" }),
-		            editableItems.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-muted", children: "\u5DF2\u7EB3\u5165\u7684\u5E73\u53F0\u6CA1\u6709\u53EF\u7528\u7684\u7B5B\u9009\u7EF4\u5EA6 \u2014\u2014 \u4FDD\u5B58\u540E\u5B83\u4EEC\u4F1A\u6309\u5E73\u53F0\u81EA\u5DF1\u7684\u9ED8\u8BA4\u5217\u8868\u6293\u3002" }) : primaryItems.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-muted", children: "\u5DF2\u7EB3\u5165\u7684\u5E73\u53F0\u6CA1\u6709\u300C\u57CE\u5E02 / \u7ECF\u9A8C / \u5B66\u5386 / \u85AA\u8D44\u300D\u8FD9\u51E0\u7C7B\u5E38\u7528\u7B5B\u9009 \u2014\u2014 \u5B83\u4EEC\u80FD\u7B5B\u7684\u4E1C\u897F\u90FD\u5728\u4E0B\u9762\u7684\u300C\u9AD8\u7EA7\u7B5B\u9009\u300D\u91CC\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-grid2", children: primaryItems.map(renderDimension) }),
-		            advancedItems.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(import_jsx_runtime47.Fragment, { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-plan-toggle",
-		                  "aria-expanded": advancedOpen,
-		                  "aria-controls": "jh-plan-advanced",
-		                  onClick: () => setAdvancedOpen((open) => !open),
-		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-plan-caret", "aria-hidden": "true", children: advancedOpen ? "\u25BE" : "\u25B8" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-plan-toggle-text", children: "\u9AD8\u7EA7\u7B5B\u9009" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
-		                      "span",
-		                      {
-		                        className: `jh-filter-note${advancedActiveCount > 0 ? " jh-filter-note-on" : ""}`,
-		                        children: advancedActiveCount > 0 ? `\u5DF2\u8BBE ${String(advancedActiveCount)} \u9879` : advancedNames
-		                      }
-		                    )
-		                  ]
-		                }
-		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-plan-panel", id: "jh-plan-advanced", hidden: !advancedOpen, children: /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-grid2", children: advancedItems.map(renderDimension) }) })
+		            /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("div", { className: "jh-section-title", children: [
+		              selectedPlatformName,
+		              " \u7684\u641C\u7D22\u6761\u4EF6"
 		            ] }),
-		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(CriteriaPreview, { platforms: form.platforms, criteria: previewCriteria2 }),
-		            staleBlocked.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("div", { className: "jh-alert jh-alert-warn", role: "alert", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-filter-note", children: "\u8FD9\u91CC\u662F\u8FD9\u4E2A\u5E73\u53F0\u58F0\u660E\u4E86\u3001\u5E76\u4E14\u771F\u7684\u4F1A\u53D1\u5230\u5B83\u63A5\u53E3\u53C2\u6570\u4E0A\u7684\u5168\u90E8\u7B5B\u9009\u6761\u4EF6\uFF0C\u4E00\u6761\u4E0D\u5C11\u3002 \u5E73\u53F0\u9875\u9762\u4E0A\u6709\u3001\u4F46\u9002\u914D\u5668\u8FD8\u6CA1\u6253\u901A\u7684\u6761\u4EF6\u4E0D\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC \u2014\u2014 \u90A3\u662F\u9002\u914D\u5668\u7684\u7F3A\u53E3\uFF0C \u6446\u8FDB\u8868\u5355\u53EA\u4F1A\u8BA9\u4F60\u914D\u4E00\u4E2A\u70B9\u4E86\u6CA1\u7528\u7684\u4E1C\u897F\u3002" }),
+		            wiredItems.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-muted", children: "\u8FD9\u4E2A\u5E73\u53F0\u6CA1\u6709\u53EF\u914D\u7684\u7B5B\u9009\u6761\u4EF6 \u2014\u2014 \u4FDD\u5B58\u540E\u5B83\u4F1A\u6309\u81EA\u5DF1\u7684\u9ED8\u8BA4\u5217\u8868\u6293\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-grid2", children: wiredItems.map(renderDimension) }),
+		            orphanKeys.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("div", { className: "jh-alert jh-alert-warn", role: "alert", children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("div", { className: "jh-alert-head", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("span", { className: "jh-alert-title", children: [
 		                  "\u6709 ",
-		                  String(staleBlocked.length),
-		                  " \u4E2A\u6761\u4EF6\u5F53\u524D\u5E73\u53F0\u7528\u4E0D\u4E86"
+		                  String(orphanKeys.length),
+		                  " \u4E2A\u6761\u4EF6\u8FD9\u4E2A\u5E73\u53F0\u7528\u4E0D\u4E86"
 		                ] }),
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-muted", children: "\u5E73\u53F0\u4E0A\u4E0D\u4F1A\u6309\u5B83\u7B5B\uFF0C\u4FDD\u5B58\u524D\u4F1A\u88AB\u62E6\u4E0B \u2014\u2014 \u70B9\u300C\u79FB\u9664\u8FD9\u4E2A\u6761\u4EF6\u300D\u6E05\u6389" })
+		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-muted", children: "\u5E73\u53F0\u4E0D\u4F1A\u6309\u5B83\u7B5B\uFF0C\u4FDD\u5B58\u524D\u4F1A\u88AB\u62E6\u4E0B \u2014\u2014 \u70B9\u300C\u79FB\u9664\u300D\u6E05\u6389" })
 		              ] }),
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("ul", { className: "jh-alert-list", children: staleBlocked.map((item) => /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("li", { className: "jh-dim-blocked", children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("ul", { className: "jh-alert-list", children: orphanKeys.map((key) => /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("li", { className: "jh-dim-blocked", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("span", { children: [
-		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("b", { children: item.label }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("b", { children: items.find((item) => item.key === key)?.label ?? FALLBACK_LABEL[key] ?? key }),
 		                  "\uFF1A",
-		                  form.criteria[item.key] ?? "",
-		                  " \u2014\u2014 ",
-		                  item.disabledReason
+		                  form.criteria[key] ?? "",
+		                  " \u2014\u2014 \u5F53\u524D\u5E73\u53F0\uFF08",
+		                  selectedPlatformName,
+		                  "\uFF09\u6CA1\u6709\u8FD9\u4E2A\u7B5B\u9009"
 		                ] }),
 		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(
 		                  "button",
 		                  {
 		                    type: "button",
 		                    className: "jh-btn jh-btn-inline jh-btn-tiny",
-		                    title: "\u53EA\u4ECE\u8FD9\u4E2A\u65B9\u6848\u91CC\u53BB\u6389\u8FD9\u4E00\u6761\u6761\u4EF6\uFF0C\u4E0D\u5F71\u54CD\u5E73\u53F0\u914D\u7F6E\u3002",
-		                    onClick: () => setCriteria(item.key, ""),
+		                    onClick: () => setCriteria(key, ""),
 		                    children: "\u79FB\u9664\u8FD9\u4E2A\u6761\u4EF6"
 		                  }
 		                )
-		              ] }, item.key)) })
+		              ] }, key)) })
 		            ] }),
-		            restBlocked.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(import_jsx_runtime47.Fragment, { children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(
-		                "button",
-		                {
-		                  type: "button",
-		                  className: "jh-plan-toggle",
-		                  "aria-expanded": blockedOpen,
-		                  "aria-controls": "jh-plan-blocked",
-		                  onClick: () => setBlockedOpen((open) => !open),
-		                  children: [
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-plan-caret", "aria-hidden": "true", children: blockedOpen ? "\u25BE" : "\u25B8" }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("span", { className: "jh-plan-toggle-text", children: [
-		                      "\u5F53\u524D\u5E73\u53F0\u7528\u4E0D\u4E86\u7684\u7B5B\u9009\uFF08",
-		                      String(restBlocked.length),
-		                      "\uFF09"
-		                    ] }),
-		                    /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("span", { className: "jh-filter-note", children: restBlocked.map((item) => item.label).join(" / ") })
-		                  ]
-		                }
-		              ),
-		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-plan-panel", id: "jh-plan-blocked", hidden: !blockedOpen, children: /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("ul", { className: "jh-alert-list", children: restBlocked.map((item) => /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("li", { children: [
-		                /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("b", { children: item.label }),
-		                " \u2014\u2014 ",
-		                item.disabledReason
-		              ] }, item.key)) }) })
-		            ] })
+		            depthItems.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(import_jsx_runtime47.Fragment, { children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-section-title", children: "\u91C7\u96C6\u6DF1\u5EA6" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("p", { className: "jh-filter-note", children: "\u8FD9\u4E9B\u4E0D\u8FDB\u8BF7\u6C42\uFF0C\u53EA\u51B3\u5B9A\u8FD9\u4E2A\u5E73\u53F0\u6293\u591A\u6DF1\uFF08\u7FFB\u9875\u6293\u51E0\u9875\uFF0F\u6EDA\u52A8\u52A0\u8F7D\u51E0\u8F6E\uFF09\u3002" }),
+		              /* @__PURE__ */ (0, import_jsx_runtime47.jsx)("div", { className: "jh-grid2", children: depthItems.map(renderDimension) })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime47.jsx)(CriteriaPreview, { platforms: form.platforms, criteria: previewCriteria2 })
 		          ] }) : null,
 		          step === 2 ? /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)(import_jsx_runtime47.Fragment, { children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime47.jsxs)("fieldset", { className: "jh-fieldset", children: [
@@ -8062,64 +7943,6 @@ window.__ModuleLoader__.load({
 		    ] });
 		  }
 		  return null;
-		}
-
-		// src/shared/text/criteria-label.ts
-		var FALLBACK_LABEL = {
-		  keyword: "\u5173\u952E\u8BCD",
-		  city: "\u57CE\u5E02",
-		  sort: "\u6392\u5E8F\u65B9\u5F0F",
-		  postedWithinDays: "\u53D1\u5E03\u65F6\u95F4",
-		  maxPages: "\u6293\u53D6\u9875\u6570\u4E0A\u9650",
-		  scrollRounds: "\u52A0\u8F7D\u8F6E\u6570",
-		  // 平台特有维度：只有部分平台声明（如神仙外企），但方案可能引用了它们，
-		  // 而平台刚被取消勾选 —— 那时候界面不该退回去印 `workExp`。
-		  //
-		  // ⚠️ 这张表必须**覆盖所有被适配器声明过的键**：漏一个，方案卡上的条件行就会
-		  // 印出源码里的键名（`businessCategory：30`）。`test/platform/dimension-namespace.test.ts`
-		  // 遍历全部适配器的声明来钉这条不变量。
-		  workExp: "\u5DE5\u4F5C\u7ECF\u9A8C",
-		  education: "\u5B66\u5386",
-		  type: "\u804C\u4F4D\u8303\u56F4",
-		  businessCategory: "\u884C\u4E1A",
-		  posInfo: "\u804C\u80FD",
-		  salaryRange: "\u85AA\u8D44",
-		  experience: "\u7ECF\u9A8C",
-		  workNature: "\u5DE5\u4F5C\u6027\u8D28",
-		  jobType: "\u884C\u4E1A\u7C7B\u522B",
-		  employment: "\u96C7\u4F63\u7C7B\u578B",
-		  workMode: "\u5DE5\u4F5C\u6A21\u5F0F"
-		};
-		var NUMERIC_SUFFIX = {
-		  postedWithinDays: " \u5929\u5185",
-		  maxPages: " \u9875",
-		  scrollRounds: " \u8F6E"
-		};
-		function describeCriteria(criteria, dimensions = []) {
-		  const declared = new Map(dimensions.map((dimension) => [dimension.key, dimension]));
-		  const order = [
-		    ...dimensions.map((dimension) => dimension.key).filter((key) => key in criteria),
-		    ...Object.keys(criteria).filter((key) => !declared.has(key))
-		  ];
-		  const seen = /* @__PURE__ */ new Set();
-		  const items = [];
-		  for (const key of order) {
-		    if (seen.has(key)) continue;
-		    seen.add(key);
-		    const value = criteria[key];
-		    if (value === void 0 || value === "") continue;
-		    const spec = declared.get(key);
-		    const suffix = NUMERIC_SUFFIX[key] ?? "";
-		    const inDomain = spec?.values.find((option) => option.value === value);
-		    items.push({
-		      key,
-		      label: spec?.label ?? FALLBACK_LABEL[key] ?? key,
-		      value,
-		      display: inDomain === void 0 ? `${value}${suffix}` : inDomain.label,
-		      declared: spec !== void 0
-		    });
-		  }
-		  return items;
 		}
 
 		// src/client/screens/collect/criteria-line.tsx
@@ -9275,7 +9098,7 @@ window.__ModuleLoader__.load({
 		  const sweep = () => void act("\u6B63\u5728\u6309\u540C\u4E00\u5957\u95E8\u69DB\u590D\u6838\u5168\u5E93\u2026", async () => {
 		    const result = await runDedupSweep();
 		    setDedupRevision((value) => value + 1);
-		    return `\u770B\u8FC7 ${String(result.scanned)} \u6761` + (result.skippedGrouped > 0 ? `\uFF08\u8DF3\u8FC7\u5DF2\u5728\u5206\u7EC4\u91CC\u7684 ${String(result.skippedGrouped)} \u6761\uFF09` : "") + `\uFF1A\u5408\u5E76 ${String(result.merged)} \u6761\u3001\u65B0\u5EFA ${String(result.newGroups)} \u7EC4\uFF0C\u73B0\u5728\u5171 ${String(result.groups)} \u7EC4\u3002` + (result.candidates > 0 ? `\u53E6\u6709 ${String(result.candidates)} \u6761\u7591\u4F3C\u91CD\u590D\u6CA1\u81EA\u52A8\u5408\u5E76\uFF08\u6807\u9898\u76F8\u4F3C\u5EA6\u4E0D\u591F\uFF09\u2014\u2014 \u9700\u8981\u4EBA\u5DE5\u770B\u4E00\u773C\u3002` : "");
+		    return `\u770B\u8FC7 ${String(result.scanned)} \u6761` + (result.skippedGrouped > 0 ? `\uFF08\u8DF3\u8FC7\u5DF2\u5728\u5206\u7EC4\u91CC\u7684 ${String(result.skippedGrouped)} \u6761\uFF09` : "") + `\uFF1A\u5408\u5E76 ${String(result.merged)} \u6761\u3001\u65B0\u5EFA ${String(result.newGroups)} \u7EC4\uFF0C\u73B0\u5728\u5171 ${String(result.groups)} \u7EC4\u3002` + (result.unmerged > 0 || result.dissolved > 0 ? `\u91CD\u5224\u5DF2\u6709\u5206\u7EC4\uFF1A\u62C6\u51FA ${String(result.unmerged)} \u6761` + (result.dissolved > 0 ? `\u3001\u89E3\u6563 ${String(result.dissolved)} \u7EC4` : "") + "\u3002" : "") + (result.skippedNoCompany > 0 ? `\u53E6\u6709 ${String(result.skippedNoCompany)} \u6761\u516C\u53F8\u6CA1\u5F52\u5E76\u3001\u5224\u4E0D\u4E86\u91CD\uFF08\u662F"\u6CA1\u67E5\u8FC7"\uFF0C\u4E0D\u662F"\u6CA1\u6709\u91CD\u590D"\uFF09\u3002` : "") + (result.candidates > 0 ? `\u53E6\u6709 ${String(result.candidates)} \u6761\u7591\u4F3C\u91CD\u590D\u6CA1\u81EA\u52A8\u5408\u5E76\uFF08\u6807\u9898\u76F8\u4F3C\u5EA6\u4E0D\u591F\uFF09\u2014\u2014 \u9700\u8981\u4EBA\u5DE5\u770B\u4E00\u773C\u3002` : "");
 		  });
 		  return /* @__PURE__ */ (0, import_jsx_runtime62.jsxs)("div", { className: "jh-screen", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime62.jsxs)("div", { className: "jh-collect-bar", children: [
@@ -13684,6 +13507,19 @@ window.__ModuleLoader__.load({
 		.jh-dim-blocked{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 		.jh-dim-blocked>span{min-width:0;overflow-wrap:anywhere}
 		.jh-dim-blocked>.jh-btn{flex:0 0 auto}
+
+		/* \u5E73\u53F0\u5355\u9009\uFF08\u4E00\u4E2A\u65B9\u6848\u4E00\u4E2A\u5E73\u53F0\uFF09\uFF1A\u4E00\u884C\u4E00\u4E2A\u5E73\u53F0\uFF0C\u6574\u884C\u53EF\u70B9\u3002
+		   \u7528 <label> \u5305\u4F4F radio \u8BA9\u6574\u884C\u6210\u4E3A\u70B9\u51FB\u76EE\u6807 \u2014\u2014 \u53EA\u70B9\u90A3\u4E2A\u5C0F\u5706\u70B9\u592A\u8003\u9A8C\u8010\u5FC3\uFF0C
+		   \u800C\u8FD9\u4E00\u5C4F\u7684\u4E3B\u4EFB\u52A1\u5C31\u662F"\u9009\u4E00\u4E2A\u5E73\u53F0"\u3002\u9009\u4E2D\u884C\u7ED9\u5DE6\u4FA7\u8272\u6761 + \u8FB9\u6846\u52A0\u6DF1\uFF0C
+		   \u4E0E\u5361\u7247\u91CC\u7684\u8B66\u544A banner \u7528\u540C\u4E00\u5957"\u5DE6\u4FA7\u8272\u6761"\u8BED\u8A00\uFF08\u4E0D\u53E0\u5B9E\u5FC3\u5E95\u8272\uFF09\u3002 */
+		.jh-platform-list{display:flex;flex-direction:column;gap:6px}
+		.jh-platform-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+		  padding:9px 11px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
+		  background:var(--dsw-alias-bg-layer-1);cursor:pointer}
+		.jh-platform-row:hover{border-color:var(--dsw-alias-border-l3)}
+		.jh-platform-row-on{border-left:3px solid var(--dsw-alias-brand-primary);
+		  border-color:var(--dsw-alias-brand-primary)}
+		.jh-platform-name{display:inline-flex;align-items:center;gap:4px;font-weight:600}
 
 		/* \u5E72\u8DD1\u9884\u89C8\uFF08\u65B9\u6848\u8868\u5355\u91CC\u7684\u300C\u5404\u5E73\u53F0\u5B9E\u9645\u4F1A\u8BF7\u6C42\u4EC0\u4E48\u300D\uFF09\uFF1A\u4E00\u4E2A\u5E73\u53F0\u4E00\u5757\u3002
 		   URL \u5E38\u5E38\u5F88\u957F\uFF08\u5E26\u4E00\u4E32 query\uFF09\uFF0C\u6240\u4EE5\u8BA9\u5B83**\u6362\u884C**\u800C\u4E0D\u662F\u6491\u7834\u5F39\u7A97\u5BBD\u5EA6 \u2014\u2014

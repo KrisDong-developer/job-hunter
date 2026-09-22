@@ -1,7 +1,7 @@
 /**
  * 前程无忧（51job）适配器。
  *
- * 两条设计要点：
+ * 三条设计要点：
  *
  * 1. **选择器与字段→URL 映射是配置，不是硬编码**（ADR-19 / D-18）。
  *    代码里带一份默认值，DB 里的覆盖优先（`setting` 表：scope='platform'、scope_ref='51job'、
@@ -12,13 +12,35 @@
  *    绝不引用模块作用域的自由变量 —— 否则真路径会 ReferenceError。
  *    离线测试用 jsdom 提供同一个 `document`，于是**同一份代码**在两条路径上跑。
  *
- * ── 本目录分工（2026-09-20 拆成目录）─────────────────────────────────
+ * 3. **判墙只有一份实现**（`detectBlockOf`）：`guard.detectBlock`（采集主链）与
+ *    `assertActionPage`（动作链）共用 —— 各写一遍会出现"采集认得这道墙、动作不认得"，
+ *    而动作那边恰恰是**会真发东西**的一侧。
+ *
+ * ── 功能深度（2026-09-21 对标 zhipin 补齐）───────────────────────────
+ *
+ * * `detail.extract`：详情页 JD/字段解析（`./page/detail.ts`）。
+ *   ⚠️ 详情页选择器是**候选链、未实测**（本仓没有详情页夹具）：锚不到留空 + 记 note，
+ *   可经 DB 覆盖校准 —— 校准入口见 `./page/detail.ts` 文件头。
+ * * `actions`（五个高危动作，`./actions.ts`）：sayHello / reply / sendResume /
+ *   readInbox / detectStage。证据分层（✅ 实测 / ⚠️ 候选）逐条见 `./config.ts`：
+ *   投递链路与「去聊聊」的未登录扫码形态来自真实夹具；登录态会话 DOM 与消息页地址
+ *   待真机校准，路径上**fail-closed**。
+ *   （此前 `capabilities` 声明 `supportsGreeting: true` 而 `actions` 是 `undefined` ——
+ *   契约两个字段互相矛盾、界面撒谎，正是 `adapterImplementationOf` 拆分时要治的那类。）
+ * * `auth.isLoggedIn`：升级为**结构性登录锚点**（`.loginBtnClick` 实测未登录侧），
+ *   替代旧的"整页判墙反推"（51job 搜索不需要登录，旧法在未登录页上恒判"已登录"）。
+ *
+ * ── 本目录分工 ──────────────────────────────────────────────────────
  * * `./config.ts`：选择器集、URL 参数映射、默认值与合并、排序/时间窗取值域、
  *   城市码表、页数上限、平台判墙信号常量 —— 纯数据 + 纯函数；
  * * `./urls.ts`：宿主机侧的搜索 URL 构造（不碰 `document`）；
- * * `./page.ts`：页面上下文函数（`extractJobsInPage` / `hasNextPageInPage`），自包含；
- * * `./index.ts`：本文件 —— 适配器装配（`createFiftyOneAdapter`）与 `criteriaDimensions` 表。
- * 上面第 1、2 条设计要点依然成立，只是分别落到了 `./config.ts` 与 `./page.ts` 里。
+ * * `./page/list.ts`：列表解析 / 翻页 / 元素定位 / 登录锚点（自包含）；
+ * * `./page/detail.ts`：详情页解析（自包含）；
+ * * `./page/chat.ts`：沟通入口形态 / 投递弹窗状态 / 消息送达判读（自包含）；
+ * * `./page/inbox.ts`：收件箱解析 / 接触阶段判定（自包含）；
+ * * `./actions.ts`：五个高危动作与交互工具；
+ * * `./index.ts`：本文件 —— 适配器装配（`createFiftyOneAdapter`）、`criteriaDimensions`
+ *   表与判墙的唯一实现。
  */
 import type { BlockKind, CoreField } from '../../../../shared/contract/enums/crawl.js'
 import { CORE_FIELDS } from '../../../../shared/contract/enums/crawl.js'
@@ -26,7 +48,9 @@ import { detectBlockWithSignals, signalsOf } from '../../block-signals.js'
 import { humanDelayMs } from '../../pacing.js'
 import { humanBrowse } from '../../humanize.js'
 import { platformFacts } from '../../platform-facts.js'
-import type { CriteriaDimension, RawJob, SiteAdapter } from '../../types.js'
+import { actionBlockOf, PlatformBlockedError } from '../../types.js'
+import type { CriteriaDimension, PageLike, RawJob, RawJobDetail, SiteAdapter } from '../../types.js'
+import { createFiftyOneActions } from './actions.js'
 import {
   DEFAULT_FIFTYONE_CONFIG,
   FIFTYONE_BLOCK_SIGNALS,
@@ -35,7 +59,12 @@ import {
   SORT_OPTIONS,
 } from './config.js'
 import type { FiftyOneConfig } from './config.js'
-import { extractJobsInPage, hasNextPageInPage } from './page.js'
+import { extractDetailInPage } from './page/detail.js'
+import {
+  extractJobsInPage,
+  hasNextPageInPage,
+  isLoggedInByMarkersInPage,
+} from './page/list.js'
 import { buildSearchUrl } from './urls.js'
 
 export interface FiftyOneAdapterOptions {
@@ -50,6 +79,30 @@ export interface FiftyOneAdapterOptions {
 export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): SiteAdapter {
   const config = options.config ?? DEFAULT_FIFTYONE_CONFIG
   const [delayMin, delayMax] = options.delayRangeMs ?? [0, 0]
+
+  /**
+   * 判墙的**唯一实现**（采集与动作链共用）。
+   *
+   * 信号带 51job 特有的两处（get_jobs 实战特征）：阿里云 WAF 滑块
+   * （`.waf-nc-title` 文案 + `aliyunwaf_` 脚本名）与很宽的登录词表 ——
+   * 完整理由见 `./config.ts` 的 `FIFTYONE_BLOCK_SIGNALS`。
+   */
+  const detectBlockOf = async (page: PageLike): Promise<BlockKind | null> =>
+    await page.evaluate(detectBlockWithSignals, {
+      signals: signalsOf(FIFTYONE_BLOCK_SIGNALS),
+      card: config.selectors.card,
+    })
+
+  /**
+   * 动作链上的判墙：命中就抛 `PlatformBlockedError`（由 `guard.run()` 写平台级暂停）。
+   *
+   * `blank` **不算**风控（见 `types.ts` 的 `actionBlockOf`）：会话页/详情页上 0 张岗位
+   * 卡片本来就是常态，照单全收等于每同步一次就白白暂停一次平台。
+   */
+  const assertActionPage = async (page: PageLike): Promise<void> => {
+    const kind = actionBlockOf(await detectBlockOf(page).catch(() => null))
+    if (kind !== null) throw new PlatformBlockedError(kind, '动作页面上看到风控页面')
+  }
 
   /**
    * SR-41/42：**声明**本适配器支持的筛选维度。
@@ -71,6 +124,61 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
       values: Object.keys(config.cityCodes).map((city) => ({ value: city, label: city })),
       hint: '只有这张表里的城市有对应的平台城市码；其它城市无法构造搜索 URL',
       wire: { target: 'url', param: config.urlParams.cityParam },
+    },
+    {
+      key: 'degree',
+      label: '学历',
+      // ⚠️ 只列**点击探针实测过**的档位（点一次得一对 `标签 → 码`）。没测出来的不编 ——
+      // 编错了用户选了只会静默拿到另一档（比缺功能更糟）。要补：重跑探针或 DB 覆盖。
+      values: [
+        { value: '03', label: '大专' },
+        { value: '04', label: '本科' },
+        { value: '05', label: '硕士' },
+        { value: '06', label: '博士' },
+      ],
+      hint: '对应 URL 参数 degree（2026-09-21 点击探针实测：点「本科」→ degree=04）。目前只列实测到的档位',
+      wire: { target: 'url', param: config.urlParams.degreeParam },
+    },
+    {
+      key: 'workYear',
+      label: '工作经验',
+      values: [
+        { value: '02', label: '1-3年' },
+        { value: '03', label: '3-5年' },
+        { value: '04', label: '5-10年' },
+        { value: '05', label: '10年以上' },
+      ],
+      hint: '对应 URL 参数 workYear（2026-09-21 点击探针实测：点「1-3年」→ workYear=02）。目前只列实测到的档位',
+      wire: { target: 'url', param: config.urlParams.workYearParam },
+    },
+    {
+      key: 'companyType',
+      label: '公司性质',
+      values: [
+        { value: '01', label: '外资（欧美）' },
+        { value: '02', label: '外资（非欧美）' },
+        { value: '03', label: '合资' },
+        { value: '04', label: '国企' },
+        { value: '07', label: '政府机关' },
+        { value: '08', label: '事业单位' },
+      ],
+      hint: '对应 URL 参数 companyType（2026-09-21 点击探针实测：点「国企」→ companyType=04）。目前只列实测到的档位',
+      wire: { target: 'url', param: config.urlParams.companyTypeParam },
+    },
+    {
+      key: 'companySize',
+      label: '公司规模',
+      // 同上：只列点击探针实测到的档位，没测出来的不编。
+      values: [{ value: '04', label: '500-1000人' }],
+      hint: '对应 URL 参数 companySize（2026-09-21 点击探针实测：点「500-1000人」→ companySize=04）。目前只列实测到的档位',
+      wire: { target: 'url', param: config.urlParams.companySizeParam },
+    },
+    {
+      key: 'jobType',
+      label: '职位类型',
+      values: [{ value: '01', label: '全职' }],
+      hint: '对应 URL 参数 jobType（2026-09-21 点击探针实测：点「全职」→ jobType=01）。目前只列实测到的档位',
+      wire: { target: 'url', param: config.urlParams.jobTypeParam },
     },
     {
       key: 'sort',
@@ -127,16 +235,25 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
     // 所以这里主要服务于打招呼/投递（P5）与「别把登录墙当成没有新岗位」这条要求。
     auth: {
       loginUrl: 'https://login.51job.com/login.php',
-      // 检测判**搜索页**：判据是"0 卡片 + 文本里有『登录/注册/扫码』"，
-      // 它是按结果页校准的 —— 在登录页上跑会恒判未登录（那一页本来就没有卡片、
-      // 又到处都是"登录"）。见 `auth.checkUrl` 的说明。
+      // 检测判**搜索页**：登录锚点是在搜索页夹具上校准的（页头 `.loginBtnClick`），
+      // 登录页上跑会两边锚点都不中、恒判未登录 —— 见 `auth.checkUrl` 的说明。
       checkUrl: buildSearchUrl(config, {}),
       async isLoggedIn(page): Promise<boolean> {
-        const block = await page.evaluate(detectBlockWithSignals, {
-          signals: signalsOf(FIFTYONE_BLOCK_SIGNALS),
-          card: config.selectors.card,
+        // 页头是 SPA 异步挂载的：先等两个锚点**任一**出现再判；
+        // 等不到（超时 / 离线夹具没有 waitForSelector）就按原样 evaluate。
+        if (page.waitForSelector !== undefined) {
+          await page.waitForSelector(
+            `${config.loginSelectors.loggedIn}, ${config.loginSelectors.notLoggedIn}`,
+            options.waitForListMs ?? 15_000,
+          )
+        }
+        const verdict = await page.evaluate(isLoggedInByMarkersInPage, {
+          loggedIn: config.loginSelectors.loggedIn,
+          notLoggedIn: config.loginSelectors.notLoggedIn,
         })
-        return block !== 'login-required'
+        // 判不出来时按"未登录"处理（保守：宁可漏判已登录，也不要把被登录墙
+        // 挡住当成"今天没有新岗位"。旧判据"整页判墙反推"在未登录搜索页上恒判已登录）。
+        return verdict ?? false
       },
     },
 
@@ -174,13 +291,32 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
       },
     },
 
-    guard: {
-      async detectBlock(page): Promise<BlockKind | null> {
-        return await page.evaluate(detectBlockWithSignals, {
-          signals: signalsOf(FIFTYONE_BLOCK_SIGNALS),
-          card: config.selectors.card,
-        })
+    /**
+     * 详情页解析（P2 详情抓取）。
+     *
+     * ⚠️ 选择器是**候选链、未实测**（见 `./page/detail.ts` 文件头的证据状态）：
+     * 锚不到的字段留空 + 记 note，`crawl.ts` 对空 JD 有现成降级（warn + 留空）。
+     * 好处是选择器可经 DB 覆盖校准（ADR-19），不必等发版。
+     */
+    detail: {
+      async extract(page): Promise<RawJobDetail> {
+        return await page.evaluate(extractDetailInPage, { selectors: config.detailSelectors })
       },
     },
+
+    guard: {
+      // 判墙的实现只有一份（`detectBlockOf`）—— 动作链与采集共用它。
+      detectBlock: detectBlockOf,
+    },
+
+    /**
+     * 高危动作（§4.2.2 的 `actions`）。
+     *
+     * ⚠️ 这些方法**不允许被 domain 直接调用** —— 实现放在 `./actions.ts`，但必须由
+     * `guard.run()` 签发一次性令牌后经 `guard/actions/` 调用（§4.4.1）。适配器只负责"怎么点"。
+     * 判墙断言（`assertActionPage`）与 `guard.detectBlock` 共用 `detectBlockOf` ——
+     * 一处实现两个消费者。
+     */
+    actions: createFiftyOneActions({ config, assertActionPage }),
   }
 }

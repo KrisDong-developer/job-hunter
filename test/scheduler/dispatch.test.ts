@@ -111,22 +111,31 @@ function harness(options: Options = {}) {
   const timer = createManualTimer()
   const runs: SchedulerRunInput[] = []
 
-  const plan = plans.create({
-    name: '语义测试',
-    platforms: options.platforms ?? ['51job'],
-    ...(options.platformOverrides === undefined
-      ? {}
-      : { platformOverrides: options.platformOverrides }),
-    criteria: { keyword: 'Java', city: '深圳' },
-    schedule: {
-      windowStartHour: 9,
-      windowEndHour: 11,
-      weekdays: [1, 2, 3, 4, 5, 6, 0],
-      jitterMs: 0,
-      missedGraceMs: 60 * 60 * 1000,
-      ...options.schedule,
+  /**
+   * ⚠️ 这里**直接写库**、不走 `plans.create`：一个方案只抓一个平台是**配置面**的规则
+   * （`validatePlanConfig` 挡在新增/编辑那一步），而调度层仍然要能处理**历史遗留**的多平台行
+   * —— 这组用例钉的正是调度层在多平台下的健壮性（逐平台判定 / 停用平台不跑 / 单轮预算）。
+   * 用 `plans.create` 造多平台方案会被配置面的规则直接拒掉，那测的就不是调度了。
+   */
+  const plan = store.plan.create(
+    {
+      name: '语义测试',
+      platforms: options.platforms ?? ['51job'],
+      ...(options.platformOverrides === undefined
+        ? {}
+        : { platformOverrides: options.platformOverrides }),
+      criteria: { keyword: 'Java', city: '深圳' },
+      schedule: {
+        windowStartHour: 9,
+        windowEndHour: 11,
+        weekdays: [1, 2, 3, 4, 5, 6, 0],
+        jitterMs: 0,
+        missedGraceMs: 60 * 60 * 1000,
+        ...options.schedule,
+      },
     },
-  })
+    time.clock(),
+  )
   // 生产里 `runtime` 启动时会把注册表里的每个平台 `ensure` 进 platform 表；
   // 测试里没有注册表，就按方案用到的平台补上 —— 否则平台级的账
   // （`fail_streak` / `health`）无处可落，SR-20/21/22 的断言会变成空转。

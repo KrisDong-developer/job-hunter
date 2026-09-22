@@ -185,12 +185,30 @@ export function validatePlanConfig(
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   if (name === '') throw new DomainError('INVALID_INPUT', '方案名不能为空')
 
-  // ── SR-39：平台来自注册表，未注册的不可选 ──────────────────────────
+  // ── SR-39：平台来自注册表，未注册的不可选；**一个方案只抓一个平台** ──────
+  //
+  // 为什么单平台是硬约束（不只是界面上的默认）：筛选条件只能存一份，而同一个键在
+  // 不同平台落到**不同参数**上、取值含义也常常不同（`type` 在神仙外企是"外企/不限"、
+  // 在 HiredChina 是 Marketing/Teaching…；`sort` 在 51job 是 sortType、在智联是 order）。
+  // 多平台共用一份条件，必然有一家收到的是"它取值域外的值"——
+  // 而界面上那句"这个方案会按它筛"就成了假话。
+  // 想同时盯多个平台就建多个方案：时段与每日额度各自独立，这也正好是额度模型要的粒度。
   const platforms = [...new Set(input.platforms ?? [])]
   if (platforms.length === 0) {
-    throw new DomainError('INVALID_INPUT', '方案至少要选一个平台', {
+    throw new DomainError('INVALID_INPUT', '方案要选一个平台', {
       hint: `当前已注册的平台：${context.registry.list().map((adapter) => adapter.id).join(' / ') || '（一个都没有）'}`,
     })
+  }
+  if (platforms.length > 1) {
+    throw new DomainError(
+      'INVALID_INPUT',
+      `一个方案只能抓一个平台，收到 ${String(platforms.length)} 个：${platforms.join(' / ')}`,
+      {
+        hint:
+          '筛选条件是按平台自己的取值域与参数名定义的，两个平台共用一份条件必然有一家收错。' +
+          '要同时抓多个平台就建多个方案 —— 时段、关键词与每日额度各自独立。',
+      },
+    )
   }
   for (const platformId of platforms) {
     if (!context.registry.has(platformId)) {
@@ -268,6 +286,8 @@ export function validatePlanConfig(
       settable: boolean
       /** 数值型（界面渲染成数字框、校验要求正整数）——由适配器声明，见 `numeric`。 */
       numeric: boolean
+      /** 多选（值以逗号分隔）——校验要**逐个** id 判取值域，不能拿整串去比。 */
+      multi: boolean
       max?: number
       label: string
       hint: string
@@ -289,6 +309,7 @@ export function validatePlanConfig(
           open: !closed,
           settable,
           numeric: NUMERIC_SLOT_KEYS.has(dimension.key) || dimension.numeric === true,
+          multi: dimension.multi === true,
           ...(dimension.max === undefined ? {} : { max: dimension.max }),
           label: dimension.label,
           hint: dimension.hint,
@@ -300,6 +321,7 @@ export function validatePlanConfig(
       // 只要**有一个**平台收得下这个维度，它就还能用（其余平台由 notice / 界面按平台说清）
       if (settable) existing.settable = true
       if (NUMERIC_SLOT_KEYS.has(dimension.key) || dimension.numeric === true) existing.numeric = true
+      if (dimension.multi === true) existing.multi = true
     }
   }
   // 注册表里一个平台都没有（纯逻辑单测直接 new 服务、没有装配适配器）时，
@@ -344,17 +366,51 @@ export function validatePlanConfig(
       })
     }
 
+    /**
+     * **多选**维度：值是逗号分隔的 id 串。
+     *
+     * 校验必须**逐个**判取值域 —— 拿 `"28,31"` 去比取值集合，永远比不中，
+     * 用户会看到"公司类型不接受取值「28,31」"这种毫无道理的报错。
+     * 顺带把值规范化（去空白、丢空项、保持用户点选顺序）。
+     */
+    if (spec.multi) {
+      // ⚠️ 用 `inputValue` 而不是下面那个 `value`：那是**城市归一**之后才声明的 `let`，
+      // 在这里还在 TDZ 里（这个分支排在它前面）。
+      const parts = inputValue
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item !== '')
+      const rejected = parts.filter((item) => !spec.open && !spec.values.has(item))
+      if (rejected.length > 0) {
+        const list = [...spec.values]
+        throw new DomainError(
+          'INVALID_INPUT',
+          `${spec.label}不接受取值「${rejected.join('、')}」`,
+          { hint: `可选取值：${list.slice(0, 40).join(' / ')}${list.length > 40 ? ` …等 ${String(list.length)} 个` : ''}。${spec.hint}` },
+        )
+      }
+      criteria[key] = parts.join(',')
+      continue
+    }
+
     if (spec.numeric) {
       const parsed = Number.parseInt(inputValue, 10)
       if (!Number.isFinite(parsed) || parsed <= 0) {
-        throw new DomainError('INVALID_INPUT', `${spec.label} 需要一个正整数，收到「${inputValue}」`, {
-          hint: spec.hint,
-        })
+        throw new DomainError(
+          'INVALID_INPUT',
+          `${spec.label}（${platforms.join('/')}）需要一个正整数，收到「${inputValue}」`,
+          { hint: spec.hint },
+        )
       }
       if (spec.max !== undefined && parsed > spec.max) {
-        throw new DomainError('INVALID_INPUT', `${spec.label} 最大 ${String(spec.max)}，收到 ${String(parsed)}`, {
-          hint: spec.hint,
-        })
+        // 上限是**平台自己的**（waiqi 只有 1 页、BOSS 的页码不可寻址…）——
+        // 单平台方案下一旦超了就是硬拒：以前多平台时它只会"静默截断 + 提一句"，
+        // 而用户以为自己抓了 5 页。
+        throw new DomainError(
+          'INVALID_INPUT',
+          `${spec.label}（${platforms.join('/')}）最大 ${String(spec.max)}，收到 ${String(parsed)}`,
+          { hint: spec.hint },
+        )
       }
       // 数值维度也可能是**封闭值域**（如某平台只认 1/7/30 三档）——
       // 数值分支不能因此跳过取值域检查，否则"填 5"会静默变成平台不认识的值。
@@ -631,6 +687,7 @@ function dimensionOf(
           ? '还没有选平台'
           : `已选平台（${platforms.join('/')}）不支持这个筛选维度 —— 平台侧没有这个参数`,
       numeric,
+      multi: false,
       open: false,
       declared: false,
       platforms: [],
@@ -720,6 +777,8 @@ function dimensionOf(
     supported: settable,
     disabledReason,
     numeric,
+    // 多选是**平台事实**，取第一个声明者的（一个平台一个方案，不存在"两家不一致"）。
+    multi: first?.multi === true,
     open,
     declared: true,
     platforms: views,
@@ -763,9 +822,20 @@ export function criteriaDimensionsFor(
         ? `${name} 没有城市码（带城市会被拒）`
         : `${name} ${String(dimension.values.length)} 城`
     })
-    city.hint =
-      `城市取值域是已选平台的并集（${String(city.values.length)} 个）。` +
-      `${notes.join(' · ')}。选中某个平台不支持的城市时，保存前会提示 —— 只提示，仍然可以保存。`
+    if (cityDeclarations.length > 1) {
+      city.hint =
+        `城市取值域是已选平台的并集（${String(city.values.length)} 个）。` +
+        `${notes.join(' · ')}。选中某个平台不支持的城市时，保存前会提示 —— 只提示，仍然可以保存。`
+    } else {
+      // 单平台方案（现在**只有**这一种）：没有并集这回事，城市就是这个平台自己那张表。
+      const only = cityDeclarations[0]?.dimension
+      const closed = only !== undefined && isClosedDimension(only)
+      city.hint =
+        `城市取值：${notes.join(' · ')}。` +
+        (closed
+          ? '表外的写法会被拒绝（不猜城市码）。'
+          : '这是自由文本平台 —— 列表外的地名也能直接填。')
+    }
   }
 
   return items

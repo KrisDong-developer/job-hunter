@@ -41,6 +41,8 @@ export declare const WAIQI_BODY_FIELDS: {
     readonly education: "education";
     readonly posInfo: "posIds";
     readonly businessCategory: "businessCategoryIdList";
+    /** 公司类型：**数组**（可多选），不是字符串 —— 平台初始请求里就是 `[]`。 */
+    readonly companyType: "companyTypeList";
     readonly type: "type";
     readonly sort: "sort";
 };

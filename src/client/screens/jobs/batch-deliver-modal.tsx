@@ -306,6 +306,12 @@ export function BatchDeliverModal(props: {
                       {item.blocker?.hint === undefined ? '' : ` —— ${item.blocker.hint}`}
                     </div>
                   )}
+
+                  {/* 提醒（不阻止）：同一岗位的另一个平台副本已经投过了 —— 跨平台重复投递
+                      正是去重想帮用户避免的重复劳动。分组是启发式的，所以只提醒、不拦。 */}
+                  {item.warning === null || item.warning === undefined ? null : (
+                    <div className="jh-warn">{item.warning}</div>
+                  )}
                 </li>
               )
             })}

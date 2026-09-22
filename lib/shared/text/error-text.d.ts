@@ -1,5 +1,13 @@
 /** 故障类别 —— 界面据此给排查入口，不自己猜。 */
-export type FailureKind = 'selector' | 'script' | 'login' | 'risk' | 'navigation' | 'platform-paused' | 'quota' | 'offline'
+export type FailureKind = 'selector'
+/**
+ * **身份键没解析出来**（解析出了记录，但一条都没有平台岗位 id）。
+ *
+ * 单独立一个类别而不是并进 `selector`：并进去之后的短文案是"没解析到岗位"，
+ * 而这一种的情况恰恰是"解析到了 4 条、一条都没写" —— 说成"没解析到"会把人引到
+ * 错误的排查方向上（他会去翻卡片选择器，而问题在 id 正则上）。
+ */
+ | 'identity' | 'script' | 'login' | 'risk' | 'navigation' | 'platform-paused' | 'quota' | 'offline'
 /** 到单轮预算上限主动停手 —— **不是故障**，是保险丝生效（已抓到的都入库了）。 */
  | 'budget' | 'unknown';
 export interface FailureText {

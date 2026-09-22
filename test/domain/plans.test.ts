@@ -315,28 +315,31 @@ function citiesOf(adapter: SiteAdapter): string[] {
 }
 
 test('提示：选到还没校准的平台时要说清楚，而不是让你白跑一轮', () => {
-  const platforms = ['51job', 'guopin', 'indeed']
-  const { store, plans } = withPlatforms(createFiftyOneAdapter, createGuopinAdapter, createIndeedAdapter)
+  // 单平台方案：一家一家看（没有"选一批平台"这回事了）。
+  // guopin 是实验档 → 必须提示；indeed 已按 2026-09-21 真实夹具升级为 calibrated
+  //（曾是唯一的 disabled 平台）→ 不该再吓用户「停用/实验」。
+  const { store, plans } = withPlatforms(createGuopinAdapter, createIndeedAdapter)
   try {
-    const checked = plans.validate({
-      name: '多平台',
-      platforms,
-      criteria: { keyword: 'Java', city: '深圳' },
+    const guopin = plans.validate({
+      name: '国聘',
+      platforms: ['guopin'],
+      criteria: { keyword: 'Java' },
     })
     assert.ok(
-      checked.notices.some((note) => note.includes('guopin') && note.includes('实验')),
-      `应当提示 guopin 是实验性平台：${checked.notices.join(' | ')}`,
+      guopin.notices.some((note) => note.includes('guopin') && note.includes('实验')),
+      `应当提示 guopin 是实验性平台：${guopin.notices.join(' | ')}`,
     )
-    // indeed 已按 2026-09-21 真实夹具升级为 calibrated（曾是唯一的 disabled 平台）——
-    // 校准过的平台不该再吓用户「停用/实验」。
+    const indeed = plans.validate({
+      name: 'indeed',
+      platforms: ['indeed'],
+      criteria: { keyword: 'Java' },
+    })
     assert.ok(
-      !checked.notices.some(
-        (note) => note.includes('indeed') && (note.includes('停用') || note.includes('实验')),
-      ),
-      `indeed 已校准，不应再提示停用/实验：${checked.notices.join(' | ')}`,
+      !indeed.notices.some((note) => note.includes('停用') || note.includes('实验')),
+      `indeed 已校准，不应再提示停用/实验：${indeed.notices.join(' | ')}`,
     )
     // **提示 ≠ 拒绝**：方案照样建得出来
-    assert.ok(plans.create({ name: '多平台', platforms, criteria: { keyword: 'Java', city: '深圳' } }).id > 0)
+    assert.ok(plans.create({ name: '国聘', platforms: ['guopin'], criteria: { keyword: 'Java' } }).id > 0)
   } finally {
     const dir = store.dataDir
     store.close()
@@ -344,24 +347,28 @@ test('提示：选到还没校准的平台时要说清楚，而不是让你白�
   }
 })
 
-test('提示：城市不被某个选中平台支持时要说清楚', () => {
+test('城市不在这个平台的表里 → 硬拒（单平台之后没有"部分平台不支持"这种中间态）', () => {
+  // 多平台时的形态是"有平台接受就放行 + 提示谁不接受"。
+  // 单平台方案下这中间态不存在了：要么这个平台认（放行），要么不认（当场拒）——
+  // 后者存下来只会每轮空跑，而用户会以为"今天没岗位"。
   const oneCities = citiesOf(createFiftyOneAdapter())
   const waiqiCities = citiesOf(createWaiqiAdapter())
-  // 找"一边支持、另一边不支持"的城市 —— 这正是不一致会伤人的场景。
-  // 两个方向都试，免得把用例绑死在某一版城市表上。
   const cityInOneOnly = oneCities.find((city) => !waiqiCities.includes(city))
   const cityInWaiqiOnly = waiqiCities.find((city) => !oneCities.includes(city))
   const city = cityInOneOnly ?? cityInWaiqiOnly
   assert.ok(city !== undefined, '两个平台的城市表完全互相覆盖 —— 这条用例失去了测试对象，请换一对平台')
-  const platforms = cityInOneOnly === undefined ? ['waiqi', '51job'] : ['51job', 'waiqi']
   const missingId = cityInOneOnly === undefined ? '51job' : 'waiqi'
 
   const { store, plans } = withPlatforms(createFiftyOneAdapter, createWaiqiAdapter)
   try {
-    const checked = plans.validate({ name: '城市不一致', platforms, criteria: { keyword: 'Java', city } })
-    assert.ok(
-      checked.notices.some((note) => note.includes(city) && note.includes(missingId)),
-      `应当提示「${missingId} 不认识 ${city}」：${checked.notices.join(' | ')}`,
+    assert.throws(
+      () =>
+        plans.validate({ name: '城市不认', platforms: [missingId], criteria: { keyword: 'Java', city } }),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'INVALID_INPUT' &&
+        (error.hint ?? '').length > 0,
+      `${missingId} 不认识 ${city} —— 必须当场拒，并给出可选取值`,
     )
   } finally {
     const dir = store.dataDir
@@ -370,18 +377,24 @@ test('提示：城市不被某个选中平台支持时要说清楚', () => {
   }
 })
 
-test('提示：抓取页数被平台上限截断时要说清楚（不能让你以为抓了 5 页）', () => {
-  // 51job 排在前 → 校验按它的上限放行；而 waiqi 只有 1 页（服务端翻页坏，是平台事实）
-  const { store, plans } = withPlatforms(createFiftyOneAdapter, createWaiqiAdapter)
+test('方案级页数超过平台自己的上限 → 硬拒（"静默截断 + 提一句"的时代结束了）', () => {
+  // waiqi 的服务端翻页是坏的 → 它自己的上限是 1 页（平台事实，不是我方取舍）。
+  // 单平台之后"设 5 页"就是**这一家**的事：当场说清并拒掉，
+  // 而不是存下来、抓的时候按 1 页跑、只在提示里提一句。
+  const { store, plans } = withPlatforms(createWaiqiAdapter)
   try {
-    const checked = plans.validate({
-      name: '深度不一致',
-      platforms: ['51job', 'waiqi'],
-      criteria: { keyword: 'Java', city: '深圳', maxPages: '5' },
-    })
-    assert.ok(
-      checked.notices.some((note) => note.includes('waiqi') && note.includes('页')),
-      `应当提示 waiqi 的深度被截断：${checked.notices.join(' | ')}`,
+    assert.throws(
+      () =>
+        plans.validate({
+          name: '深度越界',
+          platforms: ['waiqi'],
+          criteria: { keyword: 'Java', city: '深圳', maxPages: '5' },
+        }),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'INVALID_INPUT' &&
+        error.message.includes('waiqi'),
+      '超过平台自己上限的页数必须当场拒，并点出是哪个平台',
     )
   } finally {
     const dir = store.dataDir
@@ -390,32 +403,28 @@ test('提示：抓取页数被平台上限截断时要说清楚（不能让你�
   }
 })
 
-test('批次 3：取值域按**已选平台的并集**判 —— 只要有平台接受就放行，一个都不接受才拦', () => {
-  // 这条修的是两个真实缺陷（同一个成因：取值域只看了**第一个**平台，且把"空表"
-  // 一律当成自由文本）：
-  //   1. guopin / hiredchina 的城市表是空的，而空表的含义是"带城市一律拒绝"。
-  //      旧行为下它们**不报错也不提示** —— 用户存得下，然后每次抓取那个平台整轮失败；
-  //   2. 51job + zhipin 时，zhipin 支持的「东莞」既选不到也**存不进**（被 51job 的表拦下）。
-  const { store, plans } = withPlatforms(createFiftyOneAdapter, createZhipinAdapter, createGuopinAdapter)
+test('取值域按**那个平台自己**的城市表判（单平台方案：一家一张表，没有并集）', () => {
+  // 判据是"这个平台认不认这个取值"：
+  //   * zhipin 的表里有「东莞」→ 放行；
+  //   * 51job 的表里没有 → 硬拒（存下来只会每轮空跑，而用户会以为"今天没岗位"）。
+  const { store, plans } = withPlatforms(createFiftyOneAdapter, createZhipinAdapter)
   try {
-    // ① 并集里的取值：zhipin 有、51job 没有 —— 必须放行
-    const merged = plans.validate({
-      name: '并集取值',
-      platforms: ['51job', 'zhipin'],
+    const zhipin = plans.validate({
+      name: 'zhipin 的东莞',
+      platforms: ['zhipin'],
       criteria: { keyword: 'Java', city: '东莞' },
     })
-    assert.equal(merged.criteria['city'], '东莞', 'zhipin 支持的取值不该被 51job 的表拦下')
+    assert.equal(zhipin.criteria['city'], '东莞', 'zhipin 自己表里的城市必须放行')
 
-    // ② 有平台接受、另一个不接受 → **放行 + 提示**（提示要说清是谁不接受）
-    const partial = plans.validate({
-      name: '部分平台不支持',
-      platforms: ['51job', 'zhipin'],
-      criteria: { keyword: 'Java', city: '厦门' }, // 厦门：zhipin 有、51job 没有
-    })
-    assert.equal(partial.criteria['city'], '厦门')
-    assert.ok(
-      partial.notices.some((note) => note.includes('51job') && note.includes('厦门') && note.includes('zhipin')),
-      `应当提示 51job 不接受厦门、并指出 zhipin 支持它：${partial.notices.join(' | ')}`,
+    assert.throws(
+      () =>
+        plans.validate({
+          name: '51job 的东莞',
+          platforms: ['51job'],
+          criteria: { keyword: 'Java', city: '东莞' },
+        }),
+      (error: unknown) => error instanceof DomainError && error.code === 'INVALID_INPUT',
+      '51job 的表里没有东莞 —— 必须当场拦住',
     )
   } finally {
     const dir = store.dataDir
@@ -467,11 +476,11 @@ test('批次 3：城市表为空的平台带城市 → 硬拒（空表 ≠ 自�
 test('批次 3：自由文本城市（LinkedIn 原样收地名）**不该**被拦也不该被提示', () => {
   // 反向的坑：linkedin 的 city 是自由文本，表里的 9 个只是建议。
   // 旧行为会为「珠海」报一条**假的**警告（甚至硬拒）—— 误报比不报更伤。
-  const { store, plans } = withPlatforms(createLinkedInAdapter, createIndeedAdapter)
+  const { store, plans } = withPlatforms(createLinkedInAdapter)
   try {
     const checked = plans.validate({
       name: '自由文本城市',
-      platforms: ['linkedin', 'indeed'],
+      platforms: ['linkedin'],
       criteria: { keyword: 'Java', city: '珠海' },
     })
     assert.equal(checked.criteria['city'], '珠海', '自由文本平台应当原样接受')
@@ -488,11 +497,11 @@ test('批次 3：自由文本城市（LinkedIn 原样收地名）**不该**被�
 })
 
 test('批次 3：「深圳市」按目录归一成「深圳」，并且**说出来**（不能悄悄改写）', () => {
-  const { store, plans } = withPlatforms(createFiftyOneAdapter, createWaiqiAdapter)
+  const { store, plans } = withPlatforms(createFiftyOneAdapter)
   try {
     const checked = plans.validate({
       name: '写法不一致',
-      platforms: ['51job', 'waiqi'],
+      platforms: ['51job'],
       criteria: { keyword: 'Java', city: '深圳市' },
     })
     assert.equal(checked.criteria['city'], '深圳', '各平台码表的键都不带「市」')
@@ -504,7 +513,7 @@ test('批次 3：「深圳市」按目录归一成「深圳」，并且**说出�
     // 原样就能用的写法**绝不**改写（把用户写对的东西改掉是另一种意外）
     const untouched = plans.validate({
       name: '原样可用',
-      platforms: ['51job', 'waiqi'],
+      platforms: ['51job'],
       criteria: { keyword: 'Java', city: '深圳' },
     })
     assert.equal(untouched.criteria['city'], '深圳')
@@ -515,20 +524,20 @@ test('批次 3：「深圳市」按目录归一成「深圳」，并且**说出�
   }
 })
 
-test('批次 3：城市取值域取**并集**（多平台时选得到只有某个平台支持的城市）', () => {
+test('单平台方案的筛选条件快照就是**那个平台自己**的表（不再有并集）', () => {
   const { store, registry } = withPlatforms(createFiftyOneAdapter, createZhipinAdapter)
   try {
-    const items = criteriaDimensionsFor(registry, ['51job', 'zhipin'])
+    const items = criteriaDimensionsFor(registry, ['zhipin'])
     const city = items.find((item) => item.key === 'city')
     assert.ok(city !== undefined)
     const values = city.values.map((item) => item.value)
-    // 「东莞」在 zhipin 表里、不在 51job 表里 —— 旧实现只给**第一个**声明 city 的平台那张表，
-    // 于是用户根本选不到它。
-    assert.ok(values.includes('东莞'), `并集里应当有 zhipin 的东莞：${values.join('、')}`)
-    assert.ok(values.length >= citiesOf(createZhipinAdapter()).length, '至少不小于单个平台的表')
-    // 顺序按城市目录（不是平台顺序）：北京在最前，且与另一个平台无关
+    // 单平台：就是 zhipin 自己那张表（含东莞），不该混进 51job 的任何城市
+    assert.ok(values.includes('东莞'), `zhipin 的表里应当有东莞：${values.join('、')}`)
+    assert.equal(values.length, citiesOf(createZhipinAdapter()).length, '不该混进别的平台的城市')
+    // 顺序仍按城市目录（便于在两份表之间对照）
     assert.equal(values[0], '北京')
-    assert.ok(city.hint.includes('并集'), `提示要说清这是并集：${city.hint}`)
+    // 提示里不再说"并集"—— 单平台没有并集这回事
+    assert.equal(city.hint.includes('并集'), false, `单平台不该再说并集：${city.hint}`)
   } finally {
     const dir = store.dataDir
     store.close()
@@ -554,25 +563,37 @@ test('提示不是噪音：单平台、城市支持、深度在限内的方案�
 
 // ── 每平台覆盖项（批次 3 数据模型侧）────────────────────────────────────
 
-test('每平台覆盖项：停用一个平台能存下来、读回来还在，且**稀疏**（默认值不落库）', () => {
+test('每平台覆盖项：真的改动落库、读回来还在，且**稀疏**（等于默认值的条目不落库）', () => {
   const { store, plans } = withRegistry({ waiqi: true })
   try {
     const plan = plans.create({
-      name: '多平台',
-      platforms: ['51job', 'waiqi'],
-      // 显式给一个"等于默认"的条目 + 一个真的改动
-      platformOverrides: { '51job': { enabled: true, maxPages: null }, waiqi: { enabled: false } },
+      name: '深度覆盖',
+      platforms: ['waiqi'],
+      // waiqi 自己的上限就是 1 页 → 这条覆盖项合法
+      platformOverrides: { waiqi: { maxPages: 1 } },
       criteria: { keyword: 'Java', city: '深圳' },
     })
     assert.deepEqual(
       plan.platformOverrides,
-      { waiqi: { enabled: false, maxPages: null } },
-      '等于默认值的条目不落库 —— 这样"什么都没配"的方案与升级前形状一致',
+      { waiqi: { enabled: true, maxPages: 1 } },
+      '真的改动要落库',
     )
 
     const reloaded = plans.get(plan.id)
-    assert.equal(reloaded.platformOverrides['waiqi']?.enabled, false, '读回来还在')
-    assert.equal(reloaded.platformOverrides['51job'], undefined, '默认条目不该被凭空造出来')
+    assert.equal(reloaded.platformOverrides['waiqi']?.maxPages, 1, '读回来还在')
+
+    // 显式给一个"等于默认"的条目（enabled:true / maxPages:null）→ 不该落库
+    const plain = plans.create({
+      name: '默认条目',
+      platforms: ['51job'],
+      platformOverrides: { '51job': { enabled: true, maxPages: null } },
+      criteria: { keyword: 'Java', city: '深圳' },
+    })
+    assert.deepEqual(
+      plain.platformOverrides,
+      {},
+      '等于默认值的条目不落库 —— 这样"什么都没配"的方案与升级前形状一致',
+    )
   } finally {
     const dir = store.dataDir
     store.close()
@@ -610,8 +631,8 @@ test('每平台覆盖项：所有平台都停用 → 报错（那种方案永远
       () =>
         plans.create({
           name: '全停',
-          platforms: ['51job', 'waiqi'],
-          platformOverrides: { '51job': { enabled: false }, waiqi: { enabled: false } },
+          platforms: ['51job'],
+          platformOverrides: { '51job': { enabled: false } },
           criteria: { keyword: 'Java' },
         }),
       (error: unknown) => error instanceof DomainError && error.code === 'INVALID_INPUT',
@@ -631,9 +652,9 @@ test('每平台覆盖项：页数上限按**该平台自己的**上限校验，�
       () =>
         plans.create({
           name: '深度越界',
-          platforms: ['51job', 'waiqi'],
+          platforms: ['waiqi'],
           platformOverrides: { waiqi: { maxPages: 2 } },
-          criteria: { keyword: 'Java', maxPages: '5' },
+          criteria: { keyword: 'Java' },
         }),
       (error: unknown) =>
         error instanceof DomainError &&
@@ -645,9 +666,9 @@ test('每平台覆盖项：页数上限按**该平台自己的**上限校验，�
     // 在限内则通过，并且能读回来
     const ok = plans.create({
       name: '深度合规',
-      platforms: ['51job', 'waiqi'],
+      platforms: ['waiqi'],
       platformOverrides: { waiqi: { maxPages: 1 } },
-      criteria: { keyword: 'Java', maxPages: '5' },
+      criteria: { keyword: 'Java', maxPages: '1' },
     })
     assert.equal(ok.platformOverrides['waiqi']?.maxPages, 1)
   } finally {
@@ -657,22 +678,28 @@ test('每平台覆盖项：页数上限按**该平台自己的**上限校验，�
   }
 })
 
-test('每平台覆盖项：平台被移出方案时，它的覆盖项一起消失', () => {
+test('一个方案只能抓一个平台：两个平台直接拒（条件是按平台自己的参数名定义的）', () => {
+  // 为什么是硬约束而不是界面上的默认：条件只能存一份，而 `sort` 在 51job 是 sortType、
+  // 在智联是 order；`type` 在神仙外企是"外企/不限"、在 HiredChina 是 Marketing…
+  // 两家共用一份条件，必然有一家收到的是"它取值域外的值"，而界面上那句"按它筛"就是假话。
   const { store, plans } = withRegistry({ waiqi: true })
   try {
-    const plan = plans.create({
-      name: '先要两个平台',
-      platforms: ['51job', 'waiqi'],
-      platformOverrides: { waiqi: { enabled: false } },
-      criteria: { keyword: 'Java', city: '深圳' },
-    })
-    assert.equal(plan.platformOverrides['waiqi']?.enabled, false)
-
-    const updated = plans.update(plan.id, { platforms: ['51job'] })
-    assert.deepEqual(
-      updated.platformOverrides,
-      {},
-      '留着它，下次把 waiqi 加回来时会**静默生效** —— 而用户早忘了自己配过它',
+    assert.throws(
+      () =>
+        plans.create({
+          name: '两个平台',
+          platforms: ['51job', 'waiqi'],
+          criteria: { keyword: 'Java' },
+        }),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'INVALID_INPUT' &&
+        error.message.includes('只能抓一个平台'),
+      '多平台方案必须被配置面拦下 —— 要同时抓就建多个方案（时段与额度各自独立）',
+    )
+    assert.ok(
+      plans.create({ name: '单平台', platforms: ['51job'], criteria: { keyword: 'Java' } }).id > 0,
+      '单平台方案照常能建',
     )
   } finally {
     const dir = store.dataDir
@@ -691,8 +718,8 @@ test('每平台覆盖项：平台被移出方案时，它的覆盖项一起消�
         检查前面并 `continue` —— 于是"发布时间＝3"能存进方案。
      ② **值域开放但有建议列表**（领英的 location）：以前按 `values` 非空 = 下拉渲染，
         于是"表外地名"根本打不进去 —— 而适配器明说 `closed: false`（收任何地名）。
-     ③ **同一个键在多个平台含义不同**（`sort` / `type`）：以前只画第一个声明者的
-        取值域，用户既看不到别家能选什么，也不知道自己选的值另一家认不认。 */
+     ③ **"站点页面有、适配器没写"的筛选**：那是适配器的缺口，不是用户的配置项 ——
+        界面只列"声明了且真的能发到平台参数上"的那些，不让用户配一个点了没用的东西。 */
 
 test('空值域 + closed = 不可填：不给输入框，原因取自适配器自己的声明', () => {
   const { store, registry } = withPlatforms(createFiftyOneAdapter)
@@ -746,49 +773,32 @@ test('值域开放但有建议列表（领英的城市）：open=true，界面�
   }
 })
 
-test('多平台：取值域取并集，每个取值标出"谁接受它"；含义不同则报冲突', () => {
-  const { store, registry } = withPlatforms(createFiftyOneAdapter, createZhaopinAdapter)
+test('多选维度：逗号分隔的多个 id 逐个判取值域（不能拿整串去比）', () => {
+  // 神仙外企的公司类型是**数组参数**（companyTypeList）：界面上多选，值在 criteria 里
+  // 以逗号分隔存。校验如果拿 "28,31" 整串去比取值集合，永远比不中 —— 用户会看到
+  // "公司类型不接受取值「28,31」"这种毫无道理的报错。
+  const { store, plans } = withPlatforms(createWaiqiAdapter)
   try {
-    const sort = criteriaDimensionsFor(registry, ['51job', 'zhaopin']).find(
-      (item) => item.key === 'sort',
-    )
-    assert.ok(sort !== undefined)
-    assert.equal(sort.conflict, true, '51job 的 sortType 与智联的 order 是两套不透明编码')
-    assert.ok(
-      sort.conflictNote?.includes('前程无忧') === true && sort.conflictNote?.includes('智联招聘') === true,
-      `冲突说明要把两家的取值域都写出来（用显示名）：${sort.conflictNote ?? '（空）'}`,
-    )
-    assert.ok(
-      sort.values.some((item) => item.value === '1' && item.platforms.join(',') === '51job'),
-      '「最新优先」(sortType=1) 只属于 51job',
-    )
-    assert.ok(
-      sort.values.some((item) => item.value === '4' && item.platforms.join(',') === 'zhaopin'),
-      '「最新发布」(order=4) 只属于智联',
-    )
-  } finally {
-    const dir = store.dataDir
-    store.close()
-    cleanup(dir)
-  }
-})
-
-test('多平台：type 在神仙外企与 HiredChina 含义不同 —— 冲突要说出来，校验口径与界面一致', () => {
-  const { store, registry, plans } = withPlatforms(createWaiqiAdapter, createHiredChinaAdapter)
-  try {
-    const type = criteriaDimensionsFor(registry, ['waiqi', 'hiredchina']).find(
-      (item) => item.key === 'type',
-    )
-    assert.ok(type !== undefined)
-    assert.equal(type.conflict, true, '"外企/不限" 与 "Marketing/Teaching…" 不是一套取值')
-    // 界面口径 = "至少一个平台接受" = 校验口径（`validatePlanConfig` 的同一判据），
-    // 所以两家的取值都能存 —— 存下来之后由界面按平台说清谁会用对。
-    const plan = plans.create({
-      name: '两家 type',
-      platforms: ['waiqi', 'hiredchina'],
-      criteria: { type: 'marketing' },
+    const checked = plans.validate({
+      name: '多选公司类型',
+      platforms: ['waiqi'],
+      criteria: { keyword: 'Java', companyType: '28,31' },
     })
-    assert.equal(plan.criteria['type'], 'marketing')
+    assert.equal(checked.criteria['companyType'], '28,31', '两个合法 id 都要留下')
+
+    assert.throws(
+      () =>
+        plans.validate({
+          name: '多选里混了脏值',
+          platforms: ['waiqi'],
+          criteria: { keyword: 'Java', companyType: '28,9999' },
+        }),
+      (error: unknown) =>
+        error instanceof DomainError &&
+        error.code === 'INVALID_INPUT' &&
+        error.message.includes('9999'),
+      '只要有一个 id 不在取值域里就必须报错，并点名是哪个',
+    )
   } finally {
     const dir = store.dataDir
     store.close()
@@ -796,15 +806,28 @@ test('多平台：type 在神仙外企与 HiredChina 含义不同 —— 冲突�
   }
 })
 
-test('城市刻意**不**判冲突：它是跨平台共享的人的概念，取并集', () => {
-  const { store, registry } = withPlatforms(createFiftyOneAdapter, createLinkedInAdapter)
+test('单平台快照：只含那个平台声明的维度与取值（别人的东西一个都不出现）', () => {
+  const { store, registry } = withPlatforms(createFiftyOneAdapter, createWaiqiAdapter)
   try {
-    const city = criteriaDimensionsFor(registry, ['51job', 'linkedin']).find(
-      (item) => item.key === 'city',
+    const items = criteriaDimensionsFor(registry, ['51job'])
+    const sort = items.find((item) => item.key === 'sort')
+    assert.ok(sort !== undefined)
+    assert.equal(sort.supported, true)
+    assert.deepEqual(
+      sort.values.map((item) => item.value).sort(),
+      ['0', '1', '3', '5'],
+      '排序取值就是 51job 自己的四档',
     )
-    assert.ok(city !== undefined)
-    assert.equal(city.conflict, false, '一个封闭表 + 一个自由文本，不等于"含义冲突"')
-    assert.ok(city.values.some((item) => item.value === '深圳' && item.platforms.includes('51job')))
+
+    // 神仙外企才有的「行业 / 职能」**根本不出现在 51job 的快照里** ——
+    // 界面不会把它画成可填的输入框，也不会拿别的平台的名义解释它。
+    for (const key of ['businessCategory', 'posInfo']) {
+      assert.equal(
+        items.some((entry) => entry.key === key),
+        false,
+        `${key} 是神仙外企才有的维度，不该出现在 51job 的快照里`,
+      )
+    }
   } finally {
     const dir = store.dataDir
     store.close()

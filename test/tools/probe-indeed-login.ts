@@ -360,6 +360,8 @@ async function readWithAdapter(page: Page): Promise<Reading> {
       host: CONFIG.host,
       jobKeyPattern: CONFIG.jobKeyPattern,
       salaryPattern: CONFIG.salaryPattern,
+      payloadEnabled: CONFIG.payloadEnabled,
+      payloadProviderKey: CONFIG.payloadProviderKey,
     })
   } catch {
     return empty

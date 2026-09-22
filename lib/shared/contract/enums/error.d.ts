@@ -19,6 +19,6 @@
  * 它们是有意保留的，不是遗漏。
  */
 /** 采集失败的原因（落在 `crawl_run.error_code`）。 */
-export declare const CRAWL_FAILURE_CODES: readonly ["NO_RECORDS", "PARSE_FAILED", "NAVIGATION_FAILED", "NOT_LOGGED_IN", "BLOCKED", "PLATFORM_QUOTA", "PLATFORM_PAUSED", "DEADLINE_REACHED", "ORPHANED", "RATE_LIMITED", "RISK", "QUOTA_REACHED", "OFFLINE"];
+export declare const CRAWL_FAILURE_CODES: readonly ["NO_RECORDS", "NO_IDENTITY", "PARSE_FAILED", "NAVIGATION_FAILED", "NOT_LOGGED_IN", "BLOCKED", "PLATFORM_QUOTA", "PLATFORM_PAUSED", "DEADLINE_REACHED", "ORPHANED", "RATE_LIMITED", "RISK", "QUOTA_REACHED", "OFFLINE"];
 export type CrawlFailureCode = (typeof CRAWL_FAILURE_CODES)[number];
 //# sourceMappingURL=error.d.ts.map

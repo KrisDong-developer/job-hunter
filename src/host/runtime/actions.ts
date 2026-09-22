@@ -56,6 +56,7 @@ import { DomainError } from '../util/errors.js'
 import type { Clock } from '../util/time.js'
 import { dataNotReady, type RuntimeFailure } from './contract.js'
 import {
+  appliedSiblingWarning,
   previewApplicationBatch,
   sendApplicationBatch as sendApplicationBatchOf,
   type ApplicationBatchDeps,
@@ -599,6 +600,7 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
       const resumeFileId = input.resumeFileId ?? null
       const resume = resolveResumeOf(opened, job.platformId, resumeFileId)
       const sideEffect = platformFacts(job.platformId).applicationSideEffect
+      const duplicateWarning = appliedSiblingWarning(opened, job.id)
       const result = await gate.run(
         {
           action: APPLICATION_SEND_ACTION,
@@ -618,6 +620,9 @@ export function createRuntimeActions(deps: ActionDeps): RuntimeActions {
             // 平台自己还会做的额外动作（如智联投递时会替你发一句招呼语）——
             // **来自平台事实表**，不是各入口自己写死；没有这一格的平台就不会出现这一行。
             ...(sideEffect === undefined ? {} : { sideEffect }),
+            // 同一岗位的另一个平台副本已经投过 → 写进审批文案（模型那条路径没有预览，
+            // 用户就是在审批屏上做决定的）。只提醒，不拦。
+            ...(duplicateWarning === null ? {} : { duplicateApplicationWarning: duplicateWarning }),
             // §22.4 的批量上限：批量逐条投递时把**整批条数**带上（与打招呼同一格）
             ...(input.batchSize === undefined || input.batchSize <= 1 ? {} : { count: input.batchSize }),
           },

@@ -84,6 +84,34 @@ export interface ApplicationBatchDeps {
   random(): number
 }
 
+/**
+ * "这个岗位的**另一个平台副本**已经投过了" —— 只提醒，不拦。
+ *
+ * 判定链：岗位在某个去重分组里 → 组内其它成员 → 它们有没有投递记录。
+ * 分组是启发式的（可能判错），所以**绝不能**拿它拦下一次投递；但"同一家公司的两个
+ * 平台副本各投一次"正是跨平台去重想帮用户避免的重复劳动 —— 必须让人看见。
+ *
+ * 提醒里带上**是哪一条、哪个平台**：只说"你已经投过了"用户没法核对，
+ * 而这条判断本身是有可能错的。
+ */
+export function appliedSiblingWarning(store: Store, jobId: number): string | null {
+  const group = store.dedupGroup.findByJob(jobId)
+  if (group === undefined) return null
+  for (const memberId of group.memberIds) {
+    if (memberId === jobId) continue
+    const applied = store.pipeline.listApplications({ jobId: memberId, limit: 1 })
+    if (applied.length === 0) continue
+    const sibling = store.job.detail(memberId)
+    const date = applied[0]?.sentAt ?? ''
+    return (
+      `⚠️ 同一岗位的另一个平台副本已经投过了：${sibling?.platformId ?? `#${String(memberId)}`} 的「` +
+      `${sibling?.title ?? ''}」（${date === '' ? '时间未记' : date.slice(0, 10)}）。` +
+      '分组是按公司+城市+薪资+标题相似度判的，可能判错 —— 请自己核对一下再决定。'
+    )
+  }
+  return null
+}
+
 /** 闸门预检用的输入：与 `sendApplication` 构造的那一份**同形**（规则读的就是这几个字段）。 */
 function guardInputOf(
   item: { jobId: number; platformId: string; companyId: number | null; title: string; company: string },
@@ -155,6 +183,7 @@ export async function previewApplicationBatch(
         willDeliver: false,
         blocker: { code: 'missing', message: `岗位不存在（#${String(jobId)}）`, hint: '它可能已经被清理掉了。' },
         sideEffect: null,
+        warning: null,
       })
       continue
     }
@@ -172,6 +201,8 @@ export async function previewApplicationBatch(
       willDeliver: false,
       blocker,
       sideEffect: deps.sideEffectOf(job.platformId),
+      // 被拦下的那条不需要"重复投递"的提醒 —— 它本来就投不出去
+      warning: null,
     })
 
     // ① 平台能力与登录态：不满足时后面几项都不用看了
@@ -245,6 +276,7 @@ export async function previewApplicationBatch(
       willDeliver: true,
       blocker: null,
       sideEffect: deps.sideEffectOf(job.platformId),
+      warning: appliedSiblingWarning(deps.store, job.id),
     })
   }
 

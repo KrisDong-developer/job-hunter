@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import { createIndeedAdapter } from '../../src/host/platform/adapters/indeed/index.js'
 import { DEFAULT_INDEED_CONFIG, mergeIndeedConfig } from '../../src/host/platform/adapters/indeed/config.js'
 import { buildIndeedSearchUrl } from '../../src/host/platform/adapters/indeed/urls.js'
+import { criteriaToSearchCriteria } from '../../src/host/domain/plan-config.js'
 import type { PageLike } from '../../src/host/platform/types.js'
 import { JsdomPage } from '../support/jsdom-page.js'
 
@@ -48,6 +49,26 @@ test('搜索 URL：q/l/start；第一页 start=0；第二页 start=pageSize', ()
   assert.equal(url, `https://cn.indeed.com/jobs?q=Java&l=${encodeURIComponent('北京')}&start=0`)
   const page2 = buildIndeedSearchUrl(DEFAULT_INDEED_CONFIG, { keyword: 'Java', city: '北京', page: 2 })
   assert.equal(page2, `https://cn.indeed.com/jobs?q=Java&l=${encodeURIComponent('北京')}&start=10`)
+})
+
+test('筛选真的进 URL：fromage / jt（2026-09-21 变体对照实测生效的两个参数）', () => {
+  // 走**生产路径**（criteriaToSearchCriteria）而不是手工拼 `{ platform: … }` ——
+  // 手工拼会绕过宿主的命名空间转换，"声明了但值落进 extra"那类静默失败就藏在那里。
+  const criteria = criteriaToSearchCriteria({
+    keyword: 'Java',
+    city: '北京',
+    postedWithinDays: '7',
+    jobType: 'parttime',
+  })
+  assert.equal(
+    buildIndeedSearchUrl(DEFAULT_INDEED_CONFIG, criteria),
+    `https://cn.indeed.com/jobs?q=Java&l=${encodeURIComponent('北京')}&fromage=7&jt=parttime&start=0`,
+  )
+})
+
+test('没配筛选时 fromage / jt 都不出现 —— 不塞平台默认值', () => {
+  const url = buildIndeedSearchUrl(DEFAULT_INDEED_CONFIG, criteriaToSearchCriteria({ keyword: 'Java' }))
+  assert.equal(url, 'https://cn.indeed.com/jobs?q=Java&start=0')
 })
 
 test('地点为自由文本：城市值直接进 l=，不需要城市码映射', () => {
@@ -293,6 +314,124 @@ test('真实夹具：不判墙、有下一页、未登录（载荷 isLoggedIn=fa
   assert.equal(await adapter.guard.detectBlock(page), null, '真实列表页不判墙')
   assert.equal(await adapter.crawl.hasNextPage(page), true, 'pagination-page-next 真实存在且可用（共约 1000 条）')
   assert.equal(await adapter.auth?.isLoggedIn(page), false, '未登录侧快照：载荷 isLoggedIn=false')
+})
+
+// ── 内嵌载荷回填（2026-09-21 按真实夹具定案：发布日期的真源，zhipin 接口通道同族纪律）──
+
+test('真实夹具：发布日期走内嵌载荷 formattedRelativeTime —— 16 卡中 15 条有值，无载荷条目的那条留空 + 记 note', async () => {
+  const adapter = createIndeedAdapter()
+  const page = browserLikePage(fixture('indeed-search.html'), REAL_SEARCH_URL)
+
+  const jobs = await adapter.crawl.readListPage(page)
+  assert.equal(jobs.length, 16)
+  const dated = jobs.filter((job) => (job.publishedAt ?? '') !== '')
+  assert.equal(dated.length, 15, '载荷 results 15 条 ↔ DOM 卡 15/16 重合（jobkey 连接键）')
+  assert.ok(
+    dated.every((job) => /天前$/.test(job.publishedAt ?? '')),
+    '载荷给的是相对时间原文（如「25天前」/「30+天前」），原样带出不换算',
+  )
+  // 首卡（Apple，jk=cd47d8bc64e3d0e5）在载荷里 formattedRelativeTime = 30+天前
+  const first = jobs.find((job) => job.platformJobId === 'cd47d8bc64e3d0e5')
+  assert.equal(first?.publishedAt, '30+天前')
+  const nike = jobs.find((job) => job.platformJobId === '6544fa41aeb898dc')
+  assert.equal(nike?.publishedAt, '25天前')
+
+  // 唯一不在载荷里的那张卡（0f1e2d3c4b5a6978）：留空 + note，不编
+  const orphan = jobs.find((job) => job.platformJobId === '0f1e2d3c4b5a6978')
+  assert.ok(orphan !== undefined)
+  assert.equal(orphan.publishedAt, undefined, '载荷里没有这条 → publishedAt 不编造')
+  assert.ok(
+    (orphan.notes ?? []).some((note) => note.includes('发布日期（载荷 formattedRelativeTime）未命中')),
+    '通道开着却两边都没有 → 记 note 待校准',
+  )
+  // 薪资两侧都无源：DOM 0 命中 + 载荷 salarySnippet 匿名侧恒空对象 → 仍全空
+  assert.ok(jobs.every((job) => job.salaryRaw === ''), '载荷的 salarySnippet 匿名侧恒空 → 不当薪资来源')
+})
+
+/** 合成载荷页：卡片 + 内嵌 providerData 脚本（形态照真实夹具手搓，验回填代码路径）。 */
+const PAYLOAD_LIST = `<html><body>
+  <div id="job_a">
+    <a class="jcs-JobTitle" href="/rc/clk?jk=payload001&amp;fccid=a">载荷补全岗</a>
+    <!-- 刻意不给 company/date DOM 节点：这两个字段只能来自载荷 -->
+  </div>
+  <div id="job_b">
+    <a class="jcs-JobTitle" href="/rc/clk?jk=payload002">DOM 优先岗</a>
+    <div data-testid="company-name">某科技（DOM 值）</div>
+  </div>
+  <script>
+    window.mosaic = window.mosaic || {};
+    window.mosaic.providerData["mosaic-provider-jobcards"]={"metaData":{"mosaicProviderJobCardsModel":{
+      "results":[
+        {"jobkey":"payload001","company":"载荷公司","formattedLocation":"广州市","formattedRelativeTime":"3天前",
+         "salarySnippet":{"currency":"CNY","text":"15-25K·13薪","salaryTextFormatted":true}},
+        {"jobkey":"payload002","company":"载荷侧不该赢","formattedLocation":"不该赢的城","formattedRelativeTime":"9天前",
+         "salarySnippet":{"currency":"","salaryTextFormatted":false}},
+        {"jobkey":"notindom999","company":"DOM 里没有的岗位","formattedRelativeTime":"1天前","salarySnippet":{}}
+      ]}}}};
+  </script>
+</body></html>`
+
+test('载荷回填（合成）：补 DOM 缺的、不覆盖 DOM 有的、不引入 DOM 外岗位、补上撤 note', async () => {
+  const adapter = createIndeedAdapter()
+  const jobs = await adapter.crawl.readListPage(browserLikePage(PAYLOAD_LIST))
+
+  assert.equal(jobs.length, 2, '载荷里多出的 notindom999 不能引入新岗位（集合以 DOM 为准）')
+
+  const a = jobs.find((job) => job.platformJobId === 'payload001')
+  assert.ok(a !== undefined)
+  assert.equal(a.company, '载荷公司', 'DOM 无 company 节点 → 载荷兜底')
+  assert.equal(a.publishedAt, '3天前', '发布日期真源 = 载荷 formattedRelativeTime')
+  assert.equal(a.city, '广州市', 'DOM 无地点 → 载荷 formattedLocation 兜底')
+  assert.equal(a.salaryRaw, '15-25K·13薪', 'DOM 正则抓不到 → 载荷 salarySnippet.text 回填')
+  assert.deepEqual(
+    (a.notes ?? []).filter((note) => note.includes('公司未锚定') || note.includes('薪资未锚定')),
+    [],
+    '载荷补上之后对应 note 必须撤掉（否则数据是新的、说明是旧的）',
+  )
+
+  const b = jobs.find((job) => job.platformJobId === 'payload002')
+  assert.ok(b !== undefined)
+  assert.equal(b.company, '某科技（DOM 值）', 'DOM 已锚定的值不覆盖（DOM 是集合与字段的第一来源）')
+  assert.equal(b.publishedAt, '9天前')
+  assert.ok((b.notes ?? []).some((note) => note.includes('薪资未锚定')), '载荷该条 salarySnippet 无 text → 保持留空 + note')
+})
+
+test('载荷回填：脚本存在但 JSON 配不平 / marker 不存在 → 保持 DOM 结果，不抛错', async () => {
+  const adapter = createIndeedAdapter()
+  // 大括号不闭合（配平失败路径）
+  const broken = `<html><body>
+    <div><a class="jcs-JobTitle" href="/viewjob?jk=broken001">坏载荷岗</a>
+      <div data-testid="company-name">某科技</div></div>
+    <script>window.mosaic.providerData["mosaic-provider-jobcards"]={"metaData":{"results":[{"jobkey":"broken001"</script>
+  </body></html>`
+  const jobs = await adapter.crawl.readListPage(browserLikePage(broken))
+  assert.equal(jobs.length, 1, '载荷解析失败不连累 DOM 解析')
+  assert.equal(jobs[0]?.company, '某科技')
+  assert.equal(jobs[0]?.publishedAt, undefined)
+  assert.ok(
+    (jobs[0]?.notes ?? []).some((note) => note.includes('发布日期')),
+    '通道开着但没取到 → 如实记 note（不把坏载荷说成没开通道）',
+  )
+
+  // marker 完全不存在（改版/换 provider 名）
+  const nomarker = '<html><body><div><a class="jcs-JobTitle" href="/viewjob?jk=nomarker1">无载荷岗</a></div></body></html>'
+  const jobs2 = await adapter.crawl.readListPage(browserLikePage(nomarker))
+  assert.equal(jobs2.length, 1)
+  assert.equal(jobs2[0]?.publishedAt, undefined)
+})
+
+test('载荷回填：payloadEnabled=false 时整条通道关闭（不回填、不记日期 note）', async () => {
+  const adapter = createIndeedAdapter({ config: { ...DEFAULT_INDEED_CONFIG, payloadEnabled: false } })
+  const jobs = await adapter.crawl.readListPage(browserLikePage(PAYLOAD_LIST))
+  const a = jobs.find((job) => job.platformJobId === 'payload001')
+  assert.ok(a !== undefined)
+  assert.equal(a.company, '', '通道关闭 → 载荷不兜底，DOM 缺就留空')
+  assert.equal(a.salaryRaw, '')
+  assert.equal(a.publishedAt, undefined)
+  assert.ok(
+    !(a.notes ?? []).some((note) => note.includes('发布日期')),
+    '通道关闭时不记「发布日期未命中」（没有期待过这条来源）',
+  )
 })
 
 // ── 真实详情夹具（2026-09-21 Apple 岗 /viewjob?jk=cd47d8bc64e3d0e5，probe:indeed-detail #2） ──

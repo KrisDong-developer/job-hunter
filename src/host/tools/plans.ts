@@ -145,7 +145,9 @@ export function plansTools(runtime: HostRuntime): ToolDefinition[] {
           platforms: {
             type: 'array',
             items: { type: 'string' },
-            description: '平台集合；不填 = 全部已注册平台。未注册的平台会被明确拒绝（SR-39）',
+            description:
+              '目标平台，**只填一个 id**（一个方案只抓一个平台：筛选条件是按平台自己的取值域与参数名定义的，' +
+              '填多个会被明确拒绝）。要同时抓多个平台就建多个方案 —— 时段与每日额度各自独立。',
           },
           sort: str('排序方式（取值域见 dimensions）'),
           postedWithinDays: int('只要多少天内发布的岗位'),
@@ -230,21 +232,22 @@ export function plansTools(runtime: HostRuntime): ToolDefinition[] {
           case 'create': {
             if (name === undefined) throw new DomainError('INVALID_INPUT', 'create 需要 name')
             const patch = configPatchOf(args, name, planId, plans)
+            /**
+             * **不能默认成"全部平台"**：一个方案只抓一个平台是配置面的硬规则
+             *（筛选条件按平台自己的取值域与参数名定义），而"默认全平台"恰好是被拒的那种配置 ——
+             * 模型会收到一条与它意图无关的报错。这里直接给出可选清单。
+             */
+            const targets = (patch['platforms'] as string[] | undefined) ?? []
+            if (targets.length !== 1) {
+              throw new DomainError('INVALID_INPUT', 'create 的 platforms 要**恰好一个**平台 id', {
+                hint:
+                  `可选平台：${runtime.registry().list().map((adapter) => adapter.id).join(' / ') || '（一个都没有）'}。` +
+                  '一个方案只抓一个平台 —— 要同时抓多个就建多个方案（时段与额度各自独立）。',
+              })
+            }
             // 校验先跑一次，好把"和哪个方案重复"如实回报（SR-43：只提示，不合并）
-            const checked = plans.validate({
-              ...patch,
-              name,
-              platforms:
-                (patch['platforms'] as string[] | undefined) ??
-                runtime.registry().list().map((adapter) => adapter.id),
-            } as never)
-            const plan = plans.create({
-              ...patch,
-              name,
-              platforms:
-                (patch['platforms'] as string[] | undefined) ??
-                runtime.registry().list().map((adapter) => adapter.id),
-            } as never)
+            const checked = plans.validate({ ...patch, name, platforms: targets } as never)
+            const plan = plans.create({ ...patch, name, platforms: targets } as never)
             const duplicateNote =
               checked.duplicates.length === 0
                 ? ''

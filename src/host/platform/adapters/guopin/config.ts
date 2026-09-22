@@ -138,6 +138,20 @@ export interface GuopinConfig {
   loginSelectors: GuopinLoginSelectors
   urlParams: GuopinUrlParams
   /**
+   * **列表接口**（2026-09-21 探针实测：筛选条件只在这条请求的 body 里）。
+   *
+   * 老路径是"URL + DOM 解析"，而国聘的 `?page=` 被 SPA 忽略、筛选参数更是只认请求体 ——
+   * 列表改走接口之后，筛选与翻页同时变成"发一个参数"的事。
+   */
+  listApi: {
+    /** 接口域名。 */
+    base: string
+    /** 列表路径。 */
+    path: string
+    /** 每页条数（站点自己用 20）。 */
+    pageSize: number
+  }
+  /**
    * 城市码。**只放实测确认过的**；调研期筛选栏有城市名但 URL 城市参数未实证，故 v1 置空。
    * 未列出城市 `buildSearchUrl` 返回 null（入口层拒绝），**不猜**。逐城实测后写 DB 覆盖。
    */
@@ -196,6 +210,11 @@ export const DEFAULT_GUOPIN_CONFIG: GuopinConfig = {
     loggedIn: '.avatar-box .user-name',
     notLoggedIn: 'a.login',
   },
+  listApi: {
+    base: 'https://gp-api.iguopin.com',
+    path: '/api/jobs/v1/recom-job',
+    pageSize: 20,
+  },
   urlParams: {
     base: 'https://www.iguopin.com/jobList',
     keywordParam: 'keyword',
@@ -226,6 +245,7 @@ export function mergeGuopinConfig(override: unknown): GuopinConfig {
   return {
     selectors: { ...DEFAULT_GUOPIN_CONFIG.selectors, ...(patch.selectors ?? {}) },
     loginSelectors: { ...DEFAULT_GUOPIN_CONFIG.loginSelectors, ...(patch.loginSelectors ?? {}) },
+    listApi: { ...DEFAULT_GUOPIN_CONFIG.listApi, ...((patch.listApi as object | undefined) ?? {}) },
     urlParams: { ...DEFAULT_GUOPIN_CONFIG.urlParams, ...(patch.urlParams ?? {}) },
     cityCodes: { ...DEFAULT_GUOPIN_CONFIG.cityCodes, ...(patch.cityCodes ?? {}) },
     jobIdPattern: pattern('jobIdPattern', DEFAULT_GUOPIN_CONFIG.jobIdPattern),

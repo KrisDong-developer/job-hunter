@@ -25,7 +25,7 @@ import {
 } from '../../src/host/platform/adapters/sinojobs/config.js'
 import { buildSinoJobsRequestBody } from '../../src/host/platform/adapters/sinojobs/urls.js'
 import { JsdomPage, type PageFetchStub } from '../support/jsdom-page.js'
-import type { PageLike } from '../../src/host/platform/types.js'
+import { PlatformBlockedError, type AdapterLogger, type PageLike } from '../../src/host/platform/types.js'
 
 // 夹具目录：源码路径是 `test/fixtures`；`scripts/test.mjs` 会把整个 `fixtures/`
 // 复制到产物目录（`.test-build/fixtures`），两种布局都要认。
@@ -195,6 +195,35 @@ test('详情页：P2 解析逐项对得上（标题/公司/薪资/城市/经验/
   assert.equal(detail.sourceUrl, 'https://sinojobs.com.cn/Recruitment/content.html?id=4319')
 })
 
+test('详情页锚点腐烂：标题回退 document.title；公司不误取正文小节标题；缺口全部以 notes 留痕', async () => {
+  const adapter = createSinoJobsAdapter()
+  // 概要区（.Resume-info1）整块缺失 —— 平台改版后的真实风险形态。
+  const html =
+    '<html><head><title>某岗位标题-全职/兼职 - SinoJobs</title></head><body>' +
+    '<div class="Resume-info2"><h6>职位描述</h6><p>做点事。</p><h6>公司信息</h6><p>某公司介绍。</p></div>' +
+    '</body></html>'
+  const target = page({ html, url: DETAIL_URL })
+  await adapter.crawl.gotoSearch(target, {})
+  const detail = await adapter.detail?.extract(target)
+  assert.ok(detail)
+
+  // 标题兜底链：h5 没了 → document.title 去站名后缀；标题内文的连字符必须保留。
+  assert.equal(detail.title, '某岗位标题-全职/兼职')
+  // 公司：概要区缺失 → 留空，**绝不**把正文小节标题「职位描述」当公司名。
+  assert.equal(detail.company, '')
+  // 正文区还在 → JD 照常解析。
+  assert.ok(detail.jdText?.includes('做点事。'))
+  assert.ok(detail.jdText?.includes('某公司介绍。'))
+  // 缺口留痕：每个未锚定的锚点都要能被看见（而不是静默给空值）。
+  const notes = detail.notes ?? []
+  assert.ok(notes.includes('概要区容器未锚定（headBox 待校准）'))
+  assert.ok(notes.includes('详情公司名未锚定（h6 待校准）'))
+  assert.ok(notes.includes('详情薪资未锚定，待校准'))
+  // 正文容器在 → 不该有 JD 侧的误报。
+  assert.ok(!notes.includes('JD 容器未锚定（bodyBox 待校准）'))
+  assert.ok(!notes.includes('JD 未锚定（p 待校准）'))
+})
+
 // ── 3. 失败必须显式：绝不静默返回空数组 ───────────────────────────────
 
 test('响应形状变了（rows 不是数组）→ 解析 0 条，但**不抛错**（主链记 NO_RECORDS）', async () => {
@@ -215,6 +244,40 @@ test('接口报错（status != 1）→ 抛错（主链记 PARSE_FAILED），不�
     (error: unknown) => {
       const text = error instanceof Error ? error.message : String(error)
       return text.includes('status=0') && text.includes('系统繁忙')
+    },
+  )
+})
+
+test('HTTP 错误页（非 JSON，429）→ 状态码抬进判读，按风控抛 PlatformBlockedError（不降级成 PARSE_FAILED）', async () => {
+  const adapter = createSinoJobsAdapter()
+  // 真实形态：限流时接口回的是 HTML 拦截页 —— response.json() 会抛 SyntaxError，
+  // body 里没有任何可读的 status/info。此前这条路只能报"网络请求失败（SyntaxError）"。
+  const target = page({
+    fetchStub: () =>
+      Promise.resolve({
+        json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON')),
+        status: 429,
+      }),
+  })
+  await adapter.crawl.gotoSearch(target, {})
+  await assert.rejects(
+    () => adapter.crawl.readListPage(target),
+    (error: unknown) => error instanceof PlatformBlockedError && error.kind === 'rate-limited',
+  )
+})
+
+test('HTTP 错误页（非 JSON，403 无风控文案）→ 仍抛错并带上 HTTP 状态码，不返回空数组', async () => {
+  const adapter = createSinoJobsAdapter()
+  const target = page({
+    fetchStub: () =>
+      Promise.resolve({ json: () => Promise.reject(new SyntaxError('Unexpected token <')), status: 403 }),
+  })
+  await adapter.crawl.gotoSearch(target, {})
+  await assert.rejects(
+    () => adapter.crawl.readListPage(target),
+    (error: unknown) => {
+      const text = error instanceof Error ? error.message : String(error)
+      return text.includes('status=403') && text.includes('HTTP 403')
     },
   )
 })
@@ -414,4 +477,34 @@ test('卡片选择器被改坏时：判墙仍然工作（解析不依赖 DOM）'
   assert.equal(jobs.length, 15)
   // 但判墙的 blank 判定会因卡片数为 0 而更敏感 —— 这里用正常页面验证不算撞墙。
   assert.equal(await adapter.guard.detectBlock(target), null)
+})
+
+test('形状漂移留痕：接口成功且 total>0 但解析 0 条 → logger.warn（这种坏法不报警，日志是唯一出口）', async () => {
+  const warnings: string[] = []
+  const infos: string[] = []
+  const logger: AdapterLogger = {
+    info: (message) => infos.push(message),
+    warn: (message) => warnings.push(message),
+  }
+  const adapter = createSinoJobsAdapter({ logger })
+  // 平台自报 total=78，但 rows 没了（层级改名 / 字段漂移的真实形态）。
+  const target = page({
+    fetchStub: () =>
+      Promise.resolve({
+        json: () => Promise.resolve({ status: 1, info: '数据获取成功', data: { total: '78' } }),
+        status: 200,
+      }),
+  })
+  await adapter.crawl.gotoSearch(target, {})
+  assert.deepEqual(await adapter.crawl.readListPage(target), [])
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0] ?? '', /total=78/)
+
+  // 正常路径不打扰 logger：同样的适配器解析正常载荷，一条 warn 都不该有。
+  const healthy = page({ fetchStub: okStub })
+  await adapter.crawl.gotoSearch(healthy, {})
+  const jobs = await adapter.crawl.readListPage(healthy)
+  assert.equal(jobs.length, 15)
+  assert.equal(warnings.length, 1)
+  assert.deepEqual(infos, [])
 })

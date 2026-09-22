@@ -86,11 +86,31 @@ export interface ZhaopinImSelectors {
  * 以及 `__INITIAL_STATE__.originalUrlParams` 回显 —— 两处都点名 `kw` / `p`。
  *
  * ⚠️ 注意**城市不在 query 里，而在路径段**：`/sou/jl<cityCode>`。
- * 所以这里没有 `cityParam`，只有 `cityPrefix`。
+ * 所以 `base` 那一支没有 `cityParam` 可用，只有路径段。
+ *
+ * ## 两条路由：带筛选的走 `filterBase`（2026-09-21 点击探针实测）
+ *
+ * 在登录态 `/sou/jl765?kw=Java` 上点一下筛选控件，**站点自己**跳到的地址是
+ * `https://www.zhaopin.com/jobs?jl=765&kw=Java&el=4`（学历「本科」）——
+ * 城市在这条路由上从路径段变成了 query 参数 `jl`，筛选值用 `el`/`we`/`et`/`ct`
+ * 这样的两字母参数名（与上面那条登录表单 URL 的字母表一致）。
+ *
+ * 所以：**没有筛选时**用 `/sou/jl<码>`（那条路由有真实分页、薪资明文）；
+ * **带了任何筛选**时用 `/jobs?jl=<码>&…`（筛选参数只在这条路由上被实测过）。
+ * 两条路由适配器本来都要认：登录态请求 `/sou/jl765?kw=Java` 时，服务端会自己
+ * 302 到 `/jobs?jl=765&kw=Java`（实测 `finalUrl` 就是它，渲染的是 `.job-card` 那套
+ * 标记 —— 见 `selectors.card` 上面那段地雷说明）。
  */
 export interface ZhaopinUrlParams {
-    /** 基础地址，城市码会拼成 `${base}/jl${code}`。 */
+    /** 无筛选时的基础地址，城市码会拼成 `${base}/jl${code}`。 */
     base: string;
+    /**
+     * **带筛选**时的基础地址；城市改用 `cityParam` 传。
+     *
+     * 单独一个键而不是复用 `base`：两条路由的城市编码位置不同（路径段 vs query），
+     * 合成一个键就得在函数里猜"现在算哪种情况"，而这是能直接写清楚的事。
+     */
+    filterBase: string;
     /** 关键词参数。**只在第 1 页用**（见文件头的 robots 取舍）。 */
     keywordParam: string;
     /** 页码参数（query 兜底形式）。 */
@@ -99,6 +119,16 @@ export interface ZhaopinUrlParams {
     sortParam: string;
     /** 发布时间窗参数。**平台在搜索 URL 上不提供该维度**，保留键位仅为将来扩展。 */
     postedWithinParam: string;
+    /** `filterBase` 路由上的城市参数：实测 `jl=765`（深圳）。 */
+    cityParam: string;
+    /** 学历（**最低学历**语义）：实测点「本科」→ `el=4`。 */
+    educationParam: string;
+    /** 工作经验：实测点「1-3年」→ `we=0103`。 */
+    workExperienceParam: string;
+    /** 公司性质：实测点「国企」→ `ct=1`。 */
+    companyTypeParam: string;
+    /** 职位类型（全职/兼职/实习/校园）：实测点「全职」→ `et=2`。 */
+    jobStatusParam: string;
 }
 /**
  * 排序取值域。
@@ -115,6 +145,37 @@ export declare const ZHAOPIN_SORT_OPTIONS: Array<{
 }>;
 /** 发布时间窗：智联的搜索 URL 不暴露这个维度，所以值域为空（界面据此禁用并给出原因）。 */
 export declare const ZHAOPIN_POSTED_WITHIN_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+/**
+ * 四个筛选维度的取值域 —— **全部照抄站点自己那份字典**。
+ *
+ * 来源：登录态搜索页后台请求 `GET /c/i/search/base/data`，响应 `data` 里有
+ * `educationType` / `workExpType` / `companyType` / `jobStatus` 等字典（2026-09-21 实测，
+ * 转储见 `test/fixtures/zhaopin-base-data-filters.json` —— 夹具就是那份响应的原样摘录，
+ * 单测逐条对账，防止有人手改这些码）。
+ *
+ * 两条刻意的取舍：
+ *   * **不提供「不限」类取值**（`-1` / `-99` / `?`）：语义上等于"不带这个参数"，
+ *     收进值域只会让用户选出一个与不选完全等价的选项（界面上的"不填"已经表达了它）。
+ *   * 公司性质里的 `6;10`（机关/事业单位）与 `7;14;15`（其他）**不提供**：
+ *     它们是**分号拼的多码**，而 `URLSearchParams` 会把 `;` 转义成 `%3B` ——
+ *     站点自己怎么发这两个值没有被实测过，宁缺勿编。
+ */
+export declare const ZHAOPIN_EDUCATION_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+export declare const ZHAOPIN_WORK_EXPERIENCE_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+export declare const ZHAOPIN_COMPANY_TYPE_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+export declare const ZHAOPIN_JOB_STATUS_OPTIONS: Array<{
     value: string;
     label: string;
 }>;

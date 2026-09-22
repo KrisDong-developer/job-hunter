@@ -16,10 +16,15 @@ import {
   DEFAULT_ZHAOPIN_CONFIG,
   mergeZhaopinConfig,
   ZHAOPIN_CITY_CODES,
+  ZHAOPIN_COMPANY_TYPE_OPTIONS,
+  ZHAOPIN_EDUCATION_OPTIONS,
+  ZHAOPIN_JOB_STATUS_OPTIONS,
   ZHAOPIN_MAX_PAGES,
   ZHAOPIN_SALARY_MASK,
+  ZHAOPIN_WORK_EXPERIENCE_OPTIONS,
   type ZhaopinConfig,
 } from '../../src/host/platform/adapters/zhaopin/config.js'
+import { criteriaToSearchCriteria } from '../../src/host/domain/plan-config.js'
 import { buildTalkListUrl } from '../../src/host/platform/adapters/zhaopin/urls.js'
 import { extractJobDetailInPage } from '../../src/host/platform/adapters/zhaopin/page/detail.js'
 import type { HumanMouse } from '../../src/host/platform/humanize.js'
@@ -81,6 +86,110 @@ test('城市表里的码都是「jl + 数字」形式，且没有重复值', () 
   assert.equal(ZHAOPIN_CITY_CODES['北京'], '530')
   assert.equal(ZHAOPIN_CITY_CODES['上海'], '538')
   assert.equal(ZHAOPIN_CITY_CODES['全国'], '489')
+})
+
+// ── 筛选条件：走站点自己那条 /jobs 路由（2026-09-21 点击探针实测） ──────
+//
+// 实测方法：登录态打开 `/sou/jl765?kw=Java`，点一下筛选控件，**看站点自己跳去哪**。
+// 点「本科」跳 `…/jobs?jl=765&kw=Java&el=4`、点「1-3年」跳 `we=0103`、
+// 点「国企」跳 `ct=1`、点「全职」跳 `et=2` —— 参数名与取值都不是猜的。
+
+test('带筛选时改用 /jobs 路由，城市从路径段变成 jl 参数', () => {
+  const adapter = createZhaopinAdapter()
+  // 走**生产路径**（`criteriaToSearchCriteria`）而不是手工拼 `{ platform: … }`：
+  // 手工拼会绕过宿主的命名空间转换，那正是"声明了但值落进 extra"这类静默失败藏身的地方。
+  const criteria = criteriaToSearchCriteria({
+    keyword: 'Java',
+    city: '深圳',
+    education: '4',
+    workExperience: '0103',
+    companyType: '1',
+    jobStatus: '2',
+  })
+  assert.equal(
+    adapter.criteria.buildSearchUrl(criteria),
+    'https://www.zhaopin.com/jobs?jl=765&kw=Java&el=4&we=0103&ct=1&et=2',
+  )
+})
+
+test('没有筛选时形状**一点没变** —— 别顺手把默认入口从 /sou/ 挪走', () => {
+  const adapter = createZhaopinAdapter()
+  const criteria = criteriaToSearchCriteria({ keyword: 'Java', city: '深圳', sort: '4', page: '2' })
+  assert.equal(
+    adapter.criteria.buildSearchUrl(criteria),
+    'https://www.zhaopin.com/sou/jl765?kw=Java&p=2&order=4',
+  )
+})
+
+test('不可用的维度（发布时间）不许变成 URL 参数 —— 有没有别的筛选都不许', () => {
+  const adapter = createZhaopinAdapter()
+  // 带别的筛选：走 /jobs 分支
+  const filtered = adapter.criteria.buildSearchUrl(
+    criteriaToSearchCriteria({ education: '4', postedWithinDays: '7' }),
+  )
+  assert.ok(filtered !== null && filtered.includes('el=4'), `筛选没进 URL：${String(filtered)}`)
+  assert.ok(!filtered.includes('pd='), '发布时间在智联没有可用取值，拼上去就是给平台塞一个它不认的参数')
+  // **只**带发布时间：走 /sou/ 分支 —— 这里是它真正会漏出去的那条路
+  // （`postedWithinDays` 是顶层槽位，会落在 `criteria.postedWithinDays` 上）
+  const onlyPosted = adapter.criteria.buildSearchUrl(
+    criteriaToSearchCriteria({ keyword: 'Java', city: '深圳', postedWithinDays: '7' }),
+  )
+  assert.equal(onlyPosted, 'https://www.zhaopin.com/sou/jl765?kw=Java')
+})
+
+/**
+ * 站点字典夹具：`GET /c/i/search/base/data` 响应的**原样摘录**（四个字典，逐字段照抄）。
+ *
+ * 它存在的唯一理由是"这些码不是我们编的" —— 手改一个取值，这里当场红。
+ */
+const FILTER_DICT_FIXTURE = JSON.parse(
+  readFileSync(join(import.meta.dirname, '..', 'fixtures', 'zhaopin-base-data-filters.json'), 'utf8'),
+) as { data: Record<string, Array<{ code: string | null; name: string }>> }
+
+test('四个筛选维度的取值域与站点字典逐条一致（码 + 标签）', () => {
+  const dicts: Array<[string, string, Array<{ value: string; label: string }>]> = [
+    ['education', 'educationType', ZHAOPIN_EDUCATION_OPTIONS],
+    ['workExperience', 'workExpType', ZHAOPIN_WORK_EXPERIENCE_OPTIONS],
+    ['companyType', 'companyType', ZHAOPIN_COMPANY_TYPE_OPTIONS],
+    ['jobStatus', 'jobStatus', ZHAOPIN_JOB_STATUS_OPTIONS],
+  ]
+  for (const [key, dictKey, options] of dicts) {
+    const dict = new Map(FILTER_DICT_FIXTURE.data[dictKey]?.map((item) => [item.code, item.name]))
+    assert.ok(dict.size > 0, `夹具里没有字典 ${dictKey}`)
+    assert.ok(options.length > 0, `${key} 的取值域是空的 —— 声明了筛选却给不出一个能选的值`)
+    for (const option of options) {
+      assert.equal(dict.get(option.value), option.label, `${key} 的取值 ${option.value} 与站点字典对不上`)
+    }
+  }
+})
+
+test('刻意排除的取值：「不限」类与分号多码', () => {
+  // 不限：语义上等于"不带这个参数"，收进值域只会多一个与"不填"完全等价的选项。
+  for (const [dictKey, options] of [
+    ['educationType', ZHAOPIN_EDUCATION_OPTIONS],
+    ['workExpType', ZHAOPIN_WORK_EXPERIENCE_OPTIONS],
+    ['jobStatus', ZHAOPIN_JOB_STATUS_OPTIONS],
+  ] as const) {
+    const sentinels = (FILTER_DICT_FIXTURE.data[dictKey] ?? []).filter(
+      (item) => item.code === null || ['-1', '-99'].includes(item.code),
+    )
+    assert.ok(sentinels.length > 0, `${dictKey} 的夹具里应当有「不限」类取值 —— 没有的话这条断言就失去意义`)
+    for (const sentinel of sentinels) {
+      assert.ok(
+        !options.some((option) => option.value === sentinel.code),
+        `${dictKey} 不该收「${sentinel.name}」（${String(sentinel.code)}）`,
+      )
+    }
+  }
+  // 分号多码：`URLSearchParams` 会把 `;` 转义成 `%3B`，站点自己怎么发没实测过 → 不提供。
+  const multiCode = (FILTER_DICT_FIXTURE.data.companyType ?? []).filter((item) => item.code?.includes(';') === true)
+  assert.ok(multiCode.length > 0, 'companyType 夹具里应当有分号多码 —— 没有的话这条断言就失去意义')
+  for (const item of multiCode) {
+    assert.ok(
+      !ZHAOPIN_COMPANY_TYPE_OPTIONS.some((option) => option.value === item.code),
+      `分号多码 ${String(item.code)}（${item.name}）编码未验证，不该进值域`,
+    )
+  }
 })
 
 test('DB 覆盖能合并到默认配置上（ADR-19：配置以 DB 为权威）', () => {

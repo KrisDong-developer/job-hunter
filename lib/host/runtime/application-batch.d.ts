@@ -48,6 +48,17 @@ export interface ApplicationBatchDeps {
     /** `[0,1)` 随机数；注入以便测试固定间隔。 */
     random(): number;
 }
+/**
+ * "这个岗位的**另一个平台副本**已经投过了" —— 只提醒，不拦。
+ *
+ * 判定链：岗位在某个去重分组里 → 组内其它成员 → 它们有没有投递记录。
+ * 分组是启发式的（可能判错），所以**绝不能**拿它拦下一次投递；但"同一家公司的两个
+ * 平台副本各投一次"正是跨平台去重想帮用户避免的重复劳动 —— 必须让人看见。
+ *
+ * 提醒里带上**是哪一条、哪个平台**：只说"你已经投过了"用户没法核对，
+ * 而这条判断本身是有可能错的。
+ */
+export declare function appliedSiblingWarning(store: Store, jobId: number): string | null;
 export interface ApplicationBatchPreviewInput {
     /** 要投的岗位，**顺序即投递顺序**。 */
     jobIds: number[];

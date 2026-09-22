@@ -18,12 +18,33 @@ import type { IndeedSelectors } from './config.js';
  * `a.jcs-JobTitle`：标题 + href（内嵌 `jk=` jobkey）+ 同卡内的公司/地点/薪资/日期。
  * 相对链接拼成绝对地址；`jk` 抠出来当平台 id。
  * 锚不中的字段留空 + notes，交给字段级断言隔离进 pending_repair —— 不编。
+ *
+ * ## 内嵌载荷回填（2026-09-21 按真实夹具定案，zhipin 接口通道的同族纪律）
+ *
+ * 同一页面的 `window.mosaic.providerData["mosaic-provider-jobcards"]` 脚本里嵌着
+ * 整批卡片的结构化数据（`metaData.mosaicProviderJobCardsModel.results[]`，连接键
+ * `jobkey` ↔ DOM 的 `jk`，真实夹具 15/16 重合）—— **零额外请求**就拿到 DOM 拿不到的：
+ *
+ *   * `formattedRelativeTime`（「25天前」/「30+天前」）→ `publishedAt`：DOM 侧
+ *     `jobListingDate` 0 命中，**这是发布日期的真源**；
+ *   * `company` / `formattedLocation` → DOM 锚点 miss 时的兜底；
+ *   * `salarySnippet.text` → `salaryRaw`：匿名侧实测恒为空对象，留空；
+ *     登录侧若带明文则回填（DOM 正则抓不到时）。
+ *
+ * 四条纪律（照抄 zhipin `enrichFromApi`）：
+ *   1. **岗位集合以 DOM 为准** —— 载荷只按 jobkey 补字段，**不引入新岗位**；
+ *   2. **只补空缺** —— DOM 已锚定的值不覆盖（DOM 的 href 还要当 sourceUrl 的根）；
+ *   3. **失败保持 DOM 结果** —— marker 找不到 / 大括号配不平 / JSON 烂，一律空表，
+ *      不抛错（这条通道是"锦上添花"，不该让整页解析失败）；
+ *   4. **补上之后撤掉对应 note** —— 否则数据是新的、说明是旧的，自相矛盾。
  */
 export declare function extractJobsInPage(arg: {
     selectors: IndeedSelectors;
     host: string;
     jobKeyPattern: string;
     salaryPattern: string;
+    payloadEnabled: boolean;
+    payloadProviderKey: string;
 }): RawJob[];
 /** **在页面上下文里**看「下一页」是否可用（被禁用时打 `aria-disabled`）。 */
 export declare function hasNextPageInPage(arg: {

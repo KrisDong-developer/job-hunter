@@ -338,6 +338,14 @@ export function CollectScreen(props: { revision: number; onGoSettings: () => voi
         `看过 ${String(result.scanned)} 条` +
         (result.skippedGrouped > 0 ? `（跳过已在分组里的 ${String(result.skippedGrouped)} 条）` : '') +
         `：合并 ${String(result.merged)} 条、新建 ${String(result.newGroups)} 组，现在共 ${String(result.groups)} 组。` +
+        (result.unmerged > 0 || result.dissolved > 0
+          ? `重判已有分组：拆出 ${String(result.unmerged)} 条` +
+            (result.dissolved > 0 ? `、解散 ${String(result.dissolved)} 组` : '') +
+            '。'
+          : '') +
+        (result.skippedNoCompany > 0
+          ? `另有 ${String(result.skippedNoCompany)} 条公司没归并、判不了重（是"没查过"，不是"没有重复"）。`
+          : '') +
         (result.candidates > 0
           ? `另有 ${String(result.candidates)} 条疑似重复没自动合并（标题相似度不够）—— 需要人工看一眼。`
           : '')

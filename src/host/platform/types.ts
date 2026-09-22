@@ -177,6 +177,14 @@ export interface CriteriaDimension {
    * 适配器不必每个都写一遍。
    */
   numeric?: boolean
+  /**
+   * **多选**维度：值在 `criteria` 里以逗号分隔存，由适配器拆成平台要的形状
+   * （神仙外企的 `companyTypeList` 就是数组）。
+   *
+   * 为什么要声明而不是让界面猜：单值/多值是**平台事实** —— 猜错了要么只让用户选一个
+   * （功能缺一半），要么发出一个平台不认的字符串（静默不筛）。
+   */
+  multi?: boolean
   /** 怎么进请求。缺省 = **不进请求**（采集深度旋钮，如 `maxPages` / `scrollRounds`）。 */
   wire?: CriterionWire
 }

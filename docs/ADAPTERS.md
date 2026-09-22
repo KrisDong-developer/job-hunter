@@ -215,7 +215,12 @@ npm test
    这是刻意的）；同时按 ADR-19 读一次 DB 覆盖：
    `setting(key='adapter-config', scope='platform', scope_ref='<id>')`；
 5. 加**离线 fixture**（保存的响应/页面）+ 字段级断言测试 + 判墙测试 + 「按源码重建」护栏；
-6. **筛选维度：声明 + `wire`（键 → 真实参数名）**。命名空间**不用登记** ——
+6. **筛选维度：声明 + `wire`（键 → 真实参数名）**。
+   ⚠️ **一个方案只抓一个平台**（`validatePlanConfig` 硬拒多个）：筛选条件只能存一份，
+   而同一个键在不同平台落到**不同参数**、取值含义也常常不同（`type` / `sort`）。
+   适配器层不受影响（注册表照样 10 个平台），受约束的只是"一个方案写几个平台"。
+   所以下面的维度声明是**按平台**自洽的 —— 界面一次只呈现一个平台的声明。
+   命名空间**不用登记** ——
    `criteriaToSearchCriteria` 的规则是闭集：不在 `SearchCriteria` 类型化槽位
    （`keyword` / `city` / `sort` / `maxPages` / `postedWithinDays` / `page`）里的键
    **一律**进 `platform` 命名空间，适配器用 `platformCriterion(criteria, 'workExp')` 读

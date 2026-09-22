@@ -94,20 +94,32 @@ export interface SinoJobsConfig {
         name: string;
     }>;
     fields: SinoJobsFields;
-    /** 只用于"等页面渲染"与"翻页按钮探测"，**不用于解析**（解析走接口 / 详情页 DOM）。 */
+    /** 只用于"等页面渲染"，**不用于解析**（解析走接口 / 详情页 DOM；翻页判据是接口 total）。 */
     selectors: {
         card: string;
-        nextPage: string;
     };
-    /** 详情页解析用的选择器（详情页是服务端渲染的静态 HTML）。 */
+    /**
+     * 详情页解析用的选择器（详情页是服务端渲染的静态 HTML，结构来自真实镜像夹具
+     * `test/fixtures/sinojobs-detail.html`：概要与正文分居 `.Resume-info1` / `.Resume-info2`）。
+     */
     detail: {
-        /** 职位名（页面结构实测是 `h5`）。 */
+        /**
+         * 概要区容器（标题 `h5` / 公司 `h6` / 信息列表 `ul` 都在这里面）。
+         *
+         * 为什么要限定作用域：正文区的小节标题（「职位描述」/「任职要求」…）也是 `h6`
+         * —— 概要区一旦缺位，"全局取第一个 h6"就会把**小节标题当公司名**写进结果。
+         * 容器未命中时相关字段按未锚定处理（留空 + note），**不回退整页**（fail-closed）。
+         */
+        headBox: string;
+        /** 职位名（概要区里的 `h5`；缺位时由 `document.title` 去站名后缀兜底）。 */
         title: string;
-        /** 公司名（第一个 `h6`）。 */
+        /** 公司名（概要区第一个 `h6`）。 */
         company: string;
         /** 信息列表（薪资 / 城市 / 经验 / 工作性质 / 发布时间 五项）。 */
         infoList: string;
-        /** JD 段落（职位描述 / 任职要求等正文）。 */
+        /** 正文区容器（职位描述 / 任职要求 / 联系方式 / 公司信息的 `h6` + `p`）。 */
+        bodyBox: string;
+        /** JD 段落（正文区里的 `p`）。 */
         jdBlocks: string;
     };
 }

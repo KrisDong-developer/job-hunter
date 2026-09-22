@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   bigramSimilarity,
   cleanJobTitle,
+  companyTierOf,
   compareCompanyNames,
   compareJobs,
   jobDedupeKey,
@@ -239,4 +240,46 @@ test('疑似重复：硬门槛全过、只有标题差一点 → 不合并，但
   )
   assert.equal(merged.merge, true)
   assert.equal(merged.candidate, false)
+})
+// ── 公司名这一关的两档（2026-09-21 修）────────────────────────────────
+//
+// 起因是一个会**静默毁数据**的坏法：宽松归一化把「科技/技术/网络科技」这类行业词也剥了，
+// 于是「XX网络科技有限公司」与「XX网络技术有限公司」归一到同一个「XX网络」——
+// 公司硬键相等，再撞上通用标题 + 同城 + 同薪资档，两个真岗位就被自动合并。
+// 而合并的代价是投递记录串在一起，且极难发现。
+//
+// 但反过来也不能一刀切：跨平台数据里「北京字节跳动科技有限公司」与「字节跳动」
+// 这种**写法差异**极其常见，把它们全判成"疑似"等于把去重废掉。
+
+function keyOf(companyName: string): ReturnType<typeof jobDedupeKey> {
+  return jobDedupeKey({ companyName, title: 'Java开发工程师', salaryMin: 20000, salaryMax: 30000, city: '深圳' })
+}
+
+test('公司档次：只少写一个行业词 → 仍算同一个公司（写法差异，不该降级）', () => {
+  assert.equal(companyTierOf(keyOf('北京字节跳动科技有限公司'), keyOf('字节跳动')), 'same')
+  assert.equal(companyTierOf(keyOf('腾讯（深圳）科技有限公司'), keyOf('腾讯')), 'same')
+})
+
+test('公司档次：换了一个行业词 → weak（危险的那一种，绝不自动合并）', () => {
+  assert.equal(companyTierOf(keyOf('XX网络科技有限公司'), keyOf('XX网络技术有限公司')), 'weak')
+  assert.equal(companyTierOf(keyOf('XX科技有限公司'), keyOf('XX技术有限公司')), 'weak')
+})
+
+test('公司档次：其它情况该 same / none 的都还对', () => {
+  assert.equal(companyTierOf(keyOf('北京字节跳动科技有限公司'), keyOf('字节跳动')), 'same')
+  assert.equal(companyTierOf(keyOf('字节跳动'), keyOf('美团')), 'none')
+  assert.equal(companyTierOf(keyOf(''), keyOf('美团')), 'none', '公司名归一化后为空 → 不判（不是"不同"）')
+})
+
+test('换了一个行业词的同名岗位：**不合并**，但必须报成"疑似"让人看见', () => {
+  const left = keyOf('XX网络科技有限公司')
+  const right = keyOf('XX网络技术有限公司')
+  // 先钉住"为什么它以前会被合掉"：宽松键确实相等
+  assert.equal(left.companyKey, right.companyKey, '宽松键相等正是当年的成因')
+  assert.notEqual(left.companyKeyStrict, right.companyKeyStrict, '严格键不相等 —— 硬键就该在这里拦住')
+
+  const verdict = compareJobs(left, right)
+  assert.equal(verdict.merge, false, '两个真岗位一旦合掉，投递记录会串且极难发现')
+  assert.equal(verdict.candidate, true, '不合并是对的，但"少合并了"这件事本身也得能被看见')
+  assert.match(verdict.basis, /行业词/)
 })

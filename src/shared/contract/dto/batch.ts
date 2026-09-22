@@ -132,6 +132,14 @@ export interface ApplicationBatchItemDto {
   blocker: ApplicationBatchBlockerDto | null
   /** 平台自己还会做的额外动作（如智联投递会顺带替你发一句招呼语）——按**平台事实**给。 */
   sideEffect: string | null
+  /**
+   * **提醒**（不影响能不能投）：最典型的是"这个岗位的另一个平台副本已经投过了"。
+   *
+   * 为什么只提醒不拦：分组是**启发式**判出来的（同公司归一化名 + 同城 + 薪资不冲突 +
+   * 标题 ≥0.9），判错的时候拦下来会让用户投不出去、还不知道为什么。而"同一家公司的
+   * 两个平台副本各投一次"这件事本身，是用户最想避免的重复劳动 —— 所以必须说出来。
+   */
+  warning: string | null
 }
 
 /** `POST /applications/deliver-batch/preview` 的结果。**只读、无副作用**。 */

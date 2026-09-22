@@ -19,12 +19,33 @@ import type { IndeedSelectors } from './config.js'
  * `a.jcs-JobTitle`：标题 + href（内嵌 `jk=` jobkey）+ 同卡内的公司/地点/薪资/日期。
  * 相对链接拼成绝对地址；`jk` 抠出来当平台 id。
  * 锚不中的字段留空 + notes，交给字段级断言隔离进 pending_repair —— 不编。
+ *
+ * ## 内嵌载荷回填（2026-09-21 按真实夹具定案，zhipin 接口通道的同族纪律）
+ *
+ * 同一页面的 `window.mosaic.providerData["mosaic-provider-jobcards"]` 脚本里嵌着
+ * 整批卡片的结构化数据（`metaData.mosaicProviderJobCardsModel.results[]`，连接键
+ * `jobkey` ↔ DOM 的 `jk`，真实夹具 15/16 重合）—— **零额外请求**就拿到 DOM 拿不到的：
+ *
+ *   * `formattedRelativeTime`（「25天前」/「30+天前」）→ `publishedAt`：DOM 侧
+ *     `jobListingDate` 0 命中，**这是发布日期的真源**；
+ *   * `company` / `formattedLocation` → DOM 锚点 miss 时的兜底；
+ *   * `salarySnippet.text` → `salaryRaw`：匿名侧实测恒为空对象，留空；
+ *     登录侧若带明文则回填（DOM 正则抓不到时）。
+ *
+ * 四条纪律（照抄 zhipin `enrichFromApi`）：
+ *   1. **岗位集合以 DOM 为准** —— 载荷只按 jobkey 补字段，**不引入新岗位**；
+ *   2. **只补空缺** —— DOM 已锚定的值不覆盖（DOM 的 href 还要当 sourceUrl 的根）；
+ *   3. **失败保持 DOM 结果** —— marker 找不到 / 大括号配不平 / JSON 烂，一律空表，
+ *      不抛错（这条通道是"锦上添花"，不该让整页解析失败）；
+ *   4. **补上之后撤掉对应 note** —— 否则数据是新的、说明是旧的，自相矛盾。
  */
 export function extractJobsInPage(arg: {
   selectors: IndeedSelectors
   host: string
   jobKeyPattern: string
   salaryPattern: string
+  payloadEnabled: boolean
+  payloadProviderKey: string
 }): RawJob[] {
   const out: RawJob[] = []
   let links: NodeListOf<Element> | null = null
@@ -44,6 +65,85 @@ export function extractJobsInPage(arg: {
   }
   const keyRe = compile(arg.jobKeyPattern)
   const salaryRe = compile(arg.salaryPattern)
+
+  /**
+   * 内嵌载荷 → `jobkey → 补充字段` 表（**内联实现**，不得引用模块作用域）。
+   *
+   * 解析路径：遍历 `<script>` 找 `providerData["<key>"]` 赋值 → 从 `=` 后的
+   * 第一个 `{` 做**平衡大括号截取**（跳过字符串字面量，含 `\"` 转义）→ `JSON.parse`。
+   * 不能对整段 script 文本直接 JSON.parse：赋值语句前后都是 JS 代码。
+   */
+  const payloadExtrasOf = (): Map<
+    string,
+    { relTime: string; company: string; location: string; salaryText: string }
+  > => {
+    const empty = new Map<string, { relTime: string; company: string; location: string; salaryText: string }>()
+    if (!arg.payloadEnabled) return empty
+    try {
+      const marker = `providerData["${arg.payloadProviderKey}"]`
+      let source = ''
+      for (const node of Array.from(document.querySelectorAll('script'))) {
+        const text = node.textContent ?? ''
+        if (text.includes(marker)) {
+          source = text
+          break
+        }
+      }
+      if (source === '') return empty
+      const eq = source.indexOf('=', source.indexOf(marker))
+      const open = source.indexOf('{', eq)
+      if (eq < 0 || open < 0) return empty
+      let depth = 0
+      let inString = false
+      let end = -1
+      for (let k = open; k < source.length; k += 1) {
+        const ch = source[k]
+        if (inString) {
+          if (ch === '\\') k += 1
+          else if (ch === '"') inString = false
+          continue
+        }
+        if (ch === '"') inString = true
+        else if (ch === '{') depth += 1
+        else if (ch === '}') {
+          depth -= 1
+          if (depth === 0) {
+            end = k
+            break
+          }
+        }
+      }
+      if (end < 0) return empty
+      const parsed = JSON.parse(source.slice(open, end + 1)) as {
+        metaData?: { mosaicProviderJobCardsModel?: { results?: unknown } }
+      }
+      const results = parsed.metaData?.mosaicProviderJobCardsModel?.results
+      if (!Array.isArray(results)) return empty
+      const map = new Map<string, { relTime: string; company: string; location: string; salaryText: string }>()
+      for (const entry of results) {
+        if (entry === null || typeof entry !== 'object') continue
+        const item = entry as Record<string, unknown>
+        const jobkey = typeof item['jobkey'] === 'string' ? item['jobkey'] : ''
+        if (jobkey === '') continue
+        const str = (key: string): string => (typeof item[key] === 'string' ? (item[key] as string).trim() : '')
+        const snippet = item['salarySnippet'] as Record<string, unknown> | null | undefined
+        const salaryText =
+          snippet !== null && typeof snippet === 'object' && typeof snippet['text'] === 'string'
+            ? (snippet['text'] as string).trim()
+            : ''
+        map.set(jobkey, {
+          relTime: str('formattedRelativeTime'),
+          company: str('company'),
+          location: str('formattedLocation'),
+          salaryText,
+        })
+      }
+      return map
+    } catch {
+      return empty
+    }
+  }
+  const extras = payloadExtrasOf()
 
   const textOf = (selector: string, scope: Element): string => {
     try {
@@ -84,15 +184,27 @@ export function extractJobsInPage(arg: {
       /* 保持 card = link */
     }
 
-    const salaryRaw = salaryRe !== null ? (salaryRe.exec((card.textContent ?? '').replace(/\s+/g, ' '))?.[0] ?? '') : ''
-    const company = textOf(arg.selectors.company, card)
-    const city = textOf(arg.selectors.location, card)
-    const dateRaw = textOf(arg.selectors.date, card)
+    let domSalary = ''
+    if (salaryRe !== null) {
+      domSalary = salaryRe.exec((card.textContent ?? '').replace(/\s+/g, ' '))?.[0] ?? ''
+    }
+    const domCompany = textOf(arg.selectors.company, card)
+    const domCity = textOf(arg.selectors.location, card)
+    const domDate = textOf(arg.selectors.date, card)
+
+    // 载荷回填：只补 DOM 缺的（集合以 DOM 为准；DOM 已锚定的值不覆盖）。
+    const extra = platformJobId !== '' ? extras.get(platformJobId) : undefined
+    const salaryRaw = domSalary !== '' ? domSalary : (extra?.salaryText ?? '')
+    const company = domCompany !== '' ? domCompany : (extra?.company ?? '')
+    const city = domCity !== '' ? domCity : (extra?.location ?? '')
+    const dateRaw = domDate !== '' ? domDate : (extra?.relTime ?? '')
 
     const notes: string[] = []
     if (platformJobId === '') notes.push('jobKeyPattern 未命中，待校准')
     if (salaryRaw === '') notes.push('薪资未锚定，待校准')
     if (company === '') notes.push('公司未锚定，待校准')
+    // 发布日期的真源就是载荷（DOM 节点 0 命中）：通道开着却两边都没有，才值得记一笔待校准。
+    if (arg.payloadEnabled && dateRaw === '') notes.push('发布日期（载荷 formattedRelativeTime）未命中，待校准')
 
     out.push({
       platformJobId,

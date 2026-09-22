@@ -185,14 +185,27 @@ Cookie: 同源自动携带（页面上下文 fetch 的 credentials:'include'）
 }
 ```
 
-### 2.3 详情接口（本轮未接进采集链）
+### 2.3 详情接口（2026-09-21 已接进采集链）
 
 ```
 GET {apiBase}/social-position/details?id=256420
-→ data.description = 完整 JD（纯文本，含中英文）、workExp、education、companyId…
+→ data.description = 完整 JD 原文（外企岗常为纯英文）
+→ data.translateDescription = 平台提供的完整中文翻译（实测可与原文逐段对上）
+→ data.welfareList = 福利标签数组；另有 workExp/education/scaleName/companyType 等与列表同义的字段
 ```
-适配器暂不抓详情：列表字段已经够入库，且详情是**逐条**请求
-（50 条 = 50 次请求），在风控与礼貌之间不划算。需要 JD 时再按需补。
+
+* **匿名可读**（实测 `code=1000` 且 `loginStatus=0` 时仍给全量 JD）⇒ `authRequirement.detail = none`。
+* ⚠️ 详情响应的城市键是 `cityNamelist`（小写 l），与列表的 `cityNameList` **不是同一个拼写**
+  —— 所以 config 里列表与详情是两份字段表（`fields` / `detailFields`）。
+* `jdText` 的拼法：原文 + `【平台中文翻译】` 标记 + 译文（下游打分/技能差距按中文关键词匹配，
+  纯英文 JD 会系统性漏配）；原文缺失时用译文兜底并记 `jd:from-translate`。
+* 夹具：`test/fixtures/waiqi-detail-payload.json`（2026-09-21 匿名抓取，岗位 257761 = Cognex）。
+
+**robots 口径（2026-09-21 更新，经用户确认）**：主链补详情会先 `goto(sourceUrl)` 即
+`/position/detail` —— robots.txt 唯一禁的路径。取舍：JD 明文取自同源 details 接口
+（backservice 域，不归 www.waiqi.com 的 robots 管），**不解析页面 DOM**；频次受主链三重约束
+（仅新增岗位 / 每轮 `DETAIL_FETCH_MAX_PER_ROUND` 上限 / 高斯间隔 + 突发惩罚）。
+平台若收紧 robots：DB 覆盖 `detailApiEnabled:false` 即可整体下线（`detail` 槽位随之为空）。
 
 ---
 
@@ -276,6 +289,8 @@ GET https://backservice.offerxiansheng.com/api/backend-service/enum/education-en
 
 `auth.isLoggedIn` 只看**正向结构性信号**（有没有用户头像），
 不看"页面上有没有『登录』两个字" —— 后者在正常页面上也成立，会导致永远判定未登录。
+2026-09-21 补了 SPA 挂载等待：先等列表卡片出现（应用活过来的最稳信号）再判头像
+（Vue3 纯前端渲染，`goto` 一返回页头多半还没挂上，立刻判会恒判未登录）。
 
 ---
 
@@ -284,6 +299,11 @@ GET https://backservice.offerxiansheng.com/api/backend-service/enum/education-en
 > **本轮新增（适配器已落地）**：`city` 支持逗号分隔**多城市**（`cityIds` 逗号拼接，平台原生支持，见 §4.1）；
 > 解析时额外捕获 `posCategoryName`（职能分类 → `tags['职能·…']`）与 `address`（`districtName` 为空时回填 `district`），
 > 实测字段见 §2.2。
+>
+> **2026-09-21 新增（对标 zhipin 的功能深度）**：① `detail` 补抓落地（JD 走 details 接口，
+> 见 §2.3，含 robots 口径更新与 `detailApiEnabled` 开关）；② `auth.isLoggedIn` 补 SPA 挂载等待；
+> ③ `mergeWaiqiConfig` 合并边界校验（seed 表逐条过滤、城市码归一 —— 脏覆盖会被拦下）；
+> ④ `supportsInbox` 修正为 false（无实现亦无平台证据，能力矩阵不再虚报）。
 
 | 项 | 原因 |
 |---|---|
@@ -292,8 +312,8 @@ GET https://backservice.offerxiansheng.com/api/backend-service/enum/education-en
 | 排序 | 参数能收但结果不变，没有可用取值 |
 | 职能（`posIds`）/ 行业（`businessCategoryIdList`） | ✅ 实测生效，本轮以 **实测 seed** 声明为可选维度（职能 16 项 / 行业 13 项，覆盖 IT/医药/金融/销售 等高频类）。完整表（职能=两级树、行业=`getBusList`）较大，走**人工维护 + DB 覆盖**补齐 `config.posInfoList` / `config.businessCategoryList` |
 | 企业性质（`companyTypeList`） | 实测生效，但语义与既有 `type`（外企/不限）**重叠**，且全量取值域为接口加载 —— 暂不声明；要加时传**数组** `["外企"]` |
-| 详情页 JD | 逐条请求，成本/风控不划算（需要时再按需补） |
-| 打招呼 / 投递（`actions.*`） | 要登录态，且大量岗位投递是**跳企业官网 ATS**（`outsideUrl`）。按"不编选择器"的原则 fail-closed |
+| ~~详情页 JD~~ | ✅ 2026-09-21 已落地（走 details 接口，见 §2.3 的 robots 口径） |
+| 打招呼 / 投递（`actions.*`） | 要登录态，且大量岗位投递是**跳企业官网 ATS**（`outsideUrl`）。按"不编选择器"的原则 fail-closed；`supportsInbox` 也如实为 false |
 | 标签专场接口 `/position/all/page-list` | 语义是"某个标签的专场"，不是通用搜索 |
 | 指纹伪造 / 代理池 | 项目红线（D-17），不做。环境一致性由平台层统一提供（D-17a），适配器不感知 |
 
