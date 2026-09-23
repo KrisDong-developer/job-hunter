@@ -182,10 +182,42 @@ export function createLinkedInAdapter(options: LinkedInAdapterOptions = {}): Sit
         `默认 ${String(LINKEDIN_DEFAULT_MAX_PAGES)} 页、最多 ${String(LINKEDIN_MAX_PAGES)} 页（每页 10 条）。` +
         'LinkedIn 风控是业内最强一档（999 / authwall / checkpoint / 封号），刻意保守',
     },
-    // ⚠️ 刻意不声明 experienceLevel / workMode / easyApply / sort：
-    //   2026-09-20 v2 实测 guest 端点对这些参数**全部忽略**（f_E=4 与对照 id 集合差异 0、
-    //   sortBy=DD 不降序）—— 声明了也不改结果，等于给配置界面撒谎。
-    //   若未来接入登录态搜索接口（那套面认筛选），再按真机证据加回。
+    // ── 站点有、当前通道收不了的筛选（2026-09-23 起如实声明，禁用而非隐藏）──────
+    //
+    // 用户真机在登录版搜索页全选筛选，地址栏形如
+    // `…/jobs/search/?f_E=1,4&f_JT=F&f_WT=1&f_I=15&f_T=13&f_TPR=r2592000&sortBy=R…`
+    // —— 但本适配器的主通道是**匿名 guest 端点**（登录页初始 0 卡片 + Trusted Types
+    // 挡解析，走不通）。对 guest 端点做 slug 指纹对照（阳性对照 f_TPR 集合明显变化，
+    // 证明方法有效）：`f_JT=F`、`f_E=1`、`f_WT=3`、多值 `f_JT=F,C` + `origin=…`
+    // 与基线**逐条相同** —— guest 只认 keywords / location / f_TPR / start。
+    //
+    // 所以这三个维度声明为「封闭 + 空值域」（无 wire）：
+    //   * 校验对带这些键的方案给出**精确报错**（"guest 通道忽略该参数"），
+    //     而不是笼统的"当前平台不认识"；
+    //   * 换平台残留的值照常进「用不了的筛选」可移除；
+    //   * 界面不会多出控件（本来就没有能选的值）。
+    // 若未来接入登录态搜索接口（那套面认筛选），再按真机证据把值域填上。
+    {
+      key: 'workExp',
+      label: '经验等级',
+      values: [],
+      closed: true,
+      hint: '登录版页面有 f_E（1实习-6高管），但匿名 guest 通道实测忽略该参数（2026-09-23 slug 指纹对照），带上不改结果',
+    },
+    {
+      key: 'jobType',
+      label: '职位类型',
+      values: [],
+      closed: true,
+      hint: '登录版页面有 f_JT（F全职/P兼职/C合同/T临时/I实习），但匿名 guest 通道实测忽略该参数（2026-09-23 slug 指纹对照）',
+    },
+    {
+      key: 'workMode',
+      label: '办公形式',
+      values: [],
+      closed: true,
+      hint: '登录版页面有 f_WT（1现场/2混合/3远程），但匿名 guest 通道实测忽略该参数（2026-09-23 slug 指纹对照）',
+    },
   ]
 
   return {

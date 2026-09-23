@@ -131,6 +131,16 @@ export interface JobRepo {
    * 空串/纯空白一律忽略并返回 false（调用方据此统计"这一轮真的补到了几条"）。
    */
   setJdText(id: number, text: string): boolean
+  /**
+   * 缺 JD 正文的岗位 id（详情补抓的目标池，`last_seen_at` 倒序）。
+   *
+   * 曾经配合 `DETAIL_FETCH_MAX_PER_ROUND` 用 `limit` 截前 N 条 —— 上限去掉后
+   * （2026-09-23 用户定案：所有抓到的岗位都要有 JD）默认取**全部缺口**；
+   * `limit` 保留为可选参数，诊断/测试想看局部时仍可截断。
+   * 排序保证本轮新增最先（`last_seen` 刚刷新），存量缺口随后；
+   * 已从搜索结果里消失的死岗位 last_seen 冻结、自然沉底。
+   */
+  missingJdIds(platformId: string, limit?: number): number[]
   /** 写匹配分与**逐条理由**（§4.5.1：分数必须可解释）。 */
   setMatch(id: number, score: number, reasons: unknown, stamp?: MatchStamp | undefined): void
   /** 读回匹配理由。 */
@@ -309,6 +319,14 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
   const markStmt = db.prepare('UPDATE job SET state = ? WHERE id = ?')
   const jdTextStmt = db.prepare('SELECT jd_text FROM job WHERE id = ?')
   const setJdTextStmt = db.prepare('UPDATE job SET jd_text = ? WHERE id = ?')
+  /* 缺 JD 的岗位（详情补抓的目标池）。按 last_seen_at 倒序：
+     本轮新增天然在最前（它们 last_seen 刚刷新），存量缺口随后逐轮补齐；
+     已从搜索结果里消失的死岗位 last_seen 冻结、自然沉底，不会一直占名额。
+     LIMIT 传 -1 = 不设限（SQLite 语义），对齐"全量补齐"的新口径。 */
+  const missingJdIdsStmt = db.prepare(
+    `SELECT id FROM job WHERE platform_id = ? AND (jd_text IS NULL OR jd_text = '')
+     ORDER BY last_seen_at DESC LIMIT ?`,
+  )
   const setMatchStmt = db.prepare(
     'UPDATE job SET match_score = ?, match_reasons_json = ?, score_rev = ?, score_resume_id = ? WHERE id = ?',
   )
@@ -535,6 +553,11 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
       if (trimmed === '') return false
       const result = setJdTextStmt.run(trimmed, id)
       return asInt(result.changes) > 0
+    },
+
+    missingJdIds(platformId, limit): number[] {
+      const rows = missingJdIdsStmt.all(platformId, limit ?? -1) as Row[]
+      return rows.map((row) => asInt(row['id']))
     },
 
     setMatch(id, score, reasons, stamp): void {

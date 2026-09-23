@@ -129,6 +129,12 @@ export interface ZhaopinUrlParams {
     companyTypeParam: string;
     /** 职位类型（全职/兼职/实习/校园）：实测点「全职」→ `et=2`。 */
     jobStatusParam: string;
+    /** 薪资：实测真机全选后 `sl=0000%2C4000`（值=字典区间码）。 */
+    salaryParam: string;
+    /** 融资阶段：实测 `fs=7`（已上市）。 */
+    financingParam: string;
+    /** 公司人数：实测 `cs=1`（20人以下）。 */
+    companySizeParam: string;
 }
 /**
  * 排序取值域。
@@ -143,6 +149,15 @@ export declare const ZHAOPIN_SORT_OPTIONS: Array<{
     value: string;
     label: string;
 }>;
+/**
+ * **默认排序 = 最新发布（`order=4`）**（2026-09-23 用户定案）。
+ *
+ * 站点的默认列表是「全部」（智能匹配）—— 同一批岗位反复出现在搜索结果里是常态，
+ * 按最新采先把新岗位捞上来。方案**显式**配了别的排序时跟随方案；`order=4` 是
+ * 唯一实测过的取值（`__INITIAL_STATE__` 的 queryParams/displayParams 双回显 + 控件高亮），
+ * 其它选项（智能匹配/薪酬最高）的参数值无证据，所以"默认"也只能落到这一个值上。
+ */
+export declare const ZHAOPIN_DEFAULT_SORT = "4";
 /** 发布时间窗：智联的搜索 URL 不暴露这个维度，所以值域为空（界面据此禁用并给出原因）。 */
 export declare const ZHAOPIN_POSTED_WITHIN_OPTIONS: Array<{
     value: string;
@@ -176,6 +191,31 @@ export declare const ZHAOPIN_COMPANY_TYPE_OPTIONS: Array<{
     label: string;
 }>;
 export declare const ZHAOPIN_JOB_STATUS_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+/**
+ * 2026-09-23 追加的三个维度（薪资 / 融资阶段 / 公司人数）。
+ *
+ * 取值域同样照抄 `base/data` 字典（`salaryType` / `financing` / `companySize`，夹具同步补齐）；
+ * 参数名来自**真机全选后的地址栏**（`sl=…&fs=…&cs=…`），且 `sl` 的生效性单独实测过：
+ * `sl=0000,4000` 把深圳 java 的结果集从满页 20 条砍到 10 条（页面同时出现空态文案）。
+ *
+ * 同样的几条刻意取舍：
+ *   * 「不限」不进表（salaryType 的 `0000,9999999`、另两表的 `-1`）；
+ *   * financing 的「有融资」(`2;3;4;5;6`) 是分号多码 —— 编码未实测，不提供
+ *     （与 companyType 的 `6;10` 同一条规则）；
+ *   * companySize 的 `7`（name 为空、en_name=Confidential）没有可展示的标签，不提供。
+ */
+export declare const ZHAOPIN_SALARY_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+export declare const ZHAOPIN_FINANCING_OPTIONS: Array<{
+    value: string;
+    label: string;
+}>;
+export declare const ZHAOPIN_COMPANY_SIZE_OPTIONS: Array<{
     value: string;
     label: string;
 }>;

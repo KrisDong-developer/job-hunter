@@ -128,6 +128,31 @@ test('岗位 upsert 幂等，且不覆盖用户处置态与首次见到时间', 
   }
 })
 
+// 2026-09-23：详情补抓按"缺 JD 全量补齐"跑（每轮条数上限已去掉）——
+// missingJdIds 不传 limit 必须返回**全部**缺口，且只含本平台、已有 JD 的不在池里。
+test('missingJdIds：默认全量返回缺口（仅本平台、按 last_seen 倒序），limit 仅按需截断', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    // 30 条无 JD（51job）+ 1 条有 JD + 2 条别的平台 —— 池子必须恰好是那 30 条
+    for (let index = 0; index < 30; index += 1) {
+      store.job.upsert(jobInput({ platformJobId: `p${String(index)}` }), T1)
+    }
+    const withJd = store.job.upsert(jobInput({ platformJobId: 'has-jd' }), T1)
+    assert.ok(store.job.setJdText(withJd.id, '已有 JD 的岗位不该再进目标池'))
+    for (const id of ['x1', 'x2']) {
+      store.job.upsert(jobInput({ platformId: 'zhipin', platformJobId: id }), T1)
+    }
+
+    const all = store.job.missingJdIds('51job')
+    assert.equal(all.length, 30, '不传 limit = 全量缺口（上限已去掉，钉住这个口径）')
+    assert.equal(store.job.missingJdIds('51job', 5).length, 5, '显式 limit 仍可截断（诊断用）')
+    assert.equal(store.job.missingJdIds('zhipin').length, 2, '只看本平台的缺口')
+  } finally {
+    cleanup(dir)
+  }
+})
+
 test('查询强制 LIMIT 且支持筛选与排序', () => {
   const dir = tempDataDir()
   try {

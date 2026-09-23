@@ -21,7 +21,7 @@ import { nativeTimerPort, type TimerPort } from '../scheduler/timer-port.js'
 import { installPortGuard, type CdpSessionLike } from './cdp-guard.js'
 import { createIdleCloser } from './idle-close.js'
 import { STEALTH_INIT_SCRIPT } from './stealth.js'
-import type { PageLike, PageSource } from './types.js'
+import type { PageLike, PageResponseLike, PageSource } from './types.js'
 
 /** 浏览器引擎（D-17a）。`auto` = 优先 patchright，装不上退 playwright-core。 */
 export type BrowserEngine = 'auto' | 'patchright' | 'playwright-core'
@@ -469,8 +469,8 @@ export function createBrowserManager(options: BrowserManagerOptions): BrowserMan
     context = created
     // 新 context 的池：把自带的首页 seed 进去，串行场景仍然一页反复复用。
     pool = createPagePool({
-      newPage: async () => normalizeWaitForSelector(await created.newPage()),
-      seed: created.pages().filter((page) => !page.isClosed()).map(normalizeWaitForSelector),
+      newPage: async () => normalizePage(await created.newPage()),
+      seed: created.pages().filter((page) => !page.isClosed()).map(normalizePage),
     })
   }
 
@@ -613,6 +613,34 @@ export function normalizeWaitForSelector(page: BrowserPage): BrowserPage {
     }
   }
   return page
+}
+
+/**
+ * 把 Playwright 的响应订阅归一成 `PageLike.onResponse` 声明的形状（返回退订函数）。
+ *
+ * Playwright 的 `page.on('response', h)` 返回 `this`、退订要靠 `page.off(event, h)`
+ * —— 与 `waitForSelector` 同一类"签名逆变"问题，同样必须在这里一次性归一，
+ * 否则每个想复用 SPA 响应的适配器都要自己写一遍 `on`/`off` 配对（漏一个就是泄漏）。
+ * 页面对象没有这两个方法（假页 / 旧版包装）时保持缺失：适配器按"没有该能力"降级。
+ */
+export function wireResponseSubscription(page: BrowserPage): BrowserPage {
+  const candidate = page as unknown as {
+    on?: (event: 'response', handler: (response: PageResponseLike) => void) => unknown
+    off?: (event: 'response', handler: (response: PageResponseLike) => void) => unknown
+  }
+  if (typeof candidate.on !== 'function' || typeof candidate.off !== 'function') return page
+  page.onResponse = (handler): (() => void) => {
+    candidate.on?.('response', handler)
+    return () => {
+      candidate.off?.('response', handler)
+    }
+  }
+  return page
+}
+
+/** 建页时的能力归一（挂载点收敛在一处：池的 newPage 与 seed）。 */
+function normalizePage(page: BrowserPage): BrowserPage {
+  return wireResponseSubscription(normalizeWaitForSelector(page))
 }
 
 /**

@@ -298,6 +298,24 @@ export interface PageLike {
      * 真路径 = Playwright `page.setInputFiles(selector, files)`；离线夹具记录调用即可。
      */
     setInputFiles?(selector: string, filePaths: readonly string[]): Promise<void>;
+    /**
+     * 订阅页面自己发出的网络响应（可选能力；真路径 = Playwright `page.on('response')`，
+     * 由 `browser.ts` 包装成"返回退订函数"的形状）。离线夹具没有响应流，不实现它 ——
+     * 适配器必须容忍缺失并退回自己发请求的老路。
+     *
+     * 用途：**回填复用 SPA 自己的请求**。页面滚动加载时站点接口的数据已经到过
+     * 本机一次，回填再原样发一遍 N 个请求，等于把请求量翻倍 —— 平台风控看到的
+     * 正是"同一秒同一参数两连发"这种最廉价的机器特征（BOSS 实测：滚动 20 页 +
+     * 回填 20 页，回填从第 6 页起被限流，securityId/薪资覆盖率掉到 ~25%）。
+     *
+     * ⚠️ `text()` 可能抛错（重定向/响应体已释放），调用方必须自兜。
+     */
+    onResponse?(handler: (response: PageResponseLike) => void): () => void;
+}
+/** `onResponse` 交给适配器的最小响应面（真路径是 Playwright `Response` 的子集）。 */
+export interface PageResponseLike {
+    url(): string;
+    text(): Promise<string>;
 }
 /** 采集会话的页面来源。浏览器实现与夹具实现都满足它。 */
 export interface PageSource {

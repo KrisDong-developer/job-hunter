@@ -72,16 +72,6 @@ export const MAX_CONCURRENT_PLATFORMS = 3
  */
 export const PLAN_KEYWORDS_MAX = 10
 
-/**
- * 一轮里**最多逐条点进多少个新岗位的详情页**（P2 详情补抓）。
- *
- * 只对本轮**新增**的岗位做（老岗位已有 JD 或已被判定），所以日常轮次接近零开销；
- * 上限防的是"首轮 + 多关键词"的极端量（3 词 × 3 页 ≈ 120 新增）一次全点进去 ——
- * 那既是风控灾难，也会把任何预算吃光。超出的新岗位**这一轮拿不到 JD**
- * （列表字段照常入库；打分/标注按无 JD 口径降级），它们在下一轮已是"老岗位"。
- */
-export const DETAIL_FETCH_MAX_PER_ROUND = 20
-
 // 单轮预算（设置项；SR-46 / NFR-7）
 /** 设置表里"一轮采集最多跑多少分钟"的键（scope='global'）。 */
 export const CRAWL_ROUND_BUDGET_KEY = 'crawlRoundBudgetMinutes'

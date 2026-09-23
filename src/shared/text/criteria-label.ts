@@ -71,6 +71,13 @@ export const FALLBACK_LABEL: Record<string, string> = {
   salaryRange: '薪资',
   experience: '经验',
   workNature: '工作性质',
+  // ⚠️ `salary`（BOSS 直聘的薪资档位码，405 = 10-20K）与上面 `salaryRange`（其它平台）
+  // 语义相同、键名不同 —— 兜底给同一个中文名。
+  salary: '薪资',
+  /** BOSS 直聘的公司规模档位码（303 = 100-499人）。 */
+  scale: '公司规模',
+  /** BOSS 直聘的融资阶段码（807 = 已上市）。 */
+  stage: '融资阶段',
   // ⚠️ 第二处同名不同义：`jobType` 在 SinoJobs 是"行业类别"（43 项），在 51job 是"职位类型"（全职/实习）。
   // 兜底表给合并名；单平台方案下用各自声明里的 label（那才是准的）。
   jobType: '职位类型 / 行业类别',

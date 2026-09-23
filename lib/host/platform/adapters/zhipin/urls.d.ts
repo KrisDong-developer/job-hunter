@@ -6,23 +6,49 @@
  */
 import type { SearchCriteria } from '../../types.js';
 import type { ZhipinConfig } from './config.js';
+import { type ZhipinFilterKey } from './config.js';
 /**
  * 接口表单的字段名 —— **声明与构造共用这一份**。
  *
- * `index.ts` 里 `keyword` / `city` 两个维度的 `wire.param` 引用它，
+ * `index.ts` 里各维度的 `wire.param` 引用它，
  * 于是"声明说落到哪个参数"与"实际写哪个字段"不会各写一份字面量。
+ * 筛选六个键是恒等映射（`experience` → `experience`）—— 站点的 URL 参数名、
+ * 表单字段名、我们的维度键三者同名（2026-09-23 实测），显式写出来是为了
+ * 对账测试能拿**同一份常量**核对两个去处（URL 与 body）。
  */
 export declare const ZHIPIN_BODY_FIELDS: {
     readonly keyword: "query";
     readonly city: "city";
+    readonly jobType: "jobType";
+    readonly salary: "salary";
+    readonly experience: "experience";
+    readonly degree: "degree";
+    readonly scale: "scale";
+    readonly stage: "stage";
 };
+/**
+ * 从搜索条件里取出六个筛选维度的**生效值**（空 = 不筛）。
+ *
+ * 走 `platformCriterion`（`platform` 命名空间优先，兼容测试直接拼的顶层键）——
+ * 与 `scrollRoundsOf` 同一读法，两处不会各读各的。
+ */
+export declare function zhipinFiltersOf(criteria: SearchCriteria): Partial<Record<ZhipinFilterKey, string>>;
 /** joblist 的表单体（照抄站点自己的参数集，含那些恒为空的筛选位）。 */
 export declare function buildJoblistBody(arg: {
     query: string;
     cityCode: string;
     page: number;
     pageSize: number;
+    /** 生效的筛选值（`zhipinFiltersOf` 的产物）；缺省 = 全部空位。 */
+    filters?: Partial<Record<ZhipinFilterKey, string>>;
 }): string;
-/** 构造搜索 URL：`/web/geek/job?query=<kw>&city=<code>`（城市码未知 → null，不猜）。 */
+/**
+ * 构造搜索 URL：`/web/geek/job?query=<kw>&city=<code>&<筛选=编码…>`。
+ *
+ * 筛选参数进 URL 是**平台行为**（2026-09-23 实测：地址栏带 `experience=107&salary=406`
+ * 打开页面，SPA 自己的 tdk/joblist 请求就带上同样的筛选）—— 所以 `gotoSearch`
+ * 只要导航到这条 URL，页面发出来的就是筛过的列表，不需要去点页面上的筛选面板。
+ * 城市码未知 → null，不猜。
+ */
 export declare function buildZhipinSearchUrl(config: ZhipinConfig, criteria: SearchCriteria): string | null;
 //# sourceMappingURL=urls.d.ts.map

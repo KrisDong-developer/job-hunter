@@ -61,6 +61,59 @@ test('搜索 URL：query + city（BossHunter 同款形态）', () => {
   assert.equal(buildZhipinSearchUrl(DEFAULT_ZHIPIN_CONFIG, { keyword: 'Java', city: '火星' }), null)
 })
 
+// ── 站点筛选（2026-09-23 实测接入）──────────────────────────────────────────
+//
+// 证据链：登录态快照里筛选面板每个选项的 ka 属性就是平台编码（sel-job-rec-salary-405）；
+// 真机全选筛选后地址栏为 `…&jobType=1901&salary=402&experience=108&degree=209&industry=100002&scale=301&stage=801&query=java`；
+// 带参 URL 打开后 SPA 自己的 tdk/joblist 请求会带上同样筛选（网络面板实证）。
+test('筛选维度：声明六个站点筛选，取值 = 站点编码，wire 落在 joblist 表单字段', () => {
+  const adapter = createZhipinAdapter()
+  const keys = ['jobType', 'salary', 'experience', 'degree', 'scale', 'stage']
+  for (const key of keys) {
+    const dimension = adapter.criteriaDimensions.find((item) => item.key === key)
+    assert.ok(dimension !== undefined, `站点有「${key}」筛选，适配器必须声明`)
+    assert.ok(dimension.values.length > 0, `「${key}」要有取值表（站点编码）`)
+    assert.deepEqual(
+      dimension.wire,
+      { target: 'body', param: key },
+      `「${key}」要声明落在 joblist 表单的同名字段上`,
+    )
+  }
+  // 抽查几个编码与站点面板一致（快照 ka 属性）
+  const salary = adapter.criteriaDimensions.find((item) => item.key === 'salary')
+  assert.ok(salary?.values.some((item) => item.value === '405' && item.label === '10-20K'))
+  const stage = adapter.criteriaDimensions.find((item) => item.key === 'stage')
+  assert.ok(stage?.values.some((item) => item.value === '807' && item.label === '已上市'))
+})
+
+test('筛选进搜索 URL：参数名与站点地址栏一致（SPA 会读它们发请求）', () => {
+  const url = buildZhipinSearchUrl(DEFAULT_ZHIPIN_CONFIG, {
+    keyword: 'java',
+    city: '广州',
+    platform: { jobType: '1901', salary: '402', experience: '108', degree: '209', scale: '301', stage: '801' },
+  })
+  assert.equal(
+    url,
+    'https://www.zhipin.com/web/geek/job?query=java&city=101280100' +
+      '&jobType=1901&salary=402&experience=108&degree=209&scale=301&stage=801',
+    '形态照真机全选后的地址栏（仅含已接入的六个维度）',
+  )
+})
+
+test('筛选进 joblist 表单：有值写字段，没值保持站点的空串占位', () => {
+  const body = buildJoblistBody({
+    query: 'java',
+    cityCode: '101280100',
+    filters: { experience: '107', salary: '406' },
+    page: 1,
+    pageSize: 15,
+  })
+  assert.ok(body.includes('experience=107'), body)
+  assert.ok(body.includes('salary=406'), body)
+  assert.ok(body.includes('degree=&'), '未选的筛选位保持空串（照抄站点自己的表单）')
+  assert.ok(body.includes('industry=&'), '未接入的筛选位（行业/职位/区域）也保持占位')
+})
+
 test('适配器声明符合平台事实：未登录可搜、薪资隐藏（medium）、antiBot=high', () => {
   const adapter = createZhipinAdapter()
   assert.equal(adapter.id, 'zhipin')
@@ -248,6 +301,71 @@ test('列表薪资：接口失败时保持 DOM 结果（不抛错、不改 note�
   assert.ok(
     jobs.every((job) => job.salaryRaw === ''),
     '接口失败 ⇒ 薪资保持为空，绝不用 DOM 里的混淆码点充数',
+  )
+})
+
+// ── 回填复用 SPA 响应（2026-09-23：截获页面自己发的 joblist，不再重复 POST）──────
+//
+// 背景：scrollRounds=20 时滚动本身已让 SPA 发了 20 个 joblist POST，回填再原样
+// 发 20 个 = 请求量翻倍，实测第 6 页起被限流（securityId/薪资覆盖率掉到 ~25%）。
+// 现在 gotoSearch 期间用 PageLike.onResponse 截获响应，回填**零请求**覆盖同一批岗位。
+test('回填复用 SPA 自己的 joblist 响应：一个补发请求都不发，薪资/securityId 照常回填', async (t) => {
+  if (!existsSync(LOGGED_FIXTURE_PATH) || !existsSync(API_FIXTURE_PATH)) {
+    t.skip('需要 zhipin-search-logged-in.html 与 zhipin-search-api.json')
+    return
+  }
+  // 与上面那条用例同一份真实载荷（15/15 覆盖 DOM id —— 连接键是实测过的）
+  const apiSamples = JSON.parse(readFileSync(API_FIXTURE_PATH, 'utf8')) as Array<{ url: string; body: string | null }>
+  const payload = apiSamples
+    .filter((item) => item.url.includes('joblist.json') && item.body !== null)
+    .map((item) => JSON.parse(item.body ?? '{}') as unknown)[0]
+  assert.ok(payload !== undefined, '前置：夹具里要有 joblist 响应')
+
+  const calls: Array<{ url: string; init: Record<string, unknown> | undefined }> = []
+  const stub: PageFetchStub = async (url, init) => {
+    calls.push({ url, init })
+    return { ok: true, json: async () => payload }
+  }
+  const inner = new JsdomPage({
+    html: readFileSync(LOGGED_FIXTURE_PATH, 'utf8'),
+    url: SEARCH_URL,
+    fetchStub: stub,
+  })
+  // 假页 = 夹具页 + onResponse 能力：导航完成时把"SPA 自己的响应"吐给订阅者。
+  let emit: ((url: string, body: string) => void) | null = null
+  const page = {
+    goto: async (url: string) => {
+      await inner.goto(url)
+      // 模拟 SPA 发出的 joblist 响应（响应体是异步解析的，给一点落盘时间）
+      emit?.('https://www.zhipin.com/wapi/zpgeek/search/joblist.json?_=1', JSON.stringify(payload))
+      emit?.('https://static.zhipin.com/some-other.js', 'not-json') // 噪音：非 joblist / 非 JSON 都不许打扰
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    },
+    url: () => inner.url(),
+    evaluate: async <R, A>(fn: (arg: A) => R, arg: A): Promise<R> => await inner.evaluate(fn, arg),
+    waitForTimeout: (ms: number) => inner.waitForTimeout(ms),
+    waitForSelector: (selector: string, timeoutMs: number) => inner.waitForSelector(selector, timeoutMs),
+    onResponse: (handler: (response: { url(): string; text(): Promise<string> }) => void): (() => void) => {
+      const wrapped = (url: string, body: string): void => {
+        handler({ url: () => url, text: async () => body })
+      }
+      emit = wrapped
+      return () => {
+        emit = null
+      }
+    },
+  }
+  const adapter = createZhipinAdapter({ config: { ...DEFAULT_ZHIPIN_CONFIG, scrollStepTimeoutMs: 50 } })
+  await adapter.crawl.gotoSearch(page, { keyword: 'Java', city: '深圳' })
+  const jobs = await adapter.crawl.readListPage(page)
+
+  assert.ok(jobs.length > 0, 'DOM 解析出岗位')
+  assert.equal(calls.length, 0, '截获覆盖了全部缺口 —— 不该再发任何补发请求（这正是本改动的目的）')
+  const filled = jobs.filter((job) => job.salaryRaw !== '')
+  assert.ok(filled.length > 0, '薪资要由截获的响应补上')
+  assert.ok(
+    jobs.some((job) => job.sourceUrl.includes('securityId=')),
+    'securityId 也要由截获的响应带上（详情页打不开正是缺它）',
   )
 })
 

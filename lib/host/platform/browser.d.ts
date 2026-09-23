@@ -166,6 +166,15 @@ export declare function createBrowserManager(options: BrowserManagerOptions): Br
  */
 export declare function normalizeWaitForSelector(page: BrowserPage): BrowserPage;
 /**
+ * 把 Playwright 的响应订阅归一成 `PageLike.onResponse` 声明的形状（返回退订函数）。
+ *
+ * Playwright 的 `page.on('response', h)` 返回 `this`、退订要靠 `page.off(event, h)`
+ * —— 与 `waitForSelector` 同一类"签名逆变"问题，同样必须在这里一次性归一，
+ * 否则每个想复用 SPA 响应的适配器都要自己写一遍 `on`/`off` 配对（漏一个就是泄漏）。
+ * 页面对象没有这两个方法（假页 / 旧版包装）时保持缺失：适配器按"没有该能力"降级。
+ */
+export declare function wireResponseSubscription(page: BrowserPage): BrowserPage;
+/**
  * 把浏览器管理器接成采集层要的 `PageSource`。
  * 离线夹具实现同一个接口，于是 `runCrawl` 对两条路径完全无感。
  */

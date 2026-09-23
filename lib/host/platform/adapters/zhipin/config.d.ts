@@ -316,6 +316,31 @@ export declare const ZHIPIN_JOBLIST_API_PATH = "/wapi/zpgeek/search/joblist.json
  * 全量 373 城见原表；未列出的城市写 DB 覆盖。
  */
 export declare const ZHIPIN_CITY_CODES: Record<string, string>;
+/**
+ * 搜索页筛选维度的**取值编码**（2026-09-23 定案）。
+ *
+ * 来源是**两条实测证据的交叉**：
+ *   * 登录态快照 `zhipin-search-logged-in.html`（2026-09-18）里筛选面板每个选项的
+ *     `ka` 属性就是平台真实编码 —— `sel-job-rec-salary-405` ⇒ 薪资「10-20K」= `405`；
+ *   * 真机把全部筛选项选一遍，地址栏变成
+ *     `…?multiBusinessDistrict=440103&position=100101&jobType=1901&salary=402&experience=108&degree=209&industry=100002&scale=301&stage=801&query=java`
+ *     —— 参数名与这里的键**同名**，值与 `ka` 编码一致；且带参 URL 会让 SPA 自己的
+ *     `tdk.json`/`joblist.json` 请求带上同样的筛选（网络面板实证）。
+ *
+ * 「不限」(`ka=…-0`) 刻意**不进表**：不填这个字段 == 发空参数 == 不筛，给一个
+ * 值为 `0` 的选项只会让"选了不限"与"没选"在界面上变成两件看起来不同、实际相同的事。
+ *
+ * 没进表的三个站点筛选及原因：
+ *   * 工作区域（`multiBusinessDistrict`，值是**随城市变化的行政区划码**如 440103）——
+ *     值域依赖已选城市，一张静态表盖不住；
+ *   * 职位类型（`position`）与公司行业（`industry`）—— 值是六位树形码（100101 / 100002），
+ *     站点 DOM 里只给位置序号（`sel-industry-17`），完整码表要从平台接口拉，暂缺。
+ */
+export type ZhipinFilterKey = 'jobType' | 'salary' | 'experience' | 'degree' | 'scale' | 'stage';
+export declare const ZHIPIN_FILTER_OPTIONS: Record<ZhipinFilterKey, Array<{
+    value: string;
+    label: string;
+}>>;
 /** 岗位链接形态：`/job_detail/<加密id>.html`（id 含字母数字与 ~_-）。 */
 export declare const ZHIPIN_JOB_ID_PATTERN = "/job_detail/([0-9a-zA-Z~_-]+)\\.html";
 /** 会话页筛选 tab 的文案（2026-09-18 实测：全部 / 未读 / 新招呼 / 仅沟通）。 */

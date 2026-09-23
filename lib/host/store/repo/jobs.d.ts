@@ -128,6 +128,16 @@ export interface JobRepo {
      * 空串/纯空白一律忽略并返回 false（调用方据此统计"这一轮真的补到了几条"）。
      */
     setJdText(id: number, text: string): boolean;
+    /**
+     * 缺 JD 正文的岗位 id（详情补抓的目标池，`last_seen_at` 倒序）。
+     *
+     * 曾经配合 `DETAIL_FETCH_MAX_PER_ROUND` 用 `limit` 截前 N 条 —— 上限去掉后
+     * （2026-09-23 用户定案：所有抓到的岗位都要有 JD）默认取**全部缺口**；
+     * `limit` 保留为可选参数，诊断/测试想看局部时仍可截断。
+     * 排序保证本轮新增最先（`last_seen` 刚刷新），存量缺口随后；
+     * 已从搜索结果里消失的死岗位 last_seen 冻结、自然沉底。
+     */
+    missingJdIds(platformId: string, limit?: number): number[];
     /** 写匹配分与**逐条理由**（§4.5.1：分数必须可解释）。 */
     setMatch(id: number, score: number, reasons: unknown, stamp?: MatchStamp | undefined): void;
     /** 读回匹配理由。 */

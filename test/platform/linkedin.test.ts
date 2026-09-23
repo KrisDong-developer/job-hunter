@@ -508,9 +508,25 @@ test('适配器声明符合平台事实：antiBot=high、免登录可搜、field
   const dimensionKeys = adapter.criteriaDimensions.map((item) => item.key)
   assert.deepEqual(
     dimensionKeys,
-    ['keyword', 'city', 'postedWithinDays', 'maxPages'],
-    '只声明 guest 端点真认的维度（v2 实测：f_E/f_WT/f_AL/sortBy 被忽略 → 不声明）',
+    ['keyword', 'city', 'postedWithinDays', 'maxPages', 'workExp', 'jobType', 'workMode'],
+    '前四个是 guest 端点实测认的；后三个是 2026-09-23 起如实声明的「站点有、guest 忽略」维度',
   )
+  // ⚠️ 守卫的本意：**有 wire 的**维度必须是 guest 端点真认的（拼了不改结果 = 对界面撒谎）。
+  // f_E / f_WT / f_AL / sortBy 两次实测被忽略（2026-09-20 + 2026-09-23 slug 指纹对照）
+  // → 它们只能以「封闭 + 空值域 + 无 wire」的形态出现（声明为不可用，不是可用）。
+  const wired = adapter.criteriaDimensions.filter((item) => item.wire !== undefined)
+  assert.deepEqual(
+    wired.map((item) => item.key),
+    ['keyword', 'city', 'postedWithinDays'],
+    '有 wire 的维度只能是 guest 端点实测生效的那三个（f_E/f_JT/f_WT/sortBy 均被忽略）',
+  )
+  for (const key of ['workExp', 'jobType', 'workMode']) {
+    const dim = adapter.criteriaDimensions.find((item) => item.key === key)
+    assert.ok(dim !== undefined, `「${key}」应被声明`)
+    assert.equal(dim.wire, undefined, `「${key}」不得带 wire（guest 端点忽略该参数）`)
+    assert.equal(dim.closed, true, `「${key}」必须是封闭值域（没有能选的值）`)
+    assert.equal(dim.values.length, 0, `「${key}」不得提供取值（值域无从实测）`)
+  }
 })
 
 test('guest 端点 URL 是采集导航目标（criteria.buildSearchUrl 与 gotoSearch 同址）', async () => {

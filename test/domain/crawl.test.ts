@@ -493,7 +493,7 @@ const DETAIL_OK_HTML = `<html><body><div class="job-detail">${'岗位职责与�
 const DETAIL_CAPTCHA_HTML =
   '<html><body><div class="geetest_panel">请完成安全验证</div></body></html>'
 
-test('详情补抓：只补【本轮新增】的岗位并把 JD 回写到位；第二轮一条都不再点', async () => {
+test('详情补抓：缺 JD 的岗位全量点到、JD 回写到位；第二轮缺口清零后一条都不再点', async () => {
   let calls = 0
   const h = harness({
     detail: {

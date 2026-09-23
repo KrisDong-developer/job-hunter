@@ -39,10 +39,23 @@ function probesOf(dimension: { values: Array<{ value: string }> }): string[] {
 
 test('声明了 wire 的维度必须真的改变请求 —— 否则"声明在说谎"', () => {
   for (const adapter of allAdapters()) {
-    const baseline = fingerprintOf(previewOf(adapter, criteriaToSearchCriteria({})))
+    const baselinePreview = previewOf(adapter, criteriaToSearchCriteria({}))
+    const baseline = fingerprintOf(baselinePreview)
+    const baselineParams = baselinePreview?.params ?? {}
     for (const dimension of adapter.criteriaDimensions) {
       const wire = dimension.wire
       if (wire === undefined) continue
+
+      /**
+       * 「缺省即选中」的单取值维度：适配器把缺省排序之类直接写进基线
+       * （zhaopin 2026-09-23 起默认 `order=4`），探针值与基线相同是**设计使然** ——
+       * 选它本来就该是"无变化"。它是否真的到达请求仍由下面的参数名断言守着
+       * （参数在基线里就是它在请求里的证据）。
+       */
+      const isDefaultedSingleValue =
+        dimension.values.length === 1 &&
+        wire.param !== null &&
+        baselineParams[wire.param] === dimension.values[0]?.value
 
       let changed = false
       const violations: string[] = []
@@ -74,7 +87,7 @@ test('声明了 wire 的维度必须真的改变请求 —— 否则"声明在�
           `但真实请求里没有这个参数名。实际参数：${violations[0] ?? ''}`,
       )
       assert.ok(
-        changed,
+        changed || isDefaultedSingleValue,
         `${adapter.id} 的「${dimension.label}」声明了 wire（→ ${String(wire.param)}），` +
           '但**所有合法取值**都不会改变请求 —— 用户选了它，平台上什么都不会发生。' +
           '要么这个维度该删掉声明，要么构造端漏了它。',

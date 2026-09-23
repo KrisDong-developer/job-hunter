@@ -240,6 +240,204 @@
         "deleted": false,
         "sublist": []
       }
+    ],
+    "salaryType": [
+      {
+        "code": "0000,9999999",
+        "parentCode": null,
+        "name": "不限",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "0000,4000",
+        "parentCode": null,
+        "name": "4K以下",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "4001,6000",
+        "parentCode": null,
+        "name": "4K-6K",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "6001,8000",
+        "parentCode": null,
+        "name": "6K-8K",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "8001,10000",
+        "parentCode": null,
+        "name": "8K-10K",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "10001,15000",
+        "parentCode": null,
+        "name": "10K-15K",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "15001,25000",
+        "parentCode": null,
+        "name": "15K-25K",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "25001,35000",
+        "parentCode": null,
+        "name": "25K-35K",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "35001,50000",
+        "parentCode": null,
+        "name": "35K-50K",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "50001,9999999",
+        "parentCode": null,
+        "name": "50K以上",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      }
+    ],
+    "financing": [
+      {
+        "code": "-1",
+        "parentCode": null,
+        "name": "不限",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "7",
+        "parentCode": null,
+        "name": "已上市",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "2;3;4;5;6",
+        "parentCode": null,
+        "name": "有融资",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "8",
+        "parentCode": null,
+        "name": "不需要融资",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "1",
+        "parentCode": null,
+        "name": "未融资",
+        "en_name": null,
+        "deleted": false,
+        "sublist": []
+      }
+    ],
+    "companySize": [
+      {
+        "code": "-1",
+        "parentCode": null,
+        "name": "不限",
+        "en_name": "",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "1",
+        "parentCode": null,
+        "name": "20人以下",
+        "en_name": "Less than 20",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "2",
+        "parentCode": null,
+        "name": "20-99人",
+        "en_name": "20-99",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "3",
+        "parentCode": null,
+        "name": "100-299人",
+        "en_name": "100-299",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "8",
+        "parentCode": null,
+        "name": "300-499人",
+        "en_name": "300-499",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "4",
+        "parentCode": null,
+        "name": "500-999人",
+        "en_name": "500-999",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "5",
+        "parentCode": null,
+        "name": "1000-9999人",
+        "en_name": "1000-9999",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "6",
+        "parentCode": null,
+        "name": "10000人以上",
+        "en_name": "More than 10000",
+        "deleted": false,
+        "sublist": []
+      },
+      {
+        "code": "7",
+        "parentCode": null,
+        "name": "",
+        "en_name": "Confidential",
+        "deleted": false,
+        "sublist": []
+      }
     ]
   }
 }

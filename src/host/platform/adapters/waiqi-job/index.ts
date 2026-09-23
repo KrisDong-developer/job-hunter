@@ -49,8 +49,8 @@
  *
  *   * JD 明文取自**同源 details 接口**（`backservice.offerxiansheng.com`，不在
  *     www.waiqi.com robots 的管辖域），**不解析**页面 DOM；
- *   * 频次受主链三重约束：只补**新增**岗位、每轮 `DETAIL_FETCH_MAX_PER_ROUND` 上限、
- *     高斯间隔 + 突发惩罚（`domain/crawl.ts`）；
+ *   * 频次受主链既有节奏约束：高斯间隔 + 突发惩罚、单轮预算到点即停（`domain/crawl.ts`；
+ *     2026-09-23 起详情补抓按"缺 JD 全量补齐"跑，不再有每轮条数上限）；
  *   * 平台若收紧 robots / 用户不想让采集链打开详情页：DB 覆盖
  *     `detailApiEnabled:false` 即可整体下线（`detail` 槽位随之为空）。
  *

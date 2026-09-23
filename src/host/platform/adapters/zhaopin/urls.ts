@@ -7,6 +7,7 @@
  */
 import type { SearchCriteria } from '../../types.js'
 import { platformCriterion } from '../../types.js'
+import { ZHAOPIN_DEFAULT_SORT } from './config.js'
 import type { ZhaopinConfig } from './config.js'
 
 /**
@@ -43,6 +44,9 @@ export function buildZhaopinSearchUrl(config: ZhaopinConfig, criteria: SearchCri
     ['workExperience', config.urlParams.workExperienceParam],
     ['companyType', config.urlParams.companyTypeParam],
     ['jobStatus', config.urlParams.jobStatusParam],
+    ['salary', config.urlParams.salaryParam],
+    ['stage', config.urlParams.financingParam],
+    ['scale', config.urlParams.companySizeParam],
   ] as const) {
     const value = platformCriterion(criteria, key)
     if (value !== '') filters.push([param, value])
@@ -58,6 +62,12 @@ export function buildZhaopinSearchUrl(config: ZhaopinConfig, criteria: SearchCri
    * `p` / `order` 在这条路由上沿用同名参数（**未单独验证**）：不写 `p` 的后果是
    * "第 2 页又抓回第 1 页"，那是静默的重复，比参数可能不生效更糟。
    */
+  /**
+   * 排序：方案显式配置跟随方案；否则**默认「最新发布」**（2026-09-23 用户定案，
+   * 站点默认的「全部」是智能匹配序 —— 同一批老岗位反复占着前几页，新岗位反而不靠前）。
+   */
+  const sort = criteria.sort !== undefined && criteria.sort !== '' ? criteria.sort : ZHAOPIN_DEFAULT_SORT
+
   if (filters.length > 0) {
     const filtered = new URLSearchParams()
     if (code !== undefined) filtered.set(config.urlParams.cityParam, code)
@@ -68,9 +78,7 @@ export function buildZhaopinSearchUrl(config: ZhaopinConfig, criteria: SearchCri
     if (criteria.page !== undefined && criteria.page > 1) {
       filtered.set(config.urlParams.pageParam, String(criteria.page))
     }
-    if (criteria.sort !== undefined && criteria.sort !== '') {
-      filtered.set(config.urlParams.sortParam, criteria.sort)
-    }
+    filtered.set(config.urlParams.sortParam, sort)
     // `postedWithinDays` 在这里同样**不写**：站点不暴露这个维度（值域为空 + closed），
     // 拼上去只会得到一个平台不认的参数名。
     return `${config.urlParams.filterBase}?${filtered.toString()}`
@@ -83,10 +91,7 @@ export function buildZhaopinSearchUrl(config: ZhaopinConfig, criteria: SearchCri
   if (criteria.page !== undefined && criteria.page > 1) {
     params.set(config.urlParams.pageParam, String(criteria.page))
   }
-  // SR-40：只在用户真的配了的时候才写进 URL，避免静默改变默认行为。
-  if (criteria.sort !== undefined && criteria.sort !== '') {
-    params.set(config.urlParams.sortParam, criteria.sort)
-  }
+  params.set(config.urlParams.sortParam, sort)
   // ⚠️ `postedWithinDays` **一律不写**（2026-09-21 修）：这个维度在智联是
   // "声明为封闭 + 值域为空"（平台上没打通），可它偏偏是个**顶层槽位**
   // （`criteriaToSearchCriteria` 把它放进 `criteria.postedWithinDays`），

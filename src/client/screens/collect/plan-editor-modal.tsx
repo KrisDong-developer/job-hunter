@@ -308,18 +308,29 @@ export function PlanEditorModal(props: {
       (item.key !== 'maxPages' || (item.max ?? 0) > 1),
   )
   /**
-   * **方案里带着、但这个平台根本没有（或发不出去）的条件。**
+   * **方案里带着、但这个平台没有任何地方可管理的条件。**
    *
    * 两个来路：① 从别的平台换过来时清过一次，但老数据（多平台行 / 旧版本）仍可能带着；
-   * ② 适配器后来撤掉了某个维度。它们**不会被渲染成控件**（本屏只画这个平台声明了
-   * 且能发出去的条件），而校验会拦下这种保存 —— 所以必须给一条出路，
-   * 否则用户在界面上找不到任何能改它的地方，方案就卡死了。
+   * ② 适配器后来撤掉了某个维度。它们**不会被渲染成控件**，而校验会拦下这种保存 ——
+   * 所以必须给一条出路，否则用户在界面上找不到任何能改它的地方，方案就卡死了。
+   *
+   * ⚠️ 「有归宿」不等于「进请求」：**采集深度旋钮**（`加载轮数` 这类）按设计就
+   * `wire === null`（它改的是采集循环跑几轮，不是发出去的参数），但它在下面
+   * 「采集深度」区有自己的控件 —— 判据若只认 `wire !== null`，一份存了
+   * `scrollRounds=2` 的方案会被误报成"平台没有这个筛选"，而控件明明就在旁边
+   * 渲染着。所以判据与 `depthItems` 用同一条：要么进请求，要么是声明过的深度
+   * 旋钮（`maxPages` 在上限 ≤1 的平台上连深度区都不渲染，仍算孤儿可移除）。
    */
-  const orphanKeys = Object.keys(form.criteria).filter(
-    (key) =>
-      key !== 'keyword' &&
-      !items.some((item) => item.key === key && item.wire !== null && item.supported),
-  )
+  const orphanKeys = Object.keys(form.criteria).filter((key) => {
+    if (key === 'keyword') return false
+    const item = items.find((entry) => entry.key === key)
+    const hasHome =
+      item !== undefined &&
+      item.supported &&
+      (item.wire !== null ||
+        (item.declared === true && (key !== 'maxPages' || (item.max ?? 0) > 1)))
+    return !hasHome
+  })
 
   /**
    * 干跑预览用的**生效条件**。

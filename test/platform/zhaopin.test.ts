@@ -16,11 +16,14 @@ import {
   DEFAULT_ZHAOPIN_CONFIG,
   mergeZhaopinConfig,
   ZHAOPIN_CITY_CODES,
+  ZHAOPIN_COMPANY_SIZE_OPTIONS,
   ZHAOPIN_COMPANY_TYPE_OPTIONS,
   ZHAOPIN_EDUCATION_OPTIONS,
+  ZHAOPIN_FINANCING_OPTIONS,
   ZHAOPIN_JOB_STATUS_OPTIONS,
   ZHAOPIN_MAX_PAGES,
   ZHAOPIN_SALARY_MASK,
+  ZHAOPIN_SALARY_OPTIONS,
   ZHAOPIN_WORK_EXPERIENCE_OPTIONS,
   type ZhaopinConfig,
 } from '../../src/host/platform/adapters/zhaopin/config.js'
@@ -56,11 +59,11 @@ test('城市码写在路径段里，不是 query —— 这是 /sou/ 路由的�
   const adapter = createZhaopinAdapter()
   assert.equal(
     adapter.criteria.buildSearchUrl({ keyword: 'Java', city: '深圳' }),
-    'https://www.zhaopin.com/sou/jl765?kw=Java',
+    'https://www.zhaopin.com/sou/jl765?kw=Java&order=4',
   )
   assert.equal(
     adapter.criteria.buildSearchUrl({ keyword: 'Java', city: '北京', page: 2 }),
-    'https://www.zhaopin.com/sou/jl530?kw=Java&p=2',
+    'https://www.zhaopin.com/sou/jl530?kw=Java&p=2&order=4',
   )
 })
 
@@ -73,7 +76,7 @@ test('不传城市时退到「全国」码，URL 形状保持一致', () => {
   const adapter = createZhaopinAdapter()
   assert.equal(
     adapter.criteria.buildSearchUrl({ keyword: 'Java' }),
-    'https://www.zhaopin.com/sou/jl489?kw=Java',
+    'https://www.zhaopin.com/sou/jl489?kw=Java&order=4',
   )
 })
 
@@ -108,17 +111,42 @@ test('带筛选时改用 /jobs 路由，城市从路径段变成 jl 参数', () 
   })
   assert.equal(
     adapter.criteria.buildSearchUrl(criteria),
-    'https://www.zhaopin.com/jobs?jl=765&kw=Java&el=4&we=0103&ct=1&et=2',
+    'https://www.zhaopin.com/jobs?jl=765&kw=Java&el=4&we=0103&ct=1&et=2&order=4',
   )
 })
 
-test('没有筛选时形状**一点没变** —— 别顺手把默认入口从 /sou/ 挪走', () => {
+// 2026-09-23 追加的三个维度：形态照真机全选后的地址栏
+// `/jobs/?pageMode=search&jl=763&kw=java&sl=0000%2C4000&el=9&we=-1&ct=1&fs=7&cs=1&et=2&in=…&jt=…`
+// （只含已接入的维度；逗号由 URLSearchParams 编成 %2C，与站点自己的编码一致）。
+test('2026-09-23 三个新维度进 URL：sl / fs / cs，参数名与站点地址栏一致', () => {
   const adapter = createZhaopinAdapter()
-  const criteria = criteriaToSearchCriteria({ keyword: 'Java', city: '深圳', sort: '4', page: '2' })
+  const criteria = criteriaToSearchCriteria({
+    keyword: 'java',
+    city: '广州',
+    salary: '0000,4000',
+    stage: '7',
+    scale: '1',
+  })
   assert.equal(
     adapter.criteria.buildSearchUrl(criteria),
-    'https://www.zhaopin.com/sou/jl765?kw=Java&p=2&order=4',
+    'https://www.zhaopin.com/jobs?jl=763&kw=java&sl=0000%2C4000&fs=7&cs=1&order=4',
+    '与站点自己全选后的地址逐参数一致（仅已接入的维度；order=4 是默认排序）',
   )
+})
+
+test('没有筛选时走 /sou/ 入口，默认排序「最新发布」直接生效', () => {
+  const adapter = createZhaopinAdapter()
+  // 显式配置排序（老形态不变）
+  const explicit = adapter.criteria.buildSearchUrl(
+    criteriaToSearchCriteria({ keyword: 'Java', city: '深圳', sort: '4', page: '2' }),
+  )
+  assert.equal(explicit, 'https://www.zhaopin.com/sou/jl765?kw=Java&p=2&order=4')
+  // 2026-09-23 用户定案：**不配排序也默认 order=4**（站点的「全部」是智能匹配序，
+  // 老岗位反复占前几页）—— 默认行为从此刻意改变，这条用例就是定案的钉子。
+  const byDefault = adapter.criteria.buildSearchUrl(
+    criteriaToSearchCriteria({ keyword: 'Java', city: '深圳', page: '2' }),
+  )
+  assert.equal(byDefault, 'https://www.zhaopin.com/sou/jl765?kw=Java&p=2&order=4')
 })
 
 test('不可用的维度（发布时间）不许变成 URL 参数 —— 有没有别的筛选都不许', () => {
@@ -134,7 +162,7 @@ test('不可用的维度（发布时间）不许变成 URL 参数 —— 有没�
   const onlyPosted = adapter.criteria.buildSearchUrl(
     criteriaToSearchCriteria({ keyword: 'Java', city: '深圳', postedWithinDays: '7' }),
   )
-  assert.equal(onlyPosted, 'https://www.zhaopin.com/sou/jl765?kw=Java')
+  assert.equal(onlyPosted, 'https://www.zhaopin.com/sou/jl765?kw=Java&order=4')
 })
 
 /**
@@ -146,12 +174,15 @@ const FILTER_DICT_FIXTURE = JSON.parse(
   readFileSync(join(import.meta.dirname, '..', 'fixtures', 'zhaopin-base-data-filters.json'), 'utf8'),
 ) as { data: Record<string, Array<{ code: string | null; name: string }>> }
 
-test('四个筛选维度的取值域与站点字典逐条一致（码 + 标签）', () => {
+test('七个筛选维度的取值域与站点字典逐条一致（码 + 标签）', () => {
   const dicts: Array<[string, string, Array<{ value: string; label: string }>]> = [
     ['education', 'educationType', ZHAOPIN_EDUCATION_OPTIONS],
     ['workExperience', 'workExpType', ZHAOPIN_WORK_EXPERIENCE_OPTIONS],
     ['companyType', 'companyType', ZHAOPIN_COMPANY_TYPE_OPTIONS],
     ['jobStatus', 'jobStatus', ZHAOPIN_JOB_STATUS_OPTIONS],
+    ['salary', 'salaryType', ZHAOPIN_SALARY_OPTIONS],
+    ['stage', 'financing', ZHAOPIN_FINANCING_OPTIONS],
+    ['scale', 'companySize', ZHAOPIN_COMPANY_SIZE_OPTIONS],
   ]
   for (const [key, dictKey, options] of dicts) {
     const dict = new Map(FILTER_DICT_FIXTURE.data[dictKey]?.map((item) => [item.code, item.name]))
@@ -163,15 +194,18 @@ test('四个筛选维度的取值域与站点字典逐条一致（码 + 标签�
   }
 })
 
-test('刻意排除的取值：「不限」类与分号多码', () => {
+test('刻意排除的取值：「不限」类、分号多码与空名码', () => {
   // 不限：语义上等于"不带这个参数"，收进值域只会多一个与"不填"完全等价的选项。
   for (const [dictKey, options] of [
     ['educationType', ZHAOPIN_EDUCATION_OPTIONS],
     ['workExpType', ZHAOPIN_WORK_EXPERIENCE_OPTIONS],
     ['jobStatus', ZHAOPIN_JOB_STATUS_OPTIONS],
+    ['salaryType', ZHAOPIN_SALARY_OPTIONS],
+    ['financing', ZHAOPIN_FINANCING_OPTIONS],
+    ['companySize', ZHAOPIN_COMPANY_SIZE_OPTIONS],
   ] as const) {
     const sentinels = (FILTER_DICT_FIXTURE.data[dictKey] ?? []).filter(
-      (item) => item.code === null || ['-1', '-99'].includes(item.code),
+      (item) => item.code === null || ['-1', '-99'].includes(item.code) || item.code === '0000,9999999',
     )
     assert.ok(sentinels.length > 0, `${dictKey} 的夹具里应当有「不限」类取值 —— 没有的话这条断言就失去意义`)
     for (const sentinel of sentinels) {
@@ -182,14 +216,28 @@ test('刻意排除的取值：「不限」类与分号多码', () => {
     }
   }
   // 分号多码：`URLSearchParams` 会把 `;` 转义成 `%3B`，站点自己怎么发没实测过 → 不提供。
-  const multiCode = (FILTER_DICT_FIXTURE.data.companyType ?? []).filter((item) => item.code?.includes(';') === true)
-  assert.ok(multiCode.length > 0, 'companyType 夹具里应当有分号多码 —— 没有的话这条断言就失去意义')
-  for (const item of multiCode) {
-    assert.ok(
-      !ZHAOPIN_COMPANY_TYPE_OPTIONS.some((option) => option.value === item.code),
-      `分号多码 ${String(item.code)}（${item.name}）编码未验证，不该进值域`,
+  for (const [dictKey, options] of [
+    ['companyType', ZHAOPIN_COMPANY_TYPE_OPTIONS],
+    ['financing', ZHAOPIN_FINANCING_OPTIONS],
+  ] as const) {
+    const multiCode = (FILTER_DICT_FIXTURE.data[dictKey] ?? []).filter(
+      (item) => item.code?.includes(';') === true,
     )
+    assert.ok(multiCode.length > 0, `${dictKey} 夹具里应当有分号多码 —— 没有的话这条断言就失去意义`)
+    for (const item of multiCode) {
+      assert.ok(
+        !options.some((option) => option.value === item.code),
+        `${dictKey} 的分号多码 ${String(item.code)}（${item.name}）编码未验证，不该进值域`,
+      )
+    }
   }
+  // 空名码：companySize 的 `7`（name 空、en_name=Confidential）没有可展示的标签 → 不提供。
+  const nameless = (FILTER_DICT_FIXTURE.data.companySize ?? []).filter((item) => item.code === '7')
+  assert.ok(nameless.length === 1, 'companySize 夹具里应当有那个空名码 7')
+  assert.ok(
+    !ZHAOPIN_COMPANY_SIZE_OPTIONS.some((option) => option.value === '7'),
+    '空名码（Confidential）没有标签可展示，不该进值域',
+  )
 })
 
 test('DB 覆盖能合并到默认配置上（ADR-19：配置以 DB 为权威）', () => {

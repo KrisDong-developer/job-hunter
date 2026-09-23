@@ -346,6 +346,86 @@ export const ZHIPIN_CITY_CODES: Record<string, string> = {
   厦门: '101230200',
 }
 
+/**
+ * 搜索页筛选维度的**取值编码**（2026-09-23 定案）。
+ *
+ * 来源是**两条实测证据的交叉**：
+ *   * 登录态快照 `zhipin-search-logged-in.html`（2026-09-18）里筛选面板每个选项的
+ *     `ka` 属性就是平台真实编码 —— `sel-job-rec-salary-405` ⇒ 薪资「10-20K」= `405`；
+ *   * 真机把全部筛选项选一遍，地址栏变成
+ *     `…?multiBusinessDistrict=440103&position=100101&jobType=1901&salary=402&experience=108&degree=209&industry=100002&scale=301&stage=801&query=java`
+ *     —— 参数名与这里的键**同名**，值与 `ka` 编码一致；且带参 URL 会让 SPA 自己的
+ *     `tdk.json`/`joblist.json` 请求带上同样的筛选（网络面板实证）。
+ *
+ * 「不限」(`ka=…-0`) 刻意**不进表**：不填这个字段 == 发空参数 == 不筛，给一个
+ * 值为 `0` 的选项只会让"选了不限"与"没选"在界面上变成两件看起来不同、实际相同的事。
+ *
+ * 没进表的三个站点筛选及原因：
+ *   * 工作区域（`multiBusinessDistrict`，值是**随城市变化的行政区划码**如 440103）——
+ *     值域依赖已选城市，一张静态表盖不住；
+ *   * 职位类型（`position`）与公司行业（`industry`）—— 值是六位树形码（100101 / 100002），
+ *     站点 DOM 里只给位置序号（`sel-industry-17`），完整码表要从平台接口拉，暂缺。
+ */
+export type ZhipinFilterKey = 'jobType' | 'salary' | 'experience' | 'degree' | 'scale' | 'stage'
+
+export const ZHIPIN_FILTER_OPTIONS: Record<ZhipinFilterKey, Array<{ value: string; label: string }>> = {
+  /** 面板名「求职类型」。 */
+  jobType: [
+    { value: '1901', label: '全职' },
+    { value: '1903', label: '兼职' },
+  ],
+  /** 面板名「薪资待遇」。 */
+  salary: [
+    { value: '402', label: '3K以下' },
+    { value: '403', label: '3-5K' },
+    { value: '404', label: '5-10K' },
+    { value: '405', label: '10-20K' },
+    { value: '406', label: '20-50K' },
+    { value: '407', label: '50K以上' },
+  ],
+  /** 面板名「工作经验」（顺序照站点面板，`101 经验不限` 是站点的真实取值、不是兜底文案）。 */
+  experience: [
+    { value: '108', label: '在校生' },
+    { value: '102', label: '应届生' },
+    { value: '101', label: '经验不限' },
+    { value: '103', label: '1年以内' },
+    { value: '104', label: '1-3年' },
+    { value: '105', label: '3-5年' },
+    { value: '106', label: '5-10年' },
+    { value: '107', label: '10年以上' },
+  ],
+  /** 面板名「学历要求」。 */
+  degree: [
+    { value: '209', label: '初中及以下' },
+    { value: '208', label: '中专/中技' },
+    { value: '206', label: '高中' },
+    { value: '202', label: '大专' },
+    { value: '203', label: '本科' },
+    { value: '204', label: '硕士' },
+    { value: '205', label: '博士' },
+  ],
+  /** 面板名「公司规模」。 */
+  scale: [
+    { value: '301', label: '0-20人' },
+    { value: '302', label: '20-99人' },
+    { value: '303', label: '100-499人' },
+    { value: '304', label: '500-999人' },
+    { value: '305', label: '1000-9999人' },
+    { value: '306', label: '10000人以上' },
+  ],
+  /** 面板名「融资阶段」。 */
+  stage: [
+    { value: '801', label: '未融资' },
+    { value: '802', label: '天使轮' },
+    { value: '803', label: 'A轮' },
+    { value: '804', label: 'B轮' },
+    { value: '805', label: 'C轮' },
+    { value: '806', label: 'D轮及以上' },
+    { value: '807', label: '已上市' },
+    { value: '808', label: '不需要融资' },
+  ],
+}
+
 /** 岗位链接形态：`/job_detail/<加密id>.html`（id 含字母数字与 ~_-）。 */
 export const ZHIPIN_JOB_ID_PATTERN = '/job_detail/([0-9a-zA-Z~_-]+)\\.html'
 

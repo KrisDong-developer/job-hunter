@@ -34,8 +34,14 @@ const ACTION_STATES: JobState[] = ['saved', 'ignored', 'seen', 'archived']
  * 顶部是**吸顶操作条**（标题 + 薪资 + 动作）：早先动作按钮在正文最底部，
  * 右侧一屏那么长，用户根本滚不到，反馈就是"详情里没有任何操作按钮"。
  *
- * 各段正文（投递 / 接触态 / 标签 / JD / 匹配分 / 风险 / 公司 / 简历定制 / 海外）
- * 已拆进 `./panels/*`：这里只留**编排骨架** —— 状态与请求都在本文件（hooks 不外移），
+ * 正文按**决策距离**排列（2026-09-23 重排）：判读 → 事实 → 推进 → 原文 → 公司 → 备战。
+ *   * 判读（粗筛分 + 标注依据）放最前：用户是从列表带着「粗筛 N」「外包」这两个
+ *     token 点进来求证的，依据要一屏内可达 —— 低分 + 重标语的岗根本不必读 JD；
+ *     分数过期的警示也**长在分数旁边**，而不是沉成页尾脚注。
+ *   * 接触态从"事实与 JD 之间"移到事实卡之后：它是**推进记录**不是判读依据，
+ *     与发送 / 变更记录构成一个叙事区，不打断"判读 → 求证"的主线。
+ *
+ * 各段正文已拆进 `./panels/*`：这里只留**编排骨架** —— 状态与请求都在本文件（hooks 不外移），
  * 子组件只收 state 值与回调；`Hint` 也留在这里，以组件形式传给要用它的两段。
  */
 export function JobDetailBody(props: {
@@ -253,8 +259,27 @@ export function JobDetailBody(props: {
         onConfirm={() => void deliver(true)}
       />
 
+      {/* ① 判读（2026-09-23 重排，提到 JD 之前）：用户从列表带着「粗筛 N」「外包」
+          点进来就是来求证的，依据要一屏内可达 —— 低分 + 重标语的岗不必读 JD。 */}
+      <MatchPanel score={job.matchScore} reasons={matchReasons} />
+
+      {/* 分数过期的警示**长在分数旁边**（原先是沉在页面最底部的一条脚注）：它是
+          分数的限定词，离开分数就没人读得到。 */}
+      {job.scoreStale ? (
+        <p className="jh-warn">
+          <InlineMd text="这个匹配分是**旧版简历**下算出来的 —— 简历改过之后它就不再有效。用「重算」或在对话里让模型跑 `job_match_explain` 才是当前分数。" />
+        </p>
+      ) : null}
+
+      <RiskPanel flags={flags} />
+
+      {/* ② 事实：客观是什么（基本信息 + 按性质分组的标签）。 */}
       <JobFacts job={job} lastSeen={lastSeen} />
 
+      {job.tags.length === 0 ? null : <TagGroups grouped={grouped} />}
+
+      {/* ③ 推进（重排，从"事实与 JD 之间"移到事实卡之后）：接触态是**推进记录**
+          不是判读依据，与下面的发送 / 变更记录构成一个叙事区。 */}
       <ContactStagePanel
         probe={probe}
         probing={probing}
@@ -269,14 +294,10 @@ export function JobDetailBody(props: {
         onSaveStage={(to) => void saveContactStage(to)}
       />
 
-      {job.tags.length === 0 ? null : <TagGroups grouped={grouped} />}
-
+      {/* ④ 原文：自己求证。 */}
       <JdPanel jdText={jdText} />
 
-      <MatchPanel score={job.matchScore} reasons={matchReasons} />
-
-      <RiskPanel flags={flags} />
-
+      {/* ⑤ 公司情报：画像 + 人工复核 + 其它岗位（背景调查）。 */}
       {company === null ? null : (
         <>
           <CompanyPanel company={company} onSaved={reload} />
@@ -290,18 +311,13 @@ export function JobDetailBody(props: {
         </>
       )}
 
-      {/* U4：针对这个岗位的简历定制（§13）。产出的是**建议**，采用与否在你。 */}
+      {/* ⑥ 备战 —— U4：针对这个岗位的简历定制（§13）。产出的是**建议**，采用与否在你。 */}
       <TailorPanel jobId={props.id} revision={props.revision} onChanged={props.onChanged} />
 
-      {/* P8：海外支线（§4.M）—— 工签/远程识别、时区双重换算、Cover Letter */}
+      {/* ⑦ 海外支线（P8 / §4.M）—— 工签/远程识别、时区双重换算、Cover Letter */}
       <OverseasPanel jobId={props.id} onChanged={props.onChanged} />
 
-      {job.scoreStale ? (
-        <p className="jh-warn">
-          <InlineMd text="这个匹配分是**旧版简历**下算出来的 —— 简历改过之后它就不再有效。用「重算」或在对话里让模型跑 `job_match_explain` 才是当前分数。" />
-        </p>
-      ) : null}
-
+      {/* 尾注：求证的最终出口。 */}
       <p className="jh-note">
         原始页面：
         <a className="jh-link" href={job.sourceUrl} target="_blank" rel="noreferrer noopener">

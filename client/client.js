@@ -6875,6 +6875,13 @@ window.__ModuleLoader__.load({
 		  salaryRange: "\u85AA\u8D44",
 		  experience: "\u7ECF\u9A8C",
 		  workNature: "\u5DE5\u4F5C\u6027\u8D28",
+		  // ⚠️ `salary`（BOSS 直聘的薪资档位码，405 = 10-20K）与上面 `salaryRange`（其它平台）
+		  // 语义相同、键名不同 —— 兜底给同一个中文名。
+		  salary: "\u85AA\u8D44",
+		  /** BOSS 直聘的公司规模档位码（303 = 100-499人）。 */
+		  scale: "\u516C\u53F8\u89C4\u6A21",
+		  /** BOSS 直聘的融资阶段码（807 = 已上市）。 */
+		  stage: "\u878D\u8D44\u9636\u6BB5",
 		  // ⚠️ 第二处同名不同义：`jobType` 在 SinoJobs 是"行业类别"（43 项），在 51job 是"职位类型"（全职/实习）。
 		  // 兜底表给合并名；单平台方案下用各自声明里的 label（那才是准的）。
 		  jobType: "\u804C\u4F4D\u7C7B\u578B / \u884C\u4E1A\u7C7B\u522B",
@@ -7107,9 +7114,12 @@ window.__ModuleLoader__.load({
 		  const depthItems = items.filter(
 		    (item) => item.wire === null && item.declared === true && item.supported && (item.key !== "maxPages" || (item.max ?? 0) > 1)
 		  );
-		  const orphanKeys = Object.keys(form.criteria).filter(
-		    (key) => key !== "keyword" && !items.some((item) => item.key === key && item.wire !== null && item.supported)
-		  );
+		  const orphanKeys = Object.keys(form.criteria).filter((key) => {
+		    if (key === "keyword") return false;
+		    const item = items.find((entry) => entry.key === key);
+		    const hasHome = item !== void 0 && item.supported && (item.wire !== null || item.declared === true && (key !== "maxPages" || (item.max ?? 0) > 1));
+		    return !hasHome;
+		  });
 		  const selectedPlatformId = form.platforms[0] ?? null;
 		  const selectedPlatformName = selectedPlatformId === null ? "\u6240\u9009\u5E73\u53F0" : platformNameOf(selectedPlatformId);
 		  const previewKeyword = parseKeywordsText(form.keywordsText)[0];
