@@ -136,8 +136,28 @@ export const TAILOR_AND_FILE = `
 .jh-footnote{margin-top:14px;font-size:12px}
 .jh-select{max-width:260px}
 
-/* U4：岗位详情里的定制建议 */
-.jh-tailor{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+/* U4：岗位详情里的定制建议。
+   ── 2026-09-23 卡片化收口：外层已经是 .jh-card（定制 / 海外两段与其它段落
+   同一形态），这里只剩"纵向堆叠 + 8px 间距"的布局职责；原先的 margin-top
+   交给卡片的 14px 去统一，否则这两张卡会与上下卡离得不一样远。 */
+.jh-tailor{display:flex;flex-direction:column;gap:8px}
+/* 子卡：外层成卡之后，内部原先的 .jh-card 降一级 —— 描边同 l2、底色 overlay、
+   不吃外边距（collect.ts 里"卡片套卡片"叠三层的教训：层级靠"变浅变矮"表达，
+   不是靠再描一圈同粗的框）。 */
+.jh-subcard{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;
+  background:var(--dsw-alias-bg-overlay);padding:10px 12px;margin:0}
+/* 基本信息卡：kv 是卡的最后一个子元素，收掉它自带的 12px 底距（叠在卡片
+   padding 上等于双倍留白）。 */
+.jh-facts .jh-kv{margin:0}
+/* 接触态卡：标题与「探测平台状态」同一行 —— jh-card-title 的 8px 底距在行内
+   会把按钮顶歪。**限定在 .jh-contact**：row-head + card-title 的组合在流水线 /
+   收件箱等 7 个屏里也在用，全局收零会把它们的标题间距一并改掉。 */
+.jh-contact .jh-card-title{margin:0}
+/* 原始来源卡：完整 URL 小号 + 任意断行 —— LinkedIn 级长链不该撑破右栏，
+   也不该换成一句"点击查看"把事实藏起来；muted 保证它是"可核对的凭据"
+   而不是第二个动作入口（入口是上面那颗按钮）。 */
+.jh-source-url{margin:8px 0 0;font-size:11.5px;line-height:1.6;
+  overflow-wrap:anywhere;word-break:break-all;color:var(--jh-muted-fg)}
 .jh-tailor-notes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;
   font-size:12px;color:var(--dsw-alias-label-secondary)}
 .jh-tailor-skill{display:inline-block;margin:0 4px 4px 0;padding:1px 7px;border-radius:999px;font-size:12px;

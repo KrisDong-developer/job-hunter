@@ -7,7 +7,7 @@ import {
   type JobOrderValue,
   type JobState,
 } from '../../../shared/contract/enums/job.js'
-import type { SavedJobViewDto } from '../../../shared/contract/dto/job.js'
+import type { CompanyProfileDto, SavedJobViewDto } from '../../../shared/contract/dto/job.js'
 import { buildExpChips, sortEduValues, type ExpChip } from '../../../shared/domain/job-facets.js'
 import { jobsToMarkdown } from '../../format/job.js'
 import { useAsync } from '../../hooks/use-async.js'
@@ -24,11 +24,15 @@ import {
 } from '../../net/jobs.js'
 import { LoadingLine } from '../../ui/async-view.js'
 import { copyText } from '../../ui/clipboard.js'
+import { CompanyDetailPane } from '../../views/company-detail/pane.js'
 import { JobDetailPane } from '../../views/job-detail/pane.js'
 import { BatchDeliverModal } from './batch-deliver-modal.js'
 import { BatchGreetingModal } from './batch-greeting-modal.js'
 import { BatchToolbar } from './batch-toolbar.js'
+import { CompanyBar } from './company-bar.js'
+import { CompaniesPane } from './companies-pane.js'
 import { FilterBar } from './filter-bar.js'
+import { useCompanies } from './use-companies.js'
 import {
   EMPTY_FILTERS,
   clampScoreInput,
@@ -70,6 +74,33 @@ export function JobsScreen(props: {
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS)
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS)
   const [page, setPage] = useState(1)
+  /**
+   * 列表维度：岗位（逐条岗位）↔ 公司（按公司汇总）。
+   *
+   * 切换是**视图行为**，不是数据变更 —— 两侧的筛选草稿 / 已生效条件 / 页码 / 勾选
+   * 全部保留：切到公司看一眼画像，切回来还是刚才那屏岗位。
+   * 选中态分开持有：岗位选中沿用 `props.selected`（app 层，岗位 id 语义），
+   * 公司选中留在本屏内部 —— 对 app 层零侵入。
+   */
+  const [dimension, setDimension] = useState<'jobs' | 'companies'>('jobs')
+  /** 公司维度：正在看哪家公司的详情。 */
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
+  /**
+   * 岗位维度的"只看某家公司"范围（公司卡「查看岗位」设置的跳转上下文）。
+   *
+   * 刻意**不**放进 `Filters`：它会跟着"保存的筛选视图"一起落库（setting 表），
+   * 而服务端校验 `JobFilterState` 的字段清单里没有它 —— 混进去就是给视图系统埋雷。
+   * 头栏给一枚可移除的 chip，让"列表正被限定着"永远看得见。
+   */
+  const [jobCompanyScope, setJobCompanyScope] = useState<{ id: number; name: string } | null>(null)
+  /**
+   * 公司维度的列表状态机（查询 + 筛选双态 + 分页 + 行内拉黑）拆在
+   * `use-companies.ts` —— 岗位侧的状态清单本来就长，两种维度混在一个组件里
+   * 就要先分清"哪个是哪个维度的"。留在**这里**的只有跨维度协调：
+   * `dimension`（两个维度之间的路由）、`selectedCompanyId`（右栏详情的选中态）、
+   * `jobCompanyScope`（跳回岗位侧时要带着的限定）。
+   */
+  const companies = useCompanies({ revision: props.revision, onChanged: props.onChanged })
   /**
    * 每页条数（2026-09-20 页脚分页）：宿主早就接受 `pageSize` 参数（1–100，见 routes/jobs.ts），
    * 界面此前一直写死 20 —— 数据攒多了只能一页页翻。改档时**夹住当前页**而不是跳回第 1 页：
@@ -163,6 +194,8 @@ export function JobsScreen(props: {
         {
           q: applied.q,
           cities: applied.cities,
+          // 公司维度的「查看岗位」设置的限定（头栏有 chip 可移除）
+          companyId: jobCompanyScope === null ? undefined : jobCompanyScope.id,
           expReqs: appliedExpReqs,
           eduReqs: applied.eduReqs,
           state: applied.state,
@@ -184,7 +217,8 @@ export function JobsScreen(props: {
       ),
     // `appliedExpReqs` 是 facet 的函数，而 facet 比首屏查询晚到 ——
     // 不把展开结果算进依赖，梯队就会"选了没反应"（第一次查询根本没带上它）。
-    [props.revision, applied, page, pageSize, appliedExpReqs.join(',')],
+    // `jobCompanyScope?.id`：公司卡「查看岗位」改的就是它，不进依赖切过去列表不动。
+    [props.revision, applied, page, pageSize, appliedExpReqs.join(','), jobCompanyScope?.id],
     // keepPrevious（第四轮，审核 P2-6）：翻页 / 改筛选 / 外部刷新时列表不再整块消失 ——
     // 这一屏是"左列表 + 右详情"的对照阅读，整列闪一下正好打断它。
     // 重取期间沿用上一次结果，界面另用 refreshing 说明"这是旧数据，正在更新"。
@@ -331,6 +365,36 @@ export function JobsScreen(props: {
     const target = Math.trunc(Number(jumpDraft))
     if (Number.isFinite(target)) setPage(Math.max(1, Math.min(target, pages)))
     setJumpDraft('')
+  }
+
+  // ── 维度协调（「⇄ 公司」）─────────────────────────────────────────
+  // 公司侧的查询 / 筛选 / 分页 / 拉黑都在 `useCompanies` 里；这里只留
+  // 两个维度**之间**的跳转 —— 它们要同时动两边的状态，放编排层才看得见全局。
+
+  /** 切维度：什么都不重置 —— 两侧状态各自保活，切回来还是刚才那屏。 */
+  const switchDimension = (): void => {
+    setDimension((current) => (current === 'jobs' ? 'companies' : 'jobs'))
+  }
+
+  /**
+   * 公司卡的「查看岗位」：切到岗位维度，并限定只看这家公司。
+   *
+   * 走 `companyId` 精确匹配（查询层本来就支持），不拿公司名当关键词 ——
+   * 关键词只匹配岗位标题，公司名搜出来的多半是空列表。
+   * 限定是**跳转上下文**而不是筛选条件：头栏给一枚可移除的 chip，
+   * 不写进 `Filters`（它会跟着"保存的视图"落库，见 state 注释）。
+   */
+  const viewCompanyJobs = (company: CompanyProfileDto): void => {
+    setJobCompanyScope({ id: company.id, name: company.name })
+    setPage(1)
+    setDimension('jobs')
+  }
+
+  /** 公司详情里点某条岗位：清掉限定（用户点了具体一条，限定已完成使命）并选中它。 */
+  const viewJobFromCompany = (jobId: number): void => {
+    setJobCompanyScope(null)
+    setDimension('jobs')
+    props.onSelect(jobId)
   }
 
   /** 行内入口：把这一条预置进既有弹窗（与批量入口同一套，只有"目标是谁"不同）。 */
@@ -591,40 +655,60 @@ export function JobsScreen(props: {
 
   return (
     <div className="jh-jobs-split">
-      <FilterBar
-        draft={draft}
-        citiesAll={citiesAll}
-        eduAll={eduAll}
-        expChips={expChips}
-        advancedOpen={advancedOpen}
-        advancedCount={advancedCount}
-        pending={pendingChanges}
-        views={views}
-        appliedViewId={appliedViewId}
-        onSubmit={submit}
-        onReset={reset}
-        onToggleAdvanced={toggleAdvanced}
-        onKeyword={setKeyword}
-        onCity={setCity}
-        onCityToggle={toggleCity}
-        onState={setState}
-        onMinSalary={setMinSalary}
-        onMinScore={setMinScore}
-        onExpBucket={toggleExpBucket}
-        onEdu={toggleEdu}
-        onNewWindow={setNewWindow}
-        onExcludeFlag={toggleExclude}
-        onExcludeBlacklisted={setExcludeBlacklisted}
-        onGroupDuplicates={setGroupDuplicates}
-        onApplyView={applyView}
-        onSaveView={saveCurrentView}
-        onDeleteView={deleteView}
-        appliedChips={appliedChips}
-        onRemoveChip={removeChip}
-      />
+      {/* 筛选区跟着维度走：岗位侧是既有的四层 FilterBar，公司侧是同构的轻量 CompanyBar
+          （视图行的位置、切换按钮的位置完全一致 —— 用户学会一次就两边都认得）。 */}
+      {dimension === 'jobs' ? (
+        <FilterBar
+          draft={draft}
+          citiesAll={citiesAll}
+          eduAll={eduAll}
+          expChips={expChips}
+          advancedOpen={advancedOpen}
+          advancedCount={advancedCount}
+          pending={pendingChanges}
+          views={views}
+          appliedViewId={appliedViewId}
+          onSubmit={submit}
+          onReset={reset}
+          onToggleAdvanced={toggleAdvanced}
+          onKeyword={setKeyword}
+          onCity={setCity}
+          onCityToggle={toggleCity}
+          onState={setState}
+          onMinSalary={setMinSalary}
+          onMinScore={setMinScore}
+          onExpBucket={toggleExpBucket}
+          onEdu={toggleEdu}
+          onNewWindow={setNewWindow}
+          onExcludeFlag={toggleExclude}
+          onExcludeBlacklisted={setExcludeBlacklisted}
+          onGroupDuplicates={setGroupDuplicates}
+          onApplyView={applyView}
+          onSaveView={saveCurrentView}
+          onDeleteView={deleteView}
+          appliedChips={appliedChips}
+          onRemoveChip={removeChip}
+          onSwitchDimension={switchDimension}
+        />
+      ) : (
+        <CompanyBar
+          draft={companies.coDraft}
+          pending={companies.coPendingChanges}
+          appliedChips={companies.coAppliedChips}
+          onSubmit={companies.coSubmit}
+          onReset={companies.coReset}
+          onKeyword={companies.setCoKeyword}
+          onBlacklist={companies.setCoBlacklist}
+          onLabel={companies.setCoLabel}
+          onMinJobs={companies.setCoMinJobs}
+          onSwitchDimension={switchDimension}
+          onRemoveChip={companies.coRemoveChip}
+        />
+      )}
 
       <div className="jh-jobs-cols">
         {/* aria-busy：重取期间列表还是上一次的结果（keepPrevious），读屏要知道"这是旧的" */}
+        {dimension === 'jobs' ? (
         <div className="jh-jobs-pane" data-job-hunter="job-list" aria-busy={refreshing ? true : undefined}>
           {/* 只在**首次**加载时出现：后续重取由 useAsync 的 keepPrevious 保留旧列表，
               这里改成列表头栏那行「更新中…」。加载态给 live + busy，否则读屏全程静默。 */}
@@ -696,6 +780,24 @@ export function JobsScreen(props: {
                     />
                     <span>选中本页</span>
                   </label>
+                )}
+                {/* 「只看某家公司」的限定（公司维度「查看岗位」设置的跳转上下文）。
+                    形态与「筛选中」chips 一致：点掉立即恢复全部公司。
+                    刻意不进 Filters / 不进「筛选中」那排 —— 它不是用户筛的，是跳转带来的，
+                    放头栏才不会让用户以为自己的筛选条件被改了。 */}
+                {jobCompanyScope === null ? null : (
+                  <button
+                    type="button"
+                    className="jh-chip jh-chip-on"
+                    title="这是从公司维度跳过来的限定，点掉恢复全部公司的岗位"
+                    onClick={() => {
+                      setJobCompanyScope(null)
+                      setPage(1)
+                    }}
+                  >
+                    只看 {jobCompanyScope.name}
+                    <span className="jh-jobs-chip-x" aria-hidden="true">✕</span>
+                  </button>
                 )}
                 {/* 「共 N 条」与折叠/时间窗说明已移除（2026-09-20 精简）：折叠与时间窗
                     由「筛选中」chips 承载（跨平台折叠 / 新增：近 7 天），不再另说一遍；
@@ -862,13 +964,40 @@ export function JobsScreen(props: {
             </>
           )}
         </div>
+        ) : (
+          <CompaniesPane
+            state={companies.coQuery.state}
+            refreshing={companies.coQuery.refreshing}
+            page={companies.coPage}
+            pageSize={companies.coPageSize}
+            orderBy={companies.coApplied.orderBy}
+            selectedId={selectedCompanyId}
+            marking={companies.coMarking}
+            onGo={companies.setCoPage}
+            onPageSize={companies.coChangePageSize}
+            onOrder={companies.coChangeOrder}
+            onSelect={setSelectedCompanyId}
+            onViewJobs={viewCompanyJobs}
+            onBlacklist={(company, blacklisted) => void companies.toggleCoBlacklist(company, blacklisted)}
+            onRetry={companies.coQuery.reload}
+          />
+        )}
 
-        <JobDetailPane
-          id={props.selected}
-          revision={props.revision}
-          onChanged={props.onChanged}
-          onSelect={props.onSelect}
-        />
+        {dimension === 'jobs' ? (
+          <JobDetailPane
+            id={props.selected}
+            revision={props.revision}
+            onChanged={props.onChanged}
+            onSelect={props.onSelect}
+          />
+        ) : (
+          <CompanyDetailPane
+            id={selectedCompanyId}
+            revision={props.revision}
+            onChanged={props.onChanged}
+            onViewJob={viewJobFromCompany}
+          />
+        )}
       </div>
 
       {/* 打招呼（D3 / U1）：勾选走批量，行内点单条走同一套 —— 预览（逐条正文可改/可跳过）

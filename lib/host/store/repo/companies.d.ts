@@ -34,6 +34,29 @@ export interface EnsureCompanyInput {
     size?: string | null;
     nature?: string | null;
 }
+/** 工商补全快照（v13，`company_enrichment` 表）—— 一家公司一份，重查整体覆盖。 */
+export interface CompanyEnrichmentRecord {
+    companyId: number;
+    provider: string;
+    matchedName: string | null;
+    creditCode: string | null;
+    /** exact（归一化全等，自动写）/ manual（用户从候选点选）/ unmatched（查无此主体）。 */
+    confidence: 'exact' | 'manual' | 'unmatched';
+    regStatus: string | null;
+    estDate: string | null;
+    regCapital: string | null;
+    orgType: string | null;
+    legalPerson: string | null;
+    industry: string | null;
+    staffNum: string | null;
+    suitCount: number | null;
+    investCount: number | null;
+    licenseCount: number | null;
+    tags: string[];
+    sourceUrl: string | null;
+    fetchedAt: string;
+    updatedAt: string;
+}
 export interface CompanyRepo {
     /** 幂等登记公司；命中别名表时复用已有实体（§4.10.1 第 2 级）。 */
     ensure(input: EnsureCompanyInput, now: string): {
@@ -62,6 +85,14 @@ export interface CompanyRepo {
     list(filter: {
         blacklisted?: boolean;
         manualLabel?: string | null;
+        /** 关键词：匹配公司名 / 归一化名 / 别名 / 备注（不区分大小写）。 */
+        q?: string;
+        /** 只保留在手岗位数 ≥ 该值的公司（无画像按 0 算）。 */
+        minJobCount?: number;
+        /** 排序键；缺省沿用 SQL 的岗位数降序。 */
+        orderBy?: 'jobCount' | 'outsourcingScore' | 'fraudScore' | 'name';
+        /** 仅在传了 `orderBy` 时有意义；缺省降序（与岗位库的默认一致）。 */
+        descending?: boolean;
         limit?: number;
         offset?: number;
     }): {
@@ -79,6 +110,10 @@ export interface CompanyRepo {
         outsourcingScore: number;
         fraudScore: number;
     }, now: string): CompanyProfileRecord;
+    /** 工商快照：读（没有查过 = undefined）。 */
+    getEnrichment(companyId: number): CompanyEnrichmentRecord | undefined;
+    /** 工商快照：整体覆盖写（unmatched 留痕也走它，其余字段给 null）。 */
+    upsertEnrichment(record: Omit<CompanyEnrichmentRecord, 'updatedAt'>, now: string): CompanyEnrichmentRecord;
     count(): number;
 }
 export declare function createCompanyRepo(db: DatabaseSync): CompanyRepo;

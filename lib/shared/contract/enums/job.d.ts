@@ -62,6 +62,19 @@ export declare const JOB_ORDER_OPTIONS: ReadonlyArray<{
     label: string;
 }>;
 /**
+ * 公司列表的排序键（公司维度，`GET /companies` 的 `orderBy`）。
+ *
+ * 与 `JOB_ORDER_VALUES` 同住一个文件、同一套纪律：界面下拉与宿主校验共用一份。
+ * `name` 用中文 locale 排序（`localeCompare(…, 'zh')`）；分数键上没有画像的公司按 0 算
+ * —— 冷启动信号弱时"没有分"和"0 分"本来就是同一个答案（见 CompanyPanel 的说明）。
+ */
+export declare const COMPANY_ORDER_VALUES: readonly ["jobCount", "outsourcingScore", "fraudScore", "name"];
+export type CompanyOrderValue = (typeof COMPANY_ORDER_VALUES)[number];
+export declare const COMPANY_ORDER_OPTIONS: ReadonlyArray<{
+    value: CompanyOrderValue;
+    label: string;
+}>;
+/**
  * 岗位**时效档位**的天数阈值（第五轮，批次 C）。
  *
  * ── 为什么另立一套，而不是复用 `FRESHNESS_LEVELS` 那套采集新鲜度

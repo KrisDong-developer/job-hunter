@@ -50,3 +50,16 @@ export function IconCross() {
     </svg>
   )
 }
+
+/**
+ * 公司卡的「查看岗位」图标 —— 与 IconChat/IconSend 同一列、同一个 34px 方块。
+ * 14px、同一套描边参数：一列里混着字形图标和 SVG 图标，靠的是尺寸对齐（见上）。
+ */
+export function IconList() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+      <path d="M3 4h10M3 8h10M3 12h6" />
+    </svg>
+  )
+}

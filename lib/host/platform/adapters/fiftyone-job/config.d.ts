@@ -42,6 +42,8 @@ export interface FiftyOneUrlParams {
     /** 公司规模 / 职位类型（同为点击探针实测：点「500-1000人」→ `companySize=04`，点「全职」→ `jobType=01`）。 */
     companySizeParam: string;
     jobTypeParam: string;
+    /** 月薪范围（2026-09-23 点击探针：点「8千以下」→ `salary=201`、点「5万以上」→ `salary=12`）。 */
+    salaryParam: string;
 }
 /**
  * 51job 支持的排序取值域（探针实测 2026-09，搜索页「综合/活跃/最新/薪资/距离」五个按钮）。
@@ -79,6 +81,169 @@ export declare const POSTED_WITHIN_OPTIONS: Array<{
     value: string;
     label: string;
 }>;
+/**
+ * ── 六个筛选维度的完整取值域（2026-09-23 点击探针全量补齐）──────────────────────
+ *
+ * ## 证据链
+ *
+ * 1. **逐项点击**：真机打开搜索页，hook fetch/XHR 后逐项点击筛选条
+ *    （`.custom-select-wrapper` 六组下拉共 42 个选项），每点一项读站点自己发出的
+ *    `we.51job.com/api/job/search-pc` 请求 —— 累积多选里**新增的尾码**即该选项的码；
+ * 2. **五个历史锚点吻合**：本科=04 / 1-3年=02 / 国企=04 / 500-1000人=04 / 全职=01，
+ *    与 2026-09-21 点击探针逐对一致；
+ * 3. **URL 通道效果验证**（适配器走的就是 URL 导航）：带参数直开
+ *    `?keyword=java&salary=201` 等，SPA 把参数原样转进 search-pc 请求（7/7 到达 ✓），
+ *    且结果集全部变化：total 907 → salary=201 得 159、salary=12 得 33、
+ *    companySize=07 得 95、companyType=05 得 499、jobType=03 得 16、workYear=01 得 72
+ *    （阳性对照 degree=04 → 717，方法有效）。
+ *
+ * ## 站点的多选形态
+ *
+ * 页面筛选是**多选**（值逗号连接，如 `companySize=01%2C02`）；本适配器声明的是
+ * **单选**（每维一个下拉）—— 单值经 URL 验证同样生效（上面的 total 变化全是单值跑出来的）。
+ * 要支持多选得改 `CriteriaDimension` 的形态，收益边际低，先不做。
+ */
+export declare const FIFTYONE_FILTER_OPTIONS: {
+    /** URL 参数 `salary`（站点自己叫「月薪范围」；201 是特档码，其余 06-12 顺序）。 */
+    readonly salary: readonly [{
+        readonly value: "201";
+        readonly label: "8千以下";
+    }, {
+        readonly value: "06";
+        readonly label: "0.8-1万";
+    }, {
+        readonly value: "07";
+        readonly label: "1-1.5万";
+    }, {
+        readonly value: "08";
+        readonly label: "1.5-2万";
+    }, {
+        readonly value: "09";
+        readonly label: "2-3万";
+    }, {
+        readonly value: "10";
+        readonly label: "3-4万";
+    }, {
+        readonly value: "11";
+        readonly label: "4-5万";
+    }, {
+        readonly value: "12";
+        readonly label: "5万以上";
+    }];
+    /** URL 参数 `jobType`。 */
+    readonly jobType: readonly [{
+        readonly value: "01";
+        readonly label: "全职";
+    }, {
+        readonly value: "02";
+        readonly label: "兼职";
+    }, {
+        readonly value: "03";
+        readonly label: "实习";
+    }];
+    /** URL 参数 `workYear`（01 在校生/应届生 与 06 无需经验 为 2026-09-23 补齐的两端）。 */
+    readonly workYear: readonly [{
+        readonly value: "01";
+        readonly label: "在校生/应届生";
+    }, {
+        readonly value: "02";
+        readonly label: "1-3年";
+    }, {
+        readonly value: "03";
+        readonly label: "3-5年";
+    }, {
+        readonly value: "04";
+        readonly label: "5-10年";
+    }, {
+        readonly value: "05";
+        readonly label: "10年以上";
+    }, {
+        readonly value: "06";
+        readonly label: "无需经验";
+    }];
+    /** URL 参数 `degree`（01/02/07 为 2026-09-23 补齐；04 本科是 2026-09-21 锚点）。 */
+    readonly degree: readonly [{
+        readonly value: "01";
+        readonly label: "初中及以下";
+    }, {
+        readonly value: "02";
+        readonly label: "高中/中技/中专";
+    }, {
+        readonly value: "03";
+        readonly label: "大专";
+    }, {
+        readonly value: "04";
+        readonly label: "本科";
+    }, {
+        readonly value: "05";
+        readonly label: "硕士";
+    }, {
+        readonly value: "06";
+        readonly label: "博士";
+    }, {
+        readonly value: "07";
+        readonly label: "无学历要求";
+    }];
+    /** URL 参数 `companyType`（注意 **04=国企** 而 03=合资、05=民营 —— 顺序不是 01 起的
+     * 界面顺序；10 已上市 / 11 创业公司 为 2026-09-23 补齐）。 */
+    readonly companyType: readonly [{
+        readonly value: "01";
+        readonly label: "外资（欧美）";
+    }, {
+        readonly value: "02";
+        readonly label: "外资（非欧美）";
+    }, {
+        readonly value: "03";
+        readonly label: "合资";
+    }, {
+        readonly value: "04";
+        readonly label: "国企";
+    }, {
+        readonly value: "05";
+        readonly label: "民营";
+    }, {
+        readonly value: "06";
+        readonly label: "外企代表处";
+    }, {
+        readonly value: "07";
+        readonly label: "政府机关";
+    }, {
+        readonly value: "08";
+        readonly label: "事业单位";
+    }, {
+        readonly value: "09";
+        readonly label: "非营利组织";
+    }, {
+        readonly value: "10";
+        readonly label: "已上市";
+    }, {
+        readonly value: "11";
+        readonly label: "创业公司";
+    }];
+    /** URL 参数 `companySize`（01-07 顺序档；04 为 2026-09-21 锚点）。 */
+    readonly companySize: readonly [{
+        readonly value: "01";
+        readonly label: "少于50人";
+    }, {
+        readonly value: "02";
+        readonly label: "50-150人";
+    }, {
+        readonly value: "03";
+        readonly label: "150-500人";
+    }, {
+        readonly value: "04";
+        readonly label: "500-1000人";
+    }, {
+        readonly value: "05";
+        readonly label: "1000-5000人";
+    }, {
+        readonly value: "06";
+        readonly label: "5000-10000人";
+    }, {
+        readonly value: "07";
+        readonly label: "10000人以上";
+    }];
+};
 /**
  * 详情页选择器集（`jobs.51job.com/all/<jobId>.html`）。
  *

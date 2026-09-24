@@ -9,7 +9,6 @@ import { fetchGreetings, probeContactStage, updateContactStage } from '../../net
 import { deliverApplication } from '../../net/pipeline.js'
 import { TailorPanel } from './tailor-panel.js'
 import { ErrorLine, LoadingLine } from '../../ui/async-view.js'
-import { InlineMd } from '../../ui/inline-md.js'
 import { OverseasPanel } from './overseas-panel.js'
 import { ApplyEntry, ApplyModal } from './panels/apply-panel.js'
 import { CompanyJobsPanel } from './panels/company-jobs-panel.js'
@@ -34,12 +33,11 @@ const ACTION_STATES: JobState[] = ['saved', 'ignored', 'seen', 'archived']
  * 顶部是**吸顶操作条**（标题 + 薪资 + 动作）：早先动作按钮在正文最底部，
  * 右侧一屏那么长，用户根本滚不到，反馈就是"详情里没有任何操作按钮"。
  *
- * 正文按**决策距离**排列（2026-09-23 重排）：判读 → 事实 → 推进 → 原文 → 公司 → 备战。
- *   * 判读（粗筛分 + 标注依据）放最前：用户是从列表带着「粗筛 N」「外包」这两个
- *     token 点进来求证的，依据要一屏内可达 —— 低分 + 重标语的岗根本不必读 JD；
- *     分数过期的警示也**长在分数旁边**，而不是沉成页尾脚注。
- *   * 接触态从"事实与 JD 之间"移到事实卡之后：它是**推进记录**不是判读依据，
- *     与发送 / 变更记录构成一个叙事区，不打断"判读 → 求证"的主线。
+ * 正文排列（二次重排，用户要求）：原文 → 事实 → 判读 → 推进 → 公司 → 备战。
+ *   * 岗位描述置顶、基本信息第二：点开详情第一件事是读"这活到底干什么"，
+ *     系统判读（粗筛分 + 标注依据）退到事实之后；
+ *   * 分数过期的警示仍收在分数卡里（MatchPanel 的 stale 属性）；
+ *   * 接触态是**推进记录**不是判读依据，与发送 / 变更记录构成一个叙事区。
  *
  * 各段正文已拆进 `./panels/*`：这里只留**编排骨架** —— 状态与请求都在本文件（hooks 不外移），
  * 子组件只收 state 值与回调；`Hint` 也留在这里，以组件形式传给要用它的两段。
@@ -259,27 +257,21 @@ export function JobDetailBody(props: {
         onConfirm={() => void deliver(true)}
       />
 
-      {/* ① 判读（2026-09-23 重排，提到 JD 之前）：用户从列表带着「粗筛 N」「外包」
-          点进来就是来求证的，依据要一屏内可达 —— 低分 + 重标语的岗不必读 JD。 */}
-      <MatchPanel score={job.matchScore} reasons={matchReasons} />
-
-      {/* 分数过期的警示**长在分数旁边**（原先是沉在页面最底部的一条脚注）：它是
-          分数的限定词，离开分数就没人读得到。 */}
-      {job.scoreStale ? (
-        <p className="jh-warn">
-          <InlineMd text="这个匹配分是**旧版简历**下算出来的 —— 简历改过之后它就不再有效。用「重算」或在对话里让模型跑 `job_match_explain` 才是当前分数。" />
-        </p>
-      ) : null}
-
-      <RiskPanel flags={flags} />
+      {/* ① 原文置顶（二次重排）：JD 是点开详情第一眼要读的正文，
+          基本信息紧随其后 —— 先读"这活干什么"。 */}
+      <JdPanel jdText={jdText} />
 
       {/* ② 事实：客观是什么（基本信息 + 按性质分组的标签）。 */}
       <JobFacts job={job} lastSeen={lastSeen} />
 
       {job.tags.length === 0 ? null : <TagGroups grouped={grouped} />}
 
-      {/* ③ 推进（重排，从"事实与 JD 之间"移到事实卡之后）：接触态是**推进记录**
-          不是判读依据，与下面的发送 / 变更记录构成一个叙事区。 */}
+      {/* ③ 判读：粗筛分 + 标注依据。分数过期的警示收在分数卡里（MatchPanel 的 stale 属性）。 */}
+      <MatchPanel score={job.matchScore} reasons={matchReasons} stale={job.scoreStale} />
+
+      <RiskPanel flags={flags} />
+
+      {/* ④ 推进：接触态是**推进记录**，与发送 / 变更记录构成一个叙事区。 */}
       <ContactStagePanel
         probe={probe}
         probing={probing}
@@ -293,9 +285,6 @@ export function JobDetailBody(props: {
         onProbe={() => void probeStage()}
         onSaveStage={(to) => void saveContactStage(to)}
       />
-
-      {/* ④ 原文：自己求证。 */}
-      <JdPanel jdText={jdText} />
 
       {/* ⑤ 公司情报：画像 + 人工复核 + 其它岗位（背景调查）。 */}
       {company === null ? null : (
@@ -317,13 +306,20 @@ export function JobDetailBody(props: {
       {/* ⑦ 海外支线（P8 / §4.M）—— 工签/远程识别、时区双重换算、Cover Letter */}
       <OverseasPanel jobId={props.id} onChanged={props.onChanged} />
 
-      {/* 尾注：求证的最终出口。 */}
-      <p className="jh-note">
-        原始页面：
-        <a className="jh-link" href={job.sourceUrl} target="_blank" rel="noreferrer noopener">
-          {job.sourceUrl}
+      {/* 尾注（2026-09-23 卡片化收口）：求证的最终出口也是一张卡。按钮形态给"点开"，
+          完整 URL 仍留在卡里 —— 肉眼查参数 / 复制 / 悬停看全链，一条不少。 */}
+      <section className="jh-card jh-card-tight">
+        <h3 className="jh-card-title">原始来源</h3>
+        <a
+          className="jh-btn jh-btn-inline"
+          href={job.sourceUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          打开原始页面 ↗
         </a>
-      </p>
+        <p className="jh-note jh-source-url" title={job.sourceUrl}>{job.sourceUrl}</p>
+      </section>
     </>
   )
 }

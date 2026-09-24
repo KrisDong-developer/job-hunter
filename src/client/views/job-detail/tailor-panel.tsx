@@ -93,7 +93,8 @@ export function TailorPanel(props: { jobId: number; revision: number; onChanged:
   }
 
   return (
-    <section className="jh-tailor">
+    /* 2026-09-23 卡片化收口：与详情里其它段落同一形态；内部原 jh-card 降为 jh-subcard。 */
+    <section className="jh-card jh-card-tight jh-tailor">
       <h3 className="jh-card-title">简历定制</h3>
       {/* 承诺前置（调研结论）：求职者对"定制简历"的第一反应是"会不会把我的简历改乱"。
           先把边界说清楚 —— 只调顺序与措辞、不新增经历、不动简历本体 —— 再给按钮。 */}
@@ -143,7 +144,7 @@ export function TailorPanel(props: { jobId: number; revision: number; onChanged:
       {latest === undefined ? (
         <p className="jh-muted">还没有针对这个岗位的定制建议 —— 点上面的按钮，几秒就好。</p>
       ) : (
-        <div className="jh-card jh-card-tight">
+        <div className="jh-subcard">
           <p className="jh-muted">
             最新建议 #{latest.id}（来源：{latest.via === 'llm' ? 'AI 改写' : '本地重排'}）
             {latest.adopted ? ' · 已记录采用' : ''}

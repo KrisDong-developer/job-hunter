@@ -1,6 +1,6 @@
 
 
-import type { FreshnessLevel, JobFlagType, JobOrderValue, JobState } from '../enums/job.js'
+import type { CompanyOrderValue, FreshnessLevel, JobFlagType, JobOrderValue, JobState } from '../enums/job.js'
 import type { ApplicationStage, ContactStage } from '../enums/pipeline.js'
 
 /**
@@ -199,6 +199,82 @@ export interface CompanyDetailDto {
   jobs: JobDto[]
   /** 该公司岗位的标注汇总（类型 → 条数）。 */
   flagCounts: Record<string, number>
+  /** 工商补全快照（`POST /companies/:id/enrich` 抓到的天眼查免登录数据；没查过 = 缺省）。 */
+  enrichment?: CompanyEnrichmentDto
+}
+
+/**
+ * 工商补全快照（天眼查免登录通道，v13）。
+ *
+ * 只在**详情**接口返回（列表载荷不带它 —— 列表卡片不需要工商字段，别让每页
+ * 50 家公司都驮着这份快照）。`confidence='unmatched'` 的行是"工商库查无此主体"
+ * 的留痕（这本身是值得看见的警示），除 provider/fetchedAt 外字段全空。
+ *
+ * `legalPerson` 是自然人姓名：展示允许，**LLM 外发白名单默认排除**
+ * （字段名黑名单拦不住中文人名，外发控制靠调用侧）。
+ */
+export interface CompanyEnrichmentDto {
+  provider: string
+  matchedName: string | null
+  creditCode: string | null
+  confidence: 'exact' | 'manual' | 'unmatched'
+  /** 经营状态（存续/注销/吊销…）——「注销/吊销还在招人」是最强的僵尸岗信号。 */
+  regStatus: string | null
+  estDate: string | null
+  regCapital: string | null
+  orgType: string | null
+  legalPerson: string | null
+  industry: string | null
+  staffNum: string | null
+  /** 风险概览计数（免登录可见的部分；null = 页面上没有这个读数）。 */
+  suitCount: number | null
+  investCount: number | null
+  licenseCount: number | null
+  /** 平台标签（新三板/小微企业/瞪羚企业/司法案件…）。 */
+  tags: string[]
+  sourceUrl: string | null
+  fetchedAt: string
+}
+
+/** 搜索结果里的一家候选公司（多候选时界面让用户点选，`pickUrl` 原样传回）。 */
+export interface EnrichmentCandidateDto {
+  name: string
+  status: string | null
+  creditCode: string | null
+  /** 详情页相对链接（`/company/{id}`），点选后作为 `POST …/enrich` 的 `pickUrl` 传回。 */
+  url: string
+}
+
+/**
+ * `GET /companies` 的查询参数（公司维度列表）。
+ *
+ * 接口是 offset 分页模型（`limit`/`offset`），界面是页码模型 —— 换算在客户端做
+ * （`offset = (page-1) * limit`），不为界面单独加 `page` 参数。
+ */
+export interface CompanyListParams {
+  /** 关键词：匹配公司名 / 归一化名 / 别名 / 备注（不区分大小写）。 */
+  q?: string
+  /** 拉黑状态过滤；不传 = 全部。 */
+  blacklisted?: boolean
+  /** 人工标签精确匹配；不传 = 全部。 */
+  manualLabel?: string
+  /** 只保留在手岗位数 ≥ 该值的公司（无画像按 0 算）；不传 = 不限。 */
+  minJobCount?: number
+  orderBy?: CompanyOrderValue
+  descending?: boolean
+  limit?: number
+  offset?: number
+}
+
+/**
+ * `GET /companies`：item 复用扁平的 `CompanyProfileDto` —— 与详情同一形状，
+ * 两端不维护第二套"列表版画像"（此前路由直接把 repo 的 `{company, profile}`
+ * 嵌套漏出去，列表版 profile 还有四个字段是 0/null 占位，属于无意契约）。
+ */
+export interface CompanyPageDto {
+  items: CompanyProfileDto[]
+  /** 过滤后的总数（分页 total 用）。 */
+  total: number
 }
 
 /**
@@ -221,6 +297,11 @@ export interface JobListParams {
   cities?: string[]
   city?: string
   state?: string
+  /**
+   * 只看这一家公司的岗位（公司维度的「查看岗位」跳转用）。
+   * 精确匹配 `company_id`，比拿公司名当关键词搜可靠（关键词只匹配标题）。
+   */
+  companyId?: number
   minSalary?: number | null
   /**
    * 最低匹配分（0–100）；不传 = 不限。

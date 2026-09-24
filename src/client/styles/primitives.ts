@@ -105,6 +105,7 @@ a.jh-btn{display:inline-block;text-decoration:none;text-align:center}
 .jh-btn:focus-visible,.jh-chip:focus-visible,.jh-pg:focus-visible,.jh-job:focus-visible,
 .jh-job-qk:focus-visible,.jh-dedup-toggle:focus-visible,.jh-jobs-filter-toggle:focus-visible,
 .jh-icon-btn:focus-visible,.jh-link:focus-visible,.jh-tab:focus-visible,.jh-seg:focus-visible,
+.jh-jobs-dimswitch:focus-visible,.jh-jobs-co-mini:focus-visible,.jh-jobs-co-candidate:focus-visible,
 .jh-err-chip:focus-visible,.jh-notice-close:focus-visible{
   outline:2px solid var(--dsw-alias-link);outline-offset:2px}
 

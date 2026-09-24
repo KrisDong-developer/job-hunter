@@ -70,7 +70,8 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
   }
 
   return (
-    <section className="jh-tailor">
+    /* 2026-09-23 卡片化收口：与详情里其它段落同一形态；内部原 jh-card 降为 jh-subcard。 */
+    <section className="jh-card jh-card-tight jh-tailor">
       <h3 className="jh-card-title">海外 / 远程</h3>
       <div className="jh-detail-actions">
         <button
@@ -110,7 +111,7 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
       {error === null ? null : <p className="jh-error">{error}</p>}
 
       {analysis === null ? null : (
-        <div className="jh-card jh-card-tight">
+        <div className="jh-subcard">
           <p className="jh-muted">
             工签立场：
             <b>{VISA_STANCE_LABEL[analysis.stance as keyof typeof VISA_STANCE_LABEL] ?? analysis.stance}</b>
@@ -124,7 +125,7 @@ export function OverseasPanel(props: { jobId: number; onChanged: () => void }) {
         </div>
       )}
 
-      <div className="jh-card jh-card-tight">
+      <div className="jh-subcard">
         <p className="jh-muted">面试时间双重换算（算错时区 = 直接错过面试）：</p>
         <div className="jh-inline">
           <input

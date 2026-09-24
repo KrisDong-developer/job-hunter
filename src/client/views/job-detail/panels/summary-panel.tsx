@@ -7,19 +7,24 @@ import { JOB_STATE_LABEL } from '../../../../shared/contract/enums/job.js'
 /** 基本信息表：公司 / 地点 / 经验 / 学历 / 来源平台 / 发布 / 首次见到 / 最近见到 / 当前状态。 */
 export function JobFacts(props: { job: JobDto; /** 「最近见到」的显示串（相对时间，解析不出来时是 ISO）。 */ lastSeen: string }) {
   return (
-    <ul className="jh-kv">
-      <li><span>公司</span><span>{props.job.companyName ?? '—'}</span></li>
-      <li><span>地点</span><span>{props.job.city}{props.job.district === '' ? '' : `·${props.job.district}`}</span></li>
-      <li><span>经验</span><span>{props.job.expReq === '' ? '—' : props.job.expReq}</span></li>
-      <li><span>学历</span><span>{props.job.eduReq === '' ? '—' : props.job.eduReq}</span></li>
-      <li><span>来源平台</span><span>{props.job.platformName ?? props.job.platformId}</span></li>
-      <li><span>发布</span><span>{props.job.publishedAt ?? '—'}</span></li>
-      <li><span>首次见到</span><span>{props.job.firstSeenAt}</span></li>
-      {/* 「最近见到」是判断"这岗还在招吗"的依据：它一直只是排序字段，
-          界面上从来没显示过。相对时间比 ISO 串更能直接读出结论。 */}
-      <li><span>最近见到</span><span>{props.lastSeen}</span></li>
-      <li><span>当前状态</span><span>{JOB_STATE_LABEL[props.job.state]}</span></li>
-    </ul>
+    /* 2026-09-23 卡片化收口：详情里所有段落统一为卡片形态 —— 裸 kv 表在一片
+       卡片中间是一块"没有边界的例外"，扫读时节奏断在这里。 */
+    <section className="jh-card jh-card-tight jh-facts">
+      <h3 className="jh-card-title">基本信息</h3>
+      <ul className="jh-kv">
+        <li><span>公司</span><span>{props.job.companyName ?? '—'}</span></li>
+        <li><span>地点</span><span>{props.job.city}{props.job.district === '' ? '' : `·${props.job.district}`}</span></li>
+        <li><span>经验</span><span>{props.job.expReq === '' ? '—' : props.job.expReq}</span></li>
+        <li><span>学历</span><span>{props.job.eduReq === '' ? '—' : props.job.eduReq}</span></li>
+        <li><span>来源平台</span><span>{props.job.platformName ?? props.job.platformId}</span></li>
+        <li><span>发布</span><span>{props.job.publishedAt ?? '—'}</span></li>
+        <li><span>首次见到</span><span>{props.job.firstSeenAt}</span></li>
+        {/* 「最近见到」是判断"这岗还在招吗"的依据：它一直只是排序字段，
+            界面上从来没显示过。相对时间比 ISO 串更能直接读出结论。 */}
+        <li><span>最近见到</span><span>{props.lastSeen}</span></li>
+        <li><span>当前状态</span><span>{JOB_STATE_LABEL[props.job.state]}</span></li>
+      </ul>
+    </section>
   )
 }
 
@@ -53,9 +58,11 @@ export function ContactStagePanel(props: {
   /* 取成 const：属性访问的收窄穿不过下面的 onClick 闭包（TS 只对 const 保持收窄）。 */
   const { adoptable } = props
   return (
-    <div className="jh-card jh-card-tight">
+    <div className="jh-card jh-card-tight jh-contact">
       <div className="jh-row-head">
-        <span className="jh-tag-group-name">接触态</span>
+        {/* 标题升级为 jh-card-title（2026-09-23 卡片化收口）：详情里每张卡都从
+            同一档 14px 标题开始，扫读才有稳定的锚点；行距收零由样式表处理。 */}
+        <h3 className="jh-card-title">接触态</h3>
         <span className="jh-spacer" />
         <button
           type="button"

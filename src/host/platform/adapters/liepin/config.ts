@@ -323,6 +323,126 @@ export const LIEPIN_EDU_PATTERN = '(本科|硕士|博士|大专|学历不限|中
 export const LIEPIN_DEFAULT_MAX_PAGES = 3
 export const LIEPIN_MAX_PAGES = 8
 
+/**
+ * ── 搜索筛选的取值域与 body 字段映射（2026-09-23 真机调研接入）─────────────────
+ *
+ * ## 证据链（三方交叉）
+ *
+ * 1. **字典接口**（第一方，最全）：页面自己会 POST
+ *    `com.liepin.searchfront4c.pc-search-job-cond-init`（body `selectedDqCode=410`），
+ *    返回 13 组值域（educations/compScales/financeStages/compNatures/jobKinds/pubTimes/
+ *    workExperiences/yearSalaries/industries…）——探针原样摘录；
+ * 2. **页面平铺选项**：搜索页筛选条的 `data-key/data-code/data-name` 三元组
+ *    （workYearCode/salaryCode/pubTime/compTag 与字典逐条一致，互相印证）；
+ * 3. **效果验证**（`pubTime=7` 作阳性对照）：在页面上下文重放搜索接口，
+ *    8 个字段各挑一个代表值，返回的 jobId 集合与基线**全部明显不同** ——
+ *    猎聘的筛选**全部生效**（这点比 BOSS 干脆：joblist 那边部分参数被忽略）。
+ *
+ * ## 为什么值域表敢用：它是**接口原样输出**（原始摘录见
+ *   `test/fixtures/liepin-cond-init.json`），不是从 DOM 抄的文案。
+ *
+ * ## 不接的维度（如实记录）
+ *   * `industry`（H01-H15 树形码 + 150+ 二级 children）—— 与 BOSS/智联的行业
+ *     同一决定：树形码先不接；
+ *   * `compTag`（qua_* 公司标签：500强/独角兽等 6 项）—— 页面有、字典有，
+ *     价值边际低，暂不接；
+ *   * `salaries`（月薪段 0$3-60$999）—— 与 `salaryCode`（年薪档）语义重复，
+ *     页面「薪资」平铺用的是年薪档，跟页面走。
+ */
+export const LIEPIN_FILTER_OPTIONS = {
+  /** body 字段 `workYearCode`（字典 `workExperiences`；`$` 是平台的区间分隔符）。 */
+  experience: [
+    { value: '1', label: '应届生' },
+    { value: '2', label: '实习生' },
+    { value: '0$1', label: '1年以内' },
+    { value: '1$3', label: '1-3年' },
+    { value: '3$5', label: '3-5年' },
+    { value: '5$10', label: '5-10年' },
+    { value: '10$999', label: '10年以上' },
+  ],
+  /** body 字段 `eduLevel`（字典 `educations`）。 */
+  degree: [
+    { value: '010', label: '博士' },
+    { value: '030', label: '硕士' },
+    { value: '040', label: '本科' },
+    { value: '050', label: '大专' },
+    { value: '060', label: '中专/中技' },
+    { value: '080', label: '高中' },
+    { value: '090', label: '初中及以下' },
+  ],
+  /** body 字段 `salaryCode`（字典 `yearSalaries`——猎聘页面的「薪资」是**年薪档**）。 */
+  salary: [
+    { value: '1', label: '10万以下' },
+    { value: '2', label: '10-15万' },
+    { value: '3', label: '16-20万' },
+    { value: '4', label: '21-30万' },
+    { value: '5', label: '31-50万' },
+    { value: '6', label: '51-100万' },
+    { value: '7', label: '100万以上' },
+  ],
+  /** body 字段 `compScale`（字典 `compScales`）。 */
+  scale: [
+    { value: '010', label: '1-49人' },
+    { value: '020', label: '50-99人' },
+    { value: '030', label: '100-499人' },
+    { value: '040', label: '500-999人' },
+    { value: '050', label: '1000-2000人' },
+    { value: '060', label: '2000-5000人' },
+    { value: '070', label: '5000-10000人' },
+    { value: '080', label: '10000人以上' },
+  ],
+  /** body 字段 `compStage`（字典 `financeStages`）。 */
+  stage: [
+    { value: '01', label: '天使轮' },
+    { value: '02', label: 'A轮' },
+    { value: '03', label: 'B轮' },
+    { value: '04', label: 'C轮' },
+    { value: '05', label: 'D轮及以上' },
+    { value: '06', label: '已上市' },
+    { value: '07', label: '战略融资' },
+    { value: '08', label: '融资未公开' },
+    { value: '99', label: '其他' },
+  ],
+  /** body 字段 `compKind`（字典 `compNatures`）。 */
+  companyType: [
+    { value: '010', label: '外商独资·外企办事处' },
+    { value: '020', label: '中外合营(合资·合作)' },
+    { value: '030', label: '私营·民营企业' },
+    { value: '040', label: '国有企业' },
+    { value: '050', label: '国内上市公司' },
+    { value: '060', label: '政府机关/非盈利机构' },
+    { value: '070', label: '事业单位' },
+    { value: '999', label: '其他' },
+  ],
+  /** body 字段 `pubTime`（字典 `pubTimes`；空串=不限，由"不选"表达，不进值域）。 */
+  postedWithinDays: [
+    { value: '1', label: '一天以内' },
+    { value: '3', label: '三天以内' },
+    { value: '7', label: '一周以内' },
+    { value: '30', label: '一个月以内' },
+  ],
+  /** body 字段 `jobKind`（字典 `jobKinds`——猎聘特有：职位由谁发布）。 */
+  recruiterType: [
+    { value: '1', label: '猎头职位' },
+    { value: '2', label: '企业职位' },
+  ],
+}
+
+/**
+ * 维度键 → 搜索接口 body 字段（`mainSearchPcConditionForm` 的槽位名，请求采样原样）。
+ * 与 BOSS 的 `ZHIPIN_BODY_FIELDS` 同构：声明里 `wire: { target: 'body', param }` 用它。
+ */
+export const LIEPIN_BODY_FIELDS: Record<keyof typeof LIEPIN_FILTER_OPTIONS, string> = {
+  experience: 'workYearCode',
+  degree: 'eduLevel',
+  salary: 'salaryCode',
+  scale: 'compScale',
+  stage: 'compStage',
+  companyType: 'compKind',
+  postedWithinDays: 'pubTime',
+  recruiterType: 'jobKind',
+}
+
 export const DEFAULT_LIEPIN_CONFIG: LiepinConfig = {
   selectors: {
     card: "div[class*='job-card-pc-container']",

@@ -69,9 +69,9 @@ test('即便方案里存着 postedWithinDays，URL 也**不许**带 issueDate（
   assert.equal(url?.includes('issueDate'), false, String(url))
 })
 
-test('点击探针实测的三个筛选进 URL：degree / workYear / companyType，且不配就不写', () => {
-  // 证据来自站点自己的搜索历史接口（2026-09-21 点击探针）：
-  //   点「本科」→ `degree=04`，点「1-3年」→ `workYear=02`，点「国企」→ `companyType=04`。
+test('筛选进 URL：degree / workYear / companyType / companySize / jobType / salary，且不配就不写', () => {
+  // 证据：2026-09-21 点击探针（本科=04 / 1-3年=02 / 国企=04 / 500-1000人=04 / 全职=01）
+  // + 2026-09-23 全量点击探针（42 项全量取码，五锚点吻合）与 search-pc 响应效果验证。
   const adapter = createFiftyOneAdapter()
   const withFilters = adapter.criteria.buildSearchUrl({
     platform: {
@@ -80,15 +80,17 @@ test('点击探针实测的三个筛选进 URL：degree / workYear / companyType
       companyType: '04',
       companySize: '04',
       jobType: '01',
+      salary: '201',
     },
   })
   assert.ok(withFilters !== null)
   assert.ok(withFilters.includes('degree=04'), withFilters)
   assert.ok(withFilters.includes('workYear=02'), withFilters)
   assert.ok(withFilters.includes('companyType=04'), withFilters)
-  // 2026-09-21 同一套点击探针补的两个：点「500-1000人」→ `companySize=04`；点「全职」→ `jobType=01`。
   assert.ok(withFilters.includes('companySize=04'), withFilters)
   assert.ok(withFilters.includes('jobType=01'), withFilters)
+  // 2026-09-23 新接入：月薪范围（点「8千以下」→ salary=201，特档码不是顺序码）。
+  assert.ok(withFilters.includes('salary=201'), withFilters)
 
   // 与 sort 同款：**没配就不写** —— 塞平台默认值会静默改变"什么都没配"的行为。
   const bare = adapter.criteria.buildSearchUrl({})
@@ -97,19 +99,36 @@ test('点击探针实测的三个筛选进 URL：degree / workYear / companyType
   assert.equal(bare?.includes('companyType='), false, String(bare))
   assert.equal(bare?.includes('companySize='), false, String(bare))
   assert.equal(bare?.includes('jobType='), false, String(bare))
+  assert.equal(bare?.includes('salary='), false, String(bare))
 
-  // 维度声明：只列实测到的档位，且都写了 wire（声明与拼装同一份参数名）
+  // 维度声明：六个筛选都在，值域为 2026-09-23 全量点击探针的完整档位。
   const keys = adapter.criteriaDimensions.map((item) => item.key)
-  for (const key of ['degree', 'workYear', 'companyType', 'companySize', 'jobType']) {
-    assert.ok(keys.includes(key), `缺少探针实测过的维度 ${key}`)
+  for (const key of ['degree', 'workYear', 'companyType', 'companySize', 'jobType', 'salary']) {
+    assert.ok(keys.includes(key), `缺少维度 ${key}`)
   }
-  const degree = adapter.criteriaDimensions.find((item) => item.key === 'degree')
+  const byKey = new Map(adapter.criteriaDimensions.map((item) => [item.key, item]))
   assert.deepEqual(
-    degree?.values.map((item) => item.value),
-    ['03', '04', '05', '06'],
-    '学历只列实测档位（大专/本科/硕士/博士）',
+    byKey.get('degree')?.values.map((item) => item.value),
+    ['01', '02', '03', '04', '05', '06', '07'],
+    '学历 7 档（01 初中及以下 … 07 无学历要求）',
   )
-  assert.equal(degree?.wire?.param, 'degree')
+  assert.deepEqual(
+    byKey.get('companySize')?.values.map((item) => item.value),
+    ['01', '02', '03', '04', '05', '06', '07'],
+    '公司规模 7 档',
+  )
+  assert.deepEqual(
+    byKey.get('companyType')?.values.map((item) => item.value),
+    ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'],
+    '公司性质 11 档（10 已上市 / 11 创业公司 为 2026-09-23 新增）',
+  )
+  assert.deepEqual(
+    byKey.get('salary')?.values.map((item) => item.value),
+    ['201', '06', '07', '08', '09', '10', '11', '12'],
+    '月薪 8 档（201 是特档码）',
+  )
+  assert.equal(byKey.get('degree')?.wire?.param, 'degree')
+  assert.equal(byKey.get('salary')?.wire?.param, 'salary')
 })
 
 test('排序映射进 URL：最新优先 → sortType=1', () => {

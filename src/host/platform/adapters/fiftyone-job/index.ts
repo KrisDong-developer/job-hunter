@@ -54,6 +54,7 @@ import { createFiftyOneActions } from './actions.js'
 import {
   DEFAULT_FIFTYONE_CONFIG,
   FIFTYONE_BLOCK_SIGNALS,
+  FIFTYONE_FILTER_OPTIONS,
   FIFTYONE_MAX_PAGES,
   POSTED_WITHIN_OPTIONS,
   SORT_OPTIONS,
@@ -128,57 +129,44 @@ export function createFiftyOneAdapter(options: FiftyOneAdapterOptions = {}): Sit
     {
       key: 'degree',
       label: '学历',
-      // ⚠️ 只列**点击探针实测过**的档位（点一次得一对 `标签 → 码`）。没测出来的不编 ——
-      // 编错了用户选了只会静默拿到另一档（比缺功能更糟）。要补：重跑探针或 DB 覆盖。
-      values: [
-        { value: '03', label: '大专' },
-        { value: '04', label: '本科' },
-        { value: '05', label: '硕士' },
-        { value: '06', label: '博士' },
-      ],
-      hint: '对应 URL 参数 degree（2026-09-21 点击探针实测：点「本科」→ degree=04）。目前只列实测到的档位',
+      values: [...FIFTYONE_FILTER_OPTIONS.degree],
+      hint: '取值域 2026-09-23 点击探针全量补齐（逐项点击读 search-pc 请求；01/02/07 为补齐端点，03-06 与 2026-09-21 实测一致）',
       wire: { target: 'url', param: config.urlParams.degreeParam },
     },
     {
       key: 'workYear',
       label: '工作经验',
-      values: [
-        { value: '02', label: '1-3年' },
-        { value: '03', label: '3-5年' },
-        { value: '04', label: '5-10年' },
-        { value: '05', label: '10年以上' },
-      ],
-      hint: '对应 URL 参数 workYear（2026-09-21 点击探针实测：点「1-3年」→ workYear=02）。目前只列实测到的档位',
+      values: [...FIFTYONE_FILTER_OPTIONS.workYear],
+      hint: '取值域 2026-09-23 点击探针全量补齐（02-05 与 2026-09-21 实测一致；01 应届生 / 06 无需经验 为补齐端点）',
       wire: { target: 'url', param: config.urlParams.workYearParam },
     },
     {
       key: 'companyType',
       label: '公司性质',
-      values: [
-        { value: '01', label: '外资（欧美）' },
-        { value: '02', label: '外资（非欧美）' },
-        { value: '03', label: '合资' },
-        { value: '04', label: '国企' },
-        { value: '07', label: '政府机关' },
-        { value: '08', label: '事业单位' },
-      ],
-      hint: '对应 URL 参数 companyType（2026-09-21 点击探针实测：点「国企」→ companyType=04）。目前只列实测到的档位',
+      values: [...FIFTYONE_FILTER_OPTIONS.companyType],
+      hint: '取值域 2026-09-23 点击探针全量补齐（05 民营 / 06 外企代表处 / 09 非营利 / 10 已上市 / 11 创业公司 为新增）',
       wire: { target: 'url', param: config.urlParams.companyTypeParam },
     },
     {
       key: 'companySize',
       label: '公司规模',
-      // 同上：只列点击探针实测到的档位，没测出来的不编。
-      values: [{ value: '04', label: '500-1000人' }],
-      hint: '对应 URL 参数 companySize（2026-09-21 点击探针实测：点「500-1000人」→ companySize=04）。目前只列实测到的档位',
+      values: [...FIFTYONE_FILTER_OPTIONS.companySize],
+      hint: '取值域 2026-09-23 点击探针全量补齐（此前只有 04 一档，现 01-07 全量）',
       wire: { target: 'url', param: config.urlParams.companySizeParam },
     },
     {
       key: 'jobType',
       label: '职位类型',
-      values: [{ value: '01', label: '全职' }],
-      hint: '对应 URL 参数 jobType（2026-09-21 点击探针实测：点「全职」→ jobType=01）。目前只列实测到的档位',
+      values: [...FIFTYONE_FILTER_OPTIONS.jobType],
+      hint: '取值域 2026-09-23 点击探针全量补齐（02 兼职 / 03 实习 为新增）',
       wire: { target: 'url', param: config.urlParams.jobTypeParam },
+    },
+    {
+      key: 'salary',
+      label: '月薪范围',
+      values: [...FIFTYONE_FILTER_OPTIONS.salary],
+      hint: '2026-09-23 点击探针新接入（点「8千以下」→ salary=201）；URL 通道经 search-pc 响应验证：total 907 → 201 档得 159',
+      wire: { target: 'url', param: config.urlParams.salaryParam },
     },
     {
       key: 'sort',

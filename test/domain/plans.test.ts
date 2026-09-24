@@ -198,12 +198,14 @@ test('SR-39：选到未注册的平台要报可读错，不空跑', () => {
 test('SR-42：未知筛选键**显式报错**，不静默丢掉', () => {
   const { store, plans } = withRegistry()
   try {
+    // ⚠️ 别用 `salary` 当"未知键"示例 —— 51job 自 2026-09-23 起声明了它（合法键，
+    // 值域外会走另一条报错路径）。这里用一个任何适配器都不认识的键。
     assert.throws(
-      () => plans.create({ name: '怪条件', platforms: ['51job'], criteria: { salary: '20K' } }),
+      () => plans.create({ name: '怪条件', platforms: ['51job'], criteria: { noSuchFilter: '20K' } }),
       (error: unknown) =>
         error instanceof DomainError &&
         error.code === 'INVALID_INPUT' &&
-        error.message.includes('salary'),
+        error.message.includes('noSuchFilter'),
     )
   } finally {
     const dir = store.dataDir

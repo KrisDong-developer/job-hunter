@@ -236,6 +236,66 @@ export const PAGER_CONTRAST_FIX = `
 .jh-pg-gap{color:var(--jh-muted-fg);padding:0 2px}
 `
 
+export const JOBS_COMPANIES = `
+/* ── 公司维度（岗位库的「⇄ 公司」）──────────────────────────────────
+   类名一律带 jh-jobs-co- 前缀（公司专属）/ jh-jobs-dimswitch（两种维度共用）：
+   通用名在本仓库撞过车（流水线屏），纪律见 JOBS_FILTERS 段的注释。 */
+/* 维度切换小按钮：视图行末尾（margin-left:auto 推到行尾）。
+   只写"要去的地方"（岗位维度下写「公司」，公司维度下写「岗位」），
+   位置两种维度下完全一致 —— 用户学会了它在哪，切过去它就还在那。
+   尺寸与视图行的 chips 同高（12px 字号 / 18px 行高），是个安静的小按钮：
+   它换的是浏览视角，不该长得比「筛选」还像主操作。 */
+.jh-jobs-dimswitch{margin-left:auto;display:inline-flex;align-items:center;gap:4px;
+  padding:2px 8px;font:inherit;font-size:12px;line-height:18px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l3);background:transparent;
+  color:var(--dsw-alias-label-secondary);transition:border-color .12s,color .12s,background .12s}
+.jh-jobs-dimswitch:hover{border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+/* 公司卡的风险信号胶囊：与岗位标注（jh-flag）同一档形态（小圆角矩形），
+   颜色分向 —— 外包橙、风险红。只在 ≥60 分时显示（见 company-row 的阈值注释）。 */
+.jh-signal{display:inline-block;font-size:11.5px;font-weight:600;line-height:19px;
+  padding:0 8px;border-radius:4px;white-space:nowrap}
+.jh-signal-out{background:var(--jh-warn-bg);color:var(--jh-warn-fg)}
+.jh-signal-risk{background:var(--jh-error-bg);color:var(--jh-error-fg)}
+/* 已拉黑徽章：安静的中性底 + 红点 —— 与「已收藏」徽章（.jh-state-saved）同一套
+   语言，只是点染红。拉黑是人工标记，值得显眼；但它是状态不是告警，不用实心红块。 */
+.jh-state-blacked{color:var(--jh-error-fg)}
+.jh-state-blacked::before{content:'';display:inline-block;width:6px;height:6px;margin-right:5px;
+  border-radius:50%;background:var(--dsw-alias-state-error-primary);vertical-align:middle}
+/* 公司卡备注：一行截断（webkit-line-clamp），"备注"两字带个描边小牌
+   —— 与卡片里其它读数拉开层次。 */
+.jh-jobs-co-note{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;
+  overflow:hidden;margin:4px 0 0;font-size:11.5px;color:var(--jh-muted-fg)}
+.jh-jobs-co-note::before{content:'备注';flex:none;
+  color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l2);
+  border-radius:4px;padding:0 4px;font-size:10.5px;line-height:16px;margin-right:6px}
+/* 公司详情头行：标题（复用 .jh-detail-title 的 17px/600）+ 徽章同一行。 */
+.jh-jobs-co-detail-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+/* 「查工商」按钮：跟在标题行末尾（margin-left:auto 推行尾），普通描边档 ——
+   它是对外部平台的查询动作，不该长得比「筛选」还像主操作。 */
+.jh-jobs-co-enrich-btn{margin-left:auto}
+/* 候选点选列表：与「岗位数」卡的 mini 行同一种描边小卡（一套语言，不新造形状）。 */
+.jh-jobs-co-candidates{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.jh-jobs-co-candidate{display:block;width:100%;text-align:left;cursor:pointer;font:inherit;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;
+  padding:8px 10px;color:inherit;transition:border-color .12s,background .12s}
+.jh-jobs-co-candidate:hover:not(:disabled){border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-hover)}
+.jh-jobs-co-candidate:disabled{opacity:.5;cursor:default}
+.jh-jobs-co-candidate-name{display:block;font-size:13px;font-weight:600}
+.jh-jobs-co-candidate-meta{display:block;font-size:11.5px;color:var(--jh-muted-fg);margin-top:2px}
+/* 详情内嵌的岗位行（轻量版）：描边小卡，hover 提示可点（点了切到岗位维度）。 */
+.jh-jobs-co-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.jh-jobs-co-mini{display:block;width:100%;text-align:left;cursor:pointer;font:inherit;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;
+  padding:8px 10px;color:inherit;transition:border-color .12s,background .12s}
+.jh-jobs-co-mini:hover{border-color:var(--dsw-alias-border-l4);
+  background:var(--dsw-alias-interactive-bg-hover)}
+.jh-jobs-co-mini-title{font-size:13px;font-weight:600;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.jh-jobs-co-mini-salary{font-size:13px;flex:none}
+.jh-jobs-co-mini-meta{font-size:11.5px;color:var(--jh-muted-fg);margin-top:2px}
+`
+
 export const JOBS_SPLIT = `
 /* ── U1 岗位库：左列表 / 右详情（2026-09-17 起不再用抽屉）────────────
    这个屏的主任务是"浏览 → 比较 → 决定"，弹层会盖住列表、每看下一个都要先关一次。

@@ -199,4 +199,20 @@ export declare const SCHEMA_V11 = "\nCREATE INDEX idx_job_match_score ON job(mat
  * * 老库的既有模板不带归属，`ALTER TABLE ... ADD COLUMN ... DEFAULT` 保持兼容。
  */
 export declare const SCHEMA_V12 = "\nALTER TABLE greeting_template ADD COLUMN resume_id INTEGER;\nALTER TABLE greeting_template ADD COLUMN via TEXT NOT NULL DEFAULT 'manual';\nCREATE INDEX idx_greeting_template_resume ON greeting_template(resume_id, updated_at DESC);\n";
+/**
+ * v13 · 公司工商补全（enrichment，天眼查免登录通道）。
+ *
+ * 一家公司**一份快照**（`company_id` 主键，重查整体覆盖）——工商数据是"某时刻的
+ * 抓取结果"，不是事实流，所以不做追加式历史；要溯源有 `fetched_at` + `source_url`。
+ *
+ * * `confidence`：`exact`（注册名归一化后与 `name_norm` 全等，自动写入）/
+ *   `manual`（多候选时用户点选）/ `unmatched`（工商库查无此主体 —— 也是留痕：
+ *   招聘平台上的公司名在工商系统不存在，这本身是值得看见的警示，不是错误）。
+ *   `unmatched` 行其余字段全空。
+ * * 刻意**不动 `company_profile`**：那张表是"从岗位数据算出来的统计画像"（job_count
+ *   等），工商快照混进去会破坏它的语义与 upsert 纪律（见 `upsertScores` 的注释）。
+ * * `legal_person` 是自然人姓名：本地存储与展示允许，LLM 外发白名单默认排除
+ *   （`HARD_BLOCKED_FIELDS` 按字段名拦不住中文人名，外发控制必须靠调用侧 allowFields）。
+ */
+export declare const SCHEMA_V13 = "\nCREATE TABLE company_enrichment (\n  company_id   INTEGER PRIMARY KEY REFERENCES company(id),\n  provider     TEXT NOT NULL,\n  matched_name TEXT,\n  credit_code  TEXT,\n  confidence   TEXT NOT NULL,\n  reg_status   TEXT,\n  est_date     TEXT,\n  reg_capital  TEXT,\n  org_type     TEXT,\n  legal_person TEXT,\n  industry     TEXT,\n  staff_num    TEXT,\n  suit_count      INTEGER,\n  invest_count    INTEGER,\n  license_count   INTEGER,\n  tags_json    TEXT NOT NULL DEFAULT '[]',\n  source_url   TEXT,\n  fetched_at   TEXT NOT NULL,\n  updated_at   TEXT NOT NULL\n);\nCREATE INDEX idx_company_enrichment_fetched ON company_enrichment(fetched_at);\n";
 //# sourceMappingURL=schema.d.ts.map

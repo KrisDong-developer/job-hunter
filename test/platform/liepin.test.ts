@@ -11,6 +11,7 @@ import {
 import {
   buildLiepinSearchUrl,
   buildSearchRequestBody,
+  liepinFiltersOf,
 } from '../../src/host/platform/adapters/liepin/urls.js'
 import {
   parseSearchApiResponse,
@@ -283,6 +284,83 @@ test('接口请求体：结构对齐采样（city=410 默认、currentPage 0 起
   assert.equal(form['currentPage'], '1', 'criteria.page=2 → currentPage=1（0 起）')
   assert.equal(form['key'], 'Java')
   assert.equal(form['pageSize'], 40)
+})
+
+test('筛选维度 → 接口请求体槽位（2026-09-23 真机调研接入；字段名与生效性均经实测）', () => {
+  const body = buildSearchRequestBody(
+    {
+      keyword: 'Java',
+      page: 1,
+      postedWithinDays: 7,
+      platform: {
+        experience: '1$3',
+        degree: '040',
+        salary: '4',
+        scale: '080',
+        stage: '06',
+        companyType: '040',
+        recruiterType: '1',
+      },
+    },
+    '410',
+  ) as { data: { mainSearchPcConditionForm: Record<string, unknown> } }
+  const form = body.data.mainSearchPcConditionForm
+  assert.equal(form['workYearCode'], '1$3', 'experience → workYearCode')
+  assert.equal(form['eduLevel'], '040', 'degree → eduLevel')
+  assert.equal(form['salaryCode'], '4', 'salary → salaryCode')
+  assert.equal(form['compScale'], '080', 'scale → compScale')
+  assert.equal(form['compStage'], '06', 'stage → compStage')
+  assert.equal(form['compKind'], '040', 'companyType → compKind')
+  assert.equal(form['jobKind'], '1', 'recruiterType → jobKind')
+  assert.equal(form['pubTime'], '7', 'postedWithinDays（类型化数值槽）→ pubTime 字符串')
+})
+
+test('liepinFiltersOf：七个平台键走 platform 命名空间；不认识的键不透传（闭集）', () => {
+  assert.deepEqual(
+    liepinFiltersOf({ platform: { experience: '10$999', industry: 'H01' } }),
+    { workYearCode: '10$999' },
+    'industry 未声明映射 → 不进请求体（不透传任意键是 plan-config 的闭集纪律）',
+  )
+  assert.deepEqual(liepinFiltersOf({}), {}, '空条件 → 空筛选（全槽位保持站点空串占位）')
+})
+
+test('维度声明：八个筛选维度带 body wire；值域与字典接口逐条一致（码不是编的）', () => {
+  const adapter = createLiepinAdapter()
+  const byKey = new Map(adapter.criteriaDimensions.map((dim) => [dim.key, dim]))
+  for (const key of [
+    'experience',
+    'degree',
+    'salary',
+    'scale',
+    'stage',
+    'companyType',
+    'postedWithinDays',
+    'recruiterType',
+  ]) {
+    const dim = byKey.get(key)
+    assert.ok(dim !== undefined, `应声明「${key}」`)
+    assert.ok(dim.wire !== undefined && dim.wire.target === 'body', `「${key}」wire 应落 body`)
+  }
+  // 几个抽样钉住值域与实测字典一致（错一个码 = 用户筛错档还不自知）。
+  assert.deepEqual(
+    byKey.get('experience')?.values.find((v) => v.value === '1$3'),
+    { value: '1$3', label: '1-3年' },
+  )
+  assert.deepEqual(
+    byKey.get('degree')?.values.find((v) => v.value === '040'),
+    { value: '040', label: '本科' },
+  )
+  assert.deepEqual(
+    byKey.get('stage')?.values.find((v) => v.value === '06'),
+    { value: '06', label: '已上市' },
+  )
+  assert.deepEqual(
+    byKey.get('recruiterType')?.values,
+    [
+      { value: '1', label: '猎头职位' },
+      { value: '2', label: '企业职位' },
+    ],
+  )
 })
 
 test('refreshTime：yyyymmddHHMMss → ISO（北京时间解析）', () => {

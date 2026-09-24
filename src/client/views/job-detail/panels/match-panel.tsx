@@ -14,6 +14,8 @@ import { Gauge } from '../gauge.js'
 export function MatchPanel(props: {
   score: number | null
   reasons: JobDetailDto['matchReasons']
+  /** 分数是否已过期（换过简历）—— 警示长在分数卡里，而不是页面别处的脚注。 */
+  stale: boolean
 }) {
   return (
     <section className="jh-card jh-card-tight">
@@ -40,6 +42,11 @@ export function MatchPanel(props: {
           </div>
         </div>
       )}
+      {props.score !== null && props.stale ? (
+        <p className="jh-warn">
+          <InlineMd text="这个匹配分是**旧版简历**下算出来的 —— 简历改过之后它就不再有效。用「重算」或在对话里让模型跑 `job_match_explain` 才是当前分数。" />
+        </p>
+      ) : null}
       {props.reasons.length === 0 ? null : (
         <ul className="jh-reasons">
           {props.reasons.map((reason, index) => (

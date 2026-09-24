@@ -21,6 +21,10 @@ export async function fetchJobs(params: JobListParams, signal?: AbortSignal): Pr
   if (params.cities !== undefined && params.cities.length > 0) query.set('cities', params.cities.join(','))
   else if (params.city !== undefined && params.city !== '') query.set('city', params.city)
   if (params.state !== undefined && params.state !== '') query.set('state', params.state)
+  // 只看某一家公司（公司维度「查看岗位」的跳转）：精确匹配，代替拿公司名当关键词
+  if (params.companyId !== undefined && params.companyId !== null) {
+    query.set('companyId', String(params.companyId))
+  }
   if (params.minSalary !== undefined && params.minSalary !== null) {
     query.set('minSalary', String(params.minSalary))
   }

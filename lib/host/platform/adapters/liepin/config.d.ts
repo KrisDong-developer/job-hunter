@@ -292,6 +292,79 @@ export declare const LIEPIN_EDU_PATTERN = "(\u672C\u79D1|\u7855\u58EB|\u535A\u58
  */
 export declare const LIEPIN_DEFAULT_MAX_PAGES = 3;
 export declare const LIEPIN_MAX_PAGES = 8;
+/**
+ * ── 搜索筛选的取值域与 body 字段映射（2026-09-23 真机调研接入）─────────────────
+ *
+ * ## 证据链（三方交叉）
+ *
+ * 1. **字典接口**（第一方，最全）：页面自己会 POST
+ *    `com.liepin.searchfront4c.pc-search-job-cond-init`（body `selectedDqCode=410`），
+ *    返回 13 组值域（educations/compScales/financeStages/compNatures/jobKinds/pubTimes/
+ *    workExperiences/yearSalaries/industries…）——探针原样摘录；
+ * 2. **页面平铺选项**：搜索页筛选条的 `data-key/data-code/data-name` 三元组
+ *    （workYearCode/salaryCode/pubTime/compTag 与字典逐条一致，互相印证）；
+ * 3. **效果验证**（`pubTime=7` 作阳性对照）：在页面上下文重放搜索接口，
+ *    8 个字段各挑一个代表值，返回的 jobId 集合与基线**全部明显不同** ——
+ *    猎聘的筛选**全部生效**（这点比 BOSS 干脆：joblist 那边部分参数被忽略）。
+ *
+ * ## 为什么值域表敢用：它是**接口原样输出**（原始摘录见
+ *   `test/fixtures/liepin-cond-init.json`），不是从 DOM 抄的文案。
+ *
+ * ## 不接的维度（如实记录）
+ *   * `industry`（H01-H15 树形码 + 150+ 二级 children）—— 与 BOSS/智联的行业
+ *     同一决定：树形码先不接；
+ *   * `compTag`（qua_* 公司标签：500强/独角兽等 6 项）—— 页面有、字典有，
+ *     价值边际低，暂不接；
+ *   * `salaries`（月薪段 0$3-60$999）—— 与 `salaryCode`（年薪档）语义重复，
+ *     页面「薪资」平铺用的是年薪档，跟页面走。
+ */
+export declare const LIEPIN_FILTER_OPTIONS: {
+    /** body 字段 `workYearCode`（字典 `workExperiences`；`$` 是平台的区间分隔符）。 */
+    experience: {
+        value: string;
+        label: string;
+    }[];
+    /** body 字段 `eduLevel`（字典 `educations`）。 */
+    degree: {
+        value: string;
+        label: string;
+    }[];
+    /** body 字段 `salaryCode`（字典 `yearSalaries`——猎聘页面的「薪资」是**年薪档**）。 */
+    salary: {
+        value: string;
+        label: string;
+    }[];
+    /** body 字段 `compScale`（字典 `compScales`）。 */
+    scale: {
+        value: string;
+        label: string;
+    }[];
+    /** body 字段 `compStage`（字典 `financeStages`）。 */
+    stage: {
+        value: string;
+        label: string;
+    }[];
+    /** body 字段 `compKind`（字典 `compNatures`）。 */
+    companyType: {
+        value: string;
+        label: string;
+    }[];
+    /** body 字段 `pubTime`（字典 `pubTimes`；空串=不限，由"不选"表达，不进值域）。 */
+    postedWithinDays: {
+        value: string;
+        label: string;
+    }[];
+    /** body 字段 `jobKind`（字典 `jobKinds`——猎聘特有：职位由谁发布）。 */
+    recruiterType: {
+        value: string;
+        label: string;
+    }[];
+};
+/**
+ * 维度键 → 搜索接口 body 字段（`mainSearchPcConditionForm` 的槽位名，请求采样原样）。
+ * 与 BOSS 的 `ZHIPIN_BODY_FIELDS` 同构：声明里 `wire: { target: 'body', param }` 用它。
+ */
+export declare const LIEPIN_BODY_FIELDS: Record<keyof typeof LIEPIN_FILTER_OPTIONS, string>;
 export declare const DEFAULT_LIEPIN_CONFIG: LiepinConfig;
 /** 把 DB 里的覆盖合并到默认配置上（按 section 浅合并）。 */
 export declare function mergeLiepinConfig(override: unknown): LiepinConfig;

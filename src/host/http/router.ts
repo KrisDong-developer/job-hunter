@@ -95,6 +95,7 @@ const ROUTES: RouteHandler[] = [
   companies.list,
   companies.review,
   companies.detail,
+  companies.enrich,
   dedup.groups,
   dedup.sweep,
   dedup.dropGroup,

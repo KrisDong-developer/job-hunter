@@ -90,6 +90,8 @@ export const FALLBACK_LABEL: Record<string, string> = {
   workExperience: '工作经验',
   /** 智联的 `jobStatus`（全职/兼职/实习/校园）—— 与 51job 的 `jobType` 语义相邻但不等价，故单列。 */
   jobStatus: '职位类型',
+  /** 猎聘的 `jobKind`（猎头职位/企业职位）—— 职位由谁发布，独此一家。 */
+  recruiterType: '职位来源',
 }
 
 /** 数值型维度（展示时补单位，避免"3"这种光秃秃的数字）。 */

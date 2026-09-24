@@ -12,6 +12,7 @@ import type { SavedJobViewDto } from '../../../shared/contract/dto/job.js'
 import { MAX_SAVED_JOB_VIEWS, MAX_SAVED_JOB_VIEW_NAME } from '../../../shared/config/limits.js'
 import { FieldHint } from '../../ui/field-hint.js'
 import type { AppliedFilterChip, Filters } from './filters.js'
+import { DimensionSwitch } from './dimension-switch.js'
 
 /**
  * 城市下拉里的**合成值**：表示"当前是多选，具体哪些在面板里看"。
@@ -91,6 +92,8 @@ export function FilterBar(props: {
   appliedChips: AppliedFilterChip[]
   /** 移除一枚已生效条件 —— 单条明确动作，draft 与 applied 在 `JobsScreen` 一起换。 */
   onRemoveChip: (id: string) => void
+  /** 切到公司维度（本屏的筛选与列表保持不动，随时切回来）。 */
+  onSwitchDimension: () => void
 }) {
   const draft = props.draft
   const advancedOpen = props.advancedOpen
@@ -201,6 +204,11 @@ export function FilterBar(props: {
             ＋ 保存当前条件
           </button>
         )}
+        {/* 维度切换（视图行末尾的小按钮）：只写"要去的地方" —— 当前是岗位维度，
+            所以写「公司」。与公司维度的同一颗按钮（CompanyBar 里）位置完全一致。
+            它是导航不是表单字段：切走时本侧的筛选草稿 / 已生效条件 / 页码 / 勾选
+            全部原样保留，切回来还是刚才那屏。 */}
+        <DimensionSwitch to="companies" onSwitch={props.onSwitchDimension} />
       </div>
 
       {/* 行 2 · 常规工具条（表单层）：一条线，按钮紧跟最后一个字段 */}

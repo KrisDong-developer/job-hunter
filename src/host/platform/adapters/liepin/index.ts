@@ -94,7 +94,9 @@ import {
   DEFAULT_LIEPIN_CONFIG,
   LIEPIN_BLOCK_FLAGS,
   LIEPIN_BLOCK_SIGNALS,
+  LIEPIN_BODY_FIELDS,
   LIEPIN_DEFAULT_MAX_PAGES,
+  LIEPIN_FILTER_OPTIONS,
   LIEPIN_MAX_PAGES,
   type LiepinConfig,
 } from './config.js'
@@ -119,11 +121,15 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
   const logger = options.logger
 
   /**
-   * 记住每个页面最近一次 gotoSearch 的条件（city 码 + 页码），供 readListPage
+   * 记住每个页面最近一次 gotoSearch 的条件（完整 criteria + city 码），供 readListPage
    * 构造接口请求体 —— 与 waiqi 的 `lastCode` 同一模式（主链顺序
    * `gotoSearch → detectBlock → readListPage` 保证了它总是新鲜的）。
+   *
+   * ⚠️ 存**完整 criteria** 而不是只存 keyword/page：筛选维度（学历/经验/薪资…）
+   * 只在接口请求体里生效（`LIEPIN_BODY_FIELDS`），URL 不带 —— 在这里丢掉的话，
+   * readListPage 重建的请求体筛选永远全空，等于界面选了白选。
    */
-  const lastSearch = new WeakMap<object, { keyword: string; cityCode: string; page: number }>()
+  const lastSearch = new WeakMap<object, { criteria: SearchCriteria; cityCode: string }>()
 
   /**
    * 判墙的**唯一实现**（与 `zhipin` 同一处）—— 两个消费者：`guard.detectBlock`（采集）
@@ -183,6 +189,30 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
       max: LIEPIN_MAX_PAGES,
       hint: `默认 ${String(LIEPIN_DEFAULT_MAX_PAGES)} 页、最多 ${String(LIEPIN_MAX_PAGES)} 页；猎聘风控强度最高（antiBot=high），刻意比其它平台更保守`,
     },
+    // ── 搜索筛选的八个维度（2026-09-23 真机调研接入，值域与证据见 config.ts 的
+    // LIEPIN_FILTER_OPTIONS）。wire 落在搜索接口的 body 字段上 —— 猎聘的筛选
+    // 不进搜索 URL（URL 参数未实测，不拼），`buildSearchRequestBody` 负责填槽。
+    ...(
+      [
+        ['experience', '工作经验'],
+        ['degree', '学历要求'],
+        ['salary', '年薪档位'],
+        ['scale', '公司规模'],
+        ['stage', '融资阶段'],
+        ['companyType', '公司性质'],
+        ['postedWithinDays', '发布时间'],
+        ['recruiterType', '职位来源'],
+      ] as const
+    ).map(([key, label]): CriteriaDimension => ({
+      key,
+      label,
+      values: LIEPIN_FILTER_OPTIONS[key],
+      hint:
+        '取值编码来自猎聘筛选字典接口 pc-search-job-cond-init（2026-09-23 实测），' +
+        '生效性经页面上下文重放搜索接口验证（各代表值的 jobId 集合与基线全部不同）。' +
+        '注意：筛选只进接口请求体，不进搜索 URL',
+      wire: { target: 'body', param: LIEPIN_BODY_FIELDS[key] },
+    })),
   ]
 
   return {
@@ -234,6 +264,34 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
       buildSearchUrl(criteria: SearchCriteria): string | null {
         return buildLiepinSearchUrl(config, criteria)
       },
+      /**
+       * 接口型平台的请求预览（preview.ts 的纪律：筛选不在 URL 里的平台必须自己实现，
+       * 否则对账测试当场红）。把 `mainSearchPcConditionForm` 展平进 params ——
+       * 与 zhipin 的 preview 同构，"选了值 ⇒ 请求里出现那个字段"这件事才可对账。
+       */
+      preview(criteria: SearchCriteria) {
+        const url = buildLiepinSearchUrl(config, criteria)
+        const cityCode =
+          criteria.city !== undefined && criteria.city !== '' && config.cityCodes[criteria.city] !== ''
+            ? (config.cityCodes[criteria.city] as string)
+            : '410'
+        const body = buildSearchRequestBody(criteria, cityCode)
+        const form = (body as {
+          data: { mainSearchPcConditionForm: Record<string, unknown> }
+        }).data.mainSearchPcConditionForm
+        const params: Record<string, string> = {}
+        for (const [key, value] of Object.entries(form)) {
+          if (value !== '') params[key] = String(value)
+        }
+        // 城市码未知时 URL 是 null（不猜）—— 页面地址仍然给得出来，参数表能说明原因。
+        return {
+          url: url ?? config.urlParams.base,
+          method: 'POST' as const,
+          params,
+          body: JSON.stringify(body),
+          crawlOnly: [],
+        }
+      },
     },
 
     // 登录态检测（2026-09-19 落地）。此前**故意不声明** —— `auth === undefined` 会让
@@ -277,9 +335,8 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
             ? (config.cityCodes[criteria.city] as string)
             : '410'
         lastSearch.set(page as object, {
-          keyword: criteria.keyword ?? '',
+          criteria,
           cityCode,
-          page: criteria.page ?? 1,
         })
         await page.goto(url)
         // 等卡片挂载（不要求可见：猎聘卡片可能被弹窗遮挡）。
@@ -320,10 +377,7 @@ export function createLiepinAdapter(options: LiepinAdapterOptions = {}): SiteAda
           const payload = await page
             .evaluate(fetchListInPage, {
               apiPath: `${config.searchApiOrigin}${config.searchApiPath}`,
-              body: buildSearchRequestBody(
-                { keyword: remembered.keyword, page: remembered.page },
-                remembered.cityCode,
-              ),
+              body: buildSearchRequestBody(remembered.criteria, remembered.cityCode),
               headers: config.apiHeaders,
             })
             .catch(() => null)
