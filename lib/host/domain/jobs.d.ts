@@ -30,6 +30,14 @@ export interface JobService {
     detailFull(id: number): JobDetailDto;
     /** 收藏 / 忽略 / 归档。 */
     mark(id: number, state: JobState): JobDto;
+    /**
+     * 记一次已读（**用户打开详情**时由界面调用）。
+     *
+     * 只做两件事：`read_at` 幂等写第一次；`state` 在 `new` 时推成 `seen`。
+     * `saved` / `ignored` / `archived` 不动 —— 打开一次详情不该改掉用户的决定。
+     * 已经是 `seen` 或已读过的重复调用是安全的空操作（仍返回当前 DTO，界面好直接用返回值渲染）。
+     */
+    markRead(id: number, now: string): JobDto;
     latest(limit?: number): JobDto[];
     count(): number;
     /** 与 `query` 同一套筛选条件的计数（分页 total）。 */

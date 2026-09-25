@@ -64,6 +64,21 @@ export async function fetchJobDetail(id: number, signal?: AbortSignal): Promise<
   return await request<JobDetailDto>(`/jobs/${String(id)}`, signal === undefined ? {} : { signal })
 }
 
+/**
+ * 记一次**已读**（打开详情时由界面调用）。
+ *
+ * 与 `markJob` 分开：这条是**事实**（我看了），`markJob` 是**决定**（收藏/忽略/归档）。
+ * 幂等 —— 重复打开同一个岗位不会改掉第一次的时间。
+ *
+ * ⚠️ 失败**不要**弹错：这是"顺手记一笔"，失败只影响徽章，不该打断正在看详情的用户。
+ * 调用方一律 `void markJobRead(id).catch(() => {})`。
+ */
+export async function markJobRead(id: number): Promise<JobDto> {
+  // 不带 body：这条端点不需要载荷（读哪个岗位在路径里）
+  const result = await request<{ ok: boolean; job: JobDto }>(`/jobs/${String(id)}/read`, { method: 'POST' })
+  return result.job
+}
+
 export async function markJob(id: number, state: JobState): Promise<JobDto> {
   const result = await request<{ ok: boolean; job: JobDto }>(`/jobs/${String(id)}/mark`, {
     method: 'POST',

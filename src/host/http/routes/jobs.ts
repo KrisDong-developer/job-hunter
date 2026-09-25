@@ -133,6 +133,9 @@ export async function list(ctx: RouteContext): Promise<RouteResult | undefined> 
   const total = jobService.countMatching(filters)
   const body: JobPageDto = {
     items,
+    // 全库"没打开过"的条数（**不带**当前筛选）：它是"要不要现在去扫一遍"的依据，
+    // 跟着筛选变就答非所问了（见 DTO 里的说明）。
+    unread: jobService.countMatching({ state: 'new' }),
     page,
     pageSize,
     total,
@@ -335,6 +338,35 @@ export async function detail(ctx: RouteContext): Promise<RouteResult | undefined
 
   // P4：详情带上标注依据与匹配理由 —— 界面上的每个结论都要能回答「凭什么」
   return json(200, jobService.detailFull(id))
+}
+
+// ── POST /jobs/:id/read ────────────────────────────────────────────
+/**
+ * 记一次**已读**（用户打开了详情）。
+ *
+ * 与 `/mark` 分开是刻意的：`/mark` 是**用户的决定**（收藏/忽略/归档），
+ * 这条是**事实**（我看了）。混用一个端点的话，"打开详情"迟早会变成"改处置态" ——
+ * 那正是"浏览了还显示新"与"不小心改掉收藏"两种毛病共用的病根。
+ *
+ * 幂等：重复调用安全（`read_at` 只写第一次）。读不到岗位是 404，不静默成功。
+ */
+export async function read(ctx: RouteContext): Promise<RouteResult | undefined> {
+  const { runtime, segments, method } = ctx
+  if (!(method === 'POST' && segments.length === 3 && segments[0] === 'jobs' && segments[2] === 'read')) {
+    return undefined
+  }
+  const idRaw = segments[1] ?? ''
+  const id = Number.parseInt(idRaw, 10)
+  if (!Number.isFinite(id)) {
+    throw new DomainError('INVALID_INPUT', `非法岗位 id：${idRaw}`)
+  }
+  requireData(runtime)
+  const jobService = runtime.jobs()
+  if (jobService === undefined) throw dataNotReady(runtime)
+
+  const updated: JobDto = jobService.markRead(id, new Date().toISOString())
+  runtime.events().publish('job.updated', { id: updated.id, state: updated.state })
+  return json(200, { ok: true, job: updated })
 }
 
 // ── POST /jobs/:id/mark ────────────────────────────────────────────

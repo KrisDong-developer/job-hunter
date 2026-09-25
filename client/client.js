@@ -168,6 +168,145 @@ window.__ModuleLoader__.load({
 		  }
 		};
 
+		// src/client/net/client.ts
+		var ApiError = class extends Error {
+		  status;
+		  code;
+		  hint;
+		  /** 原始响应体。审批类流程需要读其中的额外字段（如 `confirmText`）。 */
+		  body;
+		  constructor(status, code, message, hint, body) {
+		    super(message);
+		    this.name = "ApiError";
+		    this.status = status;
+		    this.code = code;
+		    this.hint = hint;
+		    this.body = body;
+		  }
+		  /** 给用户看的一行字：优先用宿主给的 hint。 */
+		  get display() {
+		    return this.hint === void 0 || this.hint === "" ? this.message : this.hint;
+		  }
+		};
+		async function request(path, init = {}) {
+		  const hasBody = init.body !== void 0;
+		  const response = await fetch(`${ROUTE_PREFIX}${path}`, {
+		    ...init,
+		    headers: {
+		      accept: "application/json",
+		      ...hasBody ? { "content-type": "application/json" } : {},
+		      ...init.headers ?? {}
+		    }
+		  });
+		  const text = await response.text();
+		  let body = null;
+		  if (text !== "") {
+		    try {
+		      body = JSON.parse(text);
+		    } catch {
+		      body = null;
+		    }
+		  }
+		  if (!response.ok) {
+		    const record = body !== null && typeof body === "object" ? body : {};
+		    throw new ApiError(
+		      response.status,
+		      typeof record["code"] === "string" ? record["code"] : `HTTP_${String(response.status)}`,
+		      typeof record["message"] === "string" ? record["message"] : `HTTP ${String(response.status)}`,
+		      typeof record["hint"] === "string" ? record["hint"] : void 0,
+		      body
+		    );
+		  }
+		  return body;
+		}
+		var NeedsConfirmError = class extends Error {
+		  constructor(confirmText) {
+		    super("\u8FD9\u4E2A\u52A8\u4F5C\u9700\u8981\u4F60\u5148\u786E\u8BA4");
+		    this.confirmText = confirmText;
+		    this.name = "NeedsConfirmError";
+		  }
+		  code = "NEEDS_CONFIRM";
+		};
+
+		// src/client/net/jobs.ts
+		async function fetchJobs(params, signal) {
+		  const query = new URLSearchParams();
+		  if (params.q !== void 0 && params.q !== "") query.set("q", params.q);
+		  if (params.cities !== void 0 && params.cities.length > 0) query.set("cities", params.cities.join(","));
+		  else if (params.city !== void 0 && params.city !== "") query.set("city", params.city);
+		  if (params.state !== void 0 && params.state !== "") query.set("state", params.state);
+		  if (params.companyId !== void 0 && params.companyId !== null) {
+		    query.set("companyId", String(params.companyId));
+		  }
+		  if (params.minSalary !== void 0 && params.minSalary !== null) {
+		    query.set("minSalary", String(params.minSalary));
+		  }
+		  if (params.minScore !== void 0 && params.minScore !== null) {
+		    query.set("minScore", String(params.minScore));
+		  }
+		  if (params.expReqs !== void 0 && params.expReqs.length > 0) {
+		    query.set("expReqs", params.expReqs.join(","));
+		  }
+		  if (params.eduReqs !== void 0 && params.eduReqs.length > 0) {
+		    query.set("eduReqs", params.eduReqs.join(","));
+		  }
+		  if (params.excludeFlags !== void 0 && params.excludeFlags.length > 0) {
+		    query.set("excludeFlags", params.excludeFlags.join(","));
+		  }
+		  if (params.excludeBlacklisted === true) query.set("excludeBlacklisted", "1");
+		  if (params.groupDuplicates === true) query.set("groupDuplicates", "1");
+		  if (params.firstSeenSince !== void 0 && params.firstSeenSince !== "") {
+		    query.set("firstSeenSince", params.firstSeenSince);
+		  }
+		  if (params.orderBy !== void 0 && params.orderBy !== "") query.set("orderBy", params.orderBy);
+		  query.set("desc", params.descending === false ? "0" : "1");
+		  query.set("page", String(params.page ?? 1));
+		  query.set("pageSize", String(params.pageSize ?? 20));
+		  return await request(`/jobs?${query.toString()}`, signal === void 0 ? {} : { signal });
+		}
+		async function fetchJobFacets(signal) {
+		  return await request("/jobs/facets", signal === void 0 ? {} : { signal });
+		}
+		async function fetchJobDetail(id, signal) {
+		  return await request(`/jobs/${String(id)}`, signal === void 0 ? {} : { signal });
+		}
+		async function markJobRead(id) {
+		  const result = await request(`/jobs/${String(id)}/read`, { method: "POST" });
+		  return result.job;
+		}
+		async function markJob(id, state) {
+		  const result = await request(`/jobs/${String(id)}/mark`, {
+		    method: "POST",
+		    body: JSON.stringify({ state })
+		  });
+		  return result.job;
+		}
+		async function markJobs(ids, state) {
+		  const result = await request("/jobs/batch/mark", {
+		    method: "POST",
+		    body: JSON.stringify({ ids, state })
+		  });
+		  return { total: result.total, missing: result.missing };
+		}
+		async function fetchJobViews(signal) {
+		  return await request("/jobs/views", signal === void 0 ? {} : { signal });
+		}
+		async function saveJobViews(views) {
+		  return await request("/jobs/views", { method: "PUT", body: JSON.stringify({ views }) });
+		}
+		function jobsExportUrl(ids) {
+		  return `${ROUTE_PREFIX}/jobs/export?ids=${ids.join(",")}`;
+		}
+		async function recomputeStaleScores() {
+		  return await request("/intel/recompute", {
+		    method: "POST",
+		    body: JSON.stringify({ scope: "stale" })
+		  });
+		}
+		async function fetchJobHistory(jobId, signal) {
+		  return await request(`/jobs/${String(jobId)}/history`, signal === void 0 ? {} : { signal });
+		}
+
 		// src/client/app/intent.ts
 		var pending = null;
 		var listeners = /* @__PURE__ */ new Set();
@@ -564,12 +703,13 @@ window.__ModuleLoader__.load({
 		      variant: stage === "replied" || stage === "interview_scheduled" ? "ok" : "progress"
 		    };
 		  }
+		  const readAlready = job.state === "new" && (job.readAt ?? null) !== null;
 		  return {
 		    source: "state",
-		    label: JOB_STATE_LABEL[job.state],
+		    label: readAlready ? JOB_STATE_LABEL.seen : JOB_STATE_LABEL[job.state],
 		    // 处置态的类名与取值同名（.jh-state-new / -saved / -ignored / -archived），
 		    // 只有 `seen` 没有专属配色（它是最中性的"什么都没有"）→ 落到基类。
-		    variant: job.state === "seen" ? "" : job.state
+		    variant: job.state === "seen" || readAlready ? "" : job.state
 		  };
 		}
 		function jobFreshnessOf(iso, now = /* @__PURE__ */ new Date()) {
@@ -644,68 +784,6 @@ window.__ModuleLoader__.load({
 
 		// src/client/hooks/use-async.ts
 		var import_react4 = require("react");
-
-		// src/client/net/client.ts
-		var ApiError = class extends Error {
-		  status;
-		  code;
-		  hint;
-		  /** 原始响应体。审批类流程需要读其中的额外字段（如 `confirmText`）。 */
-		  body;
-		  constructor(status, code, message, hint, body) {
-		    super(message);
-		    this.name = "ApiError";
-		    this.status = status;
-		    this.code = code;
-		    this.hint = hint;
-		    this.body = body;
-		  }
-		  /** 给用户看的一行字：优先用宿主给的 hint。 */
-		  get display() {
-		    return this.hint === void 0 || this.hint === "" ? this.message : this.hint;
-		  }
-		};
-		async function request(path, init = {}) {
-		  const hasBody = init.body !== void 0;
-		  const response = await fetch(`${ROUTE_PREFIX}${path}`, {
-		    ...init,
-		    headers: {
-		      accept: "application/json",
-		      ...hasBody ? { "content-type": "application/json" } : {},
-		      ...init.headers ?? {}
-		    }
-		  });
-		  const text = await response.text();
-		  let body = null;
-		  if (text !== "") {
-		    try {
-		      body = JSON.parse(text);
-		    } catch {
-		      body = null;
-		    }
-		  }
-		  if (!response.ok) {
-		    const record = body !== null && typeof body === "object" ? body : {};
-		    throw new ApiError(
-		      response.status,
-		      typeof record["code"] === "string" ? record["code"] : `HTTP_${String(response.status)}`,
-		      typeof record["message"] === "string" ? record["message"] : `HTTP ${String(response.status)}`,
-		      typeof record["hint"] === "string" ? record["hint"] : void 0,
-		      body
-		    );
-		  }
-		  return body;
-		}
-		var NeedsConfirmError = class extends Error {
-		  constructor(confirmText) {
-		    super("\u8FD9\u4E2A\u52A8\u4F5C\u9700\u8981\u4F60\u5148\u786E\u8BA4");
-		    this.confirmText = confirmText;
-		    this.name = "NeedsConfirmError";
-		  }
-		  code = "NEEDS_CONFIRM";
-		};
-
-		// src/client/hooks/use-async.ts
 		function useAsync(loader, deps, options = {}) {
 		  const [nonce, setNonce] = (0, import_react4.useState)(0);
 		  const [state, setState] = (0, import_react4.useState)({ status: "loading" });
@@ -741,81 +819,6 @@ window.__ModuleLoader__.load({
 		    setNonce((value) => value + 1);
 		  }, []);
 		  return { state, reload, refreshing };
-		}
-
-		// src/client/net/jobs.ts
-		async function fetchJobs(params, signal) {
-		  const query = new URLSearchParams();
-		  if (params.q !== void 0 && params.q !== "") query.set("q", params.q);
-		  if (params.cities !== void 0 && params.cities.length > 0) query.set("cities", params.cities.join(","));
-		  else if (params.city !== void 0 && params.city !== "") query.set("city", params.city);
-		  if (params.state !== void 0 && params.state !== "") query.set("state", params.state);
-		  if (params.companyId !== void 0 && params.companyId !== null) {
-		    query.set("companyId", String(params.companyId));
-		  }
-		  if (params.minSalary !== void 0 && params.minSalary !== null) {
-		    query.set("minSalary", String(params.minSalary));
-		  }
-		  if (params.minScore !== void 0 && params.minScore !== null) {
-		    query.set("minScore", String(params.minScore));
-		  }
-		  if (params.expReqs !== void 0 && params.expReqs.length > 0) {
-		    query.set("expReqs", params.expReqs.join(","));
-		  }
-		  if (params.eduReqs !== void 0 && params.eduReqs.length > 0) {
-		    query.set("eduReqs", params.eduReqs.join(","));
-		  }
-		  if (params.excludeFlags !== void 0 && params.excludeFlags.length > 0) {
-		    query.set("excludeFlags", params.excludeFlags.join(","));
-		  }
-		  if (params.excludeBlacklisted === true) query.set("excludeBlacklisted", "1");
-		  if (params.groupDuplicates === true) query.set("groupDuplicates", "1");
-		  if (params.firstSeenSince !== void 0 && params.firstSeenSince !== "") {
-		    query.set("firstSeenSince", params.firstSeenSince);
-		  }
-		  if (params.orderBy !== void 0 && params.orderBy !== "") query.set("orderBy", params.orderBy);
-		  query.set("desc", params.descending === false ? "0" : "1");
-		  query.set("page", String(params.page ?? 1));
-		  query.set("pageSize", String(params.pageSize ?? 20));
-		  return await request(`/jobs?${query.toString()}`, signal === void 0 ? {} : { signal });
-		}
-		async function fetchJobFacets(signal) {
-		  return await request("/jobs/facets", signal === void 0 ? {} : { signal });
-		}
-		async function fetchJobDetail(id, signal) {
-		  return await request(`/jobs/${String(id)}`, signal === void 0 ? {} : { signal });
-		}
-		async function markJob(id, state) {
-		  const result = await request(`/jobs/${String(id)}/mark`, {
-		    method: "POST",
-		    body: JSON.stringify({ state })
-		  });
-		  return result.job;
-		}
-		async function markJobs(ids, state) {
-		  const result = await request("/jobs/batch/mark", {
-		    method: "POST",
-		    body: JSON.stringify({ ids, state })
-		  });
-		  return { total: result.total, missing: result.missing };
-		}
-		async function fetchJobViews(signal) {
-		  return await request("/jobs/views", signal === void 0 ? {} : { signal });
-		}
-		async function saveJobViews(views) {
-		  return await request("/jobs/views", { method: "PUT", body: JSON.stringify({ views }) });
-		}
-		function jobsExportUrl(ids) {
-		  return `${ROUTE_PREFIX}/jobs/export?ids=${ids.join(",")}`;
-		}
-		async function recomputeStaleScores() {
-		  return await request("/intel/recompute", {
-		    method: "POST",
-		    body: JSON.stringify({ scope: "stale" })
-		  });
-		}
-		async function fetchJobHistory(jobId, signal) {
-		  return await request(`/jobs/${String(jobId)}/history`, signal === void 0 ? {} : { signal });
 		}
 
 		// src/client/net/outreach.ts
@@ -2274,8 +2277,19 @@ window.__ModuleLoader__.load({
 		var import_jsx_runtime23 = require("react/jsx-runtime");
 		var ACTION_STATES = ["saved", "ignored", "seen", "archived"];
 		function JobDetailBody(props) {
-		  const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision]);
-		  const history = useAsync((signal) => fetchJobHistory(props.id, signal), [props.id, props.revision]);
+		  const lastIdRef = (0, import_react11.useRef)(props.id);
+		  const sameJob = lastIdRef.current === props.id;
+		  (0, import_react11.useEffect)(() => {
+		    lastIdRef.current = props.id;
+		  }, [props.id]);
+		  const { state, reload } = useAsync(
+		    (signal) => fetchJobDetail(props.id, signal),
+		    [props.id, props.revision],
+		    { keepPrevious: sameJob }
+		  );
+		  const history = useAsync((signal) => fetchJobHistory(props.id, signal), [props.id, props.revision], {
+		    keepPrevious: sameJob
+		  });
 		  const greetings = useAsync(
 		    (signal) => fetchGreetings({ jobId: props.id, limit: 5 }, signal),
 		    [props.id, props.revision]
@@ -2360,7 +2374,16 @@ window.__ModuleLoader__.load({
 		    }
 		  };
 		  if (state.status === "loading") {
-		    return /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u8BE6\u60C5\u2026" });
+		    const known = props.fallback ?? null;
+		    if (known === null) return /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u8BE6\u60C5\u2026" });
+		    return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("header", { className: "jh-detail-head", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "jh-detail-headline", children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h2", { className: "jh-detail-title", children: known.title }),
+		        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "jh-detail-salary", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { className: "jh-salary", children: known.salaryRaw }) })
+		      ] }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "jh-note", children: [known.companyName ?? "", known.city, known.district === "" ? "" : known.district].filter((item) => item !== "").join(" \xB7 ") }),
+		      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(LoadingLine, { busy: true, live: "polite", children: "\u6B63\u5728\u8BFB\u53D6\u8BE6\u60C5\u2026" })
+		    ] });
 		  }
 		  if (state.status === "error") {
 		    return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { children: [
@@ -2759,7 +2782,7 @@ window.__ModuleLoader__.load({
 		    ["\u6CE8\u518C\u8D44\u672C", e.regCapital ?? "\u2014"],
 		    ["\u6CD5\u5B9A\u4EE3\u8868\u4EBA", e.legalPerson ?? "\u2014"],
 		    ["\u56FD\u6807\u884C\u4E1A", e.industry ?? "\u2014"],
-		    ["\u4F01\u4E1A\u89C4\u6A21", e.staffNum ?? "\u2014"],
+		    ["\u5458\u5DE5\u4EBA\u6570", e.staffNum ?? "\u2014"],
 		    ["\u4FE1\u7528\u4EE3\u7801", e.creditCode ?? "\u2014"]
 		  ];
 		  return /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("section", { className: "jh-card", children: [
@@ -2828,7 +2851,8 @@ window.__ModuleLoader__.load({
 		      id: props.id,
 		      revision: props.revision,
 		      onChanged: props.onChanged,
-		      onSelect: props.onSelect
+		      onSelect: props.onSelect,
+		      fallback: props.fallback ?? null
 		    }
 		  ) });
 		}
@@ -4494,6 +4518,8 @@ window.__ModuleLoader__.load({
 		  const requirements = [job.expReq, job.eduReq].filter((item) => item !== "").join("\xB7");
 		  const crawled = relativeTime(job.crawledAt) ?? job.crawledAt;
 		  const seen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt;
+		  const firstSeenShown = job.firstSeenAt !== job.crawledAt;
+		  const firstSeen = relativeTime(job.firstSeenAt) ?? job.firstSeenAt;
 		  const freshness = jobFreshnessOf(job.lastSeenAt);
 		  const badge = jobProgressBadgeOf(job);
 		  const stateMark = badge.source !== "state" && job.state !== "new" && job.state !== "seen" ? JOB_STATE_LABEL[job.state] : null;
@@ -4537,6 +4563,10 @@ window.__ModuleLoader__.load({
 		              ] }),
 		              /* @__PURE__ */ (0, import_jsx_runtime38.jsxs)("span", { className: "jh-job-origin", children: [
 		                /* @__PURE__ */ (0, import_jsx_runtime38.jsx)("span", { children: job.platformName ?? job.platformId }),
+		                firstSeenShown ? /* @__PURE__ */ (0, import_jsx_runtime38.jsxs)("span", { title: `\u9996\u6B21\u89C1\u5230\uFF1A${formatLocalDateTime(job.firstSeenAt)}`, children: [
+		                  "\u9996\u6B21 ",
+		                  firstSeen
+		                ] }) : null,
 		                /* @__PURE__ */ (0, import_jsx_runtime38.jsxs)("span", { title: formatLocalDateTime(job.crawledAt), children: [
 		                  "\u6293\u53D6 ",
 		                  crawled
@@ -4748,6 +4778,11 @@ window.__ModuleLoader__.load({
 		    setApplied((current) => ({ ...current, excludeBlacklisted: false }));
 		    setPage(1);
 		  };
+		  const showOnlyNew = () => {
+		    setDraft((current) => ({ ...current, state: "new" }));
+		    setApplied((current) => ({ ...current, state: "new" }));
+		    setPage(1);
+		  };
 		  const setNewWindow = (newWindow) => {
 		    setDraft({ ...draft, newWindow });
 		  };
@@ -4925,6 +4960,11 @@ window.__ModuleLoader__.load({
 		    void persistViews(views.filter((item) => item.id !== id));
 		    setNotice({ tone: "ok", text: `\u5DF2\u5220\u9664\u89C6\u56FE\u300C${view.name}\u300D\uFF08\u5217\u8868\u6761\u4EF6\u4FDD\u6301\u4E0D\u52A8\uFF09` });
 		  };
+		  const localJobOf = (job) => {
+		    const override = optimistic.states.get(job.id);
+		    if (override === void 0 || override === job.state) return job;
+		    return override === "seen" ? { ...job, state: "seen", readAt: job.readAt ?? (/* @__PURE__ */ new Date()).toISOString() } : { ...job, state: override };
+		  };
 		  const togglePick = (id, checked) => {
 		    setPicked(
 		      (current) => checked ? [...current, id] : current.filter((item) => item !== id)
@@ -4934,18 +4974,46 @@ window.__ModuleLoader__.load({
 		    setOpenGroup(openGroup === groupId ? null : groupId);
 		  };
 		  const [marking, setMarking] = (0, import_react19.useState)(null);
+		  const [optimistic, setOptimistic] = (0, import_react19.useState)({ states: /* @__PURE__ */ new Map(), unreadDelta: 0 });
+		  const selectJob = (id) => {
+		    props.onSelect(id);
+		    const wasNew = state.status === "ok" && state.data.items.some((item) => item.id === id && item.state === "new");
+		    if (wasNew) applyLocalState(id, "seen");
+		    void markJobRead(id).catch(() => void 0);
+		  };
+		  const applyLocalState = (id, next) => {
+		    setOptimistic((current) => {
+		      const before = current.states.get(id) ?? (state.status === "ok" ? state.data.items.find((item) => item.id === id)?.state : void 0);
+		      if (before === next) return current;
+		      const states = new Map(current.states);
+		      states.set(id, next);
+		      const delta = before === "new" && next !== "new" ? -1 : before !== "new" && next === "new" ? 1 : 0;
+		      return { states, unreadDelta: current.unreadDelta + delta };
+		    });
+		  };
 		  const quickMark = async (id, state2) => {
 		    setMarking(id);
+		    applyLocalState(id, state2);
 		    try {
 		      await markJob(id, state2);
-		      props.onChanged();
 		    } catch {
 		      props.onChanged();
 		    } finally {
 		      setMarking(null);
 		    }
 		  };
+		  (0, import_react19.useEffect)(() => {
+		    setOptimistic(
+		      (current) => current.states.size === 0 && current.unreadDelta === 0 ? current : { states: /* @__PURE__ */ new Map(), unreadDelta: 0 }
+		    );
+		  }, [state]);
 		  const total = state.status === "ok" ? state.data.total : 0;
+		  const unreadShown = state.status === "ok" ? Math.max(0, state.data.unread + optimistic.unreadDelta) : 0;
+		  const selectedRowOf = () => {
+		    if (props.selected === null || state.status !== "ok") return null;
+		    const row = state.data.items.find((item) => item.id === props.selected);
+		    return row === void 0 ? null : localJobOf(row);
+		  };
 		  const pages = Math.max(1, Math.ceil(total / pageSize));
 		  const pendingChanges = !sameFilters(draft, applied);
 		  const hasFilters = !sameFilters(applied, EMPTY_FILTERS);
@@ -5077,6 +5145,19 @@ window.__ModuleLoader__.load({
 		                ]
 		              }
 		            ),
+		            unreadShown === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime39.jsxs)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "jh-link",
+		                title: "\u5E93\u91CC\u8FD8\u6CA1\u6709\u6253\u5F00\u8FC7\u7684\u5C97\u4F4D\u6570\uFF08\u4E0D\u53D7\u5F53\u524D\u7B5B\u9009\u5F71\u54CD\uFF09\u3002\u70B9\u4E00\u4E0B\u53EA\u770B\u8FD9\u4E9B",
+		                onClick: showOnlyNew,
+		                children: [
+		                  unreadShown,
+		                  " \u6761\u65B0 \xB7 \u53EA\u770B\u65B0"
+		                ]
+		              }
+		            ),
 		            hiddenByBlacklist === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime39.jsxs)(
 		              "button",
 		              {
@@ -5159,12 +5240,12 @@ window.__ModuleLoader__.load({
 		          /* @__PURE__ */ (0, import_jsx_runtime39.jsx)("ul", { className: "jh-jobs", children: state.data.items.map((job) => /* @__PURE__ */ (0, import_jsx_runtime39.jsx)(
 		            JobRow,
 		            {
-		              job,
+		              job: localJobOf(job),
 		              active: job.id === props.selected,
 		              picked: picked.includes(job.id),
 		              marking: marking === job.id,
 		              openGroup,
-		              onSelect: props.onSelect,
+		              onSelect: selectJob,
 		              onTogglePick: togglePick,
 		              onGreet: greetOne,
 		              onDeliver: deliverOne,
@@ -5235,7 +5316,8 @@ window.__ModuleLoader__.load({
 		          id: props.selected,
 		          revision: props.revision,
 		          onChanged: props.onChanged,
-		          onSelect: props.onSelect
+		          onSelect: selectJob,
+		          fallback: selectedRowOf()
 		        }
 		      ) : /* @__PURE__ */ (0, import_jsx_runtime39.jsx)(
 		        CompanyDetailPane,

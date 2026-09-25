@@ -18,7 +18,8 @@ import { MatchPanel } from './panels/match-panel.js'
 import { RiskPanel } from './panels/risk-panel.js'
 import { ContactStagePanel, JobFacts } from './panels/summary-panel.js'
 import { TagGroups } from './panels/tag-groups.js'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { JobDto } from '../../../shared/contract/dto/job.js'
 
 /** 详情里给得出的动作（不提供"标为新"——回退到未读没有意义）。 */
 const ACTION_STATES: JobState[] = ['saved', 'ignored', 'seen', 'archived']
@@ -48,9 +49,47 @@ export function JobDetailBody(props: {
   onChanged: () => void
   /** 有它时，"这家公司的其它岗位"可点击切换；抽屉场景没有这个上下文。 */
   onSelect?: ((id: number) => void) | undefined
+  /**
+   * **列表里那条已有数据**（可选）。
+   *
+   * 用途只有一个：换岗位时先把标题 / 公司 / 城市 / 薪资画出来，别让整栏先塌成
+   * 一行"正在读取详情…"再长回来 —— 那是点击时最明显的一次闪。
+   * 它**只用于加载态**：详情一到就以服务端那份为准（列表那条缺 JD / 标注 / 匹配理由，
+   * 拿它当真相会显示不全甚至过时的字段）。
+   */
+  fallback?: JobDto | null
 }) {
-  const { state, reload } = useAsync((signal) => fetchJobDetail(props.id, signal), [props.id, props.revision])
-  const history = useAsync((signal) => fetchJobHistory(props.id, signal), [props.id, props.revision])
+  /**
+   * **同一个岗位的重取**（`revision` 变了、`id` 没变）不要清空内容。
+   *
+   * 为什么必须区分这两种变化：`keepPrevious` 是"沿用上一次结果"，它对**换岗位**是
+   * 危险的 —— 那会在 B 的标题下先显示 A 的薪资/JD（看起来像 B 的，实际是 A 的），
+   * 比闪一下加载态坏得多。所以只在"还是同一条岗位"时才沿用旧内容。
+   *
+   * 点击岗位本身已经不重取了（见 `screens/jobs/index.tsx` 的 `selectJob`），
+   * 这里保的是别处动作（收藏 / 打招呼 / 投递）触发 `revision` 时右栏不闪。
+   */
+  /**
+   * ⚠️ ref 只在 **commit 之后**更新（`useEffect`），不在 render 期间写。
+   *
+   * render 期间写的话，StrictMode 的"渲染两次"会让第二次渲染看到已经写进去的新 id，
+   * 于是 `sameJob` 变成 true —— 换岗位时就会拿**上一条**的内容当骨架（看起来像 B 的
+   * 数据其实是 A 的）。那正是这个判据要防的事，所以宁可绕一下。
+   */
+  const lastIdRef = useRef(props.id)
+  const sameJob = lastIdRef.current === props.id
+  useEffect(() => {
+    lastIdRef.current = props.id
+  }, [props.id])
+
+  const { state, reload } = useAsync(
+    (signal) => fetchJobDetail(props.id, signal),
+    [props.id, props.revision],
+    { keepPrevious: sameJob },
+  )
+  const history = useAsync((signal) => fetchJobHistory(props.id, signal), [props.id, props.revision], {
+    keepPrevious: sameJob,
+  })
   /**
    * 打招呼记录（D6）。
    *
@@ -175,7 +214,33 @@ export function JobDetailBody(props: {
   }
 
   if (state.status === 'loading') {
-    return <LoadingLine>正在读取详情…</LoadingLine>
+    const known = props.fallback ?? null
+    if (known === null) return <LoadingLine>正在读取详情…</LoadingLine>
+    /**
+     * 列表里那条已知数据先把头部画出来（标题 / 薪资 / 公司 / 城市），
+     * 下面照旧说明"详情正在读" —— 换岗位时整栏不再塌掉再长回来。
+     * 头部之外的东西（JD / 匹配理由 / 标注 / 投递记录）**不猜**，没有就是没有。
+     */
+    return (
+      <>
+        <header className="jh-detail-head">
+          <div className="jh-detail-headline">
+            <h2 className="jh-detail-title">{known.title}</h2>
+            <div className="jh-detail-salary">
+              <b className="jh-salary">{known.salaryRaw}</b>
+            </div>
+          </div>
+        </header>
+        <p className="jh-note">
+          {[known.companyName ?? '', known.city, known.district === '' ? '' : known.district]
+            .filter((item) => item !== '')
+            .join(' · ')}
+        </p>
+        <LoadingLine busy live="polite">
+          正在读取详情…
+        </LoadingLine>
+      </>
+    )
   }
 
   if (state.status === 'error') {

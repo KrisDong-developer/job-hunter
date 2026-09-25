@@ -122,6 +122,30 @@ export interface JobRepo {
   query(filters?: JobQuery, limit?: number, offset?: number): JobDto[]
   detail(id: number): JobDto | undefined
   mark(id: number, state: JobState): boolean
+  /**
+   * **见到就刷新 `last_seen_at`**（不动任何别的列）。
+   *
+   * 存在的理由：`upsert` 只在"这一条被成功写库"时才刷新 `last_seen_at`，
+   * 于是"最近见到"实际表达的是"最后一次写成功" —— 列表里解析到、但被字段断言
+   * （或缺身份键）拦下的那些记录**明明见到了却不刷新**。后果有两层：
+   *   * 界面上显示"三天前见到"，而它昨天还在列表里（事实错了）；
+   *   * `cleanup.ts` 的保留条件正是 `last_seen_at < ?` —— **还在招的岗位会被清掉**。
+   *
+   * 所以"见到"要和"写成功"分开：只要拿到了身份键，就先记下"我见到它了"。
+   * 返回 true = 库里确实有这么一条（`changes > 0`）；没抓过的新岗位返回 false。
+   */
+  touch(platformId: string, platformJobId: string, now: string): boolean
+  /**
+   * 记一次**已读**（用户打开了详情）。
+   *
+   * 幂等：`read_at` 只在第一次写（COALESCE），重复点开不改时间。
+   * 唯一会碰 `state` 的地方：`new → seen`（只在`state` 还是 `new` 时）。
+   * `saved` / `ignored` / `archived` **一律不动** —— 那是用户的有意决定，
+   * 打开一次详情不该把它改掉。
+   *
+   * 返回 true = 这次真的产生了变化（第一次读、或 new→seen）。
+   */
+  markRead(id: number, now: string): boolean
   /** 读 JD 正文（列表页拿不到，P2+ 的详情页才有）。 */
   jdText(id: number): string | null
   /**
@@ -237,6 +261,7 @@ function toDto(row: Row): JobDto {
     publishedAt: asTextOrNull(row['published_at']),
     firstSeenAt: asText(row['first_seen_at']),
     lastSeenAt: asText(row['last_seen_at']),
+    readAt: asTextOrNull(row['read_at']),
     // 抓取入库时间（列表默认排序用的就是它，界面要把它显示出来）
     crawledAt: asText(row['crawled_at']),
     state: asText(row['state'], 'new') as JobState,
@@ -317,6 +342,24 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
   )
   const selectById = db.prepare(`${SELECT_BASE} WHERE j.id = ?`)
   const markStmt = db.prepare('UPDATE job SET state = ? WHERE id = ?')
+  /**
+   * 只刷新"见到"这一列。⚠️ 必须**只**动 `last_seen_at`：
+   * `crawled_at` / `first_seen_at` / 各字段都不能碰 —— "我见到它了"与"我把字段写下来了"
+   * 是两件事，把它们一起改就等于又回到了恒等式（见 `touch` 的接口说明）。
+   */
+  const touchStmt = db.prepare('UPDATE job SET last_seen_at = ? WHERE platform_id = ? AND platform_job_id = ?')
+  /**
+   * 已读：`read_at` 幂等（COALESCE 保住第一次的时间），`state` 只推 `new → seen`。
+   * 一条语句写完，避免"读了但状态没推"这种半截状态。
+   *
+   * ⚠️ `WHERE` 里必须带 `read_at IS NULL OR state = 'new'`：SQLite 的 `changes` 对
+   * "匹配到行但值没变"也算 1，光靠 `id = ?` 就分不出"第一次读"和"又读了一遍"。
+   * 调用方（域服务）正是靠这个返回值区分"没变化"与"这条根本不存在"（后者要 404）。
+   */
+  const markReadStmt = db.prepare(
+    `UPDATE job SET read_at = coalesce(read_at, ?), state = CASE WHEN state = 'new' THEN 'seen' ELSE state END
+     WHERE id = ? AND (read_at IS NULL OR state = 'new')`,
+  )
   const jdTextStmt = db.prepare('SELECT jd_text FROM job WHERE id = ?')
   const setJdTextStmt = db.prepare('UPDATE job SET jd_text = ? WHERE id = ?')
   /* 缺 JD 的岗位（详情补抓的目标池）。按 last_seen_at 倒序：
@@ -535,6 +578,17 @@ export function createJobRepo(db: DatabaseSync): JobRepo {
     detail(id): JobDto | undefined {
       const row = selectById.get(id) as Row | undefined
       return row === undefined ? undefined : toDto(row)
+    },
+
+    touch(platformId, platformJobId, now): boolean {
+      if (platformJobId.trim() === '') return false
+      const result = touchStmt.run(now, platformId, platformJobId)
+      return Number(result.changes) > 0
+    },
+
+    markRead(id, now): boolean {
+      const result = markReadStmt.run(now, id)
+      return Number(result.changes) > 0
     },
 
     mark(id, state): boolean {

@@ -7,7 +7,7 @@ import {
   type JobOrderValue,
   type JobState,
 } from '../../../shared/contract/enums/job.js'
-import type { CompanyProfileDto, SavedJobViewDto } from '../../../shared/contract/dto/job.js'
+import type { CompanyProfileDto, JobDto, SavedJobViewDto } from '../../../shared/contract/dto/job.js'
 import { buildExpChips, sortEduValues, type ExpChip } from '../../../shared/domain/job-facets.js'
 import { jobsToMarkdown } from '../../format/job.js'
 import { useAsync } from '../../hooks/use-async.js'
@@ -18,6 +18,7 @@ import {
   fetchJobs,
   jobsExportUrl,
   markJob,
+  markJobRead,
   markJobs,
   recomputeStaleScores,
   saveJobViews,
@@ -285,6 +286,18 @@ export function JobsScreen(props: {
   const showBlacklistedJobs = (): void => {
     setDraft((current) => ({ ...current, excludeBlacklisted: false }))
     setApplied((current) => ({ ...current, excludeBlacklisted: false }))
+    setPage(1)
+  }
+
+  /**
+   * 点「N 条新」：直接套用"只看新"。
+   *
+   * 与 `showBlacklistedJobs` 同款 —— draft 与 applied **一起**改，否则用户点了没反应
+   * （筛选是要提交的），并回到第 1 页。
+   */
+  const showOnlyNew = (): void => {
+    setDraft((current) => ({ ...current, state: 'new' }))
+    setApplied((current) => ({ ...current, state: 'new' }))
     setPage(1)
   }
 
@@ -561,6 +574,21 @@ export function JobsScreen(props: {
     setNotice({ tone: 'ok', text: `已删除视图「${view.name}」（列表条件保持不动）` })
   }
 
+  /**
+   * 把一条岗位按本地乐观覆盖画出来（没覆盖就原样返回）。
+   *
+   * 只改 `state`（必要时补一个 `readAt`）—— 别的字段没有本地真相，不许瞎猜。
+   * 注意 `readAt` 只在"推到已读"时补：`markJob`（收藏/忽略）不写已读时间。
+   */
+  const localJobOf = (job: JobDto): JobDto => {
+    const override = optimistic.states.get(job.id)
+    if (override === undefined || override === job.state) return job
+    return override === 'seen'
+      ? { ...job, state: 'seen', readAt: job.readAt ?? new Date().toISOString() }
+      : { ...job, state: override }
+  }
+
+
   const togglePick = (id: number, checked: boolean): void => {
     setPicked((current) =>
       checked ? [...current, id] : current.filter((item) => item !== id),
@@ -573,21 +601,118 @@ export function JobsScreen(props: {
 
   /** 正在被快捷标记的岗位 id（列表很密，单张卡片内闪烁即可，不必弹整条错误）。 */
   const [marking, setMarking] = useState<number | null>(null)
+  /**
+   * **本地乐观覆盖**：这一轮里"我点了什么"，在服务端数据回来之前先画出来。
+   *
+   * ⚠️ 它存在的整个前提是：**点一条岗位、点一下行内标记，都绝不能让列表重取**。
+   *
+   * 上一版在记已读时调了 `props.onChanged()`（想让「N 条新」立刻变准），代价是
+   * `revision` 一变 → 列表重取 → 头栏亮出「更新中…」→ **每点一条就闪一下**。
+   * 对一个"左列表 + 右详情"的对照阅读界面来说，这个闪比"计数慢一拍"烦得多 ——
+   * 而且它还会顺带把右栏的内容一起打回加载态。
+   *
+   * 所以现在的做法：写库照发，本地当场把结果画出来，**不重取**；
+   * `unreadDelta` 同步调整「N 条新」（+1 / −1，取决于这一下让它是变多还是变少）。
+   * 等下一次自然刷新（翻页 / 改筛选 / 别处 `onChanged`）拿到新数据时，
+   * 服务端那份已经包含了这些变化，本地覆盖随之清空（见下面的 effect），不会重复算。
+   */
+  const [optimistic, setOptimistic] = useState<{
+    states: ReadonlyMap<number, JobState>
+    unreadDelta: number
+  }>({ states: new Map(), unreadDelta: 0 })
+  /**
+   * 打开详情 = **记一次已读**（事实），不是处置（决定）。
+   *
+   * 宿主侧只做两件事：`read_at` 幂等写第一次、`new → seen`。失败不弹错、也不回滚
+   * 本地状态 —— 这是"顺手记一笔"，不该打断正在看详情的用户。
+   *
+   * ⚠️ **刻意不调 `props.onChanged()`**：那会重取列表并亮出「更新中…」，
+   * 于是每点一条就闪一下。这里只做本地的两件事（翻徽章、扣未读数），
+   * 服务端那份真值等到下一次自然刷新再对齐。
+   */
+  const selectJob = (id: number): void => {
+    props.onSelect(id)
+    // 只有"当时还是新"的那条才需要本地淡化与扣减（已读的、收藏的都不用）
+    const wasNew =
+      state.status === 'ok' && state.data.items.some((item) => item.id === id && item.state === 'new')
+    if (wasNew) applyLocalState(id, 'seen')
+    void markJobRead(id)
+      // 404 / 网络错都不值得打断阅读：徽章下一轮自然会被服务端纠正
+      .catch(() => undefined)
+  }
+
+  /**
+   * 把一条岗位的处置态就地画出来，并同步调整「N 条新」。
+   *
+   * 两个调用方：打开详情（`new → seen`）与行内快捷标记。**都不重取列表** ——
+   * 重取会让头栏冒「更新中…」、整列重渲染，而那正是这几处点击最不该有的反馈。
+   */
+  const applyLocalState = (id: number, next: JobState): void => {
+    setOptimistic((current) => {
+      const before =
+        current.states.get(id) ??
+        (state.status === 'ok' ? state.data.items.find((item) => item.id === id)?.state : undefined)
+      if (before === next) return current
+      const states = new Map(current.states)
+      states.set(id, next)
+      // 未读数只跟"是不是 new"有关：new → 其它 = 少一条；其它 → new = 多一条
+      const delta = before === 'new' && next !== 'new' ? -1 : before !== 'new' && next === 'new' ? 1 : 0
+      return { states, unreadDelta: current.unreadDelta + delta }
+    })
+  }
+
   const quickMark = async (id: number, state: JobState): Promise<void> => {
     setMarking(id)
+    // 就地画出来，**不重取**（重取会让整列闪一下「更新中…」）——
+    // 行内那个 ✕ 是列表里点得最频繁的按钮，它值得做到无感。
+    applyLocalState(id, state)
     try {
       await markJob(id, state)
-      props.onChanged()
     } catch {
-      // 标记失败时列表状态不真实 —— 但整列不该为此闪出一条错误横幅。
-      // 让 onChanged 触发的重载把真实状态画回去即可。
+      // 只有失败时才拉服务端真值：本地那份乐观覆盖可能是错的，必须纠正。
+      // 成功路径不重取，所以正常使用下这一列永远不会闪。
       props.onChanged()
     } finally {
       setMarking(null)
     }
   }
 
+  /**
+   * 服务端数据一到位，本地那份"刚读过"的临时覆盖就退休。
+   *
+   * 为什么必须清：`unread` 是新取回来的，**已经**把刚才那几条已读算进去了；
+   * 不清的话下一次渲染会再扣一遍（读 3 条、显示少 6 条）。
+   * 依赖 `state` 是准的 —— `useAsync` 只在**新数据到达**时换 `state` 对象
+   * （`refreshing` 只是另一个布尔），所以这个 effect 的语义就是"新数据到了"。
+   */
+  useEffect(() => {
+    setOptimistic((current) =>
+      current.states.size === 0 && current.unreadDelta === 0
+        ? current
+        : { states: new Map(), unreadDelta: 0 },
+    )
+  }, [state])
+
   const total = state.status === 'ok' ? state.data.total : 0
+  /** 头栏显示的未读数：服务端那份 **加上** 本轮本地改动的增减（还没被服务端算进去的）。 */
+  const unreadShown =
+    state.status === 'ok' ? Math.max(0, state.data.unread + optimistic.unreadDelta) : 0
+  /**
+   * 列表里当前选中的那条（已套上本地乐观覆盖）—— 详情栏换岗位时拿它先画头部。
+   *
+   * ⚠️ 写成**函数**、在 JSX 里调用，而不是 `const selectedRow = (() => …)()`。
+   *
+   * 后者在 render 期间**立即求值**：只要它出现在 `optimistic` 的 `useState` 之前，
+   * 读 `optimistic` 就是 TDZ —— `Cannot access 'optimistic' before initialization`，
+   * 岗位库整屏白掉（这一版真的炸过：`tsc` 查不出跨函数的 TDZ，只有真渲染才报）。
+   * 函数体在 JSX 求值那一刻才跑，那时所有声明都已初始化，**顺序不再是雷**。
+   */
+  const selectedRowOf = (): JobDto | null => {
+    if (props.selected === null || state.status !== 'ok') return null
+    const row = state.data.items.find((item) => item.id === props.selected)
+    return row === undefined ? null : localJobOf(row)
+  }
+
   const pages = Math.max(1, Math.ceil(total / pageSize))
   /**
    * 草稿与已生效条件不一致（第四轮，审核 P2-12）。
@@ -805,6 +930,19 @@ export function JobsScreen(props: {
                 {/* 「排除已拉黑公司」隐藏了几条（批次 B）：**必须说出来**。
                     这条筛选默认开着，不说的话用户会以为某些岗位凭空消失了 ——
                     "可以隐藏，但绝不静默隐藏"。点它当场把这一条关掉并重查。 */}
+                {/* 「N 条新」入口（2026-09-21 补）：以前想知道"还有多少没看"只能去筛选里
+                    按状态选，没有数字。它是**全库**口径（不受当前筛选影响）——
+                    这正是它的用处："我这库里还堆着多少条没扫过"。点一下 = 只看新。 */}
+                {unreadShown === 0 ? null : (
+                  <button
+                    type="button"
+                    className="jh-link"
+                    title="库里还没有打开过的岗位数（不受当前筛选影响）。点一下只看这些"
+                    onClick={showOnlyNew}
+                  >
+                    {unreadShown} 条新 · 只看新
+                  </button>
+                )}
                 {hiddenByBlacklist === 0 ? null : (
                   <button
                     type="button"
@@ -908,12 +1046,14 @@ export function JobsScreen(props: {
                 {state.data.items.map((job) => (
                   <JobRow
                     key={job.id}
-                    job={job}
+                    /* 乐观已读：刚点开的那条当场显示成「已读」，但**不**从列表里抽走。
+                       重排/移出交给下一次刷新（见 `readNow` 的说明）。 */
+                    job={localJobOf(job)}
                     active={job.id === props.selected}
                     picked={picked.includes(job.id)}
                     marking={marking === job.id}
                     openGroup={openGroup}
-                    onSelect={props.onSelect}
+                    onSelect={selectJob}
                     onTogglePick={togglePick}
                     onGreet={greetOne}
                     onDeliver={deliverOne}
@@ -988,7 +1128,9 @@ export function JobsScreen(props: {
             id={props.selected}
             revision={props.revision}
             onChanged={props.onChanged}
-            onSelect={props.onSelect}
+            onSelect={selectJob}
+            /* 换岗位时先把头部画出来（用本地乐观覆盖后的那条），别让整栏塌一下再长回来 */
+            fallback={selectedRowOf()}
           />
         ) : (
           <CompanyDetailPane

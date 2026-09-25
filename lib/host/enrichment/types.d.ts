@@ -9,7 +9,9 @@ import type { EnrichmentCandidateDto } from '../../shared/contract/dto/job.js';
  */
 /** provider 从详情页解析出的原始工商数据（领域层再补 companyId/时间戳入库）。 */
 export interface RawEnrichment {
-    matchedName: string;
+    /** 注册全称。只有 NEXT_DATA 能可靠拿到；文本路径**宁可 null 也不猜**（回退正则会
+     *  命中页头"请输入公司名称"这类噪声，拿错名字比拿空更糟），入库时编排层用公司名兜底。 */
+    matchedName: string | null;
     creditCode: string | null;
     regStatus: string | null;
     estDate: string | null;

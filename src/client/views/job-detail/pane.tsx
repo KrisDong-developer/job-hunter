@@ -1,4 +1,5 @@
 import { InlineMd } from '../../ui/inline-md.js'
+import type { JobDto } from '../../../shared/contract/dto/job.js'
 import { JobDetailBody } from './body.js'
 
 /**
@@ -15,6 +16,8 @@ export function JobDetailPane(props: {
   onChanged: () => void
   /** 列表就在左边，所以"这家公司的其它岗位"可以直接点着切过去。 */
   onSelect?: ((id: number) => void) | undefined
+  /** 列表里那条已有数据 —— 换岗位时先把头部画出来，别让整栏塌一下（见 `body.tsx`）。 */
+  fallback?: JobDto | null
 }) {
   if (props.id === null) {
     return (
@@ -34,6 +37,7 @@ export function JobDetailPane(props: {
         revision={props.revision}
         onChanged={props.onChanged}
         onSelect={props.onSelect}
+        fallback={props.fallback ?? null}
       />
     </section>
   )

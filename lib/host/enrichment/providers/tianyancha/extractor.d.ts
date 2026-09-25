@@ -6,8 +6,7 @@ export interface ExtractResult {
 }
 /**
  * 解析天眼查公司详情页 HTML。两级来源合并：NEXT_DATA 先取，DOM 补缺。
- * `matchedName` 两级都拿不到时回退用 URL 之外的文本首段 —— 拿不到就给空串
- * （入库前的 matcher/调用方会再校验，不在此编造）。
+ * matchedName 只信 NEXT_DATA（文本回退会命中页头噪声，宁可 null —— 编排层用公司名兜底）。
  */
 export declare function extractDetailHtml(html: string, sourceUrl: string): ExtractResult;
 //# sourceMappingURL=extractor.d.ts.map

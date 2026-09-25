@@ -119,6 +119,30 @@ export interface JobRepo {
     query(filters?: JobQuery, limit?: number, offset?: number): JobDto[];
     detail(id: number): JobDto | undefined;
     mark(id: number, state: JobState): boolean;
+    /**
+     * **见到就刷新 `last_seen_at`**（不动任何别的列）。
+     *
+     * 存在的理由：`upsert` 只在"这一条被成功写库"时才刷新 `last_seen_at`，
+     * 于是"最近见到"实际表达的是"最后一次写成功" —— 列表里解析到、但被字段断言
+     * （或缺身份键）拦下的那些记录**明明见到了却不刷新**。后果有两层：
+     *   * 界面上显示"三天前见到"，而它昨天还在列表里（事实错了）；
+     *   * `cleanup.ts` 的保留条件正是 `last_seen_at < ?` —— **还在招的岗位会被清掉**。
+     *
+     * 所以"见到"要和"写成功"分开：只要拿到了身份键，就先记下"我见到它了"。
+     * 返回 true = 库里确实有这么一条（`changes > 0`）；没抓过的新岗位返回 false。
+     */
+    touch(platformId: string, platformJobId: string, now: string): boolean;
+    /**
+     * 记一次**已读**（用户打开了详情）。
+     *
+     * 幂等：`read_at` 只在第一次写（COALESCE），重复点开不改时间。
+     * 唯一会碰 `state` 的地方：`new → seen`（只在`state` 还是 `new` 时）。
+     * `saved` / `ignored` / `archived` **一律不动** —— 那是用户的有意决定，
+     * 打开一次详情不该把它改掉。
+     *
+     * 返回 true = 这次真的产生了变化（第一次读、或 new→seen）。
+     */
+    markRead(id: number, now: string): boolean;
     /** 读 JD 正文（列表页拿不到，P2+ 的详情页才有）。 */
     jdText(id: number): string | null;
     /**

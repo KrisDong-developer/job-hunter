@@ -25,6 +25,7 @@ import {
   SCHEMA_V11,
   SCHEMA_V12,
   SCHEMA_V13,
+  SCHEMA_V14,
 } from './schema.js'
 
 export interface Migration {
@@ -48,6 +49,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 11, name: 'job-score-index', sql: SCHEMA_V11 },
   { version: 12, name: 'greeting-template-resume', sql: SCHEMA_V12 },
   { version: 13, name: 'company-enrichment', sql: SCHEMA_V13 },
+  { version: 14, name: 'job-read-at', sql: SCHEMA_V14 },
 ]
 
 export interface MigrationReport {

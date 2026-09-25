@@ -46,6 +46,17 @@ export interface JobDto {
      */
     crawledAt: string;
     state: JobState;
+    /**
+     * **第一次打开这条详情的时间**（`null` = 从没打开过）。
+     *
+     * 与 `state` 分工明确：`readAt` 是**事实**（我看过它了，自动记的），
+     * `state` 是**决定**（收藏 / 忽略 / 归档，只有显式动作才改）。
+     * 界面上"新"的判据是 `state === 'new' && readAt === null`；
+     * 一旦读过，`state` 会被自动推到 `'seen'`（只在 `new` 时），徽章随之安静下来。
+     *
+     * 为什么不让模型读一下就写：`job_detail` 是**模型替你看**，不等于你看过。
+     */
+    readAt: string | null;
     /** L1 粗筛分（0-100）。**不是**完整评估，界面上必须标清楚（§4.5.1）。 */
     matchScore: number | null;
     /** 算这个分时用的是哪一版简历、哪个 rev（§4.1）。 */
@@ -102,6 +113,15 @@ export interface JobPageDto {
      * 它的存在本身就是这条功能的纪律：**可以隐藏，但绝不静默隐藏**。
      */
     hiddenByBlacklist?: number;
+    /**
+     * **全库还没有打开过的岗位数**（`state='new'`）—— 不受当前筛选影响。
+     *
+     * 为什么是全库口径而不是"当前筛选下的新岗位数"：这个数字要回答的是
+     * "我这库里还堆着多少条没扫过"，那是用户决定"现在去扫一遍"的依据；
+     * 如果它跟着筛选变，它回答的就成了"我现在看到的这些里有多少条没读"——
+     * 而那个问题的答案就在眼前这一屏上，不需要一个数字。
+     */
+    unread: number;
 }
 /** 岗位库筛选器的**取值集**（`GET /jobs/facets`）。 */
 export interface JobFacetsDto {

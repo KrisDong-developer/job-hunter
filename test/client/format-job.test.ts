@@ -9,6 +9,7 @@ import {
   salaryDetail,
   splitJobTags,
 } from '../../src/client/format/job.js'
+import { JOB_STATE_LABEL } from '../../src/shared/contract/enums/job.js'
 import type { JobDto } from '../../src/shared/contract/dto/job.js'
 
 /**
@@ -154,4 +155,35 @@ test('复制为表格：Markdown 表结构正确，竖线与换行不会把表�
   assert.ok(lines[2]?.includes('后端开发 / 急招'), '竖线换成斜杠（Markdown 表格没有通用转义）')
   assert.ok(lines[2]?.includes('深圳·南山区'), '城市带上区')
   assert.equal((lines[2] ?? '').split('|').length, (lines[0] ?? '').split('|').length, '列数必须与表头一致')
+})
+// ── 「已读」兜底（2026-09-21）────────────────────────────────────────
+//
+// `state` 与 `read_at` 是两次写：中间但凡有一次失败，就会留下
+// "state 还是 new、但 read_at 已经有值"的组合。而徽章最招人烦的失败方式恰恰是
+// **你明明看过了它还说你没看** —— 所以判据取并集：读过就是读过。
+
+test('徽章兜底：state 还是 new，但已经有了已读时间 → 显示「已读」而不是「新」', () => {
+  const badge = jobProgressBadgeOf({
+    state: 'new',
+    contactStage: 'none',
+    applicationStage: null,
+    readAt: '2026-09-16T02:00:00.000Z',
+  })
+  assert.equal(badge.label, JOB_STATE_LABEL.seen)
+  assert.equal(badge.variant, '', '「已读」是最中性的一档，不该染色')
+})
+
+test('徽章兜底：没读过就还是「新」（别把新岗位误判成已读）', () => {
+  const badge = jobProgressBadgeOf({
+    state: 'new',
+    contactStage: 'none',
+    applicationStage: null,
+    readAt: null,
+  })
+  assert.equal(badge.label, JOB_STATE_LABEL.new)
+})
+
+test('徽章兜底：调用方不给 readAt 也照样工作（老调用点不必改）', () => {
+  const badge = jobProgressBadgeOf({ state: 'new', contactStage: 'none', applicationStage: null })
+  assert.equal(badge.label, JOB_STATE_LABEL.new)
 })

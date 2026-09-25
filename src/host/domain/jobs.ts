@@ -31,6 +31,14 @@ export interface JobService {
   detailFull(id: number): JobDetailDto
   /** 收藏 / 忽略 / 归档。 */
   mark(id: number, state: JobState): JobDto
+  /**
+   * 记一次已读（**用户打开详情**时由界面调用）。
+   *
+   * 只做两件事：`read_at` 幂等写第一次；`state` 在 `new` 时推成 `seen`。
+   * `saved` / `ignored` / `archived` 不动 —— 打开一次详情不该改掉用户的决定。
+   * 已经是 `seen` 或已读过的重复调用是安全的空操作（仍返回当前 DTO，界面好直接用返回值渲染）。
+   */
+  markRead(id: number, now: string): JobDto
   latest(limit?: number): JobDto[]
   count(): number
   /** 与 `query` 同一套筛选条件的计数（分页 total）。 */
@@ -127,6 +135,17 @@ export function createJobService(store: Store, options: JobServiceOptions = {}):
       const rawJd = store.job.jdText(id)
       const jdText = rawJd === null || rawJd.trim() === '' ? null : rawJd
       return { job, jdText, flags, matchReasons: reasons, company: companyProfileOf(job.companyId) }
+    },
+
+    markRead(id, now): JobDto {
+      if (!store.job.markRead(id, now)) {
+        // 没产生变化有两种可能：这条不存在，或者早就读过了。
+        // 前者必须是 404（否则界面会把"读了一条不存在的岗位"当成成功）。
+        if (store.job.detail(id) === undefined) {
+          throw new DomainError('NOT_FOUND', `岗位不存在：${String(id)}`, { detail: { id } })
+        }
+      }
+      return jobWithFlags(id)
     },
 
     mark(id, state): JobDto {

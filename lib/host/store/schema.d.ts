@@ -215,4 +215,20 @@ export declare const SCHEMA_V12 = "\nALTER TABLE greeting_template ADD COLUMN re
  *   （`HARD_BLOCKED_FIELDS` 按字段名拦不住中文人名，外发控制必须靠调用侧 allowFields）。
  */
 export declare const SCHEMA_V13 = "\nCREATE TABLE company_enrichment (\n  company_id   INTEGER PRIMARY KEY REFERENCES company(id),\n  provider     TEXT NOT NULL,\n  matched_name TEXT,\n  credit_code  TEXT,\n  confidence   TEXT NOT NULL,\n  reg_status   TEXT,\n  est_date     TEXT,\n  reg_capital  TEXT,\n  org_type     TEXT,\n  legal_person TEXT,\n  industry     TEXT,\n  staff_num    TEXT,\n  suit_count      INTEGER,\n  invest_count    INTEGER,\n  license_count   INTEGER,\n  tags_json    TEXT NOT NULL DEFAULT '[]',\n  source_url   TEXT,\n  fetched_at   TEXT NOT NULL,\n  updated_at   TEXT NOT NULL\n);\nCREATE INDEX idx_company_enrichment_fetched ON company_enrichment(fetched_at);\n";
+/**
+ * v14 · 岗位**已读**时间（跨平台去重与"新"的语义分层，2026-09-21）。
+ *
+ * 为什么单开一列而不是继续用 `state`：`state` 一个字段背了两个不同性质的东西 ——
+ *   * **已读**（"我扫过这条了"）：低成本、无意识，应该在你点开详情时自动发生；
+ *   * **处置**（收藏 / 忽略 / 归档）：你的有意决定，绝不该被自动改掉。
+ *
+ * 混在一个枚举里，"浏览了还显示新"就无解（要么手动标、要么自动改掉你的处置态），
+ * 而且 `seen` 还被复用成"撤销忽略后的回退值"，将来分不清"我自己确认过"与"系统替我标的"。
+ *
+ * `read_at` 只记**第一次**打开的时间（幂等），它是事实；`state` 仍然只由显式动作改
+ * （唯一例外：`new → seen`，见 `repo/jobs.ts` 的 `markRead`）。
+ *
+ * 可空：历史行（迁移前抓的）一律 `NULL`，界面按"没读过"处理 —— 这比"补一个假时间"诚实。
+ */
+export declare const SCHEMA_V14 = "\nALTER TABLE job ADD COLUMN read_at TEXT;\n";
 //# sourceMappingURL=schema.d.ts.map

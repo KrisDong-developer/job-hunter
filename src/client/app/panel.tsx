@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { PHASE, PLUGIN_ID } from '../../shared/config/plugin.js'
 import { ScreenErrorBoundary } from './error-boundary.js'
+import { markJobRead } from '../net/jobs.js'
 import { consumePanelIntent, subscribePanelIntent } from './intent.js'
 import { backToConversation } from './runtime.js'
 import { STREAM_LABEL, TABS, tabLabelOf, type Screen } from './tabs.js'

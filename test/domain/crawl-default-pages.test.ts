@@ -236,3 +236,95 @@ test('身份键只算"去掉空白后为空" —— 纯空白同样不该变成�
     h.close()
   }
 })
+// ── 「见到」与「写成功」分家（2026-09-21）──────────────────────────────
+//
+// 起因：`upsert` 只在写成功时刷新 `last_seen_at`，于是"最近见到"其实说的是
+// "最后一次写成功" —— 列表里解析到、但被字段断言拦下的记录**明明见到了却不刷新**。
+// 后果不只是显示错：`cleanup.ts` 的保留条件正是 `last_seen_at < ?`，还在招的岗位会被清掉。
+
+/** 造一个"页面能解析、但字段缺了必需项"的适配器（用来触发字段断言隔离）。 */
+function brokenFieldAdapter(): SiteAdapter {
+  return {
+    id: 'brokenfield',
+    displayName: 'BrokenField',
+    ...platformFacts('brokenfield'),
+    capabilities: {
+      searchWithoutLogin: true,
+      supportsAttachment: false,
+      supportsReadReceipt: false,
+      supportsInbox: false,
+      supportsGreeting: false,
+      fieldCompleteness: 'low',
+      antiBot: 'low',
+    },
+    // 要求 company —— 下面返回的记录故意不带公司（模拟"公司选择器烂了"）
+    requiredFields: ['title', 'company'],
+    criteriaDimensions: [],
+    maxPages: 1,
+    defaultMaxPages: 1,
+    criteria: { buildSearchUrl: () => 'https://example.com/search' },
+    crawl: {
+      async gotoSearch(): Promise<void> {},
+      async readListPage(): Promise<RawJob[]> {
+        return [
+          {
+            platformJobId: 'keep-1',
+            title: '岗位 1',
+            salaryRaw: '',
+            company: '',
+            sourceUrl: 'https://example.com/job/1',
+          },
+        ]
+      },
+      hasNextPage: async () => false,
+    },
+    guard: { detectBlock: async () => null },
+  }
+}
+
+test('字段断言拦下的记录（有身份键）：仍然刷新「最近见到」，但不写主表', async () => {
+  const h = harness(brokenFieldAdapter())
+  try {
+    // 第一轮：字段齐全 → 正常入库
+    const good = { ...brokenFieldAdapter() }
+    const first = await runCrawl(h.deps, { platformId: 'brokenfield', criteria: {} })
+    assert.equal(first.run.found, 1)
+
+    // 那一轮是"缺公司"的，所以其实一条都没写 —— 换成先正常写一条：
+    // 直接往库里放一条同身份键的岗位，再跑一轮"缺公司"的解析
+    const store = h.deps.store
+    store.job.upsert(
+      {
+        platformId: 'brokenfield',
+        platformJobId: 'keep-1',
+        title: '岗位 1',
+        companyId: null,
+        salaryRaw: '2-3万',
+        salaryMin: 20000,
+        salaryMax: 30000,
+        salaryMonths: null,
+        city: '深圳',
+        district: '',
+        expReq: '',
+        eduReq: '',
+        tags: [],
+        sourceUrl: 'https://example.com/job/1',
+        publishedAt: null,
+      },
+      '2026-09-15T00:00:00.000Z',
+    )
+    const before = store.job.detail(1)
+
+    const second = await runCrawl(h.deps, { platformId: 'brokenfield', criteria: {} })
+    assert.equal(second.run.quarantined, 1, '这一轮这条被隔离（缺公司）')
+
+    const after = store.job.detail(1)
+    assert.ok(
+      after !== undefined && before !== undefined && after.lastSeenAt !== before.lastSeenAt,
+      `隔离不等于没见到 —— 「最近见到」必须刷新（否则会被 cleanup 当僵尸清掉）：${String(after?.lastSeenAt)}`,
+    )
+    assert.equal(after?.crawledAt, before?.crawledAt, '但抓取时间不变：这一轮并没有把字段写下来')
+  } finally {
+    h.close()
+  }
+})

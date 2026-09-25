@@ -36,6 +36,15 @@ export function JobRow(props: {
   const crawled = relativeTime(job.crawledAt) ?? job.crawledAt
   const seen = relativeTime(job.lastSeenAt) ?? job.lastSeenAt
   /**
+   * 「首次见到」（2026-09-21 补）：以前卡片上印的是**抓取**与**最近见到**，
+   * 而"这岗在库里挂了多久"恰恰要拿**首次见到**才看得出来。
+   *
+   * 只在它和抓取时间不同的时候才占位：新抓到的岗位两者本来就相等，
+   * 那会儿多印一格只是噪音（"首次 3 分钟前 / 抓取 3 分钟前"）。
+   */
+  const firstSeenShown = job.firstSeenAt !== job.crawledAt
+  const firstSeen = relativeTime(job.firstSeenAt) ?? job.firstSeenAt
+  /**
    * 时效档位（第五轮，批次 C2）：把"最近见到 X"从一串灰字升级成**带档位**的读数。
    * 档位只是颜色 + tooltip，文字仍然是相对时间 —— 相对时间好读，档位帮你在扫的时候
    * 一眼分出"这岗还在招"与"半月没动静"。解析不出来（`null`）就不染色，
@@ -120,6 +129,9 @@ export function JobRow(props: {
                 改走 localDateTime：本地时间、跨年才带年份。 */}
             <span className="jh-job-origin">
               <span>{job.platformName ?? job.platformId}</span>
+              {firstSeenShown ? (
+                <span title={`首次见到：${formatLocalDateTime(job.firstSeenAt)}`}>首次 {firstSeen}</span>
+              ) : null}
               <span title={formatLocalDateTime(job.crawledAt)}>抓取 {crawled}</span>
               {/* 时效档位（批次 C2）：颜色分三档，文字仍是相对时间。
                   tooltip 三件事都写清：绝对本地时刻、档位说法、以及**基准**是

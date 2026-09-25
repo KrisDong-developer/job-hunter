@@ -101,7 +101,12 @@ export interface JobProgressBadge {
 }
 
 export function jobProgressBadgeOf(
-  job: Pick<JobDto, 'state' | 'contactStage' | 'applicationStage'>,
+  /**
+   * `readAt` **可选**：它只服务一处兜底（见下面的 `readAlready`）。
+   * 声明成可选是有意的 —— 调用方（含测试）只需给三格就能问"现在该显示哪枚徽章"，
+   * 不必为了一个新字段去改所有构造点。
+   */
+  job: Pick<JobDto, 'state' | 'contactStage' | 'applicationStage'> & { readAt?: string | null },
 ): JobProgressBadge {
   if (job.applicationStage !== null) {
     const stage = job.applicationStage
@@ -127,12 +132,20 @@ export function jobProgressBadgeOf(
       variant: stage === 'replied' || stage === 'interview_scheduled' ? 'ok' : 'progress',
     }
   }
+  /**
+   * `state` 还是 `new`、但 `read_at` 已经有值 → 按「已读」显示。
+   *
+   * 正常路径上不会出现（`markRead` 会顺手把 `new` 推成 `seen`），但两列是两次写，
+   * 中间但凡有一次失败就会留下这个组合。而"新"这个徽章最招人烦的失败方式就是
+   * **你明明看过了它还说你没看** —— 所以判据取两者的**并集**：读过就是读过。
+   */
+  const readAlready = job.state === 'new' && (job.readAt ?? null) !== null
   return {
     source: 'state',
-    label: JOB_STATE_LABEL[job.state],
+    label: readAlready ? JOB_STATE_LABEL.seen : JOB_STATE_LABEL[job.state],
     // 处置态的类名与取值同名（.jh-state-new / -saved / -ignored / -archived），
     // 只有 `seen` 没有专属配色（它是最中性的"什么都没有"）→ 落到基类。
-    variant: job.state === 'seen' ? '' : job.state,
+    variant: job.state === 'seen' || readAlready ? '' : job.state,
   }
 }
 

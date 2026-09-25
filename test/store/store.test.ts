@@ -538,3 +538,78 @@ test('upsert：来源链接与标题仍然直接覆盖（必填字段，空值�
     cleanup(dir)
   }
 })
+// ── 「见到」与「已读」两件事（2026-09-21）──────────────────────────────
+
+test('touch：只刷新「最近见到」，不碰抓取时间、也不碰任何字段', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const id = store.job.upsert(jobInput(), T1).id
+    const before = store.job.detail(id)
+
+    // 隔了一轮又"见到"它（这一轮没能把字段写下来）
+    const ok = store.job.touch('51job', '173674707', T2)
+
+    const after = store.job.detail(id)
+    assert.equal(ok, true, '库里确实有这一条')
+    assert.equal(after?.lastSeenAt, T2, '「见到」要刷新 —— 它回答的是"这岗还在吗"')
+    assert.equal(after?.crawledAt, before?.crawledAt, '抓取时间是"最后一次写下来"，不该被 touch 改掉')
+    assert.equal(after?.title, before?.title)
+    assert.equal(after?.state, before?.state, 'touch 不许碰处置态')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('touch：没抓过的岗位返回 false（新岗位由 upsert 插入，不靠 touch）', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    assert.equal(store.job.touch('51job', '从没见过的-id', T1), false)
+    // 空身份键直接拒绝：`WHERE platform_job_id = ''` 会命中所有"空 id 的行"（历史脏数据）
+    assert.equal(store.job.touch('51job', '   ', T1), false)
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('markRead：写第一次的已读时间，并把 new 推到 seen（幂等）', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const id = store.job.upsert(jobInput(), T1).id
+    assert.equal(store.job.detail(id)?.readAt, null, '刚抓到的没有已读时间')
+    assert.equal(store.job.detail(id)?.state, 'new')
+
+    assert.equal(store.job.markRead(id, T2), true, '第一次读 → 有变化')
+    assert.equal(store.job.detail(id)?.readAt, T2)
+    assert.equal(store.job.detail(id)?.state, 'seen', 'new → seen（只在 new 时推）')
+
+    // 再读一次：时间不动（幂等），这次没有变化
+    assert.equal(store.job.markRead(id, '2026-09-16T03:00:00.000Z'), false)
+    assert.equal(store.job.detail(id)?.readAt, T2, '已读时间只记第一次 —— 重复点开不该刷新它')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('markRead：**不许**改掉用户的处置态（收藏 / 忽略 / 归档）', () => {
+  const dir = tempDataDir()
+  try {
+    const store = openTestStore(dir)
+    const id = store.job.upsert(jobInput(), T1).id
+    store.job.mark(id, 'saved')
+    store.job.markRead(id, T2)
+    assert.equal(store.job.detail(id)?.state, 'saved', '打开一次详情不该把收藏改掉')
+    assert.equal(store.job.detail(id)?.readAt, T2, '但已读时间照样记下（两件事互不干扰）')
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('read_at 是迁移 v14 加的列（老库升级后就有）', () => {
+  assert.ok(
+    MIGRATIONS.some((migration) => migration.sql.includes('ALTER TABLE job ADD COLUMN read_at')),
+    'read_at 必须来自一条迁移 —— 直接改 v1 的建表语句对已有的库无效',
+  )
+})
